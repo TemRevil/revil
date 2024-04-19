@@ -1,2 +1,2 @@
 # revil
-Tem Revil - Gallary
+Tem Revil - Gallery
