@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- <meta http-equiv="refresh" content="30"> -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A Tem Revil Developer Profile">
+    <meta name="keywords" content="TemRevil, Tem Revil, Tem Revil Profile, Revil, Tem, Mohammed Ahmed, Mohammed Ahmed Profile">
+    <meta name="author" content="Tem Revil">
+    <meta name="robots" content="index, follow">
+    <meta name="theme-color" content="#3395ff">
+    <meta name="referrer" content="no-referrer">
+    
+    <title>Tem Revil</title>
+
+    <link rel="stylesheet" href="CSS/all.css">
+    <link rel="stylesheet" href="CSS/Canvas.css">
+    <link rel="stylesheet" href="CSS/Main.css">
+</head>
+<body class="flex col center">
+    <div class="bouncing-blobs-container">
+        <div class="bouncing-blobs-glass"></div>
+        <div class="bouncing-blobs">
+          <div class="bouncing-blob bouncing-blob--blue"></div>
+          <div class="bouncing-blob bouncing-blob--blue"></div>
+          <div class="bouncing-blob bouncing-blob--blue"></div>
+          <div class="bouncing-blob bouncing-blob--white"></div>
+          <div class="bouncing-blob bouncing-blob--purple"></div>
+          <div class="bouncing-blob bouncing-blob--purple"></div>
+          <div class="bouncing-blob bouncing-blob--pink"></div>
+        </div>
+    </div>
+    <section class="landing flex row">
+        <div class="img transition"><img src="Background/TemRevil/tem.png" alt="Tem Revil" class="transition"></div>
+        <div class="about flex col">
+            <p class="title" id="landing-title">Mohammed Ahmed aka"Tem Revil"</p>
+            <hr id="landing-hr">
+            <div class="about-links">
+                <button class="t-btn" id="btn1" onclick="moveUnderline(this, 'Info')">Information</button>
+                <button class="t-btn" id="btn2" onclick="moveUnderline(this, 'Word')">a Word</button>
+                <button class="t-btn" id="btn3" onclick="moveUnderline(this, 'Skills')">Skills</button>
+                <button class="t-btn" id="btn4" onclick="moveUnderline(this, 'FAQs')">the FAQs</button>
+                <button class="t-btn" id="btn5" onclick="moveUnderline(this, 'Accounts')">the Accounts</button>
+                <div class="underline"></div>
+            </div>
+            <section class="about-box off" id="Info">
+                <p class="align">Statues : Free To Hire</p>
+                <p class="align">Name : Mohammed Ahmed</p>
+                <p class="text">Old : 19 - For 16/02/2024</p>
+                <p class="text">Nationality : Egyptian</p>
+                <p class="text">index created : 12</p>
+                <p class="text">components created : 2</p>
+            </section>
+            <section class="about-box off" id="Word">
+                <p class="text" id="the-word">
+                    <!-- Hey there! I'm Mohammed Ahmed, a Front-End Enthusiast on a mission to create awesome digital experiences!
+                    <br>
+                    Embracing my 19 years of existence, I embark on a thrilling journey of learning and growth, armed with a treasure trove of experience that belies my age.
+                    <br>
+                    Experience isn't just a word for me; it's my compass, guiding my code and my outlook on life. With every project, I aim to break limits and exceed expectations.
+                    <br>
+                    Curious to delve deeper into my world? Feel free to explore further or check out my <strong><a href="#" class="links">Gallery</a></strong>.
+                    <br>
+                    My Plans is to continue learn to innovation ignites like a flame! -->
+                </p>
+            </section>
+            <section class="about-box skills flex row off" id="Skills">
+                <div class="tooltip">
+                    <i class="fa-brands fa-html5 icons"></i>
+                    <span class="tooltiptext">81%</span>
+                </div>
+                <div class="tooltip">
+                    <i class="fa-brands fa-css3-alt icons"></i>
+                    <span class="tooltiptext">77%</span>
+                </div>
+                <div class="tooltip">
+                    <i class="fa-brands fa-js icons"></i>
+                    <span class="tooltiptext" style="width: 265px;">3% (80% using chat GPT until now)</span>
+                </div>
+                <div class="tooltip">
+                    <i class="fa-solid fa-font-awesome icons"></i>
+                    <span class="tooltiptext">library</span>
+                </div>
+            </section>
+            <section class="about-box flex col off" id="FAQs">
+                <div class="FAQs">
+                    <p class="align">What is your Experience Limits?</p>
+                    <p class="text" style="margin-left: 15px;">Well. This is Depend on What Do You Need.</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">Do you have any experience working in a team environment?</p>
+                    <p class="text" style="margin-left: 15px;">Yes, and i'd love to.</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">What programming languages are you proficient in?</p>
+                    <p class="text" style="margin-left: 15px;">For Now HTML, CSS.</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">Can you describe how do you solve a complex problem?</p>
+                    <p class="text" style="margin-left: 15px;">Search and Learn, Then Fix.</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">How do you keep your skills sharp and up-to-date?</p>
+                    <p class="text" style="margin-left: 15px;">Keep learning what i have to</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">Can you tell us about a challenging project you worked on?</p>
+                    <p class="text" style="margin-left: 15px;"><a href="#" class="links">Encryptor</a>, The First Project Without full Experience.</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">How do you handle tight deadlines or stressful situations?</p>
+                    <p class="text" style="margin-left: 15px;">Follow my Quotes.. Work More, Work Hard.</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">What motivates you to continue learning and improving your skills?</p>
+                    <p class="text" style="margin-left: 15px;">Want to be better than ever.. and i love this field.</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">What are your goals or aspirations?</p>
+                    <p class="text" style="margin-left: 15px;">to create a lot of more projects.</p>
+                </div>                
+                <div class="FAQs">
+                    <p class="align">What are your favorite development tools or resources?</p>
+                    <p class="text" style="margin-left: 15px;">Visual Studio Code</p>
+                </div>
+                <div class="FAQs">
+                    <p class="align">What do you enjoy most about being a front-end developer?</p>
+                    <p class="text" style="margin-left: 15px;">Developing websites that contain charming and imaginative interface features.</p>
+                </div>
+            </section>
+            <section class="about-box off" id="Accounts">
+                <div class="accounts">
+                    <div class="tooltip">
+                        <a href="https://www.facebook.com/temrevil/" target="_blank" class="links"><i class="fa-brands fa-facebook"></i></a>
+                        <span class="tooltiptext">@temrevil</span>
+                    </div>
+                    <div class="tooltip">
+                        <a href="https://www.instagram.com/temrevil/" target="_blank" class="links"><i class="fa-brands fa-instagram"></i></a>
+                        <span class="tooltiptext">@temrevil</span>
+                    </div>
+                    <div class="tooltip">
+                        <a href="https://github.com/temrevil" target="_blank" class="links"><i class="fa-brands fa-github"></i></a>
+                        <span class="tooltiptext">@temrevil</span>
+                    </div>
+                    <div class="tooltip">
+                        <a href="https://uiverse.io/profile/TemRevil/" target="_blank" class="links"><i class="fa-solid fa-u"></i>i</a>
+                        <span class="tooltiptext">@temrevil</span>
+                    </div>
+                </div>
+            </section>
+            <div class="hire flex row">
+                <button class="t-btn-2" id="hire">Let's Up To Work</button>
+                <button class="hire-btn-2">Get In Touch <i class="fa-brands fa-whatsapp"></i></button>
+            </div>
+        </div>
+        <div class="hiring flex col center off">
+            <button class="transition" id="hiring-close"><i class="fa-solid fa-x"></i></button>
+            <form method="post" action="PHP/send_email.php">
+                <div class="flex col">
+                    <label for="Email" class="text">Email*</label>
+                    <input type="email" class="text" id="Email" name="Email" required>
+                    <label for="Name" class="text">Name*</label>
+                    <input type="text" class="text" id="Name" name="Name" required>
+                    <label for="Num" class="text">Number</label>
+                    <input type="text" class="text" id="Num" name="Num">
+                    <label for="Message" class="text">Message</label>
+                    <textarea name="Message" class="text" id="Message" name="Message"></textarea>
+                </div>
+                <div class="send"><button type="submit" class="t-btn-2" name="submit">Send</button></div>
+            </form>            
+        </div>
+    </section>
+    <script src="JavaScript/all.js"></script>
+    <script src="JavaScript/Canvas.js"></script>
+    <script src="JavaScript/Main.js"></script>
+</body>
+</html>

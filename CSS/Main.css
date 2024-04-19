@@ -1,0 +1,494 @@
+@font-face {
+    font-family: 'Cairo';
+    font-weight: 300;
+    src: url(../Fonts/Cairo/static/Cairo-Regular.ttf);
+}
+@font-face {
+    font-family: 'Cairo';
+    font-weight: 700;
+    src: url(../Fonts/Cairo/static/Cairo-Bold.ttf);
+}
+@font-face {
+    font-family: 'Rubik';
+    font-weight: 300;
+    src: url(../Fonts/Rubik/static/Rubik-Regular.ttf);
+}
+@font-face {
+    font-family: 'Rubik';
+    font-weight: 700;
+    src: url(../Fonts/Rubik/static/Rubik-Bold.ttf);
+}
+@font-face {
+    font-family: 'Exo';
+    font-weight: 300;
+    src: url(../Fonts/Exo/static/Exo2-Regular.ttf);
+}
+@font-face {
+    font-family: 'Exo';
+    font-weight: 700;
+    src: url(../Fonts/Exo/static/Exo2-Bold.ttf);
+}
+
+* {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+}
+body {
+    width: 100%;
+    background-color: #ebf6ff;
+}
+body::-webkit-scrollbar {
+    width: 6px;
+} 
+body::-webkit-scrollbar-track {
+    background: #ebf6ff;
+}
+body::-webkit-scrollbar-thumb {
+    background-color: #3395ff;
+    border-radius: 20px;
+}
+::selection {
+    background-color: #1122338e;
+    color: white;
+}
+
+.flex {
+    display: flex;
+}
+.row {
+    flex-direction: row;
+}
+.col {
+    flex-direction: column;
+}
+.center {
+    justify-content: center;
+    align-items: center;
+}
+.between {
+    justify-content: space-between;
+}
+.evenly {
+    justify-content: space-evenly;
+}
+.around {
+    justify-content: space-around;
+}
+
+.off {
+    display: none;
+}
+
+.img img {
+    width: 100%;
+}
+
+p {
+    text-transform: capitalize;
+}
+.title {
+    font-family: 'Rubik', 'Exo', 'Cairo';
+    font-weight: 700;
+    font-size: 32px;
+    color: #124;
+    transition: 0.2s 0s linear;
+}
+.align {
+    font-family: 'Rubik', 'Exo', 'Cairo';
+    font-weight: 700;
+    font-size: 24px;
+    color: #124;
+    transition: 0.2s 0s linear;
+}
+.text {
+    font-family: 'Rubik', 'Exo', 'Cairo';
+    font-weight: 100;
+    font-size: 22px;
+    color: #124;
+    transition: 0.2s 0s linear;
+}
+.links {
+    text-decoration: none;
+    font-family: 'Cairo', 'Exo', 'Rubik';
+    font-weight: 900;
+    font-size: 22px;
+    color: #124;
+    transition: 0.2s 0s linear;
+}
+.links:hover {
+    text-decoration: solid;
+}
+hr {
+    border: 1px #11224486 solid;
+    border-radius: 8px;
+}
+
+.transition {
+    transition: 0.2s 0s linear;
+}
+/* -------------------------------------- */
+.landing {
+    width: 95%;
+    height: 850px;
+    background-color: #ffffff50;
+    border-radius: 15px;
+    box-shadow: 0 7px 25px #1234564b;
+}
+
+.landing .img {
+    width: 50%;
+    overflow: hidden;
+}
+.landing .img img {
+    width: 100%;
+    height: 100%;
+    border-top-left-radius: 15px;
+    border-bottom-left-radius: 15px;
+    filter: grayscale(0.2);
+    cursor: pointer;
+}
+.landing .img:hover img {
+    filter: grayscale(0);
+    scale: 1.1;
+}
+
+.landing .title {
+    width: 100%;
+    padding: 10px;
+    text-align: center;
+}
+#landing-title, #landing-hr {
+    display: none;
+    animation: getINup 0.5s 0s linear;
+}
+
+.about {
+    width: 50%;
+    position: relative;
+    overflow: hidden;
+}
+.about-links {
+    margin-top: 20px;
+    margin-left: 10px;
+}
+.about-box {
+    width: 100%;
+    height: calc(100% - 225px);
+    margin: 20px;
+    overflow: auto;
+}
+.about-box::-webkit-scrollbar {
+    width: 6px;
+} 
+.about-box::-webkit-scrollbar-track {
+    background: #ebf6ff;
+}
+.about-box::-webkit-scrollbar-thumb {
+    background-color: #3395ff;
+    border-radius: 20px;
+}
+.t-btn {
+    margin-left: 25px;
+    font-family: 'Exo', 'Rubik', 'Cairo';
+    font-weight: 700;
+    font-size: 20px;
+    background-color: transparent;
+    color: #124;
+    border: none;
+    outline: none;
+    cursor: pointer;
+}
+.underline {
+    position: relative;
+    left: -10px;
+    bottom: 0;
+    height: 3px;
+    width: 80px;
+    background-color: #124;
+    transition: transform 0.3s ease;
+}
+
+#Info, #Word {
+    animation: fadeIN 0.2s 0s linear;
+}
+
+.FAQs {
+    padding: 20px;
+    margin-bottom: 10px;
+    background-color: #ffffffd1;
+    border-radius: 8px;
+    cursor: pointer;
+    animation: getIN 0.2s 0s linear;
+    transition: 0.2s 0s linear;
+}
+.FAQs:hover {
+    background-color: #fff;
+}
+.FAQs:active {
+    scale: 0.95;
+}
+
+.accounts .links {
+    position: relative;
+    top: 10px;
+    font-size: 52px;
+    margin-right: 20px;
+    animation: fadeIN 0.2s 0s linear;
+    transition: 0.2s 0s linear;
+}
+.accounts .links:active {
+    font-size: 45px;
+}
+.tooltip {
+    position: relative;
+    display: inline-block;
+}
+.tooltip .tooltiptext {
+    visibility: hidden;
+    width: fit-content;
+    background-color: #124;
+    color: white;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px;
+    position: absolute;
+    z-index: 1;
+    bottom: 75%;
+    left: 36%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
+}
+
+.skills {
+    height: 110px;
+    gap: 20px;
+    animation: fadeIN 0.2s 0s linear;
+    overflow: visible;
+}
+.skills .tooltip .icons {
+    font-size: 72px;
+    color: #1E3050;
+}
+.skills .tooltip .tooltiptext {
+    bottom: -50%;
+    left: 50%;
+}
+
+.hire {
+    width: 100%;
+    height: 90px;
+    gap: 20px;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    padding: 25px;
+    background-color: #ffffff50;
+    border-bottom-right-radius: 15px;
+}
+.t-btn-2 {
+    width: fit-content;
+    height: fit-content;
+    position: relative;
+    padding: 10px 20px;
+    background: transparent;
+    color: #3395ff;
+    font-weight: 600;
+    font-size: 22px;
+    border: 1px solid #3395ff;
+    border-radius: 8px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    box-shadow: 0 0 0 0 transparent;
+    -webkit-transition: 0.2s 0s ease-in;
+    -moz-transition: 0.2s 0s ease-in;
+    transition: 0.2s 0s ease-in;
+    overflow: hidden;
+    cursor: pointer;
+}
+.t-btn-2:hover {
+    background-color: #3395ff;
+    color: #fff;
+    box-shadow: 0 0 1px 1px #008eecd0;
+    -webkit-transition: 0.2s 0s linear;
+    -moz-transition: 0.2s 0s linear;
+    transition: 0.2s 0s linear;
+}
+.t-btn-2:hover::before {
+    -webkit-animation: sh02 0.5s 0s linear;
+    -moz-animation: sh02 0.5s 0s linear;
+    animation: sh02 0.5s 0s linear;
+}
+.t-btn-2::before {
+    content: '';
+    display: block;
+    width: 0px;
+    height: 86%;
+    position: absolute;
+    top: 7%;
+    left: 0%;
+    opacity: 0;
+    background-color: #fff;
+    box-shadow: 0 0 50px 30px #fff;
+    -webkit-transform: skewX(-20deg);
+    -moz-transform: skewX(-20deg);
+    -ms-transform: skewX(-20deg);
+    -o-transform: skewX(-20deg);
+    transform: skewX(-20deg);
+}
+.t-btn-2:active {
+    scale: 0.95;
+    box-shadow: 0 0 0 0 transparent;
+    -webkit-transition: box-shadow 0.2s ease-in;
+    -moz-transition: box-shadow 0.2s ease-in;
+    transition: box-shadow 0.2s ease-in;
+}
+@keyframes sh02 {
+    from {
+        opacity: 0;
+        left: 0%;
+    }
+    50% {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+        left: 100%;
+    }
+}
+
+.hire-btn-2 {
+    width: fit-content;
+    height: fit-content;
+    position: relative;
+    z-index: 1;
+    padding: 10px 20px;
+    background-color: transparent;
+    color: #3395ff;
+    font-weight: 600;
+    font-size: 22px;
+    border: 1px solid #3395ff;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+}
+.hire-btn-2:hover {
+    color: white;
+    border-color: #25D366;
+}
+.hire-btn-2:active {
+    scale: 0.95;
+    border-color: #25D366;
+}
+.hire-btn-2::before {
+    position: absolute;
+    content: "";
+    width: 300px;
+    height: 300px;
+    z-index: -1;
+    background-color: #25D366;
+    border-radius: 50%;
+}
+.hire-btn-2:before {
+    top: 100%;
+    left: 100%;
+    transition: 0.2s 0s linear;
+}
+.hire-btn-2:hover::before {
+    top: -50px;
+    left: -50px;
+}
+/* -------------------------------------- */
+/* Hiring Things */
+.hiring {
+    width: 50%;
+    position: relative;
+    animation: fadeIN 0.2s 0s linear;
+}
+#hiring-close {
+    width: fit-content;
+    padding: 10px 20px;
+    position: absolute;
+    top: 25px;
+    right: 25px;
+    background-color: transparent;
+    color: #124;
+    font-size: 26px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+#hiring-close:hover {
+    background-color: #ffffffb2;
+}
+#hiring-close:active {
+    scale: 0.85;
+}
+
+#Email, #Name, #Num {
+    width: 400px;
+    padding: 10px 20px;
+    margin-bottom: 10px;
+    background-color: #ffffffee;
+    outline: none;
+    border: none;
+    border-radius: 5px;
+}
+#Message {
+    width: 400px;
+    min-height: 300px;
+    max-height: 300px;
+    padding: 20px;
+    outline: none;
+    border: none;
+    border-radius: 5px;
+}
+.send {
+    position: absolute;
+    bottom: 25px;
+}
+/* -------------------------------------- */
+@keyframes getINup {
+    0% {
+        margin-top: -60px;
+        opacity: 0;
+    }
+    100% {
+        margin-top: 0;
+        opacity: 1;
+    }
+}
+@keyframes getOUTdown {
+    0% {
+        margin-top: 0;
+        opacity: 1;
+    }
+    100% {
+        margin-top: -75px;
+        opacity: 0;
+    }
+}
+
+@keyframes getIN {
+    0% {
+        margin-top: 75px;
+        opacity: 0;
+    }
+    100% {
+        margin-top: 0;
+        opacity: 1;
+    }
+}
+@keyframes fadeIN {
+    0% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 1;
+    }
+}
