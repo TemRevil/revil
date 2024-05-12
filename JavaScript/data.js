@@ -12,7 +12,7 @@ const data = [
         languages: [
             { name: "HTML", percentage: 9.5 },
             { name: "CSS", percentage: 21.5 },
-            { name: "JavaScript", percentage: 96.0 }
+            { name: "JavaScript", percentage: 69.0 }
         ],
         tags: ["HTML", "CSS", "JavaScript", "Bootstrap", "Responsive"],
         description: ["encryption", "secure", "data", "tool"]
@@ -25,8 +25,9 @@ const data = [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
         ],
         languages: [
-            { name: "HTML", percentage: 0.4 },
-            { name: "CSS", percentage: 99.6 },
+            { name: "HTML", percentage: 16.5 },
+            { name: "CSS", percentage: 77.9 },
+            { name: "JavaScript", percentage: 5.6 }
         ],
         tags: ["HTML", "CSS", "JavaScript", "Responsive"],
         description: ["mails", "emails", "php", "python", "javascript", "responsive"]
@@ -39,8 +40,8 @@ const data = [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
         ],
         languages: [
-            { name: "HTML", percentage: 0.4 },
-            { name: "CSS", percentage: 99.6 },
+            { name: "HTML", percentage: 57.4 },
+            { name: "CSS", percentage: 42.6 },
         ],
         tags: ["HTML", "CSS", "Responsive", "Design"],
         description: ["login", "design", "email", "password", "inputs", "responsive"]
@@ -53,8 +54,8 @@ const data = [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
         ],
         languages: [
-            { name: "HTML", percentage: 1.7 },
-            { name: "CSS", percentage: 98.3 },
+            { name: "HTML", percentage: 0.7 },
+            { name: "CSS", percentage: 99.3 },
         ],
         tags: ["HTML", "CSS", "Responsive", "Design"],
         description: ["login", "design", "email", "password", "inputs", "responsive"]
@@ -67,9 +68,9 @@ const data = [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
         ],
         languages: [
-            { name: "HTML", percentage: 21.7 },
-            { name: "CSS", percentage: 44.3 },
-            { name: "JavaScript", percentage: 34},
+            { name: "HTML", percentage: 1.1 },
+            { name: "CSS", percentage: 97.4 },
+            { name: "JavaScript", percentage: 1.5 },
         ],
         tags: ["HTML", "CSS", "JavaScript", "Responsive", "Design"],
         description: ["messages", "whatsapp", "app", "design", "responsive"]
@@ -82,8 +83,8 @@ const data = [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
         ],
         languages: [
-            { name: "HTML", percentage: 3.7 },
-            { name: "CSS", percentage: 97.3 },
+            { name: "HTML", percentage: 1.2 },
+            { name: "CSS", percentage: 98.8 },
         ],
         tags: ["HTML", "CSS", "Responsive", "Design"],
         description: ["markting", "w3", "design", "responsive"]
@@ -110,9 +111,9 @@ const data = [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
         ],
         languages: [
-            { name: "HTML", percentage: 8.7 },
-            { name: "CSS", percentage: 74 },
-            { name: "JavaScript", percentage: 17.3 },
+            { name: "HTML", percentage: 8.3 },
+            { name: "CSS", percentage: 89.8 },
+            { name: "JavaScript", percentage: 1.9 },
         ],
         tags: ["Arabic", "HTML", "CSS", "JavaScript", "Responsive", "Design"],
         description: ["books", "library", "design", "responsive"]
