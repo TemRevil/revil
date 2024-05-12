@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <!-- <meta http-equiv="refresh" content="30"> -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="A Tem Revil Developer Profile">
     <meta name="keywords" content="TemRevil, Tem Revil, Tem Revil Profile, Revil, Tem, Mohammed Ahmed, Mohammed Ahmed Profile">
@@ -10,14 +9,25 @@
     <meta name="robots" content="index, follow">
     <meta name="theme-color" content="#3395ff">
     <meta name="referrer" content="no-referrer">
-    
+
+    <link rel="icon" href="Background/icon.png" type="image/gif">
     <title>Tem Revil</title>
 
     <link rel="stylesheet" href="CSS/all.css">
+    <link rel="stylesheet" href="CSS/prism.css">
     <link rel="stylesheet" href="CSS/Canvas.css">
-    <link rel="stylesheet" href="CSS/Main.css">
+    <link rel="stylesheet" id="theme-stylesheet" href="CSS/Main.css">
+    <link rel="stylesheet" href="CSS/Media.css">
 </head>
-<body class="flex col center">
+<body class="flex col center transition">
+    <div class="loader flex center">
+        <div class="blobs">
+          <span class="blob"></span>
+          <span class="blob"></span>
+          <span class="blob"></span>
+          <span class="blob"></span>
+        </div>
+    </div>
     <div class="bouncing-blobs-container">
         <div class="bouncing-blobs-glass"></div>
         <div class="bouncing-blobs">
@@ -31,25 +41,24 @@
         </div>
     </div>
     <section class="landing flex row">
-        <div class="img transition"><img src="Background/TemRevil/tem.png" alt="Tem Revil" class="transition"></div>
+        <div class="div-img"><div class="img"></div></div>
         <div class="about flex col">
             <p class="title" id="landing-title">Mohammed Ahmed aka"Tem Revil"</p>
             <hr id="landing-hr">
+            <button id="about-close" class="transition"><i class="fa-solid fa-x"></i></button>
             <div class="about-links">
-                <button class="t-btn" id="btn1" onclick="moveUnderline(this, 'Info')">Information</button>
+                <button class="t-btn" id="btn1" onclick="moveUnderline(this, 'Details')">Details</button>
                 <button class="t-btn" id="btn2" onclick="moveUnderline(this, 'Word')">a Word</button>
-                <button class="t-btn" id="btn3" onclick="moveUnderline(this, 'Skills')">Skills</button>
+                <button class="t-btn" id="btn3" onclick="moveUnderline(this, 'Experience')">Experience</button>
                 <button class="t-btn" id="btn4" onclick="moveUnderline(this, 'FAQs')">the FAQs</button>
                 <button class="t-btn" id="btn5" onclick="moveUnderline(this, 'Accounts')">the Accounts</button>
                 <div class="underline"></div>
             </div>
-            <section class="about-box off" id="Info">
+            <section class="about-box off" id="Details">
                 <p class="align">Statues : Free To Hire</p>
                 <p class="align">Name : Mohammed Ahmed</p>
                 <p class="text">Old : 19 - For 16/02/2024</p>
                 <p class="text">Nationality : Egyptian</p>
-                <p class="text">index created : 12</p>
-                <p class="text">components created : 2</p>
             </section>
             <section class="about-box off" id="Word">
                 <p class="text" id="the-word">
@@ -59,12 +68,12 @@
                     <br>
                     Experience isn't just a word for me; it's my compass, guiding my code and my outlook on life. With every project, I aim to break limits and exceed expectations.
                     <br>
-                    Curious to delve deeper into my world? Feel free to explore further or check out my <strong><a href="#" class="links">Gallery</a></strong>.
+                    Curious to delve deeper into my world? Feel free to explore further or check out my <b><a href="#" class="links">Gallery</a></b>.
                     <br>
                     My Plans is to continue learn to innovation ignites like a flame! -->
                 </p>
             </section>
-            <section class="about-box skills flex row off" id="Skills">
+            <section class="about-box experience flex row off" id="Experience">
                 <div class="tooltip">
                     <i class="fa-brands fa-html5 icons"></i>
                     <span class="tooltiptext">81%</span>
@@ -76,10 +85,6 @@
                 <div class="tooltip">
                     <i class="fa-brands fa-js icons"></i>
                     <span class="tooltiptext" style="width: 265px;">3% (80% using chat GPT until now)</span>
-                </div>
-                <div class="tooltip">
-                    <i class="fa-solid fa-font-awesome icons"></i>
-                    <span class="tooltiptext">library</span>
                 </div>
             </section>
             <section class="about-box flex col off" id="FAQs">
@@ -150,28 +155,631 @@
             </section>
             <div class="hire flex row">
                 <button class="t-btn-2" id="hire">Let's Up To Work</button>
-                <button class="hire-btn-2">Get In Touch <i class="fa-brands fa-whatsapp"></i></button>
+                <button class="t-btn-3" id="whatsapp"><i class="fa-brands fa-whatsapp"></i> Get In Touch</button>
+                <button class="t-btn-2" id="cv"><i class="fa-solid fa-file"></i> CV</button>
             </div>
         </div>
+        <button id="about-open" class="flex col align transition">
+            <p>|</p>
+            <br>
+            <p>A</p>
+            <p>B</p>
+            <p>O</p>
+            <p>U</p>
+            <p>T</p>
+            <br>
+            <p>M</p>
+            <p>E</p>
+            <br>
+            <p>|</p>
+        </button>
         <div class="hiring flex col center off">
             <button class="transition" id="hiring-close"><i class="fa-solid fa-x"></i></button>
-            <form method="post" action="PHP/send_email.php">
-                <div class="flex col">
-                    <label for="Email" class="text">Email*</label>
-                    <input type="email" class="text" id="Email" name="Email" required>
-                    <label for="Name" class="text">Name*</label>
-                    <input type="text" class="text" id="Name" name="Name" required>
-                    <label for="Num" class="text">Number</label>
-                    <input type="text" class="text" id="Num" name="Num">
-                    <label for="Message" class="text">Message</label>
-                    <textarea name="Message" class="text" id="Message" name="Message"></textarea>
-                </div>
-                <div class="send"><button type="submit" class="t-btn-2" name="submit">Send</button></div>
-            </form>            
+            <div class="flex col">
+                <label for="Email" class="text">Email*</label>
+                <input type="email" class="text" id="Email" required>
+                <label for="Name" class="text">Name*</label>
+                <input type="text" class="text" id="Name" required>
+                <label for="Num" class="text">Number</label>
+                <input type="text" class="text" id="Num">
+                <label for="Message" class="text">Message</label>
+                <textarea name="Message" class="text" id="Message"></textarea>
+            </div>
+            <p class="text" id="alert"></p>
+            <div class="send">
+                <button class="t-btn-2" onclick="sendMail();">Send</button>
+            </div>
         </div>
     </section>
+    <section class="skills flex col">
+        <div class="section-head flex row">
+            <p class="section-title transition" data-text="Awesome">
+                <span class="actual-text transition">&nbsp;Skills&nbsp;</span>
+                <span aria-hidden="true" class="hover-text transition">&nbsp;Skills&nbsp;</span>
+            </p>
+        </div>
+        <div class="s flex row center">
+            <div class="s1 flex col center">
+                <div class="card-skills flex row transition">
+                    <div class="img transition"><img src="Background/Skills/SEO.png" alt="SEO"></div>
+                    <div class="skill-hr"></div>
+                    <p class="align">SEO</p>
+                </div>
+                <div class="card-skills flex row transition">
+                    <div class="img transition"><img src="Background/Skills/Performance.png" alt="Performance"></div>
+                    <div class="skill-hr"></div>
+                    <p class="align">Performance</p>
+                </div>
+                <div class="card-skills flex row transition">
+                    <div class="img transition"><img src="Background/Skills/Details.png" alt="Details"></div>
+                    <div class="skill-hr"></div>
+                    <p class="align">Attention To Details</p>
+                </div>
+            </div>
+            <div class="s2 flex col center">
+                <div class="card-skills flex row transition">
+                    <div class="img transition"><img src="Background/Skills/Creativity.png" alt="Creativity"></div>
+                    <div class="skill-hr"></div>
+                    <p class="align">Creativity</p>
+                </div>
+                <div class="card-skills flex row transition">
+                    <div class="img transition"><img src="Background/Skills/Communication.png" alt="Communication"></div>
+                    <div class="skill-hr"></div>
+                    <p class="align">Communication</p>
+                </div>
+                <div class="card-skills flex row transition">
+                    <div class="img transition"><img src="Background/Skills/Team Work.png" alt="Team Work"></div>
+                    <div class="skill-hr"></div>
+                    <p class="align">Team Work</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="gallery flex col center">
+        <div class="section-head flex row center between">
+            <p class="section-title transition" data-text="Awesome">
+                <span class="actual-text transition">&nbsp;Gallery&nbsp;</span>
+                <span aria-hidden="true" class="hover-text transition">&nbsp;Gallery&nbsp;</span>
+            </p>
+            <div class="search-container">
+                <input placeholder="Search..." class="text flex center" id="Search" type="Search">
+                <i class="fa-solid fa-search search-icon"></i>
+            </div>
+        </div>
+        <div class="gallery-options">
+            <label class="radio">
+                <input type="radio" name="gallery-radio" checked="">
+                <span class="name text" onclick="toggleView('sites')">Sites</span>
+            </label>
+            <label class="radio">
+                <input type="radio" name="gallery-radio">
+                <span class="name text" onclick="toggleView('ui')">UI</span>
+            </label>
+        </div>
+        <div class="gallery-cards flex row center">
+            <div class="card flex col view-link" id="Encryptor" data-link="https://temrevil.github.io/Encryptor/Index.html">
+                <div class="card-img img">
+                    <div class="slides">
+                        <img src="Background/Cards/Encryptor/1.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/2.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/3.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/4.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/5.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/6.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/7.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/8.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/9.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/10.png" alt="#" class="transition">
+                        <img src="Background/Cards/Encryptor/11.png" alt="#" class="transition">
+                        <!-- More Images Here -->
+                    </div>
+                    <div class="tags-div flex row">
+                        <!-- Tags Collected IN Data.js -->
+                    </div>
+                </div>
+                <p class="card-name align">Encryptor</p>
+                <p class="card-dis text">
+                    The Encryptor website, developed by TemRevil, is a platform specialized in providing multiple security pass ways1.
+                    <br>
+                    <b>Here are the details:</b>
+                    <br>
+                    <b>Website Specialization:</b> The website is specialized in multi-security pass ways. It’s still in the update phase.
+                    <br>
+                    <b>Contribution:</b> If you’re interested in contributing to the development of the website, you can create an account on GitHub and Join US.
+                    <br>
+                    <b>Services:</b> The website offers several services, including secure password generation and password management.
+                    <br>
+                    <b>Privacy:</b> All encryption operations are executed on the client-side, and no input or output is recorded.
+                </p>
+                <button class="card-btn transition" id="card-view"><p class="text"><i class="fa-solid fa-code"></i> View</p></button>
+                <button class="card-btn card-site transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+            </div>
+            <div class="card flex col view-link" id="Nook" data-link="https://temrevil.github.io/Nook/Index.html">
+                <div class="card-img img">
+                    <div class="slides">
+                        <img src="Background/Cards/Nook/1.png" alt="#" class="transition">
+                        <img src="Background/Cards/Nook/2.png" alt="#" class="transition">
+                        <img src="Background/Cards/Nook/3.png" alt="#" class="transition">
+                        <img src="Background/Cards/Nook/4.png" alt="#" class="transition">
+                        <img src="Background/Cards/Nook/5.png" alt="#" class="transition">
+                        <img src="Background/Cards/Nook/6.png" alt="#" class="transition">
+                        <!-- More Images Here -->
+                    </div>
+                    <div class="tags-div flex row">
+                        <!-- Tags Collected IN Data.js -->
+                    </div>
+                </div>
+                <p class="card-name align">Nook</p>
+                <p class="card-dis text">
+                    Nook is a major destination for temporary email services.
+                    <br>
+                    A Way To Protect Your Email From Spams & Ads.
+                    <br>
+                    <b>Temporary Email</b> can be useful in many scenarios, such as registering for websites that require an email address
+                    <br>
+                    <b>but</b> you don't want to use your personal email, avoiding unwanted messages or spam that may come from registering on some sites,testing the system.
+                    <br>
+                    <b>Email or applications</b> that require an email address. It is worth noting that temporary email is not a substitute for personal email and should be used with caution. 
+                    <br>
+                    <b>Warning</b> It should not be used for personal or sensitive information because messages are not encrypted and can be accessed by anyone who knows your temporary email address.
+                </p>
+                <button class="card-btn transition" id="card-view"><p class="text"><i class="fa-solid fa-code"></i> View</p></button>
+                <button class="card-btn card-site transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+            </div>
+            <div class="card flex col view-link" id="Login-Design" data-link="https://temrevil.github.io/LoginDesign/Index.html">
+                <div class="card-img img">
+                    <div class="slides">
+                        <img src="Background/Cards/Login Design/1.png" alt="#" class="transition">
+                        <img src="Background/Cards/Login Design/2.png" alt="#" class="transition">
+                        <!-- More Images Here -->
+                    </div>
+                    <div class="tags-div flex row">
+                        <!-- Tags Collected IN Data.js -->
+                    </div>
+                </div>
+                <p class="card-name align">Login-Design</p>
+                <p class="card-dis text">
+                    The Login-Design Vol.1, Developed By TemRevil, Is A Design to a login landing site that help user to log in to his/her account with a beautiful design full up with colors, background and fonts.
+                    <br>
+                    <b>Here Are The Details:</b>
+                    <br>
+                    <b>Website Specialization:</b> Login Design.
+                    <br>
+                    <b>Contribution:</b> Help User To Login from a landing login magical design.
+                    <br>
+                    <b>Contact:</b> If You Wish To Join The Team, Go To Hire Me Section And Send Email There.
+                    <br>
+                    <b>Rights:</b> All Designs Developed By Tem Revil is free to share for Deveolopers.
+                </p>
+                <button class="card-btn transition" id="card-view"><p class="text"><i class="fa-solid fa-code"></i> View</p></button>
+                <button class="card-btn card-site transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+            </div>
+            <div class="card flex col view-link" id="Login Design 2" data-link="https://temrevil.github.io/LoginDesign-2/Index.html">
+                <div class="card-img img">
+                    <div class="slides">
+                        <img src="Background/Cards/Login Design 2/1.png" alt="#" class="transition">
+                        <img src="Background/Cards/Login Design 2/2.png" alt="#" class="transition">
+                        <img src="Background/Cards/Login Design 2/3.png" alt="#" class="transition">
+                        <!-- More Images Here -->
+                    </div>
+                    <div class="tags-div flex row">
+                        <!-- Tags Collected IN Data.js -->
+                    </div>
+                </div>
+                <p class="card-name align">Login Design 2</p>
+                <p class="card-dis text">
+                    The Login-Design Vol.2, Developed By TemRevil, Is A Design to a login landing site that help user to log in to his/her account with a beautiful design full up with colors, background and fonts.
+                    <br>
+                    <b>Here Are The Details:</b>
+                    <br>
+                    <b>Website Specialization:</b> Login Design-2.
+                    <br>
+                    <b>Contribution:</b> Help User To Login from a landing login magical design.
+                    <br>
+                    <b>Contact:</b> If You Wish To Join The Team, Go To Hire Me Section And Send Email There.
+                    <br>
+                    <b>Rights:</b> All Designs Developed By Tem Revil is free to share for Deveolopers.
+                </p>
+                <button class="card-btn transition" id="card-view"><p class="text"><i class="fa-solid fa-code"></i> View</p></button>
+                <button class="card-btn card-site transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+            </div>
+            <div class="card flex col view-link" id="Evick" data-link="https://temrevil.github.io/Evick/Index.html">
+                <div class="card-img img">
+                    <div class="slides">
+                        <img src="Background/Cards/Evick/1.png" alt="#" class="transition">
+                        <img src="Background/Cards/Evick/2.png" alt="#" class="transition">
+                        <img src="Background/Cards/Evick/3.png" alt="#" class="transition">
+                        <img src="Background/Cards/Evick/4.png" alt="#" class="transition">
+                        <img src="Background/Cards/Evick/5.png" alt="#" class="transition">
+                        <img src="Background/Cards/Evick/6.png" alt="#" class="transition">
+                        <!-- More Images Here -->
+                    </div>
+                    <div class="tags-div flex row">
+                        <!-- Tags Collected IN Data.js -->
+                    </div>
+                </div>
+                <p class="card-name align">Evick</p>
+                <p class="card-dis text">
+                    Evick is a clone for whatsapp web design with some changes that it's more flexible.
+                    <br>
+                    <b>Here Are The Details:</b>
+                    <br>
+                    <b>Website Specialization:</b> Messages Design.
+                    <br>
+                    <b>Contribution:</b> Send and recieve messages from user to user (Design) in a beautiful design.
+                    <br>
+                    <b>Warning:</b> this site is just a design and need Back-End Section to send and receieve messages.
+                    <br>
+                    <b>Contact:</b> If You Wish To Join The Team, Go To Hire Me Section And Send Email There.
+                    <br>
+                    <b>Rights:</b> All Designs Developed By Tem Revil Is Free To Share For Deveolopers.
+                </p>
+                <button class="card-btn transition" id="card-view"><p class="text"><i class="fa-solid fa-code"></i> View</p></button>
+                <button class="card-btn card-site transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+            </div>
+            <div class="card flex col view-link" id="Markting Design" data-link="https://temrevil.github.io/MarktingDesign/Index.html">
+                <div class="card-img img">
+                    <div class="slides">
+                        <img src="Background/Cards/Markting Design/1.png" alt="#" class="transition">
+                        <img src="Background/Cards/Markting Design/2.png" alt="#" class="transition">
+                        <img src="Background/Cards/Markting Design/3.png" alt="#" class="transition">
+                        <img src="Background/Cards/Markting Design/4.png" alt="#" class="transition">
+                        <!-- More Images Here -->
+                    </div>
+                    <div class="tags-div flex row">
+                        <!-- Tags Collected IN Data.js -->
+                    </div>
+                </div>
+                <p class="card-name align">Markting Design</p>
+                <p class="card-dis text">
+                    Markting Design is a clone form w3 School designs with some changes with colors, background and Fonts
+                    <br>
+                    <b>Here Are The Details:</b>
+                    <br>
+                    <b>Website Specialization:</b> Markting Design.
+                    <br>
+                    <b>Contribution:</b> Markting Design that show details about *company*, easy to see and understand *company* pricing, details and products.
+                    <br>
+                    <b>Contact:</b> If You Wish To Join The Team, Go To Hire Me Section And Send Email There.
+                    <br>
+                    <b>Rights:</b> This Design is cloned from w3 school you can go and check rights there.
+                </p>
+                <button class="card-btn transition" id="card-view"><p class="text"><i class="fa-solid fa-code"></i> View</p></button>
+                <button class="card-btn card-site transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+            </div>
+            <div class="card flex col view-link" id="Land-Mark Design" data-link="https://temrevil.github.io/LandMarkDesign/Index.html">
+                <div class="card-img img">
+                    <div class="slides">
+                        <img src="Background/Cards/Land Mark Design/1.png" alt="#" class="transition">
+                        <img src="Background/Cards/Land Mark Design/2.png" alt="#" class="transition">
+                        <img src="Background/Cards/Land Mark Design/3.png" alt="#" class="transition">
+                        <!-- More Images Here -->
+                    </div>
+                    <div class="tags-div flex row">
+                        <!-- Tags Collected IN Data.js -->
+                    </div>
+                </div>
+                <p class="card-name align">Land-Mark Design</p>
+                <p class="card-dis text">
+                    LandMark Design is an Attractive blurly design full with colors, backgrounds and fonts, and easy to show products in a good look
+                    <br>
+                    <b>Here Are The Details:</b>
+                    <br>
+                    <b>Website Specialization:</b> Landing Page Design.
+                    <br>
+                    <b>Contribution:</b> Landing Page Design that show details about product to user with a Attractive Design to offer the product easy to user.
+                    <br>
+                    <b>Contact:</b> If You Wish To Join The Team, Go To Hire Me Section And Send Email There.
+                    <br>
+                    <b>Rights:</b> All Designs Developed By Tem Revil Is Free To Share For Deveolopers.
+                </p>
+                <button class="card-btn transition" id="card-view"><p class="text"><i class="fa-solid fa-code"></i> View</p></button>
+                <button class="card-btn card-site transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+            </div>
+            <div class="card flex col view-link" id="NY-e-Book" data-link="https://temrevil.github.io/NYeBook/Index.html">
+                <div class="card-img img">
+                    <div class="slides">
+                        <img src="Background/Cards/NY eBook/1.png" alt="#" class="transition">
+                        <img src="Background/Cards/NY eBook/2.png" alt="#" class="transition">
+                        <img src="Background/Cards/NY eBook/3.png" alt="#" class="transition">
+                        <img src="Background/Cards/NY eBook/4.png" alt="#" class="transition">
+                        <!-- More Images Here -->
+                    </div>
+                    <div class="tags-div flex row">
+                        <!-- Tags Collected IN Data.js -->
+                    </div>
+                </div>
+                <p class="card-name align">New York e-Book</p>
+                <p class="card-dis text">
+                    NYeBook Design is an online library design in arabic lang, with a lot of kinds for books in the library
+                    <br>
+                    <b>Here Are The Details:</b>
+                    <br>
+                    <b>Website Specialization:</b> Library Arabic Design.
+                    <br>
+                    <b>Contribution:</b> New York e-Book is just a design for a library in arabic lang, the design is simple but Attractive, the design is using /Owl Carousel carousel and bootstrap.
+                    <br>
+                    <b>Contact:</b> If You Wish To Join The Team, Go To Hire Me Section And Send Email There.
+                    <br>
+                    <b>Rights:</b> All Designs Developed By Tem Revil Is Free To Share For Deveolopers.
+                </p>
+                <button class="card-btn transition" id="card-view"><p class="text"><i class="fa-solid fa-code"></i> View</p></button>
+                <button class="card-btn card-site transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+            </div>
+        </div>
+        <div class="gallery-ui flex row center off">
+            <div class="card-ui" id="ui-1">
+                <div class="tags-div flex row">
+                    <div class="tag tag-loading">Loading</div>
+                </div>
+                <div class="card-ui-view flex center">
+                    <iframe src="Ui-Gallery/ui-1/ui.html" frameborder="0"></iframe>
+                </div>
+                <button class="btn-ui-view transition"><span>View</span></button>
+            </div>
+            <div class="card-ui" id="ui-2">
+                <div class="tags-div flex row">
+                    <div class="tag tag-loading">Loading</div>
+                </div>
+                <div class="card-ui-view flex center">
+                    <iframe src="Ui-Gallery/ui-2/ui.html" frameborder="0"></iframe>
+                </div>
+                <button class="btn-ui-view transition"><span>View</span></button>
+            </div>
+            <div class="card-ui" id="ui-3">
+                <div class="tags-div flex row">
+                    <div class="tag tag-loading">Loading</div>
+                </div>
+                <div class="card-ui-view flex center">
+                    <iframe src="Ui-Gallery/ui-3/ui.html" frameborder="0"></iframe>
+                </div>
+                <button class="btn-ui-view transition"><span>View</span></button>
+            </div>
+            <div class="card-ui" id="ui-4">
+                <div class="tags-div flex row">
+                    <div class="tag tag-loading">Loading</div>
+                </div>
+                <div class="card-ui-view flex center">
+                    <iframe src="Ui-Gallery/ui-4/ui.html" frameborder="0"></iframe>
+                </div>
+                <button class="btn-ui-view transition"><span>View</span></button>
+            </div>
+            <div class="card-ui" id="ui-5">
+                <div class="tags-div flex row">
+                    <div class="tag tag-loading">Loading</div>
+                </div>
+                <div class="card-ui-view flex center">
+                    <iframe src="Ui-Gallery/ui-5/ui.html" frameborder="0"></iframe>
+                </div>
+                <button class="btn-ui-view transition"><span>View</span></button>
+            </div>
+            <div class="card-ui" id="ui-6">
+                <div class="tags-div flex row">
+                    <div class="tag tag-loading">Loading</div>
+                </div>
+                <div class="card-ui-view flex center">
+                    <iframe src="Ui-Gallery/ui-6/ui.html" frameborder="0"></iframe>
+                </div>
+                <button class="btn-ui-view transition"><span>View</span></button>
+            </div>
+            <div class="card-ui" id="ui-7">
+                <div class="tags-div flex row">
+                    <div class="tag tag-button">Buttons</div>
+                </div>
+                <div class="card-ui-view flex center">
+                    <iframe src="Ui-Gallery/ui-7/ui.html" frameborder="0"></iframe>
+                </div>
+                <button class="btn-ui-view transition"><span>View</span></button>
+            </div>
+        </div>
+    </section>
+    <section class="certificate flex col">
+        <div class="section-head flex row">
+            <p class="section-title transition" data-text="Awesome">
+                <span class="actual-text transition">&nbsp;Certificates&nbsp;</span>
+                <span aria-hidden="true" class="hover-text transition">&nbsp;Certificates&nbsp;</span>
+            </p>
+        </div>
+        <div class="certificate-gallery flex row">
+            <div class="flex col center">
+                <div class="img transition"><img src="Background/Certificate/Typing Skills.png" alt="Typing Skills"></div>
+                <p class="align">Typing Skills</p>
+            </div>
+        </div>
+    </section>
+    <section class="partenrs flex col">
+        <div class="section-head flex row">
+            <p class="section-title transition" data-text="Awesome">
+                <span class="actual-text transition">&nbsp;Partenrs&nbsp;</span>
+                <span aria-hidden="true" class="hover-text transition">&nbsp;Partenrs&nbsp;</span>
+            </p>
+        </div>
+        <div class="partenrs-slider">
+            <div class="partenrs-logo-slide">
+                <img src="Background/Partenrs/logo.png" alt="Logo Here">
+                <img src="Background/Partenrs/logo.png" alt="Logo Here">
+                <img src="Background/Partenrs/logo.png" alt="Logo Here">
+                <img src="Background/Partenrs/logo.png" alt="Logo Here">
+                <img src="Background/Partenrs/logo.png" alt="Logo Here">
+                <img src="Background/Partenrs/logo.png" alt="Logo Here">
+                <img src="Background/Partenrs/logo.png" alt="Logo Here">
+            </div>
+        </div>
+        <div class="partners-button flex center">
+            <button class="t-btn-2" id="partner">Be the First!</button>
+        </div>
+    </section>
+    <footer class="flex col">
+        <div class="footer-top">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
+                <path d="M0,0V46.29c47.79,22.2,103.59,32.17,158,28,70.36-5.37,136.33-33.31,206.8-37.5C438.64,32.43,512.34,53.67,583,72.05c69.27,18,138.3,24.88,209.4,13.08,36.15-6,69.85-17.84,104.45-29.34C989.49,25,1113-14.29,1200,52.47V0Z" opacity=".25" class="shape-fill"></path>
+                <path d="M0,0V15.81C13,36.92,27.64,56.86,47.69,72.05,99.41,111.27,165,111,224.58,91.58c31.15-10.15,60.09-26.07,89.67-39.8,40.92-19,84.73-46,130.83-49.67,36.26-2.85,70.9,9.42,98.6,31.56,31.77,25.39,62.32,62,103.63,73,40.44,10.79,81.35-6.69,119.13-24.28s75.16-39,116.92-43.05c59.73-5.85,113.28,22.88,168.9,38.84,30.2,8.66,59,6.17,87.09-7.5,22.43-10.89,48-26.93,60.65-49.24V0Z" opacity=".5" class="shape-fill"></path>
+                <path d="M0,0V5.63C149.93,59,314.09,71.32,475.83,42.57c43-7.64,84.23-20.12,127.61-26.46,59-8.63,112.48,12.24,165.56,35.4C827.93,77.22,886,95.24,951.2,90c86.53-7,172.46-45.71,248.8-84.81V0Z" class="shape-fill"></path>
+            </svg>
+        </div>
+        <div class="footer-body flex row around">
+            <div class="text">
+                <p class="title">My Last Word</p>
+                <br>
+                i try to build a journey full
+                <br>
+                of awesome digital experiences!
+                <br>
+                because i aim to break limits and exceed expectations.
+                <br>
+                With a Qoute : <q class="align">Experience Has No Limits</q>
+            </div>
+            <div class="footer-info flex col">
+                <div class="flex row">
+                    <i class="fa-solid fa-location-dot icon"></i>
+                    <p class="text">Egypt, El Mansoura</p>
+                </div>
+                <div class="flex row">
+                    <i class="fa-solid fa-hashtag icon"></i>
+                    <p class="text">+20 100 130 8280</p>
+                </div>
+                <div class="flex row">
+                    <i class="fa-solid fa-envelope icon"></i>
+                    <p class="text">temrevil@gmail.com</p>
+                </div>
+            </div>
+            <div class="flex col">
+                <p class="title">Get In Touch!!</p>
+                <div class="af flex row center">
+                    <a href="https://www.facebook.com/temrevil/" target="_blank" class="links footer-accounts"><i class="fa-brands fa-facebook"></i></a>
+                    <a href="https://www.instagram.com/temrevil/" target="_blank" class="links footer-accounts"><i class="fa-brands fa-instagram"></i></a>
+                    <a href="https://github.com/temrevil" target="_blank" class="links footer-accounts"><i class="fa-brands fa-github"></i></a>
+                    <a href="https://uiverse.io/profile/TemRevil/" target="_blank" class="links footer-accounts"><i class="fa-solid fa-u"></i>i</a>
+                </div>
+            </div>
+        </div>
+        <div class="footer-rights flex center">
+            <p class="text">All Rights Reserved © <a href="https://github.com/temrevil" target="_blank" class="links">Tem Revil</a></p>
+        </div>
+        <div class="texture"></div>
+    </footer>
+    <div class="site-side flex col transition">
+        <button class="side-btn img transition" id="light-mode"><img src="Background/Site Side/Light-Mode.png" alt="LM"></button>
+        <button class="side-btn img transition" id="dark-mode"><img src="Background/Site Side/Dark-Mode.png" alt="DM"></button>
+        <button class="side-btn img transition" id="go-up"><img src="Background/Site Side/UP.png" alt="UP"></button>
+    </div>
+    <div class="wh-sites flex center off"> <!-- Gallery Cards Modal -->
+        <div class="modal">
+            <button class="transition" id="modal-close"><i class="fa-solid fa-x"></i></button>
+            <p class="title">View</p>
+            <section class="flex row between" id="view">
+                <div class="view-data flex col">
+                    <div class="slider flex col">
+                        <div class="slider-view flex row center">
+                            <button class="transition" id="left"><i class="fa-solid fa-angle-left"></i></button>
+                            <img src="#" alt="#" id="img-slider-view">
+                            <button class="transition" id="right"><i class="fa-solid fa-angle-right"></i></button>
+                        </div>
+                        <div class="img-slider flex row">
+                            <img src="#" alt="#" class="active transition" id="img-slider-slice">
+                            <!-- img Collected IN Cards -->
+                        </div>
+                    </div>
+                    <div class="flex col">
+                        <p class="card-name align"><!-- Card Name Collected IN Cards --></p>
+                        <div class="tags-div flex row">
+                            <p class="align">Tags : </p>
+                            <!-- Card Tags Collected IN Cards & Data.js -->
+                        </div>
+                        <p class="card-dis text"><!-- Card Description Collected IN Cards --></p>
+                    </div>
+                </div>
+                <div class="view-info flex col" >
+                    <p class="card-name title"><!-- Card Name Collected IN Cards --></p>
+                    <div class="flex col" id="team">
+                        <!-- Team Collected IN Data.js -->
+                        <!-- <div class="team-card flex row transition">
+                            <div class="team-img img"><img src="Mohammed.png" alt="#"></div>
+                            <p class="text" id="team-name">Mohammed Ahmed</p>
+                        </div>
+                        <div class="flex row transition">
+                            <div class="team-img img"><img src="Eslam.jpg" alt="#"></div>
+                            <p class="text" id="team-name">Eslam Fathy</p>
+                        </div> -->
+                    </div>
+                    <p class="text">Version : <span id="card-vir"><!-- Collected IN Data.js --></span></p>
+                    <p class="text">Views : <span id="card-viwes"><!-- Collected IN Data.js --></span></p>
+                    <div class="view-link" data-link=""><!-- Link Collected IN Cards Data-Link -->
+                        <button class="card-site card-btn transition"><p class="text"><i class="fa-solid fa-link"></i> Visit</p></button>
+                    </div>
+                    <div class="script-data flex col">
+                        <p class="script-data-title" style="font-size: 30px;">Coding Percentage</p>
+                        <div class="script-data-lang flex row">
+                            <i class="fa-brands fa-html5" style="color: #f06529;"></i>
+                            <p class="text">HTML</p>
+                            <span class="lang-p text">0%<!-- Collected IN Data.js --></span>
+                        </div>
+                        <div class="html-data">
+                            <div class="html-p transition"></div>
+                        </div>
+                        <!-- --------------- -->
+                        <div class="script-data-lang flex row">
+                            <i class="fa-brands fa-css3-alt" style="color: #2965f1;"></i>
+                            <p class="text">CSS</p>
+                            <span class="lang-p text">0%<!-- Collected IN Data.js --></span>
+                        </div>
+                        <div class="css-data">
+                            <div class="css-p transition"></div>
+                        </div>
+                        <!-- --------------- -->
+                        <div class="script-data-lang flex row">
+                            <i class="fa-brands fa-square-js" style="color: #f0db4f;"></i>
+                            <p class="text">JavaScript</p>
+                            <span class="lang-p text">0%<!-- Collected IN Data.js --></span>
+                        </div>
+                        <div class="javascript-data">
+                            <div class="javascript-p transition"></div>
+                        </div>
+                        <p class="script-data-title">Data Collected By <i class="fa-brands fa-github"></i></p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+    <div class="wh-ui flex center off"> <!-- Gallery Ui Modal -->
+        <div class="modal-ui flex row off">
+            <button class="transition" id="modal-ui-close"><i class="fa-solid fa-x"></i></button>
+            <div class="view-ui flex center"></div>
+            <div class="view-code flex col">
+                <div class="view-code-options">
+                    <label class="radio">
+                        <input type="radio" name="ui-code-radio" checked="" onchange="showCode('html')" />
+                        <span class="name">HTML</span>
+                    </label>
+                    <label class="radio">
+                        <input type="radio" name="ui-code-radio" onchange="showCode('css')" />
+                        <span class="name">CSS</span>
+                    </label>
+                    <label class="radio">
+                        <input type="radio" name="ui-code-radio" onchange="showCode('javascript')" />
+                        <span class="name">JavaScript</span>
+                    </label>
+                </div>
+                <pre class="language-html view-html-code"></pre>
+                <pre class="language-css view-css-code off"></pre>
+                <pre class="language-javascript view-javascript-code off"></pre>
+                <p class="alert-code text"></p>
+                <button class="t-btn-2 text" id="copy-code">Copy</button>
+            </div>
+        </div>
+    </div>
+    <div class="wh-img flex center off"> <!-- Certificate Image Modal -->
+        <div class="modal-img flex center">
+            <button class="transition" id="modal-img-close"><i class="fa-solid fa-x"></i></button>
+            <div class="img transition"><img src="" alt="..."></div>
+        </div>
+    </div>
     <script src="JavaScript/all.js"></script>
+    <script src="JavaScript/prism.js"></script>
     <script src="JavaScript/Canvas.js"></script>
+    <script src="JavaScript/email.min.js"></script>
     <script src="JavaScript/Main.js"></script>
+    <script src="JavaScript/data.js"></script>
+    <script src="JavaScript/Gallery.js"></script>
 </body>
 </html>

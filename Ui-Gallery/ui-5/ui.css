@@ -1,0 +1,37 @@
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+/* ------------------------------ */
+.loading-box {
+    width: 250px;
+    height: 4px;
+    background-color: #3395ff; /* Default White Color */
+    position: relative;
+    overflow: hidden;
+}
+
+.line {
+    width: 90px;
+    height: 4px;
+    background-color: white; /* Default #3395ff Color */
+    position: absolute;
+    animation: Loading 1s infinite linear;
+}
+
+@keyframes Loading {
+    0% {
+        left: 0;
+        width: 30px;
+    }
+    50% {
+        left: 50%;
+        width: 90px;
+    }
+    100% {
+        left: 130%;
+        width: 30px;
+    }
+}

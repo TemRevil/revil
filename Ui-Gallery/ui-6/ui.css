@@ -1,0 +1,51 @@
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+/* ------------------------------ */
+.loading-box {
+    width: 150px;
+    height: 150px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    animation: Loading 2s infinite cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+.color {
+    background-color: #3955ff;
+}
+.WH {
+    width: 20px;
+    height: 70px;
+}
+
+.l1 {
+    position: absolute;
+    transform: rotate(45deg);
+}
+.l2 {
+    position: absolute;
+    transform: rotate(315deg);
+}
+
+@keyframes Loading {
+    0% {
+        transform: rotate(0deg);
+    }
+    25% {
+        transform: rotate(45deg);
+    }
+    50% {
+        transform: rotate(90deg);
+    }
+    75% {
+        transform: rotate(120deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}

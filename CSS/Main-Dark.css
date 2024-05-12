@@ -37,20 +37,20 @@
 body {
     width: 100%;
     gap: 30px;
-    background-color: #ebf6ff;
+    background-color: #001021;
 }
 body::-webkit-scrollbar {
     width: 6px;
 } 
 body::-webkit-scrollbar-track {
-    background: #ebf6ff;
+    background-color: #001021;
 }
 body::-webkit-scrollbar-thumb {
     background-color: #3395ff;
     border-radius: 20px;
 }
 ::selection {
-    background-color: #3396ffb4;
+    background-color: #a2cfffb4;
     color: white;
 }
 
@@ -103,22 +103,22 @@ body::-webkit-scrollbar-thumb {
     text-decoration: none;
     letter-spacing: 3px;
     cursor: pointer;
-    -webkit-text-stroke: 1px #124;
+    -webkit-text-stroke: 1px #fff;
 }
 .hover-text {
     content: attr(data-text);
     width: 0%;
     position: absolute;
     inset: 0;
-    color: #124;
-    border-right: 6px solid #124;
+    color: #fff;
+    border-right: 6px solid #fff;
     overflow: hidden;
-    -webkit-text-stroke: 1px #124;
+    -webkit-text-stroke: 1px #fff;
 }
 .section-title:hover .hover-text {
     width: 100%;
-    border-right-color: #124;
-    filter: drop-shadow(0 0 23px #123456b4)
+    border-right-color: #fff;
+    filter: drop-shadow(0 0 23px #ffffffb4)
 }
 
 p {
@@ -128,21 +128,21 @@ p {
     font-family: 'Rubik', 'Exo', 'Cairo';
     font-weight: 700;
     font-size: 32px;
-    color: #124;
+    color: #fff;
     transition: 0.2s 0s linear;
 }
 .align {
     font-family: 'Rubik', 'Exo', 'Cairo';
     font-weight: 700;
     font-size: 24px;
-    color: #124;
+    color: #fff;
     transition: 0.2s 0s linear;
 }
 .text {
     font-family: 'Rubik', 'Exo', 'Cairo';
     font-weight: 100;
     font-size: 22px;
-    color: #124;
+    color: #fff;
     transition: 0.2s 0s linear;
 }
 .links {
@@ -150,14 +150,14 @@ p {
     font-family: 'Cairo', 'Exo', 'Rubik';
     font-weight: 900;
     font-size: 22px;
-    color: #124;
+    color: #fff;
     transition: 0.2s 0s linear;
 }
 .links:hover {
     text-decoration: solid;
 }
 hr {
-    border: 1px #11224486 solid;
+    border: 1px #fff solid;
     border-radius: 8px;
 }
 
@@ -170,7 +170,7 @@ hr {
     height: 850px;
     position: relative;
     margin-top: 20px;
-    background-color: #ffffff50;
+    background-color: #124fff50;
     border-radius: 15px;
     box-shadow: 0 7px 25px #1234564b;
     overflow: hidden;
@@ -273,7 +273,7 @@ hr {
     width: 6px;
 } 
 .about-box::-webkit-scrollbar-track {
-    background: #ebf6ff;
+    background-color: #124fff50;
 }
 .about-box::-webkit-scrollbar-thumb {
     background-color: #3395ff;
@@ -285,7 +285,7 @@ hr {
     font-weight: 700;
     font-size: 20px;
     background-color: transparent;
-    color: #124;
+    color: #fff;
     border: none;
     outline: none;
     cursor: pointer;
@@ -297,7 +297,7 @@ hr {
     position: relative;
     left: -10px;
     bottom: 0;
-    background-color: #124;
+    background-color: #fff;
     transition: transform 0.3s ease;
 }
 
@@ -307,14 +307,14 @@ hr {
 
 .FAQs {
     padding: 20px;
-    background-color: #ffffffd1;
+    background-color: #002c5c;
     border-radius: 8px;
     cursor: pointer;
     animation: getIN 0.2s 0s linear;
     transition: 0.2s 0s linear;
 }
 .FAQs:hover {
-    background-color: #fff;
+    background-color: #124dff4f;
 }
 .FAQs:active {
     scale: 0.95;
@@ -365,7 +365,7 @@ hr {
 }
 .experience .tooltip .icons {
     font-size: 72px;
-    color: #1E3050;
+    color: #fff;
 }
 .experience .tooltip .tooltiptext {
     top: 100%;
@@ -377,7 +377,7 @@ hr {
     flex-wrap: wrap;
     gap: 20px;
     padding: 20px;
-    background-color: #ffffff50;
+    background-color: #002c5c59;
     border-bottom-right-radius: 15px;
 }
 
@@ -387,10 +387,10 @@ hr {
     position: relative;
     padding: 10px 20px;
     background: transparent;
-    color: #3395ff;
+    color: #fff;
     font-weight: 600;
     font-size: 22px;
-    border: 1px solid #3395ff;
+    border: 1px solid #fff;
     border-radius: 8px;
     text-transform: uppercase;
     letter-spacing: 2px;
@@ -460,10 +460,10 @@ hr {
     z-index: 1;
     padding: 10px 20px;
     background-color: transparent;
-    color: #3395ff;
+    color: #fff;
     font-weight: 600;
     font-size: 22px;
-    border: 1px solid #3395ff;
+    border: 1px solid #fff;
     border-radius: 6px;
     overflow: hidden;
     cursor: pointer;
@@ -526,6 +526,7 @@ hr {
     padding: 10px 20px;
     margin-bottom: 10px;
     background-color: #ffffffee;
+    color: #124;
     outline: none;
     border: none;
     border-radius: 5px;
@@ -538,6 +539,7 @@ hr {
     max-height: 300px;
     padding: 20px;
     outline: none;
+    color: #124;
     border: none;
     border-radius: 5px;
 }
@@ -571,7 +573,7 @@ hr {
     height: 100px;
     align-items: center;
     padding: 10px;
-    background-color: #fff;
+    background-color: #002c5c;
     border-radius: 8px;
     box-shadow: 0 7px 25px #1234564b;
     cursor: pointer;
@@ -598,7 +600,7 @@ hr {
     width: 3.5px;
     height: 80px;
     margin: 0px 5px;
-    background-color: #124;
+    background-color: #fff;
     border-radius: 15px;
     opacity: 0.35;
     transition: 0.15s 0s linear;
@@ -631,12 +633,12 @@ hr {
     color: transparent;
 }
 #Search:focus::placeholder {
-    color: #124;
+    color: #fff;
 }
 #Search:focus, #Search:not(:placeholder-shown) {
     width: 290px;
     padding: 18px 16px 18px 40px;
-    background-color: #ffffffb2;
+    background-color: #002c5c;
     border: 1px solid #3395ff;
     cursor: none;
 }
@@ -647,7 +649,7 @@ hr {
     left: 0;
     top: 0;
     padding: 5px;
-    background-color: #ffffffb2;
+    background-color: #002c5c;
     border-radius: 5px;
     z-index: -1;
     border: 1px solid #3395ff;
@@ -671,7 +673,7 @@ hr {
     flex-wrap: wrap;
     position: relative;
     padding: 4px;
-    background-color: #fff;
+    background-color: #002c5c;
     font-size: 14px;
     border-radius: 5px;
     box-shadow: 0 0 0px 1px #0000000f;
@@ -688,14 +690,14 @@ hr {
     align-items: center;
     justify-content: center;
     padding: 5px 0;
-    color: #334155;
+    color: #fff;
     border: none;
     border-radius: 5px;
     transition: all 0.15s ease-in-out;
     cursor: pointer;
 }
 .gallery-options .radio input:checked + .name {
-    background-color: #ebf6ff;
+    background-color: #124fff50;
     font-weight: 600;
 }
 /* -------------------------------------- */
@@ -710,7 +712,7 @@ hr {
     gap: 15px;
     position: relative;
     padding: 10px;
-    background-color: #fff;
+    background-color: #001f54;
     border-radius: 8px;
     box-shadow: 0 7px 25px #1234564b;
 }
@@ -789,13 +791,13 @@ hr {
     background-color: transparent;
 }
 .card-btn:hover .text {
-    color: #3395ff;
+    color: #fff;
 }
 .card-btn:hover svg path {
-    fill: #3395ff;
+    fill: #fff;
 }
 .card-btn:active {
-    scale: 0.90;
+    scale: 0.9;
 }
 /* -------------------------------------- */
 /* Gallery UI */
@@ -808,7 +810,7 @@ hr {
     height: 320px;
     position: relative;
     padding: 20px;
-    background-color: white;
+    background-color: #001f54;
     border: none;
     border-radius: 8px;
     box-shadow: 0 7px 25px #1234564b;
@@ -834,7 +836,7 @@ hr {
     position: absolute;
     right: 15px;
     bottom: 15px;
-    background-color: white;
+    background-color: #124fff50;
     border: 2px #3395ff solid;
     border-radius: 5px;
     overflow: hidden;
@@ -847,7 +849,7 @@ hr {
     content: " ";
     width: 0%;
     height: 100%;
-    background: #3395ff;
+    background-color: #3395ff;
     position: absolute;
     transition: 0.2s 0s ease-in-out;
     right: 0;
@@ -860,7 +862,7 @@ hr {
 .btn-ui-view span {
     width: 100%;
     padding: 10px 20px;
-    color: #124;
+    color: #fff;
     font-weight: 700;
     text-align: center;
     text-decoration: none;
@@ -1013,7 +1015,7 @@ footer .title, footer .align, footer .text, footer .links {
     height: 120px;
 }
 .footer-top .shape-fill {
-    fill: #EBF6FF;
+    fill: #001021;
 }
 .footer-body {
     flex-wrap: wrap;
@@ -1058,7 +1060,7 @@ footer .title, footer .align, footer .text, footer .links {
     right: 10px;
     z-index: 11;
     padding: 5px;
-    background-color: #fff;
+    background-color: #124fff50;
     border-radius: 8px;
     box-shadow: 0 7px 25px #1234564b;
 }
@@ -1074,18 +1076,18 @@ footer .title, footer .align, footer .text, footer .links {
     transition-duration: 0.05;
 }
 .side-btn:hover {
-    background-color: #11224415;
+    background-color: #ffffff50;
 }
 .side-btn:active {
     scale: 0.8;
 }
 
 #light-mode {
-    display: none;
+    display: block;
     animation: LD-Mode 0.5s forwards ease-in-out;
 }
 #dark-mode {
-    display: block;
+    display: none;
     animation: LD-Mode 0.5s forwards ease-in-out;
 }
 #go-up {
@@ -1154,7 +1156,7 @@ footer .title, footer .align, footer .text, footer .links {
     right: 0;
     bottom: 0;
     z-index: 10;
-    background-color: #11224481;
+    background-color: #03070abe;
     overflow: hidden;
 }
 /* ------------------------------------------ */
@@ -1164,7 +1166,7 @@ footer .title, footer .align, footer .text, footer .links {
     height: 95%;
     position: relative;
     padding: 20px;
-    background-color: white;
+    background-color: #001f54;
     border-top-left-radius: 15px;
     border-bottom-left-radius: 15px;
     box-shadow: 0 7px 25px #1234564b;
@@ -1174,7 +1176,7 @@ footer .title, footer .align, footer .text, footer .links {
     width: 6px;
 }
 .modal::-webkit-scrollbar-track {
-    background-color: #ebf6ff;
+    background-color: #124;
     border-top-right-radius: 50px;
     border-bottom-right-radius: 50px;
 }
@@ -1187,14 +1189,15 @@ footer .title, footer .align, footer .text, footer .links {
     right: 25px;
     padding: 10px 20px;
     background-color: transparent;
+    color: white;
     font-size: 26px;
     border: none;
     border-radius: 5px;
     cursor: pointer;
 }
 #modal-close:hover {
-    background-color: #11224481;
-    color: white;
+    background-color: #fff;
+    color: #124;
 }
 #modal-close:active {
     scale: 0.85;
@@ -1220,13 +1223,13 @@ footer .title, footer .align, footer .text, footer .links {
 #img-slider-view {
     width: 100%;
     height: 100%;
-    background-color: white;
+    background-color: #124fff50;
     border-radius: 5px;
 }
 #left, #right {
     height: 100%;
     background-color: transparent;
-    color: #124;
+    color: #fff;
     font-size: 40px;
     border: none;
     cursor: pointer;
@@ -1245,7 +1248,7 @@ footer .title, footer .align, footer .text, footer .links {
 .img-slider-slice {
     width: 100px;
     height: 90%;
-    background-color: #124;
+    background-color: #fff;
     border-radius: 5px;
     cursor: pointer;
 }
@@ -1294,7 +1297,7 @@ footer .title, footer .align, footer .text, footer .links {
     cursor: pointer;
 }
 .team-card:hover {
-    background-color: #ebf6ff;
+    background-color: #124;
 }
 .team-card:active {
     scale: 0.9;
@@ -1319,6 +1322,7 @@ footer .title, footer .align, footer .text, footer .links {
 }
 .script-data-title {
     width: 100%;
+    color: #fff;
     font-family: 'Rubik', 'Exo', 'Cairo';
     font-size: 26px;
     text-align: center;
@@ -1335,7 +1339,7 @@ footer .title, footer .align, footer .text, footer .links {
     width: 100%;
     height: 10px;
     position: relative;
-    background-color: #b3ddff;
+    background-color: #fff;
     border-radius: 15px;
     overflow: hidden;
 }
@@ -1366,7 +1370,7 @@ footer .title, footer .align, footer .text, footer .links {
     width: 75%;
     height: 95%;
     position: relative;
-    background-color: white;
+    background-color: #123;
     border-radius: 15px;
     box-shadow: 0 7px 25px #1234564b;
     overflow: auto;
@@ -1388,7 +1392,7 @@ footer .title, footer .align, footer .text, footer .links {
     right: 25px;
     z-index: 1;
     padding: 5px 15px;
-    background-color: #125;
+    background-color: #123;
     color: #fff;
     font-size: 26px;
     border: none;
@@ -1427,7 +1431,7 @@ footer .title, footer .align, footer .text, footer .links {
     display: flex;
     position: relative;
     padding: 12px 12px 0 12px;
-    background-color: #125;
+    background-color: #123;
     border-top-right-radius: 15px;
 }
 .view-code-options .radio input {
@@ -1506,8 +1510,8 @@ footer .title, footer .align, footer .text, footer .links {
     right: 25px;
     z-index: 1;
     padding: 10px 20px;
-    background-color: #fff;
-    color: #125;
+    background-color: #125;
+    color: #fff;
     font-size: 30px;
     border: none;
     border-radius: 5px;

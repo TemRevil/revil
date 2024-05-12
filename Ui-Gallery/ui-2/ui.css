@@ -1,0 +1,59 @@
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+/* ------------------------------ */
+.loading-box {
+    height: 100%;
+    width: 80px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+}
+
+.WH {
+    width: 20px;
+    height: 80px;
+    position: absolute;
+    animation: Loading 0.8s infinite cubic-bezier(0.55, 0.06, 0.68, 0.19);
+}
+.color {
+    background-color: #ff5100;
+}
+
+.l1 {
+    top: -10%;
+    left: 0;
+}
+.l2 {
+    top: -10%;
+}
+.l3 {
+    top: -10%;
+    right: 0;
+}
+
+@keyframes Loading {
+    0% {
+        top: 0;
+        height: 80px;
+    }
+    25% {
+        height: 150px;
+    }
+    50% {
+        top: 50%;
+        height: 200px;
+    }
+    75% {
+        height: 250px;
+    }
+    100% {
+        top: 110%;
+        height: 80px;
+    }
+}
