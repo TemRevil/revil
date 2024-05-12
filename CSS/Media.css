@@ -83,7 +83,7 @@
 }
 @media (max-width: 900px) {
     .title, .align, .text {
-        font-size: 22px;
+        font-size: 20px;
     }
 
     .div-img .img {

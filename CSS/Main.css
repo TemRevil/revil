@@ -1059,6 +1059,7 @@ footer .title, footer .align, footer .text, footer .links {
     z-index: 11;
     padding: 5px;
     background-color: #fff;
+    backdrop-filter: blur(10px);
     border-radius: 8px;
     box-shadow: 0 7px 25px #1234564b;
 }

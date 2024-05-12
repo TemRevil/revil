@@ -178,6 +178,14 @@ const uiData = [
         cssLines: '8,1000',
         description: ["button, pay, visa, credit, token, credit card"]
     },
+    {
+        id: 'ui-8',
+        htmlURL: 'Ui-Gallery/ui-8/ui.html',
+        cssURL: 'Ui-Gallery/ui-8/ui.css',
+        htmlLines: '2,1000',
+        cssLines: '8,1000',
+        description: ["loading, simple, windows, blue"]
+    },
 ];
 // --------------------------------
 window.data = data;

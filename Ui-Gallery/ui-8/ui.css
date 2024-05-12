@@ -1,0 +1,47 @@
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+/* ------------------------------ */
+.loading-box {
+    width: 70px;
+    height: 70px;
+}
+
+.spin {
+    width: 70px;
+    height: 70px;
+    position: absolute;
+    background-color: #007bff;
+    border-radius: 50%;
+    animation: Spinner 1s infinite linear;
+    overflow: hidden;
+}
+.transparent {
+    width: 50px;
+    height: 50px;
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: white;
+    border-radius: 50%;
+}
+.spinner {
+    width: 30px;
+    height: 25px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    background-color: #47a0ff;
+}
+
+@keyframes Spinner {
+    from {
+        rotate: 0deg;
+    }
+    to {
+        rotate: 360deg;
+    }
+}
