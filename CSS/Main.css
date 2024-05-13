@@ -1259,7 +1259,6 @@ footer .title, footer .align, footer .text, footer .links {
 }
 
 .view-data .align {
-    margin-left: 30px !important;
     font-size: 52px;
 }
 .modal .tag {
@@ -1269,13 +1268,13 @@ footer .title, footer .align, footer .text, footer .links {
 .view-data .tags-div {
     align-items: center;
     position: static;
-    margin: 20px 0px;
+    margin: 20px 30px;
 }
 .tags-div .align {
     font-size: 32px;
 }
 .view-data .card-dis {
-    margin-left: 20px !important;
+    margin-left: 20px;
     -webkit-line-clamp: 100 !important;
     -webkit-box-orient: vertical;
 }
