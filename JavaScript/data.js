@@ -33,9 +33,23 @@ const data = [
         description: ["mails", "emails", "php", "python", "javascript", "responsive"]
     },
     {
+        name: "Vrose",
+        version: "Vol.6",
+        views: 84,
+        creators: [
+            { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
+        ],
+        languages: [
+            { name: "HTML", percentage: 0.8 },
+            { name: "CSS", percentage: 99.2 },
+        ],
+        tags: ["HTML", "CSS", "Responsive", "Design"],
+        description: ["mails", "emails", "php", "python", "javascript", "responsive"]
+    },
+    {
         name: "Login-Design",
         version: "Vol.1",
-        views: 34,
+        views: 31,
         creators: [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
         ],
@@ -44,7 +58,7 @@ const data = [
             { name: "CSS", percentage: 42.6 },
         ],
         tags: ["HTML", "CSS", "Responsive", "Design"],
-        description: ["login", "design", "email", "password", "inputs", "responsive"]
+        description: ["vrose", "rose", "flowers", "design", "flexible", "responsive", "pink"]
     },
     {
         name: "Login Design 2",
@@ -91,7 +105,7 @@ const data = [
     },
     {
         name: "Land-Mark Design",
-        version: "Vol.4",
+        version: "Vol.5",
         views: 76,
         creators: [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
@@ -105,7 +119,7 @@ const data = [
     },
     {
         name: "New York e-Book",
-        version: "Vol.5",
+        version: "Vol.6",
         views: 118,
         creators: [
             { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
