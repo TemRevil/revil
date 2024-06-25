@@ -15,21 +15,21 @@ const darkModeButton = document.getElementById('dark-mode');
 const themeStylesheet = document.getElementById('theme-stylesheet');
 
 window.addEventListener('DOMContentLoaded', () => {
-    const theme = localStorage.getItem('theme');
-    if (theme) {
+    const revilTheme = localStorage.getItem('revilTheme');
+    if (revilTheme) {
         document.getElementById('theme-stylesheet').setAttribute('href', theme);
     }
 });
 
 lightModeButton.addEventListener('click', () => {
     themeStylesheet.setAttribute('href', 'CSS/Main.css');
-    localStorage.setItem('theme', 'CSS/Main.css');
+    localStorage.setItem('revilTheme', 'CSS/Main.css');
     document.querySelector('.loader').style.backgroundColor = '#ebf6ff';
 });
 
 darkModeButton.addEventListener('click', () => {
     themeStylesheet.setAttribute('href', 'CSS/Main-Dark.css');
-    localStorage.setItem('theme', 'CSS/Main-Dark.css');
+    localStorage.setItem('revilTheme', 'CSS/Main-Dark.css');
     document.querySelector('.loader').style.backgroundColor = '#001021';
 });
 // -----------------------------------------------------------
