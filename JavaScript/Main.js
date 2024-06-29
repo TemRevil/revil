@@ -17,7 +17,7 @@ const themeStylesheet = document.getElementById('theme-stylesheet');
 window.addEventListener('DOMContentLoaded', () => {
     const revilTheme = localStorage.getItem('revilTheme');
     if (revilTheme) {
-        document.getElementById('theme-stylesheet').setAttribute('href', theme);
+        document.getElementById('theme-stylesheet').setAttribute('href', revilTheme);
     }
 });
 

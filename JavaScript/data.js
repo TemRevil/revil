@@ -15,7 +15,22 @@ const data = [
             { name: "JavaScript", percentage: 69.0 }
         ],
         tags: ["HTML", "CSS", "JavaScript", "Bootstrap", "Responsive"],
-        description: ["encryption", "secure", "data", "tool"]
+        description: ["encryption", "secure", "data", "tool", "beta", "security", "pass", "password", "game", "password game"]
+    },
+    {
+        name: "Encryptor-2.0",
+        version: "2.0 Beta.E",
+        views: 1037,
+        creators: [
+            { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
+        ],
+        languages: [
+            { name: "HTML", percentage: 1.7 },
+            { name: "CSS", percentage: 93.9 },
+            { name: "JavaScript", percentage: 4.4 }
+        ],
+        tags: ["HTML", "CSS", "JavaScript", "Responsive"],
+        description: ["encryption", "secure", "data", "tool", "beta", "security", "pass", "password", "game", "password game"]
     },
     {
         name: "Nook",
@@ -31,6 +46,21 @@ const data = [
         ],
         tags: ["HTML", "CSS", "JavaScript", "Responsive"],
         description: ["mails", "emails", "php", "python", "javascript", "responsive"]
+    },
+    {
+        name: "Arkham-Studio",
+        version: "1.0.0",
+        views: 684,
+        creators: [
+            { image: "Background/Team/Dev.Mohammed.png", name: "Mohammed Ahmed"},
+        ],
+        languages: [
+            { name: "HTML", percentage: 3.6 },
+            { name: "CSS", percentage: 92.4 },
+            { name: "JavaScript", percentage: 5 }
+        ],
+        tags: ["HTML", "CSS", "JavaScript", "Responsive"],
+        description: ["gaming", "games", "arkham", "batman", "javascript", "responsive", "call of duty", "studio", "sony", "playstation", "entertainment"]
     },
     {
         name: "Vrose",
