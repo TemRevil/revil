@@ -319,22 +319,13 @@ function sendMail() {
 }
 // -----------------------------------------------------------
 // CV Download Button
-document.addEventListener('DOMContentLoaded', function() {
-    const cvButton = document.getElementById('cv');
-    const cvFilePath = '/Files/MohammedAhmedCV.pdf';
-
-    cvButton.addEventListener('click', function() {
-        // إنشاء عنصر رابط
-        const link = document.createElement('a');
-        link.href = cvFilePath;
-        link.download = 'CV.pdf';
-
-        document.body.appendChild(link);
-
-        link.click();
-
-        document.body.removeChild(link);
-    });
+document.getElementById('cv').addEventListener('click', function() {
+    const link = document.createElement('a');
+    link.href = 'Files/MohammedAhmedCV.pdf';
+    link.download = 'MohammedAhmedCV.pdf';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 });
 // -----------------------------------------------------------
 // Certificate Modal Image
