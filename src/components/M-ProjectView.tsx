@@ -1,0 +1,575 @@
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { X, Github, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+
+// Import SVG icons
+import htmlIcon from '../assets/svgs/html.svg';
+import cssIcon from '../assets/svgs/css.svg';
+import jsIcon from '../assets/svgs/javascript.svg';
+import reactIcon from '../assets/svgs/react.svg';
+import nodejsIcon from '../assets/svgs/nodejs.svg';
+import firebaseIcon from '../assets/svgs/firebase.svg';
+
+import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+
+export const getStackIcon = (name: string) => {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('html')) return htmlIcon;
+    if (lowerName.includes('css')) return cssIcon;
+    if (lowerName.includes('javascript') || lowerName.includes('js')) return jsIcon;
+    if (lowerName.includes('react')) return reactIcon;
+    if (lowerName.includes('node')) return nodejsIcon;
+    if (lowerName.includes('firebase')) return firebaseIcon;
+    return null;
+};
+
+export interface Project {
+    id: number | string;
+    title?: string;
+    name?: string;
+    description: string;
+    fullDescription?: string;
+    images: string[];
+    stack?: string[];
+    tags?: any[];
+    contributors: any[];
+    repoLink?: string;
+    demoLink?: string;
+    liveLink?: string;
+    views?: number;
+    githubViews?: number;
+    liveViews?: number;
+}
+
+interface MProjectViewProps {
+    project: Project;
+    onClose: () => void;
+    onContributorClick: (contributor: any) => void;
+}
+
+const MProjectView = ({ project: initialProject, onClose, onContributorClick }: MProjectViewProps) => {
+    const [project, setProject] = useState<Project>(initialProject);
+    const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [isDark, setIsDark] = useState(false);
+    const [isHovered, setIsHovered] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
+
+    // Keep internal project state in sync with incoming props
+    useEffect(() => {
+        setProject(initialProject);
+    }, [initialProject]);
+
+    // Sync with Firestore for real-time views
+    useEffect(() => {
+        if (!project.id) return;
+
+        const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+
+        // Subscribe to real-time updates for views AND project details
+        const unsub = onSnapshot(projectRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const v = data.Views || {};
+
+                // Also update contributors if they've changed in the background
+                setProject(prev => {
+                    const updated = {
+                        ...prev,
+                        views: Number(v.Project || 0) || 0,
+                        githubViews: Number(v.Github || 0) || 0,
+                        liveViews: Number(v.Live || 0) || 0
+                    };
+
+                    // If we have contributor data in the snapshot, keep the core details synced
+                    if (data.Description) updated.description = data.Description;
+                    return updated;
+                });
+            }
+        });
+
+        // Increment project views on mount
+        const incrementViews = async () => {
+            try {
+                const snap = await getDoc(projectRef);
+                if (snap.exists()) {
+                    const currentViews = snap.data().Views || {};
+                    const newVal = (parseInt(currentViews.Project || "0") + 1).toString();
+                    await updateDoc(projectRef, {
+                        "Views.Project": newVal
+                    });
+                }
+            } catch (err) {
+                console.warn("Could not increment views:", err);
+            }
+        };
+        incrementViews();
+
+        return () => unsub();
+    }, [project.id]);
+
+    useEffect(() => {
+        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+        checkTheme();
+        const observer = new MutationObserver(checkTheme);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    // Auto-slide Gallery
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval> | undefined;
+        if (project.images && project.images.length > 1 && !isHovered) {
+            interval = setInterval(() => {
+                setCurrentImageIndex((prev) => (prev + 1) % project.images.length);
+            }, 5000);
+        }
+        return () => clearInterval(interval);
+    }, [project.images, isHovered]);
+
+    const handleNext = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setCurrentImageIndex((prev) => (prev + 1) % project.images.length);
+    };
+
+    const handlePrev = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setCurrentImageIndex((prev) => (prev - 1 + project.images.length) % project.images.length);
+    };
+
+    const handleClose = () => {
+        setIsClosing(true);
+        setTimeout(() => {
+            onClose();
+        }, 600);
+    };
+
+    const handleGithubClick = async () => {
+        if (!project.repoLink) return;
+        try {
+            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const snap = await getDoc(projectRef);
+            if (snap.exists()) {
+                const currentViews = snap.data().Views || {};
+                const newVal = (parseInt(currentViews.Github || "0") + 1).toString();
+                await updateDoc(projectRef, {
+                    "Views.Github": newVal
+                });
+            }
+        } catch (err) {
+            console.warn("Could not increment github views:", err);
+        }
+    };
+
+    const handleLiveClick = async () => {
+        if (!project.liveLink && !project.demoLink) return;
+        try {
+            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const snap = await getDoc(projectRef);
+            if (snap.exists()) {
+                const currentViews = snap.data().Views || {};
+                const newVal = (parseInt(currentViews.Live || "0") + 1).toString();
+                await updateDoc(projectRef, {
+                    "Views.Live": newVal
+                });
+            }
+        } catch (err) {
+            console.warn("Could not increment live views:", err);
+        }
+    };
+
+    const getTechColor = (name: string) => {
+        const lower = name.toLowerCase();
+        if (lower.includes('react')) return '#61dafb';
+        if (lower.includes('html')) return '#e34f26';
+        if (lower.includes('css')) return '#1572b6';
+        if (lower.includes('js') || lower.includes('javascript')) return '#f7df1e';
+        if (lower.includes('node')) return '#339933';
+        if (lower.includes('firebase')) return '#ffca28';
+        if (lower.includes('typescript') || lower.includes('ts')) return '#3178c6';
+        if (lower.includes('tailwind')) return '#06b6d4';
+        return '#60a5fa';
+    };
+
+    const displayTitle = (project.title || project.name || 'Untitled Project').toUpperCase();
+    const displayFullDescription = project.fullDescription || project.description || 'No description available.';
+
+    const displayTags = [
+        ...(project.stack || []).map(tech => ({ name: tech, color: getTechColor(tech), icon: getStackIcon(tech) })),
+        ...(project.tags || []).map(t => {
+            const isString = typeof t === 'string';
+            const name = isString ? t : t.name;
+            return {
+                name: name,
+                color: isString ? getTechColor(name) : (t.color || getTechColor(name)),
+                icon: isString ? getStackIcon(t) : (t.iconSvg || getStackIcon(t.name))
+            };
+        })
+    ];
+
+    const GlassPanel = ({ children, style, className = "" }: any) => (
+        <div className={className} style={{
+            background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.4)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            borderRadius: '32px',
+            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'}`,
+            padding: '30px',
+            ...style
+        }}>
+            {children}
+        </div>
+    );
+
+    return createPortal(
+        <div style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1100,
+            overflow: 'hidden',
+            fontFamily: "'Inter', sans-serif",
+            animation: isClosing ? 'fadeOut 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards' : 'none'
+        }} onClick={handleClose}>
+            {/* Dynamic Background Blur */}
+            <div style={{
+                position: 'absolute', inset: -50,
+                backgroundImage: `url(${project.images[currentImageIndex]})`,
+                backgroundSize: 'cover', backgroundPosition: 'center',
+                filter: 'blur(80px) brightness(0.35)', opacity: 0.7,
+                transition: 'background-image 1.5s cubic-bezier(0.16, 1, 0.3, 1)',
+                zIndex: -1
+            }} />
+
+            {/* Close Button - Ultra Minimal */}
+            <button onClick={handleClose} style={{
+                position: 'absolute', top: '40px', right: '40px', zIndex: 1200,
+                width: '56px', height: '56px', borderRadius: '50%',
+                background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', backdropFilter: 'blur(10px)', transition: 'all 0.3s'
+            }} onMouseEnter={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.transform = 'scale(1.1) rotate(90deg)'; }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.transform = 'scale(1) rotate(0deg)'; }}>
+                <X size={24} />
+            </button>
+
+            {/* Scrollable Container */}
+            <div
+                onClick={e => e.stopPropagation()}
+                style={{
+                    width: isMobile ? '100%' : '90vw',
+                    height: isMobile ? '100%' : '90vh',
+                    maxWidth: '1500px',
+                    overflowY: 'auto',
+                    scrollbarWidth: 'none',
+                    padding: isMobile ? '20px' : '60px',
+                    display: 'flex', flexDirection: 'column', gap: '50px',
+                    animation: isClosing ? 'slideDown 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards' : 'slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
+                }}>
+                {/* Hero Showcase Section */}
+                <div style={{ position: 'relative', width: '100%', minHeight: isMobile ? '400px' : '650px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {/* Big Decorative Title */}
+                    <div style={{
+                        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                        fontSize: isMobile ? '15vw' : '12vw', fontWeight: 950, color: 'white',
+                        opacity: 0.03, whiteSpace: 'nowrap', pointerEvents: 'none',
+                        zIndex: 0, userSelect: 'none', letterSpacing: '-0.07em'
+                    }}>{displayTitle}</div>
+
+                    {/* Main Image Spotlight */}
+                    <div
+                        onMouseEnter={() => setIsHovered(true)}
+                        onMouseLeave={() => setIsHovered(false)}
+                        style={{
+                            position: 'relative', width: isMobile ? '100%' : '85%', height: 'auto',
+                            aspectRatio: '16/9', borderRadius: '48px', overflow: 'hidden',
+                            boxShadow: '0 80px 150px rgba(0,0,0,0.6)', zIndex: 1,
+                            transition: 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+                            background: '#0a0a0a'
+                        }}
+                    >
+                        {project.images.map((img, i) => (
+                            <div key={i} style={{
+                                position: 'absolute', inset: 0,
+                                opacity: i === currentImageIndex ? 1 : 0,
+                                transform: i === currentImageIndex ? 'scale(1)' : 'scale(1.08)',
+                                transition: 'all 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                                zIndex: i === currentImageIndex ? 1 : 0
+                            }}>
+                                <img src={img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)' }} />
+                            </div>
+                        ))}
+
+                        {/* Manual Nav Controls */}
+                        {project.images.length > 1 && (
+                            <>
+                                <button onClick={handlePrev} style={{
+                                    position: 'absolute', left: '30px', top: '50%', transform: 'translateY(-50%)',
+                                    width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
+                                    backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                                    zIndex: 20, transition: 'all 0.3s'
+                                }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; e.currentTarget.style.left = '25px'; }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.left = '30px'; }}>
+                                    <ChevronLeft size={28} />
+                                </button>
+                                <button onClick={handleNext} style={{
+                                    position: 'absolute', right: '30px', top: '50%', transform: 'translateY(-50%)',
+                                    width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
+                                    backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                                    zIndex: 20, transition: 'all 0.3s'
+                                }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; e.currentTarget.style.right = '25px'; }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.right = '30px'; }}>
+                                    <ChevronRight size={28} />
+                                </button>
+                            </>
+                        )}
+
+                        {/* Indicator Dots */}
+                        <div style={{ position: 'absolute', bottom: '30px', left: '0', right: '0', display: 'flex', justifyContent: 'center', gap: '12px', zIndex: 10 }}>
+                            {project.images.map((_, i) => (
+                                <div key={i} onClick={() => setCurrentImageIndex(i)} style={{
+                                    width: i === currentImageIndex ? '40px' : '10px', height: '10px', borderRadius: '5px',
+                                    background: 'white', opacity: i === currentImageIndex ? 1 : 0.3,
+                                    cursor: 'pointer', transition: 'all 0.4s'
+                                }} />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Content Matrix */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : '1.8fr 1fr',
+                    gap: '40px',
+                    position: 'relative', zIndex: 2
+                }}>
+                    {/* Primary Info */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+                        <GlassPanel>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                                <div style={{ padding: '6px 14px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', borderRadius: '50px', fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Digital Masterpiece</div>
+                                <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }} />
+                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Project ID: #{project.id.toString().slice(-6).toUpperCase()}</div>
+                            </div>
+                            <h1 style={{
+                                margin: 0, fontSize: isMobile ? '2.8rem' : '5rem', fontWeight: 950,
+                                color: 'white', letterSpacing: '-0.05em', lineHeight: 0.9, marginBottom: '30px'
+                            }}>{displayTitle}</h1>
+                            <p style={{
+                                margin: 0, fontSize: '1.35rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.75)',
+                                fontWeight: 400, borderLeft: '3px solid #60a5fa', paddingLeft: '24px'
+                            }}>{displayFullDescription}</p>
+                        </GlassPanel>
+
+                        <GlassPanel>
+                            <h3 style={{ margin: '0 0 35px 0', fontSize: '0.85rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.25em', color: '#60a5fa' }}>Technological Blueprint</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px' }}>
+                                {displayTags.map((tag, i) => (
+                                    <div key={i} style={{
+                                        display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px',
+                                        background: `${tag.color}11`, borderRadius: '24px',
+                                        border: `1px solid ${tag.color}33`, transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                                        cursor: 'default'
+                                    }} onMouseEnter={e => {
+                                        e.currentTarget.style.background = `${tag.color}22`;
+                                        e.currentTarget.style.borderColor = tag.color;
+                                        e.currentTarget.style.transform = 'translateY(-4px)';
+                                        e.currentTarget.style.boxShadow = `0 10px 20px -10px ${tag.color}88`;
+                                    }} onMouseLeave={e => {
+                                        e.currentTarget.style.background = `${tag.color}11`;
+                                        e.currentTarget.style.borderColor = `${tag.color}33`;
+                                        e.currentTarget.style.transform = 'translateY(0)';
+                                        e.currentTarget.style.boxShadow = 'none';
+                                    }}>
+                                        <div style={{ width: '28px', height: '28px', color: tag.color }}>
+                                            {tag.icon ? (
+                                                typeof tag.icon === 'string' && tag.icon.startsWith('<svg') ?
+                                                    <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: tag.icon }} /> :
+                                                    <img src={tag.icon} style={{ width: '100%', height: '100%', filter: `drop-shadow(0 0 8px ${tag.color}88)` }} alt="" />
+                                            ) : <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: tag.color, boxShadow: `0 0 10px ${tag.color}` }} />}
+                                        </div>
+                                        <span style={{ fontSize: '0.95rem', fontWeight: 900, color: 'white' }}>{tag.name}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </GlassPanel>
+                    </div>
+
+                    {/* Sidebar / Actions */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+                        {/* Action Link Hub */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+                            {(project.liveLink || project.demoLink) && (
+                                <a href={project.liveLink || project.demoLink} onClick={handleLiveClick} target="_blank" rel="noopener noreferrer" style={{
+                                    height: '90px', background: '#ffffff', color: '#000', borderRadius: '28px',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                    textDecoration: 'none', transition: 'all 0.3s', boxShadow: '0 20px 40px rgba(255, 255, 255, 0.15)'
+                                }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-5px) scale(1.02)'; e.currentTarget.style.boxShadow = '0 30px 60px rgba(255, 255, 255, 0.25)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.boxShadow = '0 20px 40px rgba(255, 255, 255, 0.15)'; }}>
+                                    <ExternalLink size={24} />
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live View</span>
+                                </a>
+                            )}
+                            {project.repoLink && (
+                                <a href={project.repoLink} onClick={handleGithubClick} target="_blank" rel="noopener noreferrer" style={{
+                                    height: '90px', background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '28px',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                    textDecoration: 'none', transition: 'all 0.3s', border: '1px solid rgba(255,255,255,0.1)'
+                                }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}>
+                                    <Github size={24} />
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.12em' }}>GitHub</span>
+                                </a>
+                            )}
+                        </div>
+
+                        {/* Creative Team Section */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px', padding: '0 8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{ width: '3px', height: '18px', background: '#60a5fa', borderRadius: '4px' }} />
+                                    <h3 style={{ margin: 0, fontSize: '0.8rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.35em', color: 'white' }}>Project Team</h3>
+                                </div>
+                                <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'rgba(96,165,250,0.5)', background: 'rgba(96,165,250,0.1)', padding: '2px 8px', borderRadius: '4px', fontFamily: 'monospace' }}>COUNT::{project.contributors.length.toString().padStart(2, '0')}</div>
+                            </div>
+
+                            <div style={{ position: 'relative' }}>
+                                <div className="creators-scroll-container" style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '10px',
+                                    maxHeight: '340px',
+                                    overflowY: 'auto',
+                                    padding: '5px 8px 15px 5px',
+                                    scrollbarWidth: 'none',
+                                    msOverflowStyle: 'none'
+                                }}>
+                                    {project.contributors.map((c, i) => (
+                                        <div key={i} onClick={() => onContributorClick(c)} style={{
+                                            position: 'relative',
+                                            background: 'rgba(255,255,255,0.02)',
+                                            borderRadius: '24px',
+                                            padding: '16px 20px',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '18px',
+                                            border: '1px solid rgba(255,255,255,0.03)',
+                                            overflow: 'hidden'
+                                        }} onMouseEnter={e => {
+                                            e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                                            e.currentTarget.style.borderColor = 'rgba(96,165,250,0.3)';
+                                            e.currentTarget.style.transform = 'translateY(-4px)';
+                                            e.currentTarget.style.boxShadow = '0 20px 40px rgba(0,0,0,0.25)';
+                                            const roleBadge = e.currentTarget.querySelector('.role-badge') as HTMLElement;
+                                            if (roleBadge) { roleBadge.style.background = 'rgba(96,165,250,0.25)'; roleBadge.style.borderColor = '#60a5fa'; }
+                                        }} onMouseLeave={e => {
+                                            e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.03)';
+                                            e.currentTarget.style.transform = 'translateY(0)';
+                                            e.currentTarget.style.boxShadow = 'none';
+                                            const roleBadge = e.currentTarget.querySelector('.role-badge') as HTMLElement;
+                                            if (roleBadge) { roleBadge.style.background = 'rgba(96,165,250,0.1)'; roleBadge.style.borderColor = 'rgba(96,165,250,0.2)'; }
+                                        }}>
+                                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                <img
+                                                    src={c.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.name)}&background=60a5fa&color=fff`}
+                                                    style={{
+                                                        width: '50px', height: '50px', borderRadius: '18px', objectFit: 'cover',
+                                                        border: '2px solid rgba(255,255,255,0.05)',
+                                                        transition: 'all 0.5s ease'
+                                                    }}
+                                                    alt=""
+                                                />
+                                            </div>
+
+                                            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                <div style={{ fontWeight: 950, fontSize: '1.05rem', color: 'white', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+
+                                                {/* Specialized Project Role Badge */}
+                                                <div className="role-badge" style={{
+                                                    alignSelf: 'flex-start',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    fontSize: '0.62rem',
+                                                    fontWeight: 900,
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.12em',
+                                                    color: '#60a5fa',
+                                                    background: 'rgba(96,165,250,0.1)',
+                                                    padding: '4px 10px',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(96,165,250,0.2)',
+                                                    transition: 'all 0.4s ease'
+                                                }}>
+                                                    <span style={{ fontSize: '0.55rem', opacity: 0.5, fontFamily: 'monospace' }}>ASSIGNMENT //</span>
+                                                    {c.role}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {/* Fog indicated more content if scrollable */}
+                                {project.contributors.length > 3 && (
+                                    <div style={{
+                                        position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px',
+                                        background: 'linear-gradient(to top, rgba(10,10,10,0.95), transparent)',
+                                        pointerEvents: 'none', borderRadius: '0 0 24px 24px', zIndex: 10
+                                    }} />
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Analytics Panel */}
+                        <div style={{
+                            padding: '30px', borderRadius: '32px', background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
+                            border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '25px'
+                        }}>
+                            <h3 style={{ margin: 0, fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)' }}>Engagement Matrix</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '1.8rem', fontWeight: 950, color: 'white', lineHeight: 1, marginBottom: '8px', letterSpacing: '-0.02em' }}>{typeof project.githubViews === 'number' ? project.githubViews : 0}</div>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Github</div>
+                                </div>
+                                <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <div style={{ fontSize: '1.8rem', fontWeight: 950, color: 'white', lineHeight: 1, marginBottom: '8px', letterSpacing: '-0.02em' }}>{typeof project.liveViews === 'number' ? project.liveViews : 0}</div>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Live</div>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '1.8rem', fontWeight: 950, color: 'white', lineHeight: 1, marginBottom: '8px', letterSpacing: '-0.02em' }}>{typeof project.views === 'number' ? project.views : 0}</div>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Project</div>
+                                </div>
+                            </div>
+                            <div style={{ height: '4px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden', marginTop: '5px' }}>
+                                <div style={{ height: '100%', width: '100%', background: 'linear-gradient(to right, #60a5fa, #3b82f6)', borderRadius: '2px', boxShadow: '0 0 15px rgba(96,165,250,0.5)' }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+            </div>
+
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                @keyframes slideUp { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes slideDown { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(60px); } }
+                @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+                ::-webkit-scrollbar { display: none; }
+                * { scroll-behavior: smooth; }
+            ` }} />
+        </div>,
+        document.body
+    );
+};
+
+export default MProjectView;
