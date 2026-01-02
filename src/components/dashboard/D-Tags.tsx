@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Tag, Edit2, Trash2, Users, UserPlus } from 'lucide-react';
-import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
+import { doc, collection, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
 import anime from 'animejs';
@@ -90,8 +90,13 @@ const DTags = () => {
                         color: val.Color || '#3b82f6',
                         iconSvg: val.Icon || ''
                     }));
-                    // Sort by name
-                    tagsData.sort((a, b) => a.name.localeCompare(b.name));
+                    // Sort by numeric ID if possible, otherwise by name
+                    tagsData.sort((a, b) => {
+                        const idA = parseInt(a.id);
+                        const idB = parseInt(b.id);
+                        if (!isNaN(idA) && !isNaN(idB)) return idA - idB;
+                        return a.name.localeCompare(b.name);
+                    });
                     setTags(tagsData);
                 } else {
                     setTags([]);
@@ -103,11 +108,12 @@ const DTags = () => {
             }
         );
 
-        const unsubContributors = onSnapshot(doc(db, 'Tags', 'Contributors'),
-            (snapshot) => {
-                if (snapshot.exists()) {
-                    const data = snapshot.data();
-                    const contribData = Object.entries(data).map(([id, val]: [string, any]) => ({
+        const unsubContributorsDoc = onSnapshot(doc(db, 'Tags', 'Contributors'), (snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.data();
+                const contribData = Object.entries(data)
+                    .filter(([_, val]) => val && typeof val === 'object' && (val as any).Name)
+                    .map(([id, val]: [string, any]) => ({
                         id,
                         name: val.Name || 'Anonymous',
                         role: val.Role || '',
@@ -120,24 +126,39 @@ const DTags = () => {
                             portfolio: val['Social Accounts']?.Portfolio || ''
                         }
                     }));
-                    // Sort by name
-                    contribData.sort((a, b) => a.name.localeCompare(b.name));
-                    setContributors(contribData);
-                } else {
-                    setContributors([]);
-                }
-            },
-            (err) => {
-                const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
-                console.warn(`[Connection] Contributors sync: ${status}. Check diagnostic in lib/firebase.ts`, err);
+                setContributors(prev => [...prev.filter(c => !contribData.some(d => d.id === c.id)), ...contribData]);
             }
-        );
+        });
+
+        const unsubContributorsCol = onSnapshot(collection(db, 'Tags', 'Contributors', 'Profiles'), (snapshot) => {
+            const contribData = snapshot.docs.map(docSnap => {
+                const val = docSnap.data();
+                return {
+                    id: docSnap.id,
+                    name: val.Name || val.name || 'Anonymous',
+                    role: val.Role || val.role || '',
+                    imagePreview: val.Image || val.image || '',
+                    socials: {
+                        github: (val['Social Accounts']?.Github || val.socials?.github || ''),
+                        linkedin: (val['Social Accounts']?.Linkedin || val.socials?.linkedin || ''),
+                        facebook: (val['Social Accounts']?.Facebook || val.socials?.facebook || ''),
+                        instagram: (val['Social Accounts']?.Instagram || val.socials?.instagram || ''),
+                        portfolio: (val['Social Accounts']?.Portfolio || val.socials?.portfolio || '')
+                    }
+                };
+            });
+            setContributors(prev => {
+                const filtered = prev.filter(c => !contribData.some(d => d.id === c.id));
+                return [...filtered, ...contribData];
+            });
+        });
 
         return () => {
             window.removeEventListener('resize', handleResize);
             observer.disconnect();
             unsubTags();
-            unsubContributors();
+            unsubContributorsDoc();
+            unsubContributorsCol();
         };
     }, []);
 
@@ -205,11 +226,25 @@ const DTags = () => {
 
     const handleSaveTag = async (data: TagData) => {
         try {
-            const id = data.id || `tag_${Date.now()}`;
+            setGlobalLoading(true);
+            const nextIndex = tags.length > 0
+                ? Math.max(...tags.map(t => parseInt(t.id)).filter(n => !isNaN(n))) + 1
+                : 1;
+            const id = data.id || nextIndex.toString();
+
+            let iconUrl = data.iconSvg || '';
+
+            // Handle file upload if a new file was provided
+            if (data.iconFile) {
+                const storageRef = ref(storage, `tags/${id}_${data.iconFile.name}`);
+                await uploadBytes(storageRef, data.iconFile);
+                iconUrl = await getDownloadURL(storageRef);
+            }
+
             const tagPayload = {
                 Name: data.name,
                 Color: data.color,
-                Icon: data.iconSvg || ''
+                Icon: iconUrl
             };
 
             await updateDoc(doc(db, 'Tags', 'Tags'), {
@@ -220,6 +255,8 @@ const DTags = () => {
             setEditingTag(null);
         } catch (error) {
             console.error('Error saving tag:', error);
+        } finally {
+            setGlobalLoading(false);
         }
     };
 
@@ -245,7 +282,10 @@ const DTags = () => {
     const handleSaveContributor = async (data: ContributorData) => {
         try {
             setGlobalLoading(true);
-            const id = data.id || `contrib_${Date.now()}`;
+            const nextIndex = contributors.length > 0
+                ? Math.max(...contributors.map(c => parseInt(c.id)).filter(n => !isNaN(n))) + 1
+                : 0;
+            const id = data.id || nextIndex.toString();
             let imageUrl = '';
 
             if (typeof data.image === 'string') {

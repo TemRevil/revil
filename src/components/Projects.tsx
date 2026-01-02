@@ -6,7 +6,7 @@ import { collection, onSnapshot, doc } from 'firebase/firestore';
 
 // Import SVG icons
 
-import MProjectView, { getStackIcon, Project } from './M-ProjectView';
+import MProjectView, { getStackIcon, getTechColor, Project } from './M-ProjectView';
 import MContributorView, { Contributor } from './M-ContributorView';
 
 
@@ -117,7 +117,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                             transition: 'opacity 0.5s ease, transform 0.5s ease'
                         }}
                     >
-                        {(project.tags || []).slice(0, 2).map((tag: any, i) => (
+                        {(project.tags || []).slice(0, 3).map((tag: any, i) => (
                             <span key={i} style={{
                                 padding: '6px 14px',
                                 backgroundColor: tag.color ? `${tag.color}40` : 'rgba(59, 130, 246, 0.25)',
@@ -135,7 +135,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                 textShadow: '0 1px 2px rgba(0,0,0,0.3)'
                             }}>
                                 {tag.iconSvg ? (
-                                    (tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image')) ? (
+                                    (typeof tag.iconSvg === 'string' && (tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image'))) ? (
                                         <img src={tag.iconSvg} alt="" style={{ width: '14px', height: '14px', objectFit: 'contain' }} />
                                     ) : (
                                         <span style={{ width: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -145,7 +145,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                 {tag.name}
                             </span>
                         ))}
-                        {(project.tags || []).length > 2 && (
+                        {(project.tags || []).length > 3 && (
                             <span style={{
                                 padding: '6px 10px',
                                 backgroundColor: 'rgba(0, 0, 0, 0.4)',
@@ -157,7 +157,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                 WebkitBackdropFilter: 'blur(12px)',
                                 border: '1px solid rgba(255, 255, 255, 0.1)'
                             }}>
-                                +{(project.tags || []).length - 2}
+                                +{(project.tags || []).length - 3}
                             </span>
                         )}
                     </div>
@@ -239,80 +239,134 @@ const Projects = () => {
 
     // Fetch contributors from Firestore (Global Team List)
     useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'Tags', 'Contributors'), (docSnap) => {
+        // Option 1: Map inside document
+        const unsubDoc = onSnapshot(doc(db, 'Tags', 'Contributors'), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                // Convert the map of ID -> Contributor into an array
-                const loaded = Object.values(data).map((c: any) => ({
-                    ...c,
-                    name: c.Name, // Normalize field names from Firestore
-                    role: c.Role,
-                    image: c.Image,
-                    links: {
-                        github: c["Social Accounts"]?.Github,
-                        linkedin: c["Social Accounts"]?.Linkedin,
-                        website: c["Social Accounts"]?.Portfolio
-                    }
-                }));
-                setAvailableContributors(loaded);
+                const loaded = Object.entries(data)
+                    .filter(([_, val]) => val && typeof val === 'object' && (val as any).Name)
+                    .map(([id, val]: [string, any]) => ({
+                        id,
+                        name: val.Name,
+                        role: val.Role,
+                        image: val.Image,
+                        links: val["Social Accounts"] || {}
+                    }));
+                setAvailableContributors(prev => {
+                    const filtered = prev.filter(p => !loaded.some(l => l.id === p.id));
+                    return [...filtered, ...loaded];
+                });
             }
         });
-        return () => unsub();
+
+        // Option 2: Individual documents in subcollection
+        const unsubCol = onSnapshot(collection(db, 'Tags', 'Contributors', 'Profiles'), (snapshot) => {
+            const loaded = snapshot.docs.map(d => {
+                const val = d.data();
+                return {
+                    id: d.id,
+                    name: val.Name || val.name,
+                    role: val.Role || val.role,
+                    image: val.Image || val.image,
+                    links: val["Social Accounts"] || val.links || val.socials || {}
+                };
+            });
+            setAvailableContributors(prev => {
+                const filtered = prev.filter(p => !loaded.some(l => l.id === p.id));
+                return [...filtered, ...loaded];
+            });
+        });
+
+        return () => {
+            unsubDoc();
+            unsubCol();
+        };
     }, []);
+
+    const [rawProjects, setRawProjects] = useState<any[]>([]);
 
     // Fetch projects from Firestore
     useEffect(() => {
         const unsub = onSnapshot(collection(db, 'Projects'), (snapshot) => {
-            const loaded = snapshot.docs.map(doc => {
-                const data = doc.data();
-                const v = data.Views || {};
-
-                const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: any) => {
-                    const name = c["Contributor Name"] || '';
-                    const projectRole = c["Role at Project"];
-                    const fullContrib = availableContributors.find(cont =>
-                        cont.name?.trim().toLowerCase() === name?.trim().toLowerCase()
-                    );
-
-                    return {
-                        name,
-                        // Priority: Project-Specific Role -> Global Identity Role
-                        role: projectRole || (fullContrib ? fullContrib.role : 'Contributor'),
-                        // Global Job Title from /Tags/Contributors
-                        jobTitle: fullContrib ? fullContrib.role : 'Contributor',
-                        image: fullContrib?.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=60a5fa&color=fff`,
-                        links: fullContrib?.links || {}
-                    };
-                }) : [];
-
-                const rawTags = data.Tags ? Object.values(data.Tags) : [];
-                const normalizedTags = rawTags.map((t: any) => ({
-                    name: t.name || t.Name || 'Unix', // fallback
-                    color: t.color || t.Color || '#3b82f6',
-                    iconSvg: t.iconSvg || t.Icon || ''
-                }));
-
-                return {
-                    id: doc.id,
-                    title: doc.id,
-                    name: doc.id,
-                    description: data.Description || '',
-                    fullDescription: data.Description || '',
-                    images: data["Project Images"] || [],
-                    stack: normalizedTags.map((t: any) => t.name),
-                    tags: normalizedTags,
-                    repoLink: data["Repository Link"],
-                    liveLink: data["Live Link"],
-                    views: Number(v.Project || 0) || 0,
-                    githubViews: Number(v.Github || 0) || 0,
-                    liveViews: Number(v.Live || 0) || 0,
-                    contributors: projectContributors
-                } as Project;
-            });
-            setProjectsData(loaded);
+            setRawProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         });
         return () => unsub();
-    }, [availableContributors]);
+    }, []);
+
+    // Resolve projects with contributor details and metrics
+    useEffect(() => {
+        const loaded = rawProjects.map(data => {
+            const v = data.Views || {};
+
+            const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: any) => {
+                const name = c["Contributor Name"] || '';
+                const projectRole = c["Role at Project"];
+
+                // Optimized matching: Trim, Lowercase, and check for exact match
+                const fullContrib = availableContributors.find(cont => {
+                    const cName = (cont.name || '').trim().toLowerCase();
+                    const pName = name.trim().toLowerCase();
+                    return cName === pName && cName !== '';
+                });
+
+                return {
+                    name,
+                    role: projectRole || (fullContrib ? (fullContrib.role || fullContrib.jobTitle || 'Contributor') : 'Contributor'),
+                    jobTitle: fullContrib ? (fullContrib.role || fullContrib.jobTitle || 'Contributor') : 'Contributor',
+                    image: fullContrib?.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=60a5fa&color=fff`,
+                    links: fullContrib?.links || {}
+                };
+            }) : [];
+
+            const rawStack = data.Stack || [];
+            const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack)).map((t: any) => {
+                const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+                return {
+                    name,
+                    color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
+                    iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
+                };
+            }).filter(t => t.name !== 'Unix');
+
+            const rawTags = data.Tags ? Object.values(data.Tags) : [];
+            const normalizedTags = rawTags.map((t: any) => {
+                const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+                return {
+                    name,
+                    color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
+                    iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
+                };
+            }).filter(t => t.name !== 'Unix');
+
+            const displayTags = normalizedStack.length > 0 ? normalizedStack : normalizedTags;
+
+            return {
+                id: data.id,
+                title: data.Title || data.id,
+                name: data.id,
+                description: data.Description || '',
+                fullDescription: data.Description || '',
+                images: data["Project Images"] || [],
+                stack: normalizedStack.map((t: any) => t.name),
+                tags: displayTags,
+                repoLink: data["Repository Link"],
+                liveLink: data["Live Link"],
+                downloadLink: data["Download Link"] || '',
+                views: Number(v.Project || 0) || 0,
+                githubViews: Number(v.Github || 0) || 0,
+                liveViews: Number(v.Live || 0) || 0,
+                downloadViews: Number(v.Download || 0) || 0,
+                contributors: projectContributors
+            } as Project;
+        });
+        setProjectsData(loaded);
+
+        // Keep selected project in sync with latest resolved data
+        if (selectedProject) {
+            const updated = loaded.find(p => p.id === selectedProject.id);
+            if (updated) setSelectedProject(updated);
+        }
+    }, [rawProjects, availableContributors]);
 
     // Levenshtein distance for fuzzy search
     const getLevenshteinDistance = (a: string, b: string) => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, Plus, Image as ImageIcon, Github, ExternalLink, Sparkles, Check, Trash2, Eye, Edit } from 'lucide-react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import anime from 'animejs';
 
@@ -26,11 +26,14 @@ export interface ProjectData {
     contributors: ContributorData[];
     repoLink: string;
     liveLink: string;
+    demoLink?: string;
+    downloadLink?: string;
     images: (File | string)[];
     icon?: File | string;
     views?: number;
     githubViews?: number;
     liveViews?: number;
+    downloadViews?: number;
 }
 
 interface TagData {
@@ -70,6 +73,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
         contributors: [],
         repoLink: '',
         liveLink: '',
+        downloadLink: '',
         images: [],
         icon: undefined
     });
@@ -109,30 +113,60 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
             }
         });
 
-        const unsubContributors = onSnapshot(doc(db, 'Tags', 'Contributors'), (snapshot) => {
+        const unsubContributorsDoc = onSnapshot(doc(db, 'Tags', 'Contributors'), (snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.data();
-                const contribData = Object.entries(data).map(([id, val]: [string, any]) => ({
-                    id,
-                    name: val.Name || 'Anonymous',
-                    role: val.Role || '',
-                    image: val.Image || '',
-                    socials: {
-                        github: val['Social Accounts']?.Github || '',
-                        linkedin: val['Social Accounts']?.Linkedin || '',
-                        facebook: val['Social Accounts']?.Facebook || '',
-                        instagram: val['Social Accounts']?.Instagram || '',
-                        portfolio: val['Social Accounts']?.Portfolio || ''
-                    }
-                }));
-                contribData.sort((a, b) => a.name.localeCompare(b.name));
-                setAvailableContributors(contribData);
+                const contribData = Object.entries(data)
+                    .filter(([_, val]) => val && typeof val === 'object' && (val as any).Name)
+                    .map(([id, val]: [string, any]) => ({
+                        id,
+                        name: val.Name || 'Anonymous',
+                        role: val.Role || '',
+                        image: val.Image || '',
+                        socials: {
+                            github: val['Social Accounts']?.Github || '',
+                            linkedin: val['Social Accounts']?.Linkedin || '',
+                            facebook: val['Social Accounts']?.Facebook || '',
+                            instagram: val['Social Accounts']?.Instagram || '',
+                            portfolio: val['Social Accounts']?.Portfolio || ''
+                        }
+                    }));
+                setAvailableContributors(prev => {
+                    const filtered = prev.filter(c => !contribData.some(d => d.id === c.id));
+                    const combined = [...filtered, ...contribData];
+                    return combined.sort((a, b) => a.name.localeCompare(b.name));
+                });
             }
+        });
+
+        const unsubContributorsCol = onSnapshot(collection(db, 'Tags', 'Contributors', 'Profiles'), (snapshot) => {
+            const contribData = snapshot.docs.map(doc => {
+                const val = doc.data();
+                return {
+                    id: doc.id,
+                    name: val.Name || val.name || 'Anonymous',
+                    role: val.Role || val.role || '',
+                    image: val.Image || val.image || '',
+                    socials: {
+                        github: (val['Social Accounts']?.Github || val.socials?.github || ''),
+                        linkedin: (val['Social Accounts']?.Linkedin || val.socials?.linkedin || ''),
+                        facebook: (val['Social Accounts']?.Facebook || val.socials?.facebook || ''),
+                        instagram: (val['Social Accounts']?.Instagram || val.socials?.instagram || ''),
+                        portfolio: (val['Social Accounts']?.Portfolio || val.socials?.portfolio || '')
+                    }
+                };
+            });
+            setAvailableContributors(prev => {
+                const filtered = prev.filter(c => !contribData.some(d => d.id === c.id));
+                const combined = [...filtered, ...contribData];
+                return combined.sort((a, b) => a.name.localeCompare(b.name));
+            });
         });
 
         return () => {
             unsubTags();
-            unsubContributors();
+            unsubContributorsDoc();
+            unsubContributorsCol();
         };
     }, []);
 
@@ -148,6 +182,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
                     contributors: [],
                     repoLink: '',
                     liveLink: '',
+                    downloadLink: '',
                     images: [],
                     icon: undefined
                 });
@@ -384,6 +419,20 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
                                                 type="url"
                                                 name="liveLink"
                                                 value={formData.liveLink}
+                                                onChange={handleInputChange}
+                                                placeholder="https://..."
+                                                className="dashboard-input"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="dashboard-label">
+                                                <Upload size={14} className="inline mr-1" />
+                                                Download Link
+                                            </label>
+                                            <input
+                                                type="url"
+                                                name="downloadLink"
+                                                value={formData.downloadLink}
                                                 onChange={handleInputChange}
                                                 placeholder="https://..."
                                                 className="dashboard-input"

@@ -6,7 +6,7 @@ import { ref, uploadBytes, getDownloadURL, listAll, deleteObject, getBlob } from
 import { db, storage } from '../../lib/firebase';
 import Alert, { AlertType } from '../Alert';
 import MProjectForm, { ProjectData } from './M-ProjectForm';
-import MProjectView from '../M-ProjectView';
+import MProjectView, { getTechColor, getStackIcon } from '../M-ProjectView';
 import MContributorView from '../M-ContributorView';
 import { useLoading } from '../../LoadingContext';
 import MConfirmModal from './M-ConfirmModal';
@@ -168,18 +168,7 @@ const DProjects = () => {
                         name: value.Name,
                         role: value.Role || '',
                         image: value.Image || undefined,
-                        links: {
-                            github: value['Social Accounts']?.Github || '',
-                            linkedin: value['Social Accounts']?.Linkedin || '',
-                            website: value['Social Accounts']?.Portfolio || ''
-                        },
-                        socials: {
-                            github: value['Social Accounts']?.Github || '',
-                            linkedin: value['Social Accounts']?.Linkedin || '',
-                            facebook: value['Social Accounts']?.Facebook || '',
-                            instagram: value['Social Accounts']?.Instagram || '',
-                            portfolio: value['Social Accounts']?.Portfolio || ''
-                        }
+                        links: value['Social Accounts'] || {}
                     }));
                     setAvailableContributors(loaded);
                 }
@@ -233,19 +222,31 @@ const DProjects = () => {
                     });
                 }
 
-                const v = data.Views || {};
+                const statusV = data.Views || {};
+                const rawStack = data.Stack || [];
+                const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack)).map((t: any) => {
+                    const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+                    return {
+                        name,
+                        color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
+                        iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
+                    };
+                }).filter(t => t.name !== 'Unix');
+
                 return {
                     id: doc.id,
                     name: doc.id,
                     description: data.Description || '',
                     liveLink: data["Live Link"] || '',
                     repoLink: data["Repository Link"] || '',
+                    downloadLink: data["Download Link"] || '',
                     icon: data["Project Icon"] || '',
-                    tags,
+                    tags: normalizedStack.length > 0 ? normalizedStack : tags,
+                    stack: normalizedStack.map(t => t.name),
                     contributors,
-                    views: Number(v.Project || 0) || 0,
-                    githubViews: Number(v.Github || 0) || 0,
-                    liveViews: Number(v.Live || 0) || 0,
+                    views: Number(statusV.Project || 0) || 0,
+                    githubViews: Number(statusV.Github || 0) || 0,
+                    liveViews: Number(statusV.Live || 0) || 0,
                     images: data["Project Images"] || []
                 } as ProjectData;
             });
@@ -377,6 +378,7 @@ const DProjects = () => {
             const projectDoc = {
                 "Description": data.description,
                 "Live Link": data.liveLink,
+                "Download Link": data.downloadLink || '',
                 "Project Icon": iconUrl,
                 "Repository Link": data.repoLink,
                 "Contributors": contributorsMap,
@@ -385,6 +387,7 @@ const DProjects = () => {
                 "Views": {
                     "Github": (data.githubViews || 0).toString(),
                     "Live": (data.liveViews || 0).toString(),
+                    "Download": (data.downloadViews || 0).toString(),
                     "Project": (data.views || 0).toString()
                 }
             };

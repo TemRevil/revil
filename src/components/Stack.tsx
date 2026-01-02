@@ -2,12 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import anime from 'animejs';
 
 // Import SVG icons
-import htmlIcon from '../assets/svgs/html.svg';
-import cssIcon from '../assets/svgs/css.svg';
-import jsIcon from '../assets/svgs/javascript.svg';
-import reactIcon from '../assets/svgs/react.svg';
-import nodejsIcon from '../assets/svgs/nodejs.svg';
-import firebaseIcon from '../assets/svgs/firebase.svg';
+import { db } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface StackItemProps {
     icon: string;
@@ -240,14 +236,25 @@ const Stack = () => {
     const handwritingRef = useRef<HTMLDivElement>(null);
     const gridRef = useRef<HTMLDivElement>(null);
 
-    const stackItems = [
-        { icon: htmlIcon, name: 'HTML', percentage: '95%', information: 'Standard markup language for documents designed to be displayed in a web browser.' },
-        { icon: cssIcon, name: 'CSS', percentage: '90%', information: 'Style sheet language used for describing the presentation of a document written in a markup language.' },
-        { icon: jsIcon, name: 'JavaScript', percentage: '85%', information: 'High-level, often just-in-time compiled language that conforms to the ECMAScript specification.' },
-        { icon: reactIcon, name: 'React', percentage: '88%', information: 'A JavaScript library for building user interfaces.' },
-        { icon: nodejsIcon, name: 'Node.js', percentage: '75%', information: 'JavaScript runtime built on Chrome\'s V8 JavaScript engine.' },
-        { icon: firebaseIcon, name: 'Firebase', percentage: '70%', information: 'Platform developed by Google for creating mobile and web applications.' }
-    ];
+    const [stackItems, setStackItems] = useState<any[]>([]);
+
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'Settings', 'Tech Stack'), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const items = Object.entries(data)
+                    .sort(([a], [b]) => Number(a) - Number(b))
+                    .map(([_, item]: [string, any]) => ({
+                        icon: item.Icon,
+                        name: item.Name,
+                        percentage: (item["Proficiency Level"] || 0) + '%',
+                        information: item.Information
+                    }));
+                setStackItems(items);
+            }
+        });
+        return () => unsub();
+    }, []);
 
     useEffect(() => {
         // Animate handwriting text

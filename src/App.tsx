@@ -77,6 +77,13 @@ function App() {
   };
 
   const handleTouchEnd = () => {
+    // Prevent swipe navigation when modal is open
+    if (isContactModalOpen || document.body.style.overflow === 'hidden') {
+      touchStartX.current = 0;
+      touchEndX.current = 0;
+      return;
+    }
+
     const SWIPE_THRESHOLD = 100;
     // Calculate distance
     const distance = touchEndX.current - touchStartX.current;
@@ -101,8 +108,8 @@ function App() {
 
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      // When modal is open, completely disable navigation scrolling
-      if (isContactModalOpen) {
+      // When any modal is open (indicated by hidden overflow), completely disable navigation scrolling
+      if (isContactModalOpen || document.body.style.overflow === 'hidden') {
         // Don't prevent the event - let it bubble to modal content
         // Just skip all navigation logic
         return;
@@ -162,8 +169,8 @@ function App() {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent keyboard navigation when modal is open
-      if (isContactModalOpen) {
+      // Prevent keyboard navigation when any modal is open (indicated by hidden overflow)
+      if (isContactModalOpen || document.body.style.overflow === 'hidden') {
         // Allow Escape key to close modal
         if (e.key === 'Escape') {
           closeContactModal();

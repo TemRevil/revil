@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Github, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 
 // Import SVG icons
 import htmlIcon from '../assets/svgs/html.svg';
@@ -24,6 +24,19 @@ export const getStackIcon = (name: string) => {
     return null;
 };
 
+export const getTechColor = (name: string) => {
+    const lower = name.toLowerCase();
+    if (lower.includes('react')) return '#61dafb';
+    if (lower.includes('html')) return '#e34f26';
+    if (lower.includes('css')) return '#1572b6';
+    if (lower.includes('js') || lower.includes('javascript')) return '#f7df1e';
+    if (lower.includes('node')) return '#339933';
+    if (lower.includes('firebase')) return '#ffca28';
+    if (lower.includes('typescript') || lower.includes('ts')) return '#3178c6';
+    if (lower.includes('tailwind')) return '#06b6d4';
+    return '#60a5fa';
+};
+
 export interface Project {
     id: number | string;
     title?: string;
@@ -40,6 +53,8 @@ export interface Project {
     views?: number;
     githubViews?: number;
     liveViews?: number;
+    downloadLink?: string;
+    downloadViews?: number;
 }
 
 interface MProjectViewProps {
@@ -54,6 +69,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const [isDark, setIsDark] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
+    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [isClosing, setIsClosing] = useState(false);
 
     // Keep internal project state in sync with incoming props
@@ -71,15 +87,39 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         const unsub = onSnapshot(projectRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                const v = data.Views || {};
 
                 // Also update contributors if they've changed in the background
                 setProject(prev => {
+                    const statusV = data.Views || {};
+                    const rawStack = data.Stack || [];
+                    const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack)).map((t: any) => {
+                        const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+                        return {
+                            name,
+                            color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
+                            iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
+                        };
+                    }).filter(t => t.name !== 'Unix');
+
+                    const rawTags = data.Tags ? Object.values(data.Tags) : [];
+                    const normalizedTags = rawTags.map((t: any) => {
+                        const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+                        return {
+                            name,
+                            color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
+                            iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
+                        };
+                    }).filter(t => t.name !== 'Unix');
+
                     const updated = {
                         ...prev,
-                        views: Number(v.Project || 0) || 0,
-                        githubViews: Number(v.Github || 0) || 0,
-                        liveViews: Number(v.Live || 0) || 0
+                        views: Number(statusV.Project || 0) || 0,
+                        githubViews: Number(statusV.Github || 0) || 0,
+                        liveViews: Number(statusV.Live || 0) || 0,
+                        downloadViews: Number(statusV.Download || 0) || 0,
+                        stack: normalizedStack.map(t => t.name),
+                        tags: normalizedStack.length > 0 ? normalizedStack : normalizedTags,
+                        downloadLink: data["Download Link"] || ''
                     };
 
                     // If we have contributor data in the snapshot, keep the core details synced
@@ -118,12 +158,15 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     }, []);
 
     useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 1024);
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
+        const handleResize = () => {
+            const width = window.innerWidth;
+            setWindowWidth(width);
+            setIsMobile(width < 1024);
+        };
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
-
     // Auto-slide Gallery
     useEffect(() => {
         let interval: ReturnType<typeof setInterval> | undefined;
@@ -186,34 +229,45 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         }
     };
 
-    const getTechColor = (name: string) => {
-        const lower = name.toLowerCase();
-        if (lower.includes('react')) return '#61dafb';
-        if (lower.includes('html')) return '#e34f26';
-        if (lower.includes('css')) return '#1572b6';
-        if (lower.includes('js') || lower.includes('javascript')) return '#f7df1e';
-        if (lower.includes('node')) return '#339933';
-        if (lower.includes('firebase')) return '#ffca28';
-        if (lower.includes('typescript') || lower.includes('ts')) return '#3178c6';
-        if (lower.includes('tailwind')) return '#06b6d4';
-        return '#60a5fa';
+    const handleDownloadClick = async () => {
+        if (!project.downloadLink) return;
+        try {
+            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const snap = await getDoc(projectRef);
+            if (snap.exists()) {
+                const currentViews = snap.data().Views || {};
+                const newVal = (parseInt(currentViews.Download || "0") + 1).toString();
+                await updateDoc(projectRef, {
+                    "Views.Download": newVal
+                });
+            }
+        } catch (err) {
+            console.warn("Could not increment download views:", err);
+        }
     };
+
 
     const displayTitle = (project.title || project.name || 'Untitled Project').toUpperCase();
     const displayFullDescription = project.fullDescription || project.description || 'No description available.';
 
-    const displayTags = [
-        ...(project.stack || []).map(tech => ({ name: tech, color: getTechColor(tech), icon: getStackIcon(tech) })),
-        ...(project.tags || []).map(t => {
-            const isString = typeof t === 'string';
-            const name = isString ? t : t.name;
-            return {
-                name: name,
-                color: isString ? getTechColor(name) : (t.color || getTechColor(name)),
-                icon: isString ? getStackIcon(t) : (t.iconSvg || getStackIcon(t.name))
-            };
-        })
-    ];
+    const displayTags = (project.tags && project.tags.length > 0 && typeof project.tags[0] === 'object')
+        ? project.tags.map(t => ({
+            name: t.name,
+            color: t.color || getTechColor(t.name),
+            icon: t.iconSvg || getStackIcon(t.name)
+        }))
+        : [
+            ...(project.stack || []).map(tech => ({ name: tech, color: getTechColor(tech), icon: getStackIcon(tech) })),
+            ...(project.tags || []).map(t => {
+                const isString = typeof t === 'string';
+                const name = isString ? t : t.name;
+                return {
+                    name: name,
+                    color: isString ? getTechColor(name) : (t.color || getTechColor(name)),
+                    icon: isString ? getStackIcon(t) : (t.iconSvg || getStackIcon(t.name))
+                };
+            })
+        ];
 
     const GlassPanel = ({ children, style, className = "" }: any) => (
         <div className={className} style={{
@@ -251,13 +305,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
 
             {/* Close Button - Ultra Minimal */}
             <button onClick={handleClose} style={{
-                position: 'absolute', top: '40px', right: '40px', zIndex: 1200,
-                width: '56px', height: '56px', borderRadius: '50%',
+                position: 'absolute', top: isMobile ? '20px' : '40px', right: isMobile ? '20px' : '40px', zIndex: 1200,
+                width: isMobile ? '44px' : '56px', height: isMobile ? '44px' : '56px', borderRadius: '50%',
                 background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.15)',
                 color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', backdropFilter: 'blur(10px)', transition: 'all 0.3s'
             }} onMouseEnter={e => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.transform = 'scale(1.1) rotate(90deg)'; }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.transform = 'scale(1) rotate(0deg)'; }}>
-                <X size={24} />
+                <X size={isMobile ? 20 : 24} />
             </button>
 
             {/* Scrollable Container */}
@@ -269,28 +323,36 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                     maxWidth: '1500px',
                     overflowY: 'auto',
                     scrollbarWidth: 'none',
-                    padding: isMobile ? '20px' : '60px',
-                    display: 'flex', flexDirection: 'column', gap: '50px',
+                    padding: isMobile ? '0' : '0 60px',
+                    display: 'flex', flexDirection: 'column', gap: '0',
                     animation: isClosing ? 'slideDown 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards' : 'slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
                 }}>
                 {/* Hero Showcase Section */}
-                <div style={{ position: 'relative', width: '100%', minHeight: isMobile ? '400px' : '650px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{
+                    position: 'relative', width: '100%',
+                    height: '100vh', minHeight: '100vh',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '20px'
+                }}>
                     {/* Big Decorative Title */}
                     <div style={{
                         position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                        fontSize: isMobile ? '15vw' : '12vw', fontWeight: 950, color: 'white',
-                        opacity: 0.03, whiteSpace: 'nowrap', pointerEvents: 'none',
+                        fontSize: isMobile ? '20vw' : '12vw', fontWeight: 950, color: 'white',
+                        opacity: isMobile ? 0.02 : 0.03, whiteSpace: 'nowrap', pointerEvents: 'none',
                         zIndex: 0, userSelect: 'none', letterSpacing: '-0.07em'
                     }}>{displayTitle}</div>
-
                     {/* Main Image Spotlight */}
                     <div
                         onMouseEnter={() => setIsHovered(true)}
                         onMouseLeave={() => setIsHovered(false)}
                         style={{
-                            position: 'relative', width: isMobile ? '100%' : '85%', height: 'auto',
-                            aspectRatio: '16/9', borderRadius: '48px', overflow: 'hidden',
-                            boxShadow: '0 80px 150px rgba(0,0,0,0.6)', zIndex: 1,
+                            position: 'relative',
+                            width: isMobile ? '100%' : '85%',
+                            maxWidth: '1200px',
+                            height: 'auto',
+                            aspectRatio: '16/9',
+                            borderRadius: isMobile ? '16px' : '32px', overflow: 'hidden',
+                            boxShadow: '0 50px 100px rgba(0,0,0,0.5)', zIndex: 1,
                             transition: 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
                             background: '#0a0a0a'
                         }}
@@ -321,13 +383,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                     <ChevronLeft size={28} />
                                 </button>
                                 <button onClick={handleNext} style={{
-                                    position: 'absolute', right: '30px', top: '50%', transform: 'translateY(-50%)',
-                                    width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
+                                    position: 'absolute', right: isMobile ? '8px' : '30px', top: '50%', transform: 'translateY(-50%)',
+                                    width: isMobile ? '36px' : '60px', height: isMobile ? '36px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
                                     backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                                     zIndex: 20, transition: 'all 0.3s'
-                                }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; e.currentTarget.style.right = '25px'; }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.right = '30px'; }}>
-                                    <ChevronRight size={28} />
+                                }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; if (!isMobile) e.currentTarget.style.right = '25px'; }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; if (!isMobile) e.currentTarget.style.right = '30px'; }}>
+                                    <ChevronRight size={isMobile ? 18 : 28} />
                                 </button>
                             </>
                         )}
@@ -343,6 +405,26 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                             ))}
                         </div>
                     </div>
+
+                    {/* Scroll for More Indicator */}
+                    <div style={{
+                        position: 'absolute', bottom: isMobile ? '30px' : '40px', left: '50%', transform: 'translateX(-50%)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px',
+                        color: 'rgba(255,255,255,0.5)', zIndex: 10, pointerEvents: 'none',
+                        animation: 'fadeIn 1s ease-out 1.5s both'
+                    }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.25em' }}>Scroll for more</span>
+                        <div style={{
+                            width: '24px', height: '42px', borderRadius: '15px', border: '2px solid rgba(255,255,255,0.2)',
+                            display: 'flex', justifyContent: 'center', padding: '6px'
+                        }}>
+                            <div style={{
+                                width: '2px', height: '8px', borderRadius: '2px', background: '#60a5fa',
+                                animation: 'scrollWheel 1.5s ease-in-out infinite',
+                                boxShadow: '0 0 10px #60a5fa'
+                            }} />
+                        </div>
+                    </div>
                 </div>
 
                 {/* Content Matrix */}
@@ -350,19 +432,22 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                     display: 'grid',
                     gridTemplateColumns: isMobile ? '1fr' : '1.8fr 1fr',
                     gap: '40px',
-                    position: 'relative', zIndex: 2
+                    position: 'relative', zIndex: 2,
+                    padding: isMobile ? '20px' : '0 0 60px 0',
+                    marginTop: isMobile ? '0' : '40px'
                 }}>
                     {/* Primary Info */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
                         <GlassPanel>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                                <div style={{ padding: '6px 14px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', borderRadius: '50px', fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Digital Masterpiece</div>
+                                <div style={{ padding: '6px 14px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', borderRadius: '50px', fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em' }}>More Details</div>
                                 <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }} />
                                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Project ID: #{project.id.toString().slice(-6).toUpperCase()}</div>
                             </div>
                             <h1 style={{
-                                margin: 0, fontSize: isMobile ? '2.8rem' : '5rem', fontWeight: 950,
-                                color: 'white', letterSpacing: '-0.05em', lineHeight: 0.9, marginBottom: '30px'
+                                margin: 0, fontSize: isMobile ? (windowWidth < 480 ? '2.2rem' : '3.2rem') : '5rem', fontWeight: 950,
+                                color: 'white', letterSpacing: '-0.05em', lineHeight: 1.1, marginBottom: '24px',
+                                textTransform: 'uppercase'
                             }}>{displayTitle}</h1>
                             <p style={{
                                 margin: 0, fontSize: '1.35rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.75)',
@@ -412,18 +497,35 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                 <a href={project.liveLink || project.demoLink} onClick={handleLiveClick} target="_blank" rel="noopener noreferrer" style={{
                                     height: '90px', background: '#ffffff', color: '#000', borderRadius: '28px',
                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                    textDecoration: 'none', transition: 'all 0.3s', boxShadow: '0 20px 40px rgba(255, 255, 255, 0.15)'
-                                }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-5px) scale(1.02)'; e.currentTarget.style.boxShadow = '0 30px 60px rgba(255, 255, 255, 0.25)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.boxShadow = '0 20px 40px rgba(255, 255, 255, 0.15)'; }}>
+                                    textDecoration: 'none', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                    boxShadow: '0 15px 35px -5px rgba(255, 255, 255, 0.2)',
+                                    border: '1px solid rgba(255,255,255,0.8)'
+                                }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px) scale(1.02)'; e.currentTarget.style.boxShadow = '0 25px 50px -10px rgba(255, 255, 255, 0.3)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.boxShadow = '0 15px 35px -5px rgba(255, 255, 255, 0.2)'; }}>
                                     <ExternalLink size={24} />
                                     <span style={{ fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live View</span>
                                 </a>
                             )}
+                            {project.downloadLink && (
+                                <a href={project.downloadLink} onClick={handleDownloadClick} target="_blank" rel="noopener noreferrer" style={{
+                                    height: '90px',
+                                    background: '#ffffff',
+                                    color: '#000', borderRadius: '28px',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                    textDecoration: 'none', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                    boxShadow: '0 15px 35px -5px rgba(255, 255, 255, 0.2)',
+                                    border: '1px solid rgba(255,255,255,0.8)'
+                                }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px) scale(1.03)'; e.currentTarget.style.boxShadow = '0 25px 50px -10px rgba(255, 255, 255, 0.3)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.boxShadow = '0 15px 35px -5px rgba(255, 255, 255, 0.2)'; }}>
+                                    <Upload size={24} />
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.15em' }}>Download the App</span>
+                                </a>
+                            )}
                             {project.repoLink && (
                                 <a href={project.repoLink} onClick={handleGithubClick} target="_blank" rel="noopener noreferrer" style={{
-                                    height: '90px', background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '28px',
+                                    height: '90px', background: 'rgba(255,255,255,0.03)', color: '#fff', borderRadius: '28px',
                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                    textDecoration: 'none', transition: 'all 0.3s', border: '1px solid rgba(255,255,255,0.1)'
-                                }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}>
+                                    textDecoration: 'none', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                    border: '1px solid rgba(255,255,255,0.08)'
+                                }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px) scale(1.02)'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}>
                                     <Github size={24} />
                                     <span style={{ fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.12em' }}>GitHub</span>
                                 </a>
@@ -534,8 +636,8 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                             padding: '30px', borderRadius: '32px', background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
                             border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '25px'
                         }}>
-                            <h3 style={{ margin: 0, fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)' }}>Engagement Matrix</h3>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px' }}>
+                            <h3 style={{ margin: 0, fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)' }}>Engagements</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px' }}>
                                 <div style={{ textAlign: 'center' }}>
                                     <div style={{ fontSize: '1.8rem', fontWeight: 950, color: 'white', lineHeight: 1, marginBottom: '8px', letterSpacing: '-0.02em' }}>{typeof project.githubViews === 'number' ? project.githubViews : 0}</div>
                                     <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Github</div>
@@ -545,8 +647,12 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                     <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Live</div>
                                 </div>
                                 <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '1.8rem', fontWeight: 950, color: 'white', lineHeight: 1, marginBottom: '8px', letterSpacing: '-0.02em' }}>{typeof project.downloadViews === 'number' ? project.downloadViews : 0}</div>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Downloads</div>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
                                     <div style={{ fontSize: '1.8rem', fontWeight: 950, color: 'white', lineHeight: 1, marginBottom: '8px', letterSpacing: '-0.02em' }}>{typeof project.views === 'number' ? project.views : 0}</div>
-                                    <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Project</div>
+                                    <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Views</div>
                                 </div>
                             </div>
                             <div style={{ height: '4px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden', marginTop: '5px' }}>
@@ -564,6 +670,12 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                 @keyframes slideUp { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: translateY(0); } }
                 @keyframes slideDown { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(60px); } }
                 @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes scrollWheel { 
+                    0% { transform: translateY(0); opacity: 1; } 
+                    50% { transform: translateY(15px); opacity: 1; }
+                    100% { transform: translateY(15px); opacity: 0; } 
+                }
                 ::-webkit-scrollbar { display: none; }
                 * { scroll-behavior: smooth; }
             ` }} />
