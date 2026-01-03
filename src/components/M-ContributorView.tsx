@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Github, Linkedin, Globe, Instagram, Facebook } from 'lucide-react';
+import { X, Github, Linkedin, Globe, Instagram, Facebook, User } from 'lucide-react';
 
 export interface Contributor {
     name: string;
@@ -63,14 +63,22 @@ const MContributorView = ({ contributor, onClose }: MContributorViewProps) => {
 
                 <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-                        <img
-                            src={contributor.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(contributor.name)}&background=60a5fa&color=fff`}
-                            alt={contributor.name}
-                            style={{
-                                width: '120px', height: '120px', borderRadius: '50%', objectFit: 'cover',
-                                border: `4px solid ${isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'}`
-                            }}
-                        />
+                        <div style={{
+                            width: '120px', height: '120px', borderRadius: '50%', overflow: 'hidden',
+                            border: `4px solid ${isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)'}`,
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>
+                            {contributor.image ? (
+                                <img
+                                    src={contributor.image}
+                                    alt={contributor.name}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                            ) : (
+                                <User size={48} className="text-zinc-500/50" />
+                            )}
+                        </div>
                         <div style={{ textAlign: 'center' }}>
                             <h3 style={{ margin: '0 0 8px 0', color: 'var(--text-primary)', fontSize: '1.75rem', fontWeight: 'bold' }}>
                                 {contributor.name}

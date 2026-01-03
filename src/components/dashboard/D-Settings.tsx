@@ -1,17 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Briefcase, Clock, ChevronDown, HardDrive, ZoomIn, Check } from 'lucide-react';
+const DEFAULT_HERO_URL = "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FHero.image.jpg?alt=media&token=1d698d9b-468a-42e7-92c6-b9cb127a5fc6";
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
 // import firebaseIcon from '../../assets/svgs/firebase.svg';
 import { doc, onSnapshot, setDoc, updateDoc, deleteField, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, getMetadata } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
 import Alert, { AlertType } from '../Alert';
 import MHandlingProject, { HandlingProject } from './M-HandlingProject';
 import MStackItem, { StackItemData } from './M-StackItem';
 import { useLoading } from '../../LoadingContext';
 import MConfirmModal from './M-ConfirmModal';
+// // import userImg from '../assets/imgs/user.jpg';
+// Replaced failing ui-avatars.com with a local icon-based placeholder logic
+const DEFAULT_USER_IMG = '';
+
 
 interface StackItem {
     id: string;
@@ -52,18 +58,26 @@ const timezones = [
 ];
 
 // Helper to create the cropped image
-const createImage = (url: string): Promise<HTMLImageElement> =>
+const createImage = (url: string, useCrossOrigin: boolean = true): Promise<HTMLImageElement> =>
     new Promise((resolve, reject) => {
         const image = new Image();
+        if (useCrossOrigin && url.startsWith('http')) {
+            image.setAttribute('crossOrigin', 'anonymous');
+        }
         image.addEventListener('load', () => resolve(image));
         image.addEventListener('error', (error) => reject(error));
-        image.src = url;
+        // Add a timestamp to bypass local cache which might have stored a non-CORS response
+        const cacheBuster = url.includes('?') ? `&t=${Date.now()}` : `?t=${Date.now()}`;
+        const finalUrl = url.startsWith('http') ? (url + cacheBuster) : url;
+        image.src = finalUrl;
     });
 
 const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<File> => {
     return new Promise(async (resolve, reject) => {
         try {
+            console.log('[getCroppedImg] Starting crop for:', imageSrc);
             const image = await createImage(imageSrc);
+            console.log('[getCroppedImg] Image created successfully');
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
 
@@ -94,12 +108,14 @@ const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<File> => {
 
             canvas.toBlob((blob) => {
                 if (!blob) {
+                    console.error('[getCroppedImg] canvas.toBlob returned null');
                     reject(new Error('Canvas is empty'));
                     return;
                 }
-                const file = new File([blob], 'cropped_image.png', { type: 'image/png' });
+                console.log('[getCroppedImg] Blob created successfully, size:', blob.size);
+                const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
                 resolve(file);
-            }, 'image/png');
+            }, 'image/jpeg');
         } catch (e) {
             reject(e);
         }
@@ -141,12 +157,11 @@ export default function DSettings() {
         onConfirm: () => { }
     });
 
-    // Account settings
-    const [heroImagePreview, setHeroImagePreview] = useState<string>('src\\assets\\imgs\\user.jpg');
+    const [heroImagePreview, setHeroImagePreview] = useState<string>(DEFAULT_HERO_URL);
     const [heroImageFile, setHeroImageFile] = useState<File | null>(null);
     const heroImageInputRef = useRef<HTMLInputElement>(null);
 
-    const [profileImagePreview, setProfileImagePreview] = useState<string>('src\\assets\\imgs\\user.jpg');
+    const [profileImagePreview, setProfileImagePreview] = useState<string>(DEFAULT_USER_IMG);
     const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
     const profileImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -297,13 +312,16 @@ export default function DSettings() {
             return;
         }
 
-        // resolution
-        const img = new Image();
-        img.addEventListener('load', () => {
-            setHeroImageResolution(`${img.naturalWidth}×${img.naturalHeight}`);
-        });
-        img.addEventListener('error', () => setHeroImageResolution(''));
-        img.src = heroImagePreview;
+        // resolution check (try without crossOrigin first to avoid noise)
+        const checkRes = async () => {
+            try {
+                const img = await createImage(heroImagePreview, false);
+                setHeroImageResolution(`${img.naturalWidth}×${img.naturalHeight}`);
+            } catch (err) {
+                setHeroImageResolution('');
+            }
+        };
+        checkRes();
 
         // size
         (async () => {
@@ -314,15 +332,26 @@ export default function DSettings() {
                 } else if (heroImagePreview.startsWith('data:')) {
                     const bytes = sizeFromDataUrl(heroImagePreview);
                     setHeroImageSize(formatBytes(bytes));
-                } else {
-                    // try to fetch blob and read size (may be blocked on CORS but try)
-                    const res = await fetch(heroImagePreview, { method: 'GET' });
-                    if (res.ok) {
-                        const blob = await res.blob();
-                        setHeroImageSize(formatBytes(blob.size));
-                    } else {
-                        setHeroImageSize('');
+                } else if (heroImagePreview.startsWith('http')) {
+                    // try to get metadata which is safer than fetch() for CORS
+                    try {
+                        const fileRef = ref(storage, heroImagePreview);
+                        const metadata = await getMetadata(fileRef);
+                        setHeroImageSize(formatBytes(metadata.size));
+                    } catch (metaErr) {
+                        // Only try fetch if getMetadata failed and it's not a local file
+                        try {
+                            const res = await fetch(heroImagePreview, { method: 'GET' });
+                            if (res.ok) {
+                                const blob = await res.blob();
+                                setHeroImageSize(formatBytes(blob.size));
+                            }
+                        } catch (fetchErr) {
+                            setHeroImageSize('');
+                        }
                     }
+                } else {
+                    setHeroImageSize('');
                 }
             } catch (err) {
                 // ignore errors, just don't show size
@@ -333,8 +362,6 @@ export default function DSettings() {
         })();
 
         return () => {
-            img.onload = null;
-            img.onerror = null;
         };
     }, [heroImagePreview, heroImageFile]);
 
@@ -346,12 +373,16 @@ export default function DSettings() {
             return;
         }
 
-        const img = new Image();
-        img.addEventListener('load', () => {
-            setProfileImageResolution(`${img.naturalWidth}×${img.naturalHeight}`);
-        });
-        img.addEventListener('error', () => setProfileImageResolution(''));
-        img.src = profileImagePreview;
+        // resolution check (try without crossOrigin first to avoid noise)
+        const checkRes = async () => {
+            try {
+                const img = await createImage(profileImagePreview, false);
+                setProfileImageResolution(`${img.naturalWidth}×${img.naturalHeight}`);
+            } catch (err) {
+                setProfileImageResolution('');
+            }
+        };
+        checkRes();
 
         (async () => {
             setProfileImageSizeLoading(true);
@@ -361,14 +392,25 @@ export default function DSettings() {
                 } else if (profileImagePreview.startsWith('data:')) {
                     const bytes = sizeFromDataUrl(profileImagePreview);
                     setProfileImageSize(formatBytes(bytes));
-                } else {
-                    const res = await fetch(profileImagePreview, { method: 'GET' });
-                    if (res.ok) {
-                        const blob = await res.blob();
-                        setProfileImageSize(formatBytes(blob.size));
-                    } else {
-                        setProfileImageSize('');
+                } else if (profileImagePreview.startsWith('http')) {
+                    // try to get metadata which is safer than fetch() for CORS
+                    try {
+                        const fileRef = ref(storage, profileImagePreview);
+                        const metadata = await getMetadata(fileRef);
+                        setProfileImageSize(formatBytes(metadata.size));
+                    } catch (metaErr) {
+                        try {
+                            const res = await fetch(profileImagePreview, { method: 'GET' });
+                            if (res.ok) {
+                                const blob = await res.blob();
+                                setProfileImageSize(formatBytes(blob.size));
+                            }
+                        } catch (fetchErr) {
+                            setProfileImageSize('');
+                        }
                     }
+                } else {
+                    setProfileImageSize('');
                 }
             } catch (err) {
                 setProfileImageSize('');
@@ -378,25 +420,37 @@ export default function DSettings() {
         })();
 
         return () => {
-            img.onload = null;
-            img.onerror = null;
         };
     }, [profileImagePreview, profileImageFile]);
 
     // Load profile info from Firestore
     useEffect(() => {
-        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Profile'), (snap) => {
+        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'), (snap) => {
             if (snap.exists()) {
                 const data = snap.data();
-                if (data.imageUrl && !profileImagePreview) setProfileImagePreview(data.imageUrl);
-                if (data.name) setProfileName(data.name);
-                if (data.title) setProfileTitle(data.title);
+                // Only update if not currently dirty with unsaved local changes
+                if (data.imageUrl && !profileImageDirty) setProfileImagePreview(data.imageUrl);
+                if (data.name && !isEditingProfile) setProfileName(data.name);
+                if (data.title && !isEditingProfile) setProfileTitle(data.title);
             }
         }, (err) => {
             console.error('Error fetching profile settings', err);
         });
         return () => unsubscribe();
-    }, []);
+    }, [profileImageDirty, isEditingProfile]);
+
+    // Load hero image from Firestore
+    useEffect(() => {
+        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Hero'), (snap) => {
+            if (snap.exists()) {
+                const data = snap.data();
+                if (data.imageUrl && !heroImageFile) setHeroImagePreview(data.imageUrl);
+            }
+        }, (err) => {
+            console.error('Error fetching hero settings', err);
+        });
+        return () => unsubscribe();
+    }, [heroImageFile]);
 
     // Cropper State
     const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -456,7 +510,7 @@ export default function DSettings() {
             if (heroImageFile) {
                 const fileExtension = heroImageFile.name.split('.').pop();
                 const fileName = `Hero.image.${fileExtension}`;
-                const storageRef = ref(storage, `src/imgs/${fileName}`);
+                const storageRef = ref(storage, `src/imgs/Settings/${fileName}`);
                 await uploadBytes(storageRef, heroImageFile);
                 const downloadURL = await getDownloadURL(storageRef);
 
@@ -514,12 +568,12 @@ export default function DSettings() {
 
         setGlobalLoading(true);
         try {
-            const profileSnap = await getDoc(doc(db, 'Settings', 'Profile'));
+            const profileSnap = await getDoc(doc(db, 'Settings', 'Account'));
             if (profileSnap.exists()) {
                 const data = profileSnap.data();
                 setProfileName(data.name ?? 'Your Name');
                 setProfileTitle(data.title ?? 'Job Title');
-                setProfileImagePreview(data.imageUrl ?? 'src/assets/imgs/user.jpg');
+                setProfileImagePreview(data.imageUrl ?? DEFAULT_USER_IMG);
                 setProfileImageFile(null);
                 setProfileImageBackupPreview(null);
                 setProfileImageBackupFile(null);
@@ -529,7 +583,7 @@ export default function DSettings() {
             const heroSnap = await getDoc(doc(db, 'Settings', 'Hero'));
             if (heroSnap.exists()) {
                 const heroData = heroSnap.data();
-                setHeroImagePreview(heroData.imageUrl ?? 'src/assets/imgs/user.jpg');
+                setHeroImagePreview(heroData.imageUrl ?? DEFAULT_HERO_URL);
                 setHeroImageFile(null);
             }
 
@@ -803,10 +857,30 @@ export default function DSettings() {
                     setHasUnsavedChanges(true);
                     setProfileImageDirty(true);
                 }
-            } catch (e) {
+            } catch (e: any) {
                 console.error("Crop failed", e);
-                setAlert({ show: true, type: 'error', message: 'Failed to crop image.' });
+                // If it's a security/CORS error on a remote URL, give a specific hint
+                if (originalImageSrc.startsWith('http')) {
+                    setAlert({
+                        show: true,
+                        type: 'error',
+                        message: 'CORS Blocked: Please run the "gsutil" command in your Firebase console to allow image cropping.'
+                    });
+                } else {
+                    setAlert({ show: true, type: 'error', message: 'Failed to crop image.' });
+                }
             }
+            setIsCropping(false);
+            setOriginalImageSrc(null);
+        }
+    };
+
+    const handleSkipCrop = () => {
+        if (originalImageSrc) {
+            setProfileImagePreview(originalImageSrc);
+            setProfileImageFile(null); // It's a remote URL, no local file to upload
+            setProfileImageDirty(true);
+            setHasUnsavedChanges(true);
             setIsCropping(false);
             setOriginalImageSrc(null);
         }
@@ -831,7 +905,7 @@ export default function DSettings() {
     // Persist profile name/title to Firestore (used by Apply All)
     const handleSaveProfileInfo = async () => {
         try {
-            await setDoc(doc(db, 'Settings', 'Profile'), { name: profileName, title: profileTitle }, { merge: true });
+            await setDoc(doc(db, 'Settings', 'Account'), { name: profileName, title: profileTitle }, { merge: true });
         } catch (err) {
             console.error('Error saving profile info', err);
             setAlert({ show: true, type: 'error', message: 'Failed to update profile.' });
@@ -846,16 +920,14 @@ export default function DSettings() {
             setGlobalLoading(true);
 
             if (profileImageFile) {
-                const fileExtension = profileImageFile.name.split('.').pop();
-                const fileName = `Profile.${fileExtension}`;
-                const storageRef = ref(storage, `src/imgs/${fileName}`);
+                const storageRef = ref(storage, `src/imgs/Settings/Profile_${Date.now()}_cropped.jpg`);
                 await uploadBytes(storageRef, profileImageFile);
                 const downloadURL = await getDownloadURL(storageRef);
 
-                await setDoc(doc(db, 'Settings', 'Profile'), { imageUrl: downloadURL }, { merge: true });
+                await setDoc(doc(db, 'Settings', 'Account'), { imageUrl: downloadURL }, { merge: true });
             } else if (profileImagePreview && profileImagePreview.startsWith('http')) {
                 // Selected from Firebase / remote URL - just persist the URL
-                await setDoc(doc(db, 'Settings', 'Profile'), { imageUrl: profileImagePreview }, { merge: true });
+                await setDoc(doc(db, 'Settings', 'Account'), { imageUrl: profileImagePreview }, { merge: true });
             } else {
                 // Local data URL without a file - nothing to upload to storage
                 return;
@@ -889,8 +961,8 @@ export default function DSettings() {
     const selectedTz = timezones.find(tz => tz.value === selectedTimezone);
 
     if (isCropping && originalImageSrc) {
-        return (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-lg z-[2000] flex flex-col items-center justify-center animate-fade-in">
+        return createPortal(
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-lg z-[3000] flex flex-col items-center justify-center animate-fade-in" style={{ padding: '20px' }}>
                 <div className="w-full max-w-lg mx-auto">
                     {/* Cropper Container (Header + Canvas + Controls share one background) */}
                     <div className={`relative w-full overflow-hidden rounded-2xl ${isDark ? 'gradient-radial-dark' : 'gradient-radial-light'}`}>
@@ -981,6 +1053,22 @@ export default function DSettings() {
                                 <div className="flex justify-end gap-3 items-center">
                                     <button
                                         type="button"
+                                        onClick={handleCropSave}
+                                        className="btn btn-primary"
+                                    >
+                                        Save Crop
+                                    </button>
+                                    {originalImageSrc.startsWith('http') && (
+                                        <button
+                                            type="button"
+                                            onClick={handleSkipCrop}
+                                            className="btn btn-secondary px-4 py-2 text-sm border-white/20 bg-white/5 hover:bg-white/10"
+                                        >
+                                            Skip & Use Original
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
                                         onClick={handleCropCancel}
                                         className="btn btn-secondary"
                                     >
@@ -995,8 +1083,9 @@ export default function DSettings() {
                         </div>
                     </div>
                 </div>
-            </div>
-        )
+            </div>,
+            document.body
+        );
     }
 
     return (
@@ -1225,8 +1314,15 @@ export default function DSettings() {
                                 <User size={22} className="mr-3" />
                                 Hero Section Image
                             </h3>
-                            <div className="group relative overflow-hidden max-w-[360px] mx-auto md:mx-0 rounded-md" style={{ paddingTop: '125%' }}>
-                                <img src={heroImagePreview} alt="Hero Preview" className="absolute inset-0 w-full h-full object-cover rounded-md" />
+                            <div className="group relative overflow-hidden max-w-[360px] mx-auto md:mx-0 rounded-md bg-zinc-900/50 flex items-center justify-center border border-white/5" style={{ paddingTop: '125%' }}>
+                                {heroImagePreview ? (
+                                    <img src={heroImagePreview} alt="Hero Preview" className="absolute inset-0 w-full h-full object-cover rounded-md" />
+                                ) : (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-2">
+                                        <User size={48} className="opacity-20" />
+                                        <span className="text-xs font-semibold uppercase tracking-widest opacity-30">No Image</span>
+                                    </div>
+                                )}
 
                                 <div className="absolute inset-0 bg-white/10 backdrop-blur-sm flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity rounded-md">
                                     <button
@@ -1269,8 +1365,12 @@ export default function DSettings() {
                             </h3>
                             <div className="flex flex-row sm:flex-row items-center gap-4">
                                 <div className="group relative flex-shrink-0">
-                                    <div className="w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-blue-400 p-0.5 flex-shrink-0 mx-auto sm:mx-0">
-                                        <img src={profileImagePreview} alt="Profile Preview" className="w-full h-full object-cover rounded-full" />
+                                    <div className="w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-blue-400 p-0.5 flex-shrink-0 mx-auto sm:mx-0 bg-zinc-900/50 flex items-center justify-center">
+                                        {profileImagePreview ? (
+                                            <img src={profileImagePreview} alt="Profile Preview" className="w-full h-full object-cover rounded-full" />
+                                        ) : (
+                                            <User size={40} className="text-white/20" />
+                                        )}
                                     </div>
 
                                     <div className="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity bg-white/10 backdrop-blur-sm rounded-full">
@@ -1421,9 +1521,13 @@ export default function DSettings() {
                         setHeroImageFile(null);
                         setHasUnsavedChanges(true);
                     } else if (firebaseSelectTarget === 'profile') {
-                        setProfileImagePreview(url);
-                        setProfileImageFile(null);
-                        setHasUnsavedChanges(true);
+                        // Backup current profile if not already backed up
+                        if (!profileImageBackupPreview) {
+                            setProfileImageBackupPreview(profileImagePreview);
+                            setProfileImageBackupFile(profileImageFile);
+                        }
+                        setOriginalImageSrc(url);
+                        setIsCropping(true);
                     }
                     setFirebaseSelectTarget(null);
                     setFirebaseBrowserOpen(false);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, Plus, Image as ImageIcon, Github, ExternalLink, Sparkles, Check, Trash2, Eye, Edit } from 'lucide-react';
+import { X, Upload, Plus, Image as ImageIcon, Github, ExternalLink, Trash2, Eye, Edit } from 'lucide-react';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import anime from 'animejs';
@@ -14,8 +14,8 @@ const mockTags = [
 ];
 
 const mockContributors = [
-    { id: '1', name: 'John Doe', role: 'Full Stack Developer', image: 'https://ui-avatars.com/api/?name=John+Doe&background=3395ff&color=fff', socials: { github: '', linkedin: '', facebook: '', instagram: '', portfolio: '' } },
-    { id: '2', name: 'Jane Smith', role: 'UI/UX Designer', image: 'https://ui-avatars.com/api/?name=Jane+Smith&background=8b5cf6&color=fff', socials: { github: '', linkedin: '', facebook: '', instagram: '', portfolio: '' } }
+    { id: '1', name: 'John Doe', role: 'Full Stack Developer', image: '', socials: { github: '', linkedin: '', facebook: '', instagram: '', portfolio: '' } },
+    { id: '2', name: 'Jane Smith', role: 'UI/UX Designer', image: '', socials: { github: '', linkedin: '', facebook: '', instagram: '', portfolio: '' } }
 ];
 
 export interface ProjectData {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
+import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User } from 'lucide-react';
 
 // Import SVG icons
 import htmlIcon from '../assets/svgs/html.svg';
@@ -71,17 +71,47 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const [isMobile, setIsMobile] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [isClosing, setIsClosing] = useState(false);
+    const [availableTags, setAvailableTags] = useState<any[]>([]);
 
     // Keep internal project state in sync with incoming props
     useEffect(() => {
         setProject(initialProject);
     }, [initialProject]);
 
+    // Fetch Global Tags for Icons/Colors
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'Tags', 'Tags'), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const loaded = Object.entries(data).map(([id, val]: [string, any]) => ({
+                    id,
+                    name: val.Name || 'Untitled',
+                    color: val.Color || '#60a5fa',
+                    iconSvg: val.Icon || ''
+                }));
+                setAvailableTags(loaded);
+            }
+        });
+        return () => unsub();
+    }, []);
+
     // Sync with Firestore for real-time views
     useEffect(() => {
         if (!project.id) return;
 
         const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+
+        const resolveTag = (t: any) => {
+            const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+            // Try to find in global tags
+            const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
+
+            return {
+                name,
+                color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : (globalTag?.color || getTechColor(name)),
+                iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (globalTag?.iconSvg || getStackIcon(name) || '')
+            };
+        };
 
         // Subscribe to real-time updates for views AND project details
         const unsub = onSnapshot(projectRef, (docSnap) => {
@@ -92,24 +122,14 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                 setProject(prev => {
                     const statusV = data.Views || {};
                     const rawStack = data.Stack || [];
-                    const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack)).map((t: any) => {
-                        const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
-                        return {
-                            name,
-                            color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
-                            iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
-                        };
-                    }).filter(t => t.name !== 'Unix');
+                    const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack))
+                        .map(resolveTag)
+                        .filter(t => t.name !== 'Unix');
 
                     const rawTags = data.Tags ? Object.values(data.Tags) : [];
-                    const normalizedTags = rawTags.map((t: any) => {
-                        const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
-                        return {
-                            name,
-                            color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
-                            iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
-                        };
-                    }).filter(t => t.name !== 'Unix');
+                    const normalizedTags = rawTags
+                        .map(resolveTag)
+                        .filter(t => t.name !== 'Unix');
 
                     const updated = {
                         ...prev,
@@ -147,7 +167,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         incrementViews();
 
         return () => unsub();
-    }, [project.id]);
+    }, [project.id, availableTags]);
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
@@ -251,20 +271,32 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const displayFullDescription = project.fullDescription || project.description || 'No description available.';
 
     const displayTags = (project.tags && project.tags.length > 0 && typeof project.tags[0] === 'object')
-        ? project.tags.map(t => ({
-            name: t.name,
-            color: t.color || getTechColor(t.name),
-            icon: t.iconSvg || getStackIcon(t.name)
-        }))
+        ? project.tags.map(t => {
+            // Try to find in global tags again for latest icon/color
+            const globalTag = availableTags.find(gt => gt.name.toLowerCase() === t.name.toLowerCase());
+            return {
+                name: t.name,
+                color: t.color || globalTag?.color || getTechColor(t.name),
+                icon: t.iconSvg || globalTag?.iconSvg || getStackIcon(t.name)
+            };
+        })
         : [
-            ...(project.stack || []).map(tech => ({ name: tech, color: getTechColor(tech), icon: getStackIcon(tech) })),
+            ...(project.stack || []).map(tech => {
+                const globalTag = availableTags.find(gt => gt.name.toLowerCase() === tech.toLowerCase());
+                return {
+                    name: tech,
+                    color: globalTag?.color || getTechColor(tech),
+                    icon: globalTag?.iconSvg || getStackIcon(tech)
+                };
+            }),
             ...(project.tags || []).map(t => {
                 const isString = typeof t === 'string';
                 const name = isString ? t : t.name;
+                const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
                 return {
                     name: name,
-                    color: isString ? getTechColor(name) : (t.color || getTechColor(name)),
-                    icon: isString ? getStackIcon(t) : (t.iconSvg || getStackIcon(t.name))
+                    color: isString ? (globalTag?.color || getTechColor(name)) : (t.color || globalTag?.color || getTechColor(name)),
+                    icon: isString ? (globalTag?.iconSvg || getStackIcon(t)) : (t.iconSvg || globalTag?.iconSvg || getStackIcon(t.name))
                 };
             })
         ];
@@ -581,16 +613,22 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                             const roleBadge = e.currentTarget.querySelector('.role-badge') as HTMLElement;
                                             if (roleBadge) { roleBadge.style.background = 'rgba(96,165,250,0.1)'; roleBadge.style.borderColor = 'rgba(96,165,250,0.2)'; }
                                         }}>
-                                            <div style={{ position: 'relative', flexShrink: 0 }}>
-                                                <img
-                                                    src={c.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.name)}&background=60a5fa&color=fff`}
-                                                    style={{
-                                                        width: '50px', height: '50px', borderRadius: '18px', objectFit: 'cover',
-                                                        border: '2px solid rgba(255,255,255,0.05)',
-                                                        transition: 'all 0.5s ease'
-                                                    }}
-                                                    alt=""
-                                                />
+                                            <div style={{
+                                                position: 'relative', flexShrink: 0,
+                                                width: '50px', height: '50px', borderRadius: '18px', overflow: 'hidden',
+                                                border: '2px solid rgba(255,255,255,0.05)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                backgroundColor: 'rgba(255,255,255,0.03)'
+                                            }}>
+                                                {c.image ? (
+                                                    <img
+                                                        src={c.image}
+                                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                        alt={c.name}
+                                                    />
+                                                ) : (
+                                                    <User size={24} className="text-zinc-500/50" />
+                                                )}
                                             </div>
 
                                             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>

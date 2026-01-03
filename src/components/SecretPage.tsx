@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import userImage from '../assets/imgs/user.jpg';
+import { User } from 'lucide-react';
 import { getAuth, GoogleAuthProvider, signInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface SecretPageProps {
     onNavigate?: (section: any) => void;
@@ -10,22 +12,35 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
     const [isDark, setIsDark] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [profile, setProfile] = useState<{ imageUrl?: string; name?: string; title?: string }>({
+        imageUrl: '',
+        name: 'Action Center',
+        title: 'Authorized Revil Only'
+    });
     const auth = getAuth();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
 
     useEffect(() => {
-        const checkTheme = () => {
-            setIsDark(document.documentElement.classList.contains('dark'));
-        };
-
+        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
         checkTheme();
         const observer = new MutationObserver(checkTheme);
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
 
-        return () => {
-            observer.disconnect();
-        };
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'Settings', 'Account'), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setProfile({
+                    imageUrl: data.imageUrl || '',
+                    name: data.name || 'Action Center',
+                    title: data.title || 'Authorized Revil Only'
+                });
+            }
+        });
+        return () => unsub();
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -37,21 +52,12 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
             const result = await signInWithPopup(auth, provider);
             const details = getAdditionalUserInfo(result);
 
-            // Check if user is new (not in Firebase Auth)
             if (details?.isNewUser) {
-                // New user detected. Since we only want to allow existing users,
-                // we delete this new account immediately so it's not recorded.
                 await deleteUser(result.user);
                 setError('Wrong Shot.');
                 return;
             }
 
-            // Navigate to dashboard
-            if (onNavigate) {
-                onNavigate('dashboard');
-            }
-
-            // Existing user, navigate
             if (onNavigate) {
                 onNavigate('dashboard');
             }
@@ -73,42 +79,47 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
                     boxShadow: isDark ? '0 8px 24px rgba(0, 0, 0, 0.5)' : '0 8px 24px rgba(0, 0, 0, 0.2)',
                     border: `4px solid ${isDark ? '#ffffff20' : '#ffffff80'}`
                 }}>
-                    <img
-                        src={userImage}
-                        alt="User"
-                        className="w-full h-full object-cover"
-                    />
+                    {profile.imageUrl ? (
+                        <img
+                            src={profile.imageUrl}
+                            alt={profile.name}
+                            className="w-full h-full object-cover"
+                        />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-zinc-900/50">
+                            <User size={48} className="text-zinc-500/30" />
+                        </div>
+                    )}
                 </div>
 
                 <div className="text-center">
                     <h2 className="heading-lg mb-2">
-                        Action Center
+                        {profile.name}
                     </h2>
                     <p className="text-sec">
-                        Authorized Revil Only
+                        {profile.title}
                     </p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="w-full flex flex-col gap-3">
+                <form onSubmit={handleSubmit} className="w-full flex flex-col gap-4 mt-2">
                     {error && (
-                        <div className="mb-8 p-3 bg-red-500/10 text-red-500 rounded-lg text-sm text-center">
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
                             {error}
                         </div>
                     )}
-
                     <button
                         type="submit"
                         disabled={loading}
-                        className={`btn btn-primary w-full flex items-center justify-center gap-2 ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
-                        style={{
-                            backgroundColor: loading ? 'rgb(156, 163, 175)' : '#4285f4',
-                            boxShadow: loading ? 'none' : '0 4px 12px rgba(66, 133, 244, 0.3)'
-                        }}
+                        className={`btn btn-primary w-full flex items-center justify-center gap-3 ${loading ? 'opacity-70 cursor-wait' : ''}`}
                     >
-                        {loading ? 'Loging in...' : 'Login with Google'}
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5 bg-white rounded-full p-0.5" />
+                        {loading ? 'Authorizing...' : 'Authorize Access'}
                     </button>
-                </form>
 
+                    <p className="text-xs text-center text-sec opacity-50 mt-2">
+                        Protected by Revil Security Systems
+                    </p>
+                </form>
             </div>
         </div>
     );

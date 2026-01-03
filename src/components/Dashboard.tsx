@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import anime from 'animejs';
-import { Layout, Eye, Settings, Bird, LogOut, Tag, Lock } from 'lucide-react';
+import { Layout, Eye, Settings, Bird, LogOut, Tag, Lock, User } from 'lucide-react';
 import DProjects from './dashboard/D-Projects';
 import DTags from './dashboard/D-Tags';
 import DLinks from './dashboard/D-Links';
 import DSettings from './dashboard/D-Settings';
 import DPasswords from './dashboard/D-Passwords';
 import DCanary from './dashboard/D-Canary';
-import userImg from '../assets/imgs/user.jpg';
+// import userImg from '../assets/imgs/user.jpg';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface DashboardProps {
     onNavigate?: (section: any) => void;
@@ -17,6 +19,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const [isDark, setIsDark] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [activeTab, setActiveTab] = useState('projects');
+    const [profileImage, setProfileImage] = useState<string>('');
 
     // Touch state for swipe navigation (using refs for performance)
     const touchStartRef = useRef<{ x: number, y: number } | null>(null);
@@ -26,6 +29,16 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const isExtraSmall = windowWidth < 400;  // 320px - 399px
     const isSmall = windowWidth < 640;        // 400px - 639px
     const isMobile = windowWidth < 768;       // 640px - 767px
+
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'Settings', 'Account'), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.imageUrl) setProfileImage(data.imageUrl);
+            }
+        });
+        return () => unsub();
+    }, []);
 
     useEffect(() => {
         const checkTheme = () => {
@@ -339,15 +352,19 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                         alignItems: 'center',
                         justifyContent: 'center'
                     }}>
-                        <img
-                            src={userImg}
-                            alt="User Avatar"
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover'
-                            }}
-                        />
+                        {profileImage ? (
+                            <img
+                                src={profileImage}
+                                alt="User Avatar"
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover'
+                                }}
+                            />
+                        ) : (
+                            <User className="text-zinc-500/50" />
+                        )}
                     </div>
                     {!isMobile && (
                         <span style={{

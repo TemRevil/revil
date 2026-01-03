@@ -236,7 +236,7 @@ const DTags = () => {
 
             // Handle file upload if a new file was provided
             if (data.iconFile) {
-                const storageRef = ref(storage, `tags/${id}_${data.iconFile.name}`);
+                const storageRef = ref(storage, `src/svgs/${id}_${data.iconFile.name}`);
                 await uploadBytes(storageRef, data.iconFile);
                 iconUrl = await getDownloadURL(storageRef);
             }

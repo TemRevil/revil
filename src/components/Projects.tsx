@@ -230,6 +230,7 @@ const Projects = () => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const handwritingRef = useRef<HTMLDivElement>(null);
     const [availableContributors, setAvailableContributors] = useState<any[]>([]);
+    const [availableTags, setAvailableTags] = useState<any[]>([]);
     const [projectsData, setProjectsData] = useState<Project[]>([]);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [showProjectModal, setShowProjectModal] = useState(false);
@@ -277,9 +278,24 @@ const Projects = () => {
             });
         });
 
+        // Fetch Global Tags for Icons/Colors
+        const unsubTags = onSnapshot(doc(db, 'Tags', 'Tags'), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const loaded = Object.entries(data).map(([id, val]: [string, any]) => ({
+                    id,
+                    name: val.Name || 'Untitled',
+                    color: val.Color || '#60a5fa',
+                    iconSvg: val.Icon || ''
+                }));
+                setAvailableTags(loaded);
+            }
+        });
+
         return () => {
             unsubDoc();
             unsubCol();
+            unsubTags();
         };
     }, []);
 
@@ -313,30 +329,32 @@ const Projects = () => {
                     name,
                     role: projectRole || (fullContrib ? (fullContrib.role || fullContrib.jobTitle || 'Contributor') : 'Contributor'),
                     jobTitle: fullContrib ? (fullContrib.role || fullContrib.jobTitle || 'Contributor') : 'Contributor',
-                    image: fullContrib?.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=60a5fa&color=fff`,
+                    image: fullContrib?.image || '',
                     links: fullContrib?.links || {}
                 };
             }) : [];
 
-            const rawStack = data.Stack || [];
-            const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack)).map((t: any) => {
+            const resolveTag = (t: any) => {
                 const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+                // Try to find in global tags
+                const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
+
                 return {
                     name,
-                    color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
-                    iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
+                    color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : (globalTag?.color || getTechColor(name)),
+                    iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (globalTag?.iconSvg || getStackIcon(name) || '')
                 };
-            }).filter(t => t.name !== 'Unix');
+            };
+
+            const rawStack = data.Stack || [];
+            const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack))
+                .map(resolveTag)
+                .filter(t => t.name !== 'Unix');
 
             const rawTags = data.Tags ? Object.values(data.Tags) : [];
-            const normalizedTags = rawTags.map((t: any) => {
-                const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
-                return {
-                    name,
-                    color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
-                    iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
-                };
-            }).filter(t => t.name !== 'Unix');
+            const normalizedTags = rawTags
+                .map(resolveTag)
+                .filter(t => t.name !== 'Unix');
 
             const displayTags = normalizedStack.length > 0 ? normalizedStack : normalizedTags;
 
@@ -366,7 +384,7 @@ const Projects = () => {
             const updated = loaded.find(p => p.id === selectedProject.id);
             if (updated) setSelectedProject(updated);
         }
-    }, [rawProjects, availableContributors]);
+    }, [rawProjects, availableContributors, availableTags]);
 
     // Levenshtein distance for fuzzy search
     const getLevenshteinDistance = (a: string, b: string) => {

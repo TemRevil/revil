@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import anime from 'animejs';
-import userImage from '../assets/imgs/user.jpg';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+
+const DEFAULT_HERO_URL = "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FHero.image.jpg?alt=media&token=1d698d9b-468a-42e7-92c6-b9cb127a5fc6";
 
 // True handwriting animation - letter by letter
 const HandwritingText = ({
@@ -334,11 +335,19 @@ const Hero = () => {
                             boxShadow: 'var(--card-shadow)'
                         }}>
                             <div className="relative w-full max-w-[320px] aspect-[4/5] overflow-hidden bg-gray-200 rounded-sm">
-                                <img
-                                    src={heroImageUrl || userImage}
-                                    alt="User"
-                                    className="w-full h-full object-cover"
-                                />
+                                {heroImageUrl ? (
+                                    <img
+                                        src={heroImageUrl}
+                                        alt="User"
+                                        className="w-full h-full object-cover"
+                                    />
+                                ) : (
+                                    <img
+                                        src={DEFAULT_HERO_URL}
+                                        alt="User"
+                                        className="w-full h-full object-cover"
+                                    />
+                                )}
                             </div>
 
                             {/* Numbers */}

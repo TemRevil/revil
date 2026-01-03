@@ -226,10 +226,12 @@ const DProjects = () => {
                 const rawStack = data.Stack || [];
                 const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack)).map((t: any) => {
                     const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+                    const globalTag = availableTags.find((gt: any) => gt.name?.toLowerCase() === name.toLowerCase());
+
                     return {
                         name,
-                        color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : getTechColor(name),
-                        iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (getStackIcon(name) || '')
+                        color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : (globalTag?.color || getTechColor(name)),
+                        iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (globalTag?.iconSvg || getStackIcon(name) || '')
                     };
                 }).filter(t => t.name !== 'Unix');
 
