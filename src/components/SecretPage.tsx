@@ -92,12 +92,12 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
                     )}
                 </div>
 
-                <div className="text-center">
-                    <h2 className="heading-lg mb-2">
-                        {profile.name}
+                <div className="text-center flex flex-col gap-1.5">
+                    <h2 className="text-2xl font-black tracking-tighter uppercase leading-none">
+                        Identity Verification
                     </h2>
-                    <p className="text-sec">
-                        {profile.title}
+                    <p className="text-[10px] font-black uppercase tracking-[0.5em] opacity-30">
+                        Encrypted Data Protocol
                     </p>
                 </div>
 

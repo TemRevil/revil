@@ -182,6 +182,7 @@ export default function DSettings() {
     const [profileImageBackupPreview, setProfileImageBackupPreview] = useState<string | null>(null);
     const [profileImageBackupFile, setProfileImageBackupFile] = useState<File | null>(null);
     const [profileImageDirty, setProfileImageDirty] = useState(false);
+    const [profileInfoDirty, setProfileInfoDirty] = useState(false);
     const [profileImageUploading, setProfileImageUploading] = useState(false);
 
     // Hero image resolution & size display
@@ -430,21 +431,21 @@ export default function DSettings() {
                 const data = snap.data();
                 // Only update if not currently dirty with unsaved local changes
                 if (data.imageUrl && !profileImageDirty) setProfileImagePreview(data.imageUrl);
-                if (data.name && !isEditingProfile) setProfileName(data.name);
-                if (data.title && !isEditingProfile) setProfileTitle(data.title);
+                if (data.name && !isEditingProfile && !profileInfoDirty) setProfileName(data.name);
+                if (data.title && !isEditingProfile && !profileInfoDirty) setProfileTitle(data.title);
             }
         }, (err) => {
             console.error('Error fetching profile settings', err);
         });
         return () => unsubscribe();
-    }, [profileImageDirty, isEditingProfile]);
+    }, [profileImageDirty, isEditingProfile, profileInfoDirty]);
 
     // Load hero image from Firestore
     useEffect(() => {
-        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Hero'), (snap) => {
+        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'), (snap) => {
             if (snap.exists()) {
                 const data = snap.data();
-                if (data.imageUrl && !heroImageFile) setHeroImagePreview(data.imageUrl);
+                if (data.heroImageUrl && !heroImageFile) setHeroImagePreview(data.heroImageUrl);
             }
         }, (err) => {
             console.error('Error fetching hero settings', err);
@@ -514,10 +515,10 @@ export default function DSettings() {
                 await uploadBytes(storageRef, heroImageFile);
                 const downloadURL = await getDownloadURL(storageRef);
 
-                await setDoc(doc(db, 'Settings', 'Hero'), { imageUrl: downloadURL }, { merge: true });
+                await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrl: downloadURL }, { merge: true });
             } else if (heroImagePreview && heroImagePreview.startsWith('http')) {
                 // Selected from Firebase / remote URL - just persist the URL
-                await setDoc(doc(db, 'Settings', 'Hero'), { imageUrl: heroImagePreview }, { merge: true });
+                await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrl: heroImagePreview }, { merge: true });
             } else {
                 // Local data URL without a file - nothing to upload to storage
                 return;
@@ -548,6 +549,7 @@ export default function DSettings() {
                 handleSaveProfileInfo()
             ]);
 
+            setProfileInfoDirty(false);
             setHasUnsavedChanges(false);
             setAlert({ show: true, type: 'success', message: 'All settings applied successfully!' });
             setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
@@ -578,12 +580,13 @@ export default function DSettings() {
                 setProfileImageBackupPreview(null);
                 setProfileImageBackupFile(null);
                 setProfileImageDirty(false);
+                setProfileInfoDirty(false);
             }
 
-            const heroSnap = await getDoc(doc(db, 'Settings', 'Hero'));
+            const heroSnap = await getDoc(doc(db, 'Settings', 'Account'));
             if (heroSnap.exists()) {
                 const heroData = heroSnap.data();
-                setHeroImagePreview(heroData.imageUrl ?? DEFAULT_HERO_URL);
+                setHeroImagePreview(heroData.heroImageUrl ?? DEFAULT_HERO_URL);
                 setHeroImageFile(null);
             }
 
@@ -1089,7 +1092,7 @@ export default function DSettings() {
     }
 
     return (
-        <div className="h-[90%] flex flex-col gap-6">
+        <div className="flex flex-col gap-6 min-h-full relative">
             {/* Custom Alert */}
             {alert.show && (
                 <Alert
@@ -1428,9 +1431,10 @@ export default function DSettings() {
                                                     <button onClick={() => {
                                                         // Stage changes locally; Apply Changes will persist to Firebase
                                                         setHasUnsavedChanges(true);
+                                                        setProfileInfoDirty(true);
                                                         setIsEditingProfile(false);
                                                         setProfileBackup(null);
-                                                        setAlert({ show: true, type: 'success', message: 'Profile changes staged. Click Apply Changes to save to Firebase.' });
+                                                        setAlert({ show: true, type: 'success', message: 'Profile changes staged. Click Apply Changes at the bottom of the page to save permanently.' });
                                                         setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
                                                     }} className="btn btn-primary px-3 py-2"><Save size={16} /><span className="hidden sm:inline ml-2">Save</span>
                                                     </button>
@@ -1487,26 +1491,32 @@ export default function DSettings() {
                 initialData={editingStack}
             />
 
-            {/* Floating Apply Button */}
+            {/* Sticky Action Bar */}
             {
                 hasUnsavedChanges && (
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1000] animate-slide-up">
-                        <div className="flex items-center gap-3">
-                            <button
-                                id="apply-all-btn"
-                                onClick={handleApplyAll}
-                                className="btn-primary px-6 py-3 rounded-md shadow-lg shadow-blue-500/40 text-base flex items-center gap-2 hover:scale-105 transition-transform"
-                            >
-                                <Save size={20} /> Apply Changes
-                            </button>
+                    <div className="sticky bottom-6 left-1/2 -translate-x-1/2 z-[5000] p-4 mt-auto animate-slide-up flex justify-center items-center gap-4 rounded-full shadow-2xl w-max mx-auto" style={{
+                        background: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)',
+                        backdropFilter: 'blur(32px)',
+                        WebkitBackdropFilter: 'blur(32px)',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)'
+                    }}>
+                        <button
+                            id="apply-all-btn"
+                            onClick={handleApplyAll}
+                            className="btn-primary px-8 py-3 rounded-full shadow-2xl shadow-blue-500/20 text-[15px] font-bold flex items-center gap-2 hover:scale-105 transition-all"
+                        >
+                            <Save size={20} /> Apply Changes
+                        </button>
 
-                            <button
-                                onClick={handleCancelAll}
-                                className="btn btn-secondary px-4 py-3 rounded-md"
-                            >
-                                Cancel
-                            </button>
-                        </div>
+                        <button
+                            onClick={handleCancelAll}
+                            className={`px-6 py-3 rounded-full border transition-all font-semibold text-[14px] ${isDark
+                                    ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
+                                    : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
+                                }`}
+                        >
+                            Cancel Changes
+                        </button>
                     </div>
                 )
             }
