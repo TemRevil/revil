@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { LayoutGroup, AnimatePresence } from 'framer-motion';
 import Hero from './components/Hero';
 import Navbar from './components/Navbar';
 import Stack from './components/Stack';
@@ -8,6 +9,7 @@ import MContact from './components/M-Contact';
 import SecretPage from './components/SecretPage';
 import Dashboard from './components/Dashboard';
 import { ChevronRight } from 'lucide-react';
+import Loader from './components/reactbits/Loader';
 
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard';
 
@@ -16,10 +18,37 @@ function App() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextSection, setNextSection] = useState<Section>('home');
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  const [appLoading, setAppLoading] = useState(false);
+  const [isDataReady, setIsDataReady] = useState(false);
+  const [isWindowReady, setIsWindowReady] = useState(false);
 
-  // Use the global loading state (the actual MLoader is rendered in LoadingProvider)
-  // but if we want it strictly "over everything" in App, we could also move it here.
-  // Actually, LoadingProvider renders it AFTER children, which is fine for fixed z-index.
+  useEffect(() => {
+    // Phase 1: Window/Assets Load
+    const handleLoad = () => setIsWindowReady(true);
+
+    if (document.readyState === 'complete') {
+      setIsWindowReady(true);
+    } else {
+      window.addEventListener('load', handleLoad);
+      return () => window.removeEventListener('load', handleLoad);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Phase 2: Orchestration - Hide loader when both are ready
+    if (isDataReady && isWindowReady) {
+      setAppLoading(false);
+    } else {
+      setAppLoading(true);
+    }
+
+    // Safety timeout: don't stay infinite if something hangs (e.g. broken script/data)
+    const safety = setTimeout(() => {
+      setAppLoading(false);
+    }, 8000);
+
+    return () => clearTimeout(safety);
+  }, [isDataReady, isWindowReady]);
 
   const navigateTo = useCallback((section: Section) => {
     if (section !== currentSection && !isTransitioning) {
@@ -50,7 +79,7 @@ function App() {
   const renderSection = () => {
     switch (currentSection) {
       case 'home':
-        return <Hero />;
+        return <Hero onLoaded={() => setIsDataReady(true)} />;
       case 'stack':
         return <Stack />;
       case 'projects':
@@ -199,6 +228,7 @@ function App() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
+      <Loader isOpen={appLoading} isFullScreen={true} />
       {renderSection()}
       {currentSection !== 'secret' && (
         <button
@@ -237,10 +267,16 @@ function App() {
           <ChevronRight size={20} />
         </button>
       )}
-      {currentSection !== 'dashboard' && (
-        <Navbar onNavigate={navigateTo} currentSection={currentSection} onOpenContact={openContactModal} />
-      )}
-      <MContact isOpen={isContactModalOpen} onClose={closeContactModal} />
+      <LayoutGroup>
+        {currentSection !== 'dashboard' && (
+          <Navbar onNavigate={navigateTo} currentSection={currentSection} onOpenContact={openContactModal} />
+        )}
+        <AnimatePresence>
+          {isContactModalOpen && (
+            <MContact onClose={closeContactModal} />
+          )}
+        </AnimatePresence>
+      </LayoutGroup>
       <PageTransition
         isTransitioning={isTransitioning}
         onCurtainCovered={handleCurtainCovered}

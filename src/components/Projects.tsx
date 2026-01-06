@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import anime from 'animejs';
 import { X, Search } from 'lucide-react';
 import { db } from '../lib/firebase';
@@ -55,11 +56,18 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
 
 
     return (
-        <div
-            ref={cardRef}
+        <motion.div
+            layoutId={`project-card-${project.id}`}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             onClick={onClick}
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: isHovered ? -8 : 0 }}
+            transition={{
+                opacity: { duration: 0.3, delay: index * 0.03 },
+                y: { duration: 0.2 },
+                layout: { duration: 0.4, type: "tween", ease: "easeOut" }
+            }}
             className="group flex flex-col h-full"
             style={{
                 cursor: 'pointer',
@@ -68,14 +76,22 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                 WebkitBackdropFilter: 'blur(16px)',
                 borderRadius: '20px',
                 overflow: 'hidden',
-                boxShadow: isHovered ? 'var(--card-shadow-hover)' : 'var(--card-shadow)',
                 border: '1px solid var(--navbar-border)',
-                transition: 'transform 0.3s ease, box-shadow 0.3s ease',
-                transform: isHovered ? 'translateY(-10px)' : 'translateY(0)',
-                opacity: 0
+                boxShadow: isHovered ? 'var(--card-shadow-hover)' : 'var(--card-shadow)',
+                willChange: 'transform, opacity',
             }}
         >
-            <div style={{ position: 'relative', height: '200px', overflow: 'hidden' }}>
+            <motion.div
+                layoutId={`project-image-${project.id}`}
+                transition={{ duration: 0.4, type: "tween", ease: "easeOut" }}
+                style={{
+                    position: 'relative',
+                    height: '200px',
+                    overflow: 'hidden',
+                    borderRadius: '20px 20px 0 0',
+                    willChange: 'transform'
+                }}
+            >
                 <div style={{
                     display: 'flex',
                     height: '100%',
@@ -101,107 +117,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                         </div>
                     ))}
                 </div>
-
-                <div className="absolute top-[15px] left-[15px] w-[calc(100%-30px)] h-[40px] overflow-hidden pointer-events-none">
-                    {/* Stack Container */}
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            opacity: showContributors ? 0 : 1,
-                            transform: showContributors ? 'translateY(-20px)' : 'translateY(0)',
-                            transition: 'opacity 0.5s ease, transform 0.5s ease'
-                        }}
-                    >
-                        {(project.tags || []).slice(0, 3).map((tag: any, i) => (
-                            <span key={i} style={{
-                                padding: '6px 14px',
-                                backgroundColor: tag.color ? `${tag.color}40` : 'rgba(59, 130, 246, 0.25)',
-                                color: 'white',
-                                borderRadius: '20px',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                backdropFilter: 'blur(12px)',
-                                WebkitBackdropFilter: 'blur(12px)',
-                                border: `1px solid ${tag.color || 'rgba(255, 255, 255, 0.2)'}`,
-                                boxShadow: tag.color ? `0 4px 6px ${tag.color}33` : '0 4px 6px rgba(0, 0, 0, 0.1)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                textShadow: '0 1px 2px rgba(0,0,0,0.3)'
-                            }}>
-                                {tag.iconSvg ? (
-                                    (typeof tag.iconSvg === 'string' && (tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image'))) ? (
-                                        <img src={tag.iconSvg} alt="" style={{ width: '14px', height: '14px', objectFit: 'contain' }} />
-                                    ) : (
-                                        <span style={{ width: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                            dangerouslySetInnerHTML={{ __html: tag.iconSvg }} />
-                                    )
-                                ) : null}
-                                {tag.name}
-                            </span>
-                        ))}
-                        {(project.tags || []).length > 3 && (
-                            <span style={{
-                                padding: '6px 10px',
-                                backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                                color: 'white',
-                                borderRadius: '20px',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                backdropFilter: 'blur(12px)',
-                                WebkitBackdropFilter: 'blur(12px)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)'
-                            }}>
-                                +{(project.tags || []).length - 3}
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Contributors Container */}
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            opacity: showContributors ? 1 : 0,
-                            transform: showContributors ? 'translateY(0)' : 'translateY(20px)',
-                            transition: 'opacity 0.5s ease, transform 0.5s ease',
-                            pointerEvents: 'auto'
-                        }}
-                    >
-                        <span style={{
-                            padding: '6px 14px',
-                            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                            color: 'white',
-                            borderRadius: '20px',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            backdropFilter: 'blur(12px)',
-                            WebkitBackdropFilter: 'blur(12px)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            marginRight: '4px',
-                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
-                        }}>
-                            Contributors
-                        </span>
-                        <div className="flex ml-1">
-                            {project.contributors.map((contributor, i) => (
-                                <div key={i} className={`w-8 h-8 rounded-full overflow-hidden border-2 border-white/80 shadow-sm bg-gray-200 ${i > 0 ? '-ml-4' : ''}`} style={{ transform: `translateX(${i * -12}px)` }}>
-                                    <img src={contributor.image} alt={contributor.name} className="w-full h-full object-cover" />
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
+            </motion.div>
 
             <div style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <h3 className="font-inter font-extrabold text-2xl mb-2.5 text-[var(--text-primary)]">
@@ -220,7 +136,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                     {project.description}
                 </p>
             </div>
-        </div>
+        </motion.div>
     );
 };
 
@@ -605,17 +521,21 @@ const Projects = () => {
                 </div>
             </div>
 
-            {/* Modals */}
-            {showProjectModal && selectedProject && (
-                <MProjectView
-                    project={selectedProject}
-                    onClose={() => setShowProjectModal(false)}
-                    onContributorClick={(contributor) => {
-                        setSelectedContributor(contributor);
-                        setShowContributorModal(true);
-                    }}
-                />
-            )}
+            <LayoutGroup>
+                {/* Modals */}
+                <AnimatePresence>
+                    {showProjectModal && selectedProject && (
+                        <MProjectView
+                            project={selectedProject}
+                            onClose={() => setShowProjectModal(false)}
+                            onContributorClick={(contributor: Contributor) => {
+                                setSelectedContributor(contributor);
+                                setShowContributorModal(true);
+                            }}
+                        />
+                    )}
+                </AnimatePresence>
+            </LayoutGroup>
             {showContributorModal && selectedContributor && (
                 <MContributorView
                     contributor={selectedContributor}

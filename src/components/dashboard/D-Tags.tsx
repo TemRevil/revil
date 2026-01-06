@@ -7,11 +7,11 @@ import anime from 'animejs';
 import MTagForm, { TagData } from './M-TagForm';
 import MContributorForm, { ContributorData } from './M-ContributorForm';
 import { createPortal } from 'react-dom';
-import { useLoading } from '../../LoadingContext';
+import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
 
 const DTags = () => {
-    const { setIsLoading: setGlobalLoading } = useLoading();
+    const [isLoading, setIsLoading] = useState(false);
     const [isDark, setIsDark] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [activeSection, setActiveSection] = useState<'tags' | 'contributors'>('tags');
@@ -226,7 +226,7 @@ const DTags = () => {
 
     const handleSaveTag = async (data: TagData) => {
         try {
-            setGlobalLoading(true);
+            setIsLoading(true);
             const nextIndex = tags.length > 0
                 ? Math.max(...tags.map(t => parseInt(t.id)).filter(n => !isNaN(n))) + 1
                 : 1;
@@ -256,7 +256,7 @@ const DTags = () => {
         } catch (error) {
             console.error('Error saving tag:', error);
         } finally {
-            setGlobalLoading(false);
+            setIsLoading(false);
         }
     };
 
@@ -281,7 +281,7 @@ const DTags = () => {
 
     const handleSaveContributor = async (data: ContributorData) => {
         try {
-            setGlobalLoading(true);
+            setIsLoading(true);
             const nextIndex = contributors.length > 0
                 ? Math.max(...contributors.map(c => parseInt(c.id)).filter(n => !isNaN(n))) + 1
                 : 0;
@@ -318,7 +318,7 @@ const DTags = () => {
         } catch (error) {
             console.error('Error saving contributor:', error);
         } finally {
-            setGlobalLoading(false);
+            setIsLoading(false);
         }
     };
 
@@ -389,6 +389,7 @@ const DTags = () => {
 
     return (
         <div className="h-[90%] flex flex-col" style={{ gap: gap }}>
+            <Loader isOpen={isLoading} isFullScreen={true} />
             {/* Header Actions */}
             <div className="flex justify-between items-center" style={{
                 flexWrap: isExtraSmall ? 'wrap' : 'nowrap',

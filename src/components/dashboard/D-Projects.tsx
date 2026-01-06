@@ -8,12 +8,12 @@ import Alert, { AlertType } from '../Alert';
 import MProjectForm, { ProjectData } from './M-ProjectForm';
 import MProjectView, { getTechColor, getStackIcon } from '../M-ProjectView';
 import MContributorView from '../M-ContributorView';
-import { useLoading } from '../../LoadingContext';
+import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
 
 
 const DProjects = () => {
-    const { setIsLoading: setGlobalLoading } = useLoading();
+    const [isLoading, setIsLoading] = useState(false);
     const [projects, setProjects] = useState<ProjectData[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<ProjectData | null>(null);
@@ -265,12 +265,12 @@ const DProjects = () => {
             type: 'danger',
             onConfirm: async () => {
                 try {
-                    setGlobalLoading(true);
+                    setIsLoading(true);
                     await deleteDoc(doc(db, 'Projects', projectId));
                 } catch (error) {
                     console.error("Error deleting project:", error);
                 } finally {
-                    setGlobalLoading(false);
+                    setIsLoading(false);
                 }
             }
         });
@@ -279,7 +279,7 @@ const DProjects = () => {
 
     const handleSaveProject = async (data: ProjectData) => {
         try {
-            setGlobalLoading(true);
+            setIsLoading(true);
             const projectName = data.name;
             const oldName = editingProject?.name;
             const isNameChanged = oldName && oldName !== projectName;
@@ -406,7 +406,7 @@ const DProjects = () => {
             console.error("Error saving project:", error);
             setAlert({ show: true, type: 'error', message: 'Failed to save project. Check console.' });
         } finally {
-            setGlobalLoading(false);
+            setIsLoading(false);
         }
     };
 
@@ -427,6 +427,7 @@ const DProjects = () => {
 
     return (
         <div className="h-[90%] flex flex-col" style={{ gap: gap }}>
+            <Loader isOpen={isLoading} isFullScreen={true} />
             {/* Header Actions */}
             <div className="flex justify-between items-center" style={{
                 flexWrap: isExtraSmall ? 'wrap' : 'nowrap',

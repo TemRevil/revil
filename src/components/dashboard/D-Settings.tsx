@@ -12,7 +12,7 @@ import { db, storage } from '../../lib/firebase';
 import Alert, { AlertType } from '../Alert';
 import MHandlingProject, { HandlingProject } from './M-HandlingProject';
 import MStackItem, { StackItemData } from './M-StackItem';
-import { useLoading } from '../../LoadingContext';
+import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
 // // import userImg from '../assets/imgs/user.jpg';
 // Replaced failing ui-avatars.com with a local icon-based placeholder logic
@@ -124,7 +124,7 @@ const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<File> => {
 
 
 export default function DSettings() {
-    const { setIsLoading: setGlobalLoading } = useLoading();
+    const [isLoading, setIsLoading] = useState(false);
 
     const [activeTab, setActiveTab] = useState<'availability' | 'stack' | 'account'>('availability');
     const [availability, setAvailability] = useState(75);
@@ -506,7 +506,7 @@ export default function DSettings() {
         if (!heroImageFile && !heroImagePreview) return;
 
         try {
-            setGlobalLoading(true);
+            setIsLoading(true);
 
             if (heroImageFile) {
                 const fileExtension = heroImageFile.name.split('.').pop();
@@ -530,12 +530,12 @@ export default function DSettings() {
             console.error("Error updating hero image:", error);
             setAlert({ show: true, type: 'error', message: 'Failed to update hero image.' });
         } finally {
-            setGlobalLoading(false);
+            setIsLoading(false);
         }
     };
 
     const handleApplyAll = async () => {
-        setGlobalLoading(true);
+        setIsLoading(true);
         try {
             // If user is still cropping, finalize the crop first
             if (isCropping) {
@@ -557,7 +557,7 @@ export default function DSettings() {
             console.error("Error applying all settings:", error);
             setAlert({ show: true, type: 'error', message: 'Failed to apply some settings.' });
         } finally {
-            setGlobalLoading(false);
+            setIsLoading(false);
         }
     };
 
@@ -568,7 +568,7 @@ export default function DSettings() {
             setOriginalImageSrc(null);
         }
 
-        setGlobalLoading(true);
+        setIsLoading(true);
         try {
             const profileSnap = await getDoc(doc(db, 'Settings', 'Account'));
             if (profileSnap.exists()) {
@@ -602,7 +602,7 @@ export default function DSettings() {
             console.error('Error cancelling changes', err);
             setAlert({ show: true, type: 'error', message: 'Failed to cancel changes.' });
         } finally {
-            setGlobalLoading(false);
+            setIsLoading(false);
         }
     };
 
@@ -743,7 +743,7 @@ export default function DSettings() {
 
     const handleSaveStack = async (data: StackItemData) => {
         if (!data.name.trim() || !data.icon) return;
-        setGlobalLoading(true);
+        setIsLoading(true);
 
         try {
             let id = data.id || '';
@@ -777,7 +777,7 @@ export default function DSettings() {
             console.error("Error saving stack:", error);
             setAlert({ show: true, type: 'error', message: 'Failed to save stack item' });
         } finally {
-            setGlobalLoading(false);
+            setIsLoading(false);
         }
     };
 
@@ -789,7 +789,7 @@ export default function DSettings() {
             message: `Are you sure you want to delete "${item?.name || id}" from your tech stack?`,
             type: 'danger',
             onConfirm: async () => {
-                setGlobalLoading(true);
+                setIsLoading(true);
                 try {
                     await updateDoc(doc(db, 'Settings', 'Tech Stack'), { [id]: deleteField() });
                     setAlert({ show: true, type: 'success', message: 'Stack item deleted' });
@@ -797,7 +797,7 @@ export default function DSettings() {
                 } catch (error) {
                     console.error("Error deleting stack:", error);
                 } finally {
-                    setGlobalLoading(false);
+                    setIsLoading(false);
                 }
             }
         });
@@ -920,7 +920,7 @@ export default function DSettings() {
 
         try {
             setProfileImageUploading(true);
-            setGlobalLoading(true);
+            setIsLoading(true);
 
             if (profileImageFile) {
                 const storageRef = ref(storage, `src/imgs/Settings/Profile_${Date.now()}_cropped.jpg`);
@@ -950,7 +950,7 @@ export default function DSettings() {
             setAlert({ show: true, type: 'error', message: 'Failed to update profile image.' });
         } finally {
             setProfileImageUploading(false);
-            setGlobalLoading(false);
+            setIsLoading(false);
         }
     };
 
@@ -1093,6 +1093,7 @@ export default function DSettings() {
 
     return (
         <div className="flex flex-col gap-6 min-h-full relative">
+            <Loader isOpen={isLoading} isFullScreen={true} />
             {/* Custom Alert */}
             {alert.show && (
                 <Alert
@@ -1511,8 +1512,8 @@ export default function DSettings() {
                         <button
                             onClick={handleCancelAll}
                             className={`px-6 py-3 rounded-full border transition-all font-semibold text-[14px] ${isDark
-                                    ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
-                                    : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
+                                ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
+                                : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
                                 }`}
                         >
                             Cancel Changes

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Folder, FileImage, ChevronRight, ChevronLeft, Search } from 'lucide-react';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../lib/firebase';
-import { useLoading } from '../../LoadingContext';
+import Loader from '../reactbits/Loader';
 
 interface FirebaseFile {
     name: string;
@@ -21,7 +21,7 @@ interface MFirebaseStorageProps {
 }
 
 const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png', 'jpg', 'jpeg', 'gif', 'webp'], title = 'Select from Firebase Storage' }: MFirebaseStorageProps) => {
-    const { setIsLoading: setGlobalLoading } = useLoading();
+    const [isLoading, setIsLoading] = useState(false);
     const [currentPath, setCurrentPath] = useState('');
     const [files, setFiles] = useState<FirebaseFile[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -44,7 +44,7 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
     }, [isOpen, currentPath]);
 
     const loadFiles = async (path: string) => {
-        setGlobalLoading(true);
+        setIsLoading(true);
         try {
             const folderRef = ref(storage, path || '/');
             const result = await listAll(folderRef);
@@ -79,7 +79,7 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
             console.error('Error loading files:', error);
             setFiles([]);
         }
-        setGlobalLoading(false);
+        setIsLoading(false);
     };
 
     const handleFolderClick = (path: string) => {

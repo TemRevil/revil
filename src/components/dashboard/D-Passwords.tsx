@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { Lock, Shield, Key } from 'lucide-react';
-import { useLoading } from '../../LoadingContext';
+import Loader from '../reactbits/Loader';
 
 const DPasswords = () => {
-    const { setIsLoading: setGlobalLoading } = useLoading();
+    const [isLoading, setIsLoading] = useState(false);
     useEffect(() => {
         const checkTheme = () => { };
         checkTheme();
@@ -25,6 +25,7 @@ const DPasswords = () => {
             gap: '24px',
             padding: '40px'
         }}>
+            <Loader isOpen={isLoading} isFullScreen={true} />
             <div style={{
                 width: '80px',
                 height: '80px',

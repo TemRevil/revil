@@ -218,11 +218,14 @@ const AvailableBadge = ({ isDark, entryDelay = 1200 }: { isDark: boolean; entryD
                 </span>
 
                 {/* Tooltip - Positioned higher with iOS Liquid Glass look */}
-                {showTooltip && projects.length > 0 && (
+                {projects.length > 0 && (
                     <div
                         onMouseEnter={handleMouseEnter}
                         onMouseLeave={handleMouseLeave}
-                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-[195px] md:mb-[275px] p-6 rounded-[32px] border border-white/20 z-[99999] w-[320px] animate-fade-in"
+                        className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-[195px] md:mb-[275px] p-6 rounded-[32px] border border-white/20 z-[99999] w-[320px] transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] origin-bottom ${showTooltip
+                            ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
+                            : 'opacity-0 scale-95 translate-y-4 pointer-events-none'
+                            }`}
                         style={{
                             background: isDark
                                 ? 'linear-gradient(160deg, rgba(25, 25, 40, 0.7) 0%, rgba(10, 10, 15, 0.9) 100%)'
@@ -245,12 +248,12 @@ const AvailableBadge = ({ isDark, entryDelay = 1200 }: { isDark: boolean; entryD
                             <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-muted">Availability Status.</span>
                         </div>
                         <div className="flex flex-col gap-5">
-                            {displayedProjects.map((p: any, i) => (
+                            {displayedProjects.map((p: any, i: number) => (
                                 <div key={i} className="flex flex-col gap-1.5">
                                     <div className="flex items-center justify-between gap-4">
                                         <span className="text-[15px] font-bold text-primary tracking-tight">{p.name || 'Project'}</span>
                                         <span
-                                            className="text-[9px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border"
+                                            className="text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border"
                                             style={{
                                                 backgroundColor: (p.status || '').toLowerCase() === 'completed'
                                                     ? 'rgba(16, 185, 129, 0.15)'
@@ -289,6 +292,8 @@ const AvailableBadge = ({ isDark, entryDelay = 1200 }: { isDark: boolean; entryD
                     </div>
                 )}
             </div>
+
+            {/* iOS Time Lockup Style */}
             <div className="px-6 py-3 rounded-full font-semibold text-[15px] border border-white/10 shadow-lg transition-all" style={{
                 background: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.5)',
                 backdropFilter: 'blur(20px)',
@@ -301,7 +306,8 @@ const AvailableBadge = ({ isDark, entryDelay = 1200 }: { isDark: boolean; entryD
     );
 };
 
-const Hero = () => {
+
+const Hero = ({ onLoaded }: { onLoaded?: () => void }) => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const imageRef = useRef<HTMLDivElement>(null);
     const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -313,6 +319,7 @@ const Hero = () => {
     const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null);
     const [profileName, setProfileName] = useState<string>('Tem Revil');
     const [profileTitle, setProfileTitle] = useState<string>('a Front-End');
+    const hasNotifiedLoaded = useRef(false);
 
     useEffect(() => {
         const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'),
@@ -320,18 +327,29 @@ const Hero = () => {
                 if (docSnapshot.exists()) {
                     const data = docSnapshot.data();
                     if (data.heroImageUrl) setHeroImageUrl(data.heroImageUrl);
-                    // Only update if names actually changed to prevent re-animation glitches
                     if (data.name && data.name !== profileName) setProfileName(data.name);
                     if (data.title && data.title !== profileTitle) setProfileTitle(data.title);
+                }
+
+                // Notify parent that initial data is ready
+                if (onLoaded && !hasNotifiedLoaded.current) {
+                    hasNotifiedLoaded.current = true;
+                    onLoaded();
                 }
             },
             (error) => {
                 const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
                 console.warn(`[Connection] Hero sync: ${status}. Check diagnostic in lib/firebase.ts`, error);
+
+                // Even on error, we should probably allow the app to show something
+                if (onLoaded && !hasNotifiedLoaded.current) {
+                    hasNotifiedLoaded.current = true;
+                    onLoaded();
+                }
             }
         );
         return () => unsubscribe();
-    }, [profileName, profileTitle]);
+    }, [profileName, profileTitle, onLoaded]);
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));

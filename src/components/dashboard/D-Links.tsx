@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Link2, Copy, Check, RefreshCw, ExternalLink, MoreVertical, Edit2, Trash2, Eye, EyeOff } from 'lucide-react';
 import anime from 'animejs';
-import { useLoading } from '../../LoadingContext';
+import Loader from '../reactbits/Loader';
 
 interface GeneratedLink {
     id: string;
@@ -16,7 +16,7 @@ interface GeneratedLink {
 }
 
 const DLinks = () => {
-    const { setIsLoading: setGlobalLoading } = useLoading();
+    const [isLoading, setIsLoading] = useState(false);
     const [isDark, setIsDark] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [name, setName] = useState('');
@@ -78,7 +78,7 @@ const DLinks = () => {
     const generateCode = () => {
         if (!name.trim() || !forField.trim()) return;
 
-        setGlobalLoading(true);
+        setIsLoading(true);
         // Generate a random alphanumeric code
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
         let code = '';
@@ -103,7 +103,7 @@ const DLinks = () => {
             setGeneratedLinks(prev => [newLink, ...prev]);
             setName('');
             setForField('');
-            setGlobalLoading(false);
+            setIsLoading(false);
         }, 300);
     };
 
@@ -193,6 +193,7 @@ const DLinks = () => {
 
     return (
         <div className="links-section-container" style={{ height: '90%', display: 'flex', flexDirection: 'column', gap: gap, opacity: 0 }}>
+            <Loader isOpen={isLoading} isFullScreen={true} />
             {/* Link Generator Section */}
             <div style={{
                 backgroundColor: isDark ? '#00000040' : '#ffffff59',

@@ -1,5 +1,6 @@
 import { Home, Layers, FolderKanban, Mail, Moon, Sun } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 
 interface NavbarProps {
     onNavigate?: (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard') => void;
@@ -144,14 +145,18 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact }: NavbarPr
 
                 {/* Right Section - Mail & Theme */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '2px' : '4px' }}>
-                    <button
+                    <motion.button
+                        layoutId="contact-trigger"
                         style={getActionButtonStyle('mail')}
                         onClick={onOpenContact}
                         onMouseEnter={() => setHoveredTab('mail')}
                         onMouseLeave={() => setHoveredTab(null)}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
                     >
-                        <Mail size={isMobile ? 18 : 20} strokeWidth={1.8} />
-                    </button>
+                        <motion.div layoutId="contact-icon">
+                            <Mail size={isMobile ? 18 : 20} strokeWidth={1.8} />
+                        </motion.div>
+                    </motion.button>
                     <button
                         onClick={toggleTheme}
                         onMouseEnter={() => setHoveredTab('theme')}
