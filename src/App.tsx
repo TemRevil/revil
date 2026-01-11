@@ -18,7 +18,7 @@ function App() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextSection, setNextSection] = useState<Section>('home');
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
-  const [appLoading, setAppLoading] = useState(false);
+  const [appLoading, setAppLoading] = useState(true);
   const [isDataReady, setIsDataReady] = useState(false);
   const [isWindowReady, setIsWindowReady] = useState(false);
 
@@ -79,7 +79,7 @@ function App() {
   const renderSection = () => {
     switch (currentSection) {
       case 'home':
-        return <Hero onLoaded={() => setIsDataReady(true)} />;
+        return <Hero onLoaded={() => setIsDataReady(true)} isReady={!appLoading} />;
       case 'stack':
         return <Stack />;
       case 'projects':
@@ -89,7 +89,7 @@ function App() {
       case 'dashboard':
         return <Dashboard onNavigate={navigateTo} />;
       default:
-        return <Hero />;
+        return <Hero isReady={!appLoading} />;
     }
   };
 
@@ -204,6 +204,11 @@ function App() {
         if (e.key === 'Escape') {
           closeContactModal();
         }
+
+        // IMPORTANT: Don't prevent default if we're typing in an input/textarea
+        const activeTag = document.activeElement?.tagName;
+        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
         // Prevent other navigation keys that would trigger page transitions
         if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) {
           e.preventDefault();
@@ -246,7 +251,6 @@ function App() {
             borderTopLeftRadius: '12px',
             borderBottomLeftRadius: '12px',
             padding: '12px 4px',
-            cursor: 'pointer',
             zIndex: 40,
             color: 'var(--text-muted)',
             transition: 'all 0.2s ease',
@@ -269,7 +273,7 @@ function App() {
       )}
       <LayoutGroup>
         {currentSection !== 'dashboard' && (
-          <Navbar onNavigate={navigateTo} currentSection={currentSection} onOpenContact={openContactModal} />
+          <Navbar onNavigate={navigateTo} currentSection={currentSection} onOpenContact={openContactModal} isContactOpen={isContactModalOpen} />
         )}
         <AnimatePresence>
           {isContactModalOpen && (

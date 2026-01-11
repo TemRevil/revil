@@ -12,18 +12,22 @@ const HandwritingText = ({
     fontSize = 70,
     delay = 0,
     color = '#3b82f6',
-    rotate = 0
+    rotate = 0,
+    isReady = true
 }: {
     text: string;
     fontSize?: number;
     delay?: number;
     color?: string;
     rotate?: number;
+    isReady?: boolean;
 }) => {
     const svgRef = useRef<SVGSVGElement>(null);
 
     useEffect(() => {
-        if (!svgRef.current) return;
+        if (!svgRef.current || !isReady) return;
+
+        const startDelay = delay + 500;
 
         const letters = svgRef.current.querySelectorAll('.letter-path');
         anime.remove(letters);
@@ -48,7 +52,7 @@ const HandwritingText = ({
                 strokeDashoffset: [estimatedLength, 0],
                 opacity: [0, 1],
                 duration: 120, // Smooth & Elegant
-                delay: index === 0 ? delay : 0,
+                delay: index === 0 ? startDelay : 0,
                 begin: () => {
                     textEl.style.visibility = 'visible';
                 },
@@ -57,9 +61,9 @@ const HandwritingText = ({
                     textEl.style.fill = color;
                     textEl.style.strokeOpacity = '0.4';
                 }
-            }, index === 0 ? delay : '-=60'); // More overlap for smoothness
+            }, index === 0 ? startDelay : '-=60'); // More overlap for smoothness
         });
-    }, [text, delay, fontSize, color]);
+    }, [text, delay, fontSize, color, isReady]);
 
     // Calculate letter positions - normal spacing
     const letterSpacing = fontSize * 0.5;
@@ -119,7 +123,7 @@ const HandwritingText = ({
 };
 
 // Available Status Badge Component
-const AvailableBadge = ({ isDark, entryDelay = 1200 }: { isDark: boolean; entryDelay?: number }) => {
+const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark: boolean; entryDelay?: number; isReady?: boolean }) => {
     const badgeRef = useRef<HTMLDivElement>(null);
     const pulseRef = useRef<HTMLDivElement>(null);
     const [availData, setAvailData] = useState<any>(null);
@@ -147,6 +151,9 @@ const AvailableBadge = ({ isDark, entryDelay = 1200 }: { isDark: boolean; entryD
     }, []);
 
     useEffect(() => {
+        if (!isReady) return;
+        const startDelay = entryDelay + 500;
+
         // Pulse animation for the dot
         const pulse = anime({
             targets: pulseRef.current,
@@ -163,12 +170,12 @@ const AvailableBadge = ({ isDark, entryDelay = 1200 }: { isDark: boolean; entryD
             opacity: [0, 1],
             translateY: [20, 0],
             duration: 800,
-            delay: entryDelay,
+            delay: startDelay,
             easing: 'easeOutExpo'
         });
 
         return () => pulse.pause();
-    }, [entryDelay]);
+    }, [entryDelay, isReady]);
 
     const availabilityStr = availData?.['Current Availability'] || '100%';
     const availabilityPercent = parseInt(availabilityStr);
@@ -307,7 +314,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200 }: { isDark: boolean; entryD
 };
 
 
-const Hero = ({ onLoaded }: { onLoaded?: () => void }) => {
+const Hero = ({ onLoaded, isReady = true }: { onLoaded?: () => void; isReady?: boolean }) => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const imageRef = useRef<HTMLDivElement>(null);
     const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -388,13 +395,18 @@ const Hero = ({ onLoaded }: { onLoaded?: () => void }) => {
     const bottomSloganSize = isSmallMobile ? 35 : (isMobile ? 45 : 65);
 
     useEffect(() => {
+        if (!isReady) return;
+
+        // Small delay to let loader fade out completely
+        const startDelay = 500;
+
         // Step 2: Animate name (typing effect)
         anime({
             targets: '.name-char',
             opacity: [0, 1],
             translateY: [20, 0],
             duration: 600,
-            delay: anime.stagger(60, { start: timing.name }),
+            delay: anime.stagger(60, { start: timing.name + startDelay }),
             easing: 'easeOutQuart'
         });
 
@@ -405,7 +417,7 @@ const Hero = ({ onLoaded }: { onLoaded?: () => void }) => {
             scale: [0.98, 1],
             duration: 1200, // Elegant transition
             easing: 'easeOutQuart',
-            delay: timing.rest
+            delay: timing.rest + startDelay
         });
 
         // Step 4: Floating animation for the entire wrapper (image + boxes)
@@ -418,10 +430,20 @@ const Hero = ({ onLoaded }: { onLoaded?: () => void }) => {
             direction: 'alternate',
             loop: true
         });
-    }, [timing.name, timing.rest]);
+    }, [isReady, timing.name, timing.rest]);
 
     return (
         <div className="min-h-screen w-full flex items-center justify-center overflow-hidden relative pt-20 pb-32 transition-slow">
+            {/* Animated Background Blobs */}
+            <div className="blob-container">
+                <div className="blob blob-1"></div>
+                <div className="blob blob-2"></div>
+                <div className="blob blob-3"></div>
+                <div className="blob blob-4"></div>
+                <div className="blob blob-5"></div>
+                <div className="blob blob-6"></div>
+            </div>
+
             {/* Wall texture - subtle grain pattern */}
             <div className="absolute inset-0 pointer-events-none" style={{
                 backgroundImage: `
@@ -443,6 +465,7 @@ const Hero = ({ onLoaded }: { onLoaded?: () => void }) => {
                             fontSize={topSloganSize}
                             delay={timing.slogan1}
                             rotate={-6}
+                            isReady={isReady}
                         />
                     </div>
 
@@ -470,6 +493,7 @@ const Hero = ({ onLoaded }: { onLoaded?: () => void }) => {
                             fontSize={bottomSloganSize}
                             delay={timing.slogan2}
                             rotate={-3}
+                            isReady={isReady}
                         />
                     </div>
 
@@ -482,7 +506,7 @@ const Hero = ({ onLoaded }: { onLoaded?: () => void }) => {
 
                     {/* Available Badge */}
                     <div className="mt-12 md:mt-20 md:ml-4 md:pl-4 relative z-[5000]">
-                        <AvailableBadge isDark={isDark} entryDelay={timing.rest} />
+                        <AvailableBadge isDark={isDark} entryDelay={timing.rest} isReady={isReady} />
                     </div>
                 </div>
 

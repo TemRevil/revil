@@ -54,10 +54,8 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
     }, [index]);
 
 
-
     return (
         <motion.div
-            layoutId={`project-card-${project.id}`}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             onClick={onClick}
@@ -81,9 +79,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                 willChange: 'transform, opacity',
             }}
         >
-            <motion.div
-                layoutId={`project-image-${project.id}`}
-                transition={{ duration: 0.4, type: "tween", ease: "easeOut" }}
+            <div
                 style={{
                     position: 'relative',
                     height: '200px',
@@ -92,32 +88,38 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                     willChange: 'transform'
                 }}
             >
-                <div style={{
-                    display: 'flex',
-                    height: '100%',
-                    width: `${project.images.length * 100}%`,
-                    transform: `translateX(-${(currentImageIndex * 100) / project.images.length}%)`,
-                    transition: 'transform 0.5s ease-in-out'
-                }}>
-                    {project.images.map((img, i) => (
-                        <div key={i} style={{ width: `${100 / project.images.length}%`, height: '100%', position: 'relative', overflow: 'hidden' }}>
-                            <img
-                                src={img}
-                                alt={project.title}
-                                style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover',
-                                    transition: 'transform 0.5s ease',
-                                    transform: isHovered ? 'scale(1.05)' : 'scale(1)'
-                                }}
-                            />
-                            {/* Gradient Overlay for text readability (optional, but good for aesthetics) */}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                        </div>
-                    ))}
-                </div>
-            </motion.div>
+                <motion.div
+                    layoutId={`project-image-${project.id}`}
+                    transition={{ duration: 0.4, type: "tween", ease: "easeOut" }}
+                    style={{ position: 'absolute', inset: 0 }}
+                >
+                    <div style={{
+                        display: 'flex',
+                        height: '100%',
+                        width: `${project.images.length * 100}%`,
+                        transform: `translateX(-${(currentImageIndex * 100) / project.images.length}%)`,
+                        transition: 'transform 0.5s ease-in-out'
+                    }}>
+                        {project.images.map((img, i) => (
+                            <div key={i} style={{ width: `${100 / project.images.length}%`, height: '100%', position: 'relative', overflow: 'hidden' }}>
+                                <img
+                                    src={img}
+                                    alt={project.title}
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover',
+                                        transition: 'transform 0.5s ease',
+                                        transform: isHovered ? 'scale(1.05)' : 'scale(1)'
+                                    }}
+                                />
+                                {/* Gradient Overlay for text readability (optional, but good for aesthetics) */}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                            </div>
+                        ))}
+                    </div>
+                </motion.div>
+            </div>
 
             <div style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <h3 className="font-inter font-extrabold text-2xl mb-2.5 text-[var(--text-primary)]">
@@ -136,7 +138,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                     {project.description}
                 </p>
             </div>
-        </motion.div>
+        </motion.div >
     );
 };
 

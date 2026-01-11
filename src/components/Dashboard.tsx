@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import anime from 'animejs';
-import { Layout, Eye, Settings, Bird, LogOut, Tag, Lock, User } from 'lucide-react';
+import { Layout, Eye, Settings, Bird, LogOut, Tag, User } from 'lucide-react';
 import DProjects from './dashboard/D-Projects';
 import DTags from './dashboard/D-Tags';
 import DLinks from './dashboard/D-Links';
 import DSettings from './dashboard/D-Settings';
-import DPasswords from './dashboard/D-Passwords';
 import DCanary from './dashboard/D-Canary';
 // import userImg from '../assets/imgs/user.jpg';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -100,7 +99,6 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
         { id: 'projects', label: 'Projects', icon: Layout },
         { id: 'tags', label: 'Tags', icon: Tag },
         { id: 'views', label: 'Views', icon: Eye },
-        { id: 'passwords', label: 'Passwords', icon: Lock },
         { id: 'settings', label: 'Settings', icon: Settings },
         { id: 'canary', label: 'Canary', icon: Bird },
     ];
@@ -185,136 +183,14 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                 touchAction: 'none' // Prevent browser scrolling to allow full touch control
             }}>
             {/* Decorative Background Blobs */}
-            <div style={{
-                position: 'absolute',
-                top: '-5%',
-                left: '10%',
-                width: '500px',
-                height: '500px',
-                background: isDark
-                    ? 'radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, rgba(59, 130, 246, 0) 70%)'
-                    : 'radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0) 70%)',
-                borderRadius: '50%',
-                filter: 'blur(50px)',
-                animation: 'blob1 20s ease-in-out infinite',
-                pointerEvents: 'none',
-                zIndex: 0
-            }} />
-            <div style={{
-                position: 'absolute',
-                top: '20%',
-                right: '5%',
-                width: '400px',
-                height: '400px',
-                background: isDark
-                    ? 'radial-gradient(circle, rgba(139, 92, 246, 0.25) 0%, rgba(139, 92, 246, 0) 70%)'
-                    : 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0) 70%)',
-                borderRadius: '50%',
-                filter: 'blur(50px)',
-                animation: 'blob2 18s ease-in-out infinite',
-                pointerEvents: 'none',
-                zIndex: 0
-            }} />
-            <div style={{
-                position: 'absolute',
-                bottom: '-10%',
-                left: '20%',
-                width: '600px',
-                height: '600px',
-                background: isDark
-                    ? 'radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0) 70%)'
-                    : 'radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, rgba(99, 102, 241, 0) 70%)',
-                borderRadius: '50%',
-                filter: 'blur(60px)',
-                animation: 'blob3 25s ease-in-out infinite',
-                pointerEvents: 'none',
-                zIndex: 0
-            }} />
-            <div style={{
-                position: 'absolute',
-                bottom: '10%',
-                right: '15%',
-                width: '350px',
-                height: '350px',
-                background: isDark
-                    ? 'radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0) 70%)'
-                    : 'radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, rgba(59, 130, 246, 0) 70%)',
-                borderRadius: '50%',
-                filter: 'blur(40px)',
-                animation: 'blob4 15s ease-in-out infinite',
-                pointerEvents: 'none',
-                zIndex: 0
-            }} />
-            <div style={{
-                position: 'absolute',
-                top: '40%',
-                left: '35%',
-                width: '450px',
-                height: '450px',
-                background: isDark
-                    ? 'radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, rgba(124, 58, 237, 0) 70%)'
-                    : 'radial-gradient(circle, rgba(124, 58, 237, 0.1) 0%, rgba(124, 58, 237, 0) 70%)',
-                borderRadius: '50%',
-                filter: 'blur(55px)',
-                animation: 'blob5 22s ease-in-out infinite',
-                pointerEvents: 'none',
-                zIndex: 0
-            }} />
-            <div style={{
-                position: 'absolute',
-                top: '10%',
-                right: '35%',
-                width: '300px',
-                height: '300px',
-                background: isDark
-                    ? 'radial-gradient(circle, rgba(79, 70, 229, 0.2) 0%, rgba(79, 70, 229, 0) 70%)'
-                    : 'radial-gradient(circle, rgba(79, 70, 229, 0.12) 0%, rgba(79, 70, 229, 0) 70%)',
-                borderRadius: '50%',
-                filter: 'blur(45px)',
-                animation: 'blob6 20s ease-in-out infinite',
-                pointerEvents: 'none',
-                zIndex: 0
-            }} />
-
-            {/* CSS Animations */}
-            <style>{`
-                @keyframes blob1 {
-                    0% { transform: translate(0, 0) scale(1); }
-                    33% { transform: translate(50px, -50px) scale(1.1); }
-                    66% { transform: translate(-30px, 20px) scale(0.95); }
-                    100% { transform: translate(0, 0) scale(1); }
-                }
-                @keyframes blob2 {
-                    0% { transform: translate(0, 0) scale(1); }
-                    33% { transform: translate(-40px, 40px) scale(1.1); }
-                    66% { transform: translate(30px, -30px) scale(0.95); }
-                    100% { transform: translate(0, 0) scale(1); }
-                }
-                @keyframes blob3 {
-                    0% { transform: translate(0, 0) scale(1); }
-                    33% { transform: translate(30px, 50px) scale(1.05); }
-                    66% { transform: translate(-50px, -30px) scale(0.95); }
-                    100% { transform: translate(0, 0) scale(1); }
-                }
-                @keyframes blob4 {
-                    0% { transform: translate(0, 0) scale(1); }
-                    33% { transform: translate(-30px, -30px) scale(1.1); }
-                    66% { transform: translate(20px, 40px) scale(0.9); }
-                    100% { transform: translate(0, 0) scale(1); }
-                }
-                 @keyframes blob5 {
-                    0% { transform: translate(0, 0) scale(1); }
-                    33% { transform: translate(40px, -20px) scale(1.05); }
-                    66% { transform: translate(-20px, 30px) scale(0.95); }
-                    100% { transform: translate(0, 0) scale(1); }
-                }
-                @keyframes blob6 {
-                    0% { transform: translate(0, 0) scale(1); }
-                    33% { transform: translate(-20px, 30px) scale(1.1); }
-                    66% { transform: translate(30px, -20px) scale(0.9); }
-                    100% { transform: translate(0, 0) scale(1); }
-                }
-            `}</style>
+            <div className="blob-container">
+                <div className="blob blob-1"></div>
+                <div className="blob blob-2"></div>
+                <div className="blob blob-3"></div>
+                <div className="blob blob-4"></div>
+                <div className="blob blob-5"></div>
+                <div className="blob blob-6"></div>
+            </div>
 
             {/* Sidebar */}
             <aside style={{
@@ -538,8 +414,6 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                             <DLinks />
                         ) : activeTab === 'settings' ? (
                             <DSettings />
-                        ) : activeTab === 'passwords' ? (
-                            <DPasswords />
                         ) : activeTab === 'canary' ? (
                             <DCanary />
                         ) : (

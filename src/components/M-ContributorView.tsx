@@ -37,14 +37,10 @@ const MContributorView = ({ contributor, onClose }: MContributorViewProps) => {
             zIndex: 1200,
             animation: 'fadeIn 0.2s ease-out'
         }}>
-            <div style={{
+            <div className="glass-panel-deep" style={{
                 width: '90%', maxWidth: '400px',
-                backgroundColor: isDark ? 'rgba(20, 20, 20, 0.85)' : 'rgba(255, 255, 255, 0.85)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
                 borderRadius: '24px',
                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'}`,
                 overflow: 'hidden',
                 animation: 'scaleIn 0.2s ease-out'
             }}>

@@ -117,7 +117,7 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
                     </button>
 
                     <p className="text-xs text-center text-sec opacity-50 mt-2">
-                        Protected by Revil Security Systems
+                        Protected by Firebase Security.
                     </p>
                 </form>
             </div>

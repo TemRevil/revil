@@ -6,9 +6,10 @@ interface NavbarProps {
     onNavigate?: (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard') => void;
     currentSection?: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard';
     onOpenContact?: () => void;
+    isContactOpen?: boolean;
 }
 
-const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact }: NavbarProps) => {
+const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false }: NavbarProps) => {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'));
     const [hoveredTab, setHoveredTab] = useState<string | null>(null);
@@ -145,18 +146,43 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact }: NavbarPr
 
                 {/* Right Section - Mail & Theme */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '2px' : '4px' }}>
-                    <motion.button
-                        layoutId="contact-trigger"
-                        style={getActionButtonStyle('mail')}
-                        onClick={onOpenContact}
-                        onMouseEnter={() => setHoveredTab('mail')}
-                        onMouseLeave={() => setHoveredTab(null)}
-                        transition={{ duration: 0.3, ease: "easeOut" }}
-                    >
-                        <motion.div layoutId="contact-icon">
-                            <Mail size={isMobile ? 18 : 20} strokeWidth={1.8} />
-                        </motion.div>
-                    </motion.button>
+                    <div style={{ position: 'relative', width: isMobile ? '34px' : '44px', height: isMobile ? '34px' : '44px' }}>
+                        <motion.button
+                            layoutId="contact-trigger"
+                            style={{
+                                ...getActionButtonStyle('mail'),
+                                position: 'absolute',
+                                inset: 0,
+                                zIndex: isContactOpen ? 0 : 1,
+                                opacity: isContactOpen ? 0 : 1,
+                                pointerEvents: isContactOpen ? 'none' : 'auto',
+                            }}
+                            onClick={onOpenContact}
+                            onMouseEnter={() => setHoveredTab('mail')}
+                            onMouseLeave={() => setHoveredTab(null)}
+                            transition={{
+                                type: 'spring',
+                                damping: 30,
+                                stiffness: 260,
+                                mass: 1
+                            }}
+                        >
+                            <motion.div layoutId="contact-icon" style={{ display: 'flex' }}>
+                                <Mail size={isMobile ? 18 : 20} strokeWidth={2} />
+                            </motion.div>
+                        </motion.button>
+
+                        {/* Placeholder */}
+                        {isContactOpen && (
+                            <div style={{
+                                ...getActionButtonStyle('mail'),
+                                opacity: 0.2,
+                                pointerEvents: 'none'
+                            }}>
+                                <Mail size={isMobile ? 18 : 20} strokeWidth={2} opacity={0} />
+                            </div>
+                        )}
+                    </div>
                     <button
                         onClick={toggleTheme}
                         onMouseEnter={() => setHoveredTab('theme')}

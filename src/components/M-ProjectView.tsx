@@ -301,7 +301,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
 
     const GlassPanel = ({ children, style, className = "" }: any) => (
         <div className={className} style={{
-            background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.4)',
+            background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.15)',
             backdropFilter: 'blur(24px)',
             WebkitBackdropFilter: 'blur(24px)',
             borderRadius: '32px',
@@ -326,6 +326,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                 zIndex: 1100,
                 overflow: 'hidden',
                 fontFamily: "'Inter', sans-serif",
+                userSelect: 'none', // Added user-select: none to the modal overlay
             }} onClick={handleClose}>
             {/* Dynamic Background Blur */}
             <div style={{
@@ -349,7 +350,6 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
             </button>
 
             <motion.div
-                layoutId={`project-card-${project.id}`}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -364,10 +364,8 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                     padding: isMobile ? '0' : '0 60px',
                     display: 'flex', flexDirection: 'column', gap: '0',
                     willChange: 'transform',
-                    backgroundColor: 'var(--card-bg)',
                     borderRadius: isMobile ? '0' : '24px',
-                    backdropFilter: 'blur(20px)',
-                    WebkitBackdropFilter: 'blur(20px)',
+                    backgroundColor: 'transparent'
                 }}>
                 <motion.div
                     initial={{ opacity: 0 }}
@@ -711,11 +709,12 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                                 textColor="white"
                                                 fontWeight={950}
                                                 gradientHeight={0}
+                                                gap={2}
                                             />
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Github</div>
                                     </div>
-                                    <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                         <div style={{ marginBottom: '8px' }}>
                                             <Counter
                                                 value={typeof project.liveViews === 'number' ? project.liveViews : 0}
@@ -723,11 +722,12 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                                 textColor="white"
                                                 fontWeight={950}
                                                 gradientHeight={0}
+                                                gap={2}
                                             />
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Live</div>
                                     </div>
-                                    <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                         <div style={{ marginBottom: '8px' }}>
                                             <Counter
                                                 value={typeof project.downloadViews === 'number' ? project.downloadViews : 0}
@@ -735,11 +735,12 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                                 textColor="white"
                                                 fontWeight={950}
                                                 gradientHeight={0}
+                                                gap={2}
                                             />
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Downloads</div>
                                     </div>
-                                    <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                         <div style={{ marginBottom: '8px' }}>
                                             <Counter
                                                 value={typeof project.views === 'number' ? project.views : 0}
@@ -747,6 +748,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                                 textColor="white"
                                                 fontWeight={950}
                                                 gradientHeight={0}
+                                                gap={2}
                                             />
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Views</div>
