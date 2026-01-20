@@ -70,6 +70,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const [existingMeetings, setExistingMeetings] = useState<any[]>([]);
   const [bookingSuccess, setBookingSuccess] = useState<{ date: string, time: string, link: string } | null>(null);
   const [showNameTooltip, setShowNameTooltip] = useState(false);
+  const [showEmailTooltip, setShowEmailTooltip] = useState(false);
   const [alert, setAlert] = useState<{ type: AlertType, message: string } | null>(null); // Alert state
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -211,6 +212,53 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
   // Converted slots for the UI
   const convertedSlots = timeSlots.map(convertTimeToUser);
+
+  // Check if a time slot has already passed
+  const isTimePassed = (date: Date, hostTimeStr: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const checkDate = new Date(date);
+    checkDate.setHours(0, 0, 0, 0);
+
+    if (checkDate > today) return false;
+    if (checkDate < today) return true;
+
+    // It's today, check the hour
+    const [time, period] = hostTimeStr.split(' ');
+    let [h, m] = time.split(':').map(Number);
+    if (period === 'PM' && h !== 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+
+    // Get current time in host's perspective
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const hostNow = new Date(utc + (3600000 * hostOffset));
+
+    const slotTime = h * 60 + m;
+    const currentTime = hostNow.getHours() * 60 + hostNow.getMinutes();
+
+    // Add 30 mins buffer so they don't book a meeting starting "right now"
+    return currentTime + 30 > slotTime;
+  };
+
+  // Recommend the next day if today is empty
+  useEffect(() => {
+    if (selectedDate && selectedDate.toDateString() === new Date().toDateString()) {
+      const hasAvailableSlots = timeSlots.some((hostTime) => {
+        const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
+        const passed = isTimePassed(selectedDate, hostTime);
+        return !isBusy && !passed;
+      });
+
+      if (!hasAvailableSlots) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        setSelectedDate(tomorrow);
+        setCalendarDate(tomorrow);
+      }
+    }
+  }, [existingMeetings, hostTimezoneString]);
 
   // --- THIS IS THE FIXED FUNCTION ---
   const handleMeetingSubmit = async (e: React.FormEvent) => {
@@ -820,25 +868,27 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                       {convertedSlots.map((time, idx) => {
                                         const hostTime = timeSlots[idx];
                                         const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
+                                        const passed = isTimePassed(selectedDate, hostTime);
+                                        const isDisabled = isBusy || passed;
                                         return (
-                                          <button key={time} onClick={() => setSelectedTime(time)} disabled={isBusy}
+                                          <button key={time} onClick={() => setSelectedTime(time)} disabled={isDisabled}
                                             style={{
                                               padding: '10px 8px', borderRadius: '12px',
                                               border: `1px solid ${selectedTime === time ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`,
                                               background: selectedTime === time ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
                                               color: selectedTime === time ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
                                               fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                                              opacity: isBusy ? 0.3 : 1,
-                                              textDecoration: isBusy ? 'line-through' : 'none'
+                                              opacity: isDisabled ? 0.3 : 1,
+                                              textDecoration: isDisabled ? 'line-through' : 'none'
                                             }}
                                             onMouseEnter={(e) => {
-                                              if (selectedTime !== time && !isBusy) {
+                                              if (selectedTime !== time && !isDisabled) {
                                                 e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
                                                 e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
                                               }
                                             }}
                                             onMouseLeave={(e) => {
-                                              if (selectedTime !== time && !isBusy) {
+                                              if (selectedTime !== time && !isDisabled) {
                                                 e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
                                                 e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
                                               }
@@ -887,7 +937,39 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                       <input className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
                                     </div>
                                     <div>
-                                      <label className="input-label font-semibold">Email *</label>
+                                      <div style={{ position: 'relative' }}>
+                                        <label
+                                          onMouseEnter={() => setShowEmailTooltip(true)}
+                                          onMouseLeave={() => setShowEmailTooltip(false)}
+                                          className="label-help"
+                                        >
+                                          Email * <AlertCircle size={14} className="opacity-60" />
+                                        </label>
+
+                                        <AnimatePresence>
+                                          {showEmailTooltip && (
+                                            <motion.div
+                                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                                              exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                              transition={{ duration: 0.2, ease: "easeOut" }}
+                                              className="tooltip-glass"
+                                            >
+                                              Please use a correct email address. I will send the Google Calendar invitation and meeting link directly to this inbox.
+                                              <div style={{
+                                                position: 'absolute',
+                                                top: '100%',
+                                                left: '12px',
+                                                width: '0',
+                                                height: '0',
+                                                borderLeft: '6px solid transparent',
+                                                borderRight: '6px solid transparent',
+                                                borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
+                                              }} />
+                                            </motion.div>
+                                          )}
+                                        </AnimatePresence>
+                                      </div>
                                       <input type="email" className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
                                     </div>
                                     <div>
