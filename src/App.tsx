@@ -136,6 +136,8 @@ function App() {
     if (currentSection === 'dashboard') return;
     touchEndX.current = e.targetTouches[0].clientX;
     touchEndY.current = e.targetTouches[0].clientY;
+
+    // Optional: add visual feedback logic here if wanted later
   };
 
   const handleTouchEnd = () => {
@@ -148,7 +150,7 @@ function App() {
       return;
     }
 
-    const SWIPE_THRESHOLD = 100;
+    const SWIPE_THRESHOLD = 70;
     const deltaX = touchStartX.current - touchEndX.current;
     const deltaY = touchStartY.current - touchEndY.current;
 
@@ -161,8 +163,8 @@ function App() {
       }
     } else {
       // Vertical Swipe
-      const scrolledToBottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 1;
-      const scrolledToTop = window.scrollY <= 0;
+      const scrolledToBottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 5;
+      const scrolledToTop = window.scrollY <= 5;
 
       // Down to Up (deltaY positive) -> Next Page (if at bottom)
       if (deltaY > SWIPE_THRESHOLD && scrolledToBottom) {
@@ -189,79 +191,47 @@ function App() {
 
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      // When any modal is open (indicated by hidden overflow) or on dashboard, disable navigation scrolling
-      if (isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') {
-        // Don't prevent the event - let it bubble to modal content
-        // Just skip all navigation logic
-        return;
-      }
-
+      if (isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') return;
       if (isTransitioning) return;
 
       const now = Date.now();
-
-      // Reset accumulator if there's a pause in scrolling (stale intent)
-      if (now - lastScrollEventTime.current > 200) {
-        scrollAccumulator.current = 0;
-      }
+      if (now - lastScrollEventTime.current > 200) scrollAccumulator.current = 0;
       lastScrollEventTime.current = now;
 
-      // Navigation Cooldown
       if (now - lastNavigationTime.current < 1500) return;
 
       const isScrollDown = e.deltaY > 0;
       const isScrollUp = e.deltaY < 0;
-
-      // Check boundaries - 1px tolerance
-      const scrolledToBottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 1;
-      const scrolledToTop = window.scrollY <= 0;
-
-      // THRESHOLD: How much "effort" (pixels of intended scroll) to break through to next section
+      const scrolledToBottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 5;
+      const scrolledToTop = window.scrollY <= 5;
       const THRESHOLD = 100;
 
       if (isScrollDown && scrolledToBottom) {
-        // Accumulate "downward pressure"
         scrollAccumulator.current += e.deltaY;
-
         if (scrollAccumulator.current > THRESHOLD) {
           if (currentSection === 'home' || currentSection === 'view_link') navigateTo('stack');
           else if (currentSection === 'stack') navigateTo('projects');
-
-          // Reset after navigation triggered
           scrollAccumulator.current = 0;
           lastNavigationTime.current = now;
         }
       } else if (isScrollUp && scrolledToTop) {
-        // Accumulate "upward pressure" (deltaY is negative)
         scrollAccumulator.current += e.deltaY;
-
         if (scrollAccumulator.current < -THRESHOLD) {
           if (currentSection === 'projects') navigateTo('stack');
           else if (currentSection === 'stack') navigateTo('home');
-
-          // Reset after navigation triggered
           scrollAccumulator.current = 0;
           lastNavigationTime.current = now;
         }
       } else {
-        // Not pushing against a boundary, reset intent
         scrollAccumulator.current = 0;
       }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Prevent keyboard navigation when any modal is open (indicated by hidden overflow)
       if (isContactModalOpen || document.body.style.overflow === 'hidden') {
-        // Allow Escape key to close modal
-        if (e.key === 'Escape') {
-          closeContactModal();
-        }
-
-        // IMPORTANT: Don't prevent default if we're typing in an input/textarea
+        if (e.key === 'Escape') closeContactModal();
         const activeTag = document.activeElement?.tagName;
         if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
-
-        // Prevent other navigation keys that would trigger page transitions
         if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) {
           e.preventDefault();
         }
@@ -271,15 +241,33 @@ function App() {
 
     window.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('keydown', handleKeyDown);
-
     return () => {
       window.removeEventListener('wheel', handleWheel);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [currentSection, isTransitioning, navigateTo, isContactModalOpen, closeContactModal]);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const preventPullToRefresh = (e: TouchEvent) => {
+      const isPullingDown = e.touches[0].clientY > touchStartY.current;
+      const scrolledToTop = window.scrollY <= 5;
+      if (scrolledToTop && isPullingDown && !isContactModalOpen && currentSection !== 'dashboard') {
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
+    container.addEventListener('touchmove', preventPullToRefresh, { passive: false });
+    return () => container.removeEventListener('touchmove', preventPullToRefresh);
+  }, [currentSection, isContactModalOpen]);
+
   return (
     <main
+      ref={containerRef}
       className="relative"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
