@@ -1,6 +1,6 @@
 import { Home, Layers, FolderKanban, Mail, Moon, Sun } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 interface NavbarProps {
     onNavigate?: (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
@@ -8,6 +8,15 @@ interface NavbarProps {
     onOpenContact?: () => void;
     isContactOpen?: boolean;
 }
+
+const Tooltip = ({ text, show }: { text: string, show: boolean }) => (
+    <div className={`nav-tooltip ${show ? 'show' : ''}`}>
+        <div className="nav-tooltip-inner">
+            {text}
+            <div className="nav-tooltip-arrow" />
+        </div>
+    </div>
+);
 
 const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false }: NavbarProps) => {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -52,43 +61,40 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
 
     // Auto-show tooltips logic
     useEffect(() => {
-        // Show immediately on start (after a brief delay)
-        const startTimeout = setTimeout(() => {
-            if (currentSection !== 'projects' && !isHoveringNav) {
-                setAutoTooltip('projects');
-                setTimeout(() => setAutoTooltip(null), 3000);
+        let step = 0; // 0: Projects, 1: Contact, 2: Off? No, let's do 10s ON, 10s ON rotation
+
+        const runRotation = () => {
+            if (isHoveringNav) {
+                setAutoTooltip(null);
+                return;
             }
-        }, 2000);
 
-        const interval = setInterval(() => {
-            if (isHoveringNav) return; // Don't auto-show if user is interacting
-
-            // First show Projects tooltip if we are not there
-            if (currentSection !== 'projects') {
-                setAutoTooltip('projects');
-                setTimeout(() => {
+            if (step === 0) {
+                // Show Projects if not already there
+                if (currentSection !== 'projects') {
+                    setAutoTooltip('projects');
+                } else {
                     setAutoTooltip(null);
-                    // Then show Contact tooltip shortly after, if not open and still not hovering
-                    if (!isContactOpen && !isHoveringNav) {
-                        setTimeout(() => {
-                            if (!isHoveringNav) {
-                                setAutoTooltip('mail');
-                                setTimeout(() => setAutoTooltip(null), 3000);
-                            }
-                        }, 500);
-                    }
-                }, 3000);
-            } else if (!isContactOpen) {
-                // If we are in projects, just show contact
-                setAutoTooltip('mail');
-                setTimeout(() => setAutoTooltip(null), 3000);
+                }
+                step = 1;
+            } else {
+                // Show Contact if not already open
+                if (!isContactOpen) {
+                    setAutoTooltip('mail');
+                } else {
+                    setAutoTooltip(null);
+                }
+                step = 0;
             }
-        }, 30000);
-
-        return () => {
-            clearTimeout(startTimeout);
-            clearInterval(interval);
         };
+
+        // Start the rotation
+        const interval = setInterval(runRotation, 10000);
+
+        // Initial run
+        runRotation();
+
+        return () => clearInterval(interval);
     }, [currentSection, isContactOpen, isHoveringNav]);
 
     const getButtonStyle = (tabName: string) => {
@@ -140,50 +146,6 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         };
     };
 
-    const Tooltip = ({ text, show }: { text: string, show: boolean }) => (
-        <AnimatePresence>
-            {show && (
-                <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.8 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.8 }}
-                    style={{
-                        position: 'absolute',
-                        bottom: '50%',
-                        left: '50%',
-                        transform: 'translateX(-16px)',
-                        marginBottom: '18px',
-                        padding: '6px 12px',
-                        background: isDark ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                        color: isDark ? '#fff' : '#000',
-                        border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        whiteSpace: 'nowrap',
-                        pointerEvents: 'none',
-                        zIndex: 60,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                    }}
-                >
-                    {text}
-                    {/* Arrow */}
-                    <div style={{
-                        position: 'absolute',
-                        bottom: '-5px',
-                        left: '16px',
-                        marginLeft: '-5px',
-                        width: '10px',
-                        height: '10px',
-                        background: isDark ? 'rgba(30, 30, 30, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                        borderBottom: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
-                        borderRight: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
-                        transform: 'rotate(45deg)'
-                    }} />
-                </motion.div>
-            )}
-        </AnimatePresence>
-    );
 
     return (
         <nav style={{
