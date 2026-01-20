@@ -449,8 +449,11 @@ const Projects = () => {
                 <div className="mb-8 pl-0">
                     <div
                         ref={handwritingRef}
-                        className="text-2xl text-accent opacity-0 mb-[-15px] ml-2.5"
-                        style={{ fontFamily: "'Rock Salt', cursive" }}
+                        className="text-4xl opacity-0 mb-[-15px] ml-2.5"
+                        style={{
+                            fontFamily: "'Rock Salt', cursive",
+                            color: 'var(--accent)'
+                        }}
                     >
                         Selected
                     </div>
