@@ -120,21 +120,27 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
             {/* Tooltip */}
             {information && (
                 <div
-                    className="nav-tooltip-inner absolute z-50 text-center leading-relaxed"
+                    className="absolute z-50 pointer-events-auto cursor-pointer"
                     style={{
                         top: '-10px',
                         left: isSmall ? '20px' : '50px',
                         width: isSmall ? '180px' : '220px',
                         transform: isHovered ? 'translateY(-100%) scale(1)' : 'translateY(-90%) scale(0.9)',
                         opacity: isHovered ? 1 : 0,
-                        pointerEvents: 'none',
                         transition: 'opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                        whiteSpace: 'normal',
-                        fontWeight: 'normal',
-                        fontSize: '0.85rem'
+                        pointerEvents: isHovered ? 'auto' : 'none'
                     }}
                 >
-                    {information}
+                    <div
+                        className="nav-tooltip-inner text-center leading-relaxed"
+                        style={{
+                            whiteSpace: 'normal',
+                            fontWeight: 'normal',
+                            fontSize: '0.85rem'
+                        }}
+                    >
+                        {information}
+                    </div>
                     <div className="nav-tooltip-arrow" />
                 </div>
             )}
