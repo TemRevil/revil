@@ -15,7 +15,7 @@ interface DashboardProps {
 
 const Dashboard = ({ onNavigate }: DashboardProps) => {
     const [isDark, setIsDark] = useState(false);
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
     const [activeTab, setActiveTab] = useState('projects');
     const [profileImage, setProfileImage] = useState<string>('');
 
@@ -98,31 +98,17 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
         { id: 'canary', label: 'Canary', icon: Bird },
     ];
 
-    // Dynamic sizing based on screen width
     const sidebarWidth = isExtraSmall ? '56px' : (isMobile ? '72px' : '260px');
-    const sidebarPadding = isExtraSmall ? '12px 8px' : (isMobile ? '16px 12px' : '24px 16px');
-    const mainPadding = isExtraSmall ? '12px' : (isSmall ? '16px' : '32px');
-    const headerFontSize = isExtraSmall ? '1.25rem' : (isSmall ? '1.5rem' : '2rem');
-    const headerMarginBottom = isExtraSmall ? '16px' : (isSmall ? '20px' : '32px');
     const iconSize = isExtraSmall ? 18 : 20;
-    const buttonPadding = isExtraSmall ? '10px' : '12px';
     const avatarSize = isExtraSmall ? '28px' : '32px';
-    const logoMarginBottom = isExtraSmall ? '20px' : '32px';
 
     return (
         <div
             onTouchStart={(e) => e.stopPropagation()}
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
-            style={{
-                width: '100%',
-                height: '100vh',
-                display: 'flex',
-                backgroundColor: isDark ? '#0a0a0a' : '#f3f4f6',
-                position: 'relative',
-                overflow: 'hidden',
-                touchAction: 'pan-y'
-            }}>
+            className="w-full h-screen flex bg-primary relative overflow-hidden touch-pan-y"
+        >
             {/* Decorative Background Blobs */}
             <div className="blob-container">
                 <div className="blob blob-1"></div>
@@ -134,177 +120,114 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
             </div>
 
             {/* Sidebar */}
-            <aside style={{
-                width: sidebarWidth,
-                minWidth: sidebarWidth,
-                height: '100%',
-                backgroundColor: isDark ? '#00000040' : '#ffffff59',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                borderRight: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
-                display: 'flex',
-                flexDirection: 'column',
-                padding: sidebarPadding,
-                gap: isExtraSmall ? '4px' : '8px',
-                transition: 'width 0.3s ease',
-                zIndex: 10
-            }}>
-                <div className="dashboard-logo" style={{
-                    marginBottom: logoMarginBottom,
-                    padding: isExtraSmall ? '0 4px' : '0 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: isMobile ? 'center' : 'flex-start',
-                    gap: '12px',
-                    opacity: 0 // Initial state for animation
-                }}>
-                    <div style={{
-                        width: avatarSize,
-                        height: avatarSize,
-                        minWidth: avatarSize,
-                        borderRadius: '8px',
-                        overflow: 'hidden',
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}>
+            <aside
+                className={`
+                    h-full flex flex-col z-10 transition-all duration-300
+                    bg-[var(--navbar-bg)] backdrop-blur-xl border-r border-[var(--navbar-border)]
+                    ${isExtraSmall ? 'p-[12px_8px] gap-1' : isMobile ? 'p-[16px_12px] gap-2' : 'p-[24px_16px] gap-2'}
+                `}
+                style={{
+                    width: sidebarWidth,
+                    minWidth: sidebarWidth,
+                }}
+            >
+                {/* Logo Area */}
+                <div
+                    className={`
+                        dashboard-logo flex items-center opacity-0
+                        ${isMobile ? 'justify-center' : 'justify-start gap-3 px-3'}
+                        ${isExtraSmall ? 'mb-5 px-1' : 'mb-8'}
+                    `}
+                >
+                    <div
+                        className="rounded-lg overflow-hidden flex items-center justify-center bg-[rgba(0,0,0,0.1)] dark:bg-[rgba(255,255,255,0.1)]"
+                        style={{
+                            width: avatarSize,
+                            height: avatarSize,
+                            minWidth: avatarSize,
+                        }}
+                    >
                         {profileImage ? (
                             <img
                                 src={profileImage}
                                 alt="User Avatar"
-                                style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover'
-                                }}
+                                className="w-full h-full object-cover"
                             />
                         ) : (
-                            <User className="text-zinc-500/50" />
+                            <User className="text-muted/50" size={isExtraSmall ? 16 : 20} />
                         )}
                     </div>
                     {!isMobile && (
-                        <span style={{
-                            fontSize: '1.25rem',
-                            fontWeight: 700,
-                            color: 'var(--text-primary)',
-                            fontFamily: "'Inter', sans-serif"
-                        }}>
+                        <span className="text-xl font-bold text-primary font-inter">
                             Revil
                         </span>
                     )}
                 </div>
 
-                {menuItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = activeTab === item.id;
-                    return (
-                        <button
-                            key={item.id}
-                            onClick={() => setActiveTab(item.id)}
-                            className="sidebar-item"
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '12px',
-                                padding: buttonPadding,
-                                borderRadius: isExtraSmall ? '10px' : '12px',
-                                border: 'none',
-                                backgroundColor: isActive
-                                    ? (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)')
-                                    : 'transparent',
-                                color: isActive
-                                    ? 'var(--text-primary)'
-                                    : 'var(--text-secondary)',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s ease',
-                                width: '100%',
-                                justifyContent: isMobile ? 'center' : 'flex-start',
-                                position: 'relative',
-                                opacity: 0 // Initial state for animation
-                            }}
-                            onMouseEnter={(e) => {
-                                if (!isActive) {
-                                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)';
-                                    e.currentTarget.style.color = 'var(--text-primary)';
-                                    anime({
-                                        targets: e.currentTarget.querySelector('svg'),
-                                        scale: 1.2,
-                                        duration: 200,
-                                        easing: 'easeOutQuad'
-                                    });
-                                }
-                            }}
-                            onMouseLeave={(e) => {
-                                if (!isActive) {
-                                    e.currentTarget.style.backgroundColor = 'transparent';
-                                    e.currentTarget.style.color = 'var(--text-secondary)';
-                                    anime({
-                                        targets: e.currentTarget.querySelector('svg'),
-                                        scale: 1,
-                                        duration: 200,
-                                        easing: 'easeOutQuad'
-                                    });
-                                }
-                            }}
-                        >
-                            {isActive && (
-                                <div className="active-sidebar-pill" style={{
-                                    position: 'absolute',
-                                    left: 0,
-                                    width: '4px',
-                                    height: '60%',
-                                    backgroundColor: 'var(--accent)',
-                                    borderRadius: '0 4px 4px 0'
-                                }} />
-                            )}
-                            <Icon size={iconSize} />
-                            {!isMobile && (
-                                <span style={{
-                                    fontSize: '0.95rem',
-                                    fontWeight: 500,
-                                    fontFamily: "'Inter', sans-serif"
-                                }}>
-                                    {item.label}
-                                </span>
-                            )}
-                        </button>
-                    );
-                })}
+                {/* Navigation Items - Scrollable if needed */}
+                <nav className={`flex-1 flex flex-col ${isExtraSmall ? 'gap-1' : 'gap-2'} overflow-y-auto`}>
+                    {menuItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeTab === item.id;
+                        return (
+                            <button
+                                key={item.id}
+                                onClick={() => setActiveTab(item.id)}
+                                className={`
+                                    sidebar-item relative w-full flex items-center transition-all duration-200 border-0 cursor-pointer
+                                    ${isMobile ? 'justify-center' : 'justify-start'}
+                                    ${isExtraSmall ? 'p-2.5 rounded-[10px]' : 'p-3 rounded-xl gap-3'}
+                                    ${isActive ? 'bg-[rgba(0,0,0,0.05)] dark:bg-[rgba(255,255,255,0.1)] text-primary' : 'bg-transparent text-sec hover:bg-[rgba(0,0,0,0.02)] dark:hover:bg-[rgba(255,255,255,0.05)] hover:text-primary'}
+                                `}
+                                onMouseEnter={(e) => {
+                                    if (!isActive) {
+                                        anime({
+                                            targets: e.currentTarget.querySelector('svg'),
+                                            scale: 1.2,
+                                            duration: 200,
+                                            easing: 'easeOutQuad'
+                                        });
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (!isActive) {
+                                        anime({
+                                            targets: e.currentTarget.querySelector('svg'),
+                                            scale: 1,
+                                            duration: 200,
+                                            easing: 'easeOutQuad'
+                                        });
+                                    }
+                                }}
+                            >
+                                {isActive && (
+                                    <div className="active-sidebar-pill absolute left-0 w-1 h-[60%] bg-accent rounded-r" />
+                                )}
+                                <Icon size={iconSize} />
+                                {!isMobile && (
+                                    <span className="text-[0.95rem] font-medium font-inter">
+                                        {item.label}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </nav>
 
-                <div style={{ marginTop: 'auto' }}>
+                {/* Bottom Actions - Locked at the end */}
+                <div className="pt-4 mt-2 border-t border-[var(--navbar-border)]">
                     <button
                         onClick={() => onNavigate && onNavigate('home')}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px',
-                            padding: buttonPadding,
-                            borderRadius: isExtraSmall ? '10px' : '12px',
-                            border: 'none',
-                            backgroundColor: 'transparent',
-                            color: 'var(--text-secondary)',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            width: '100%',
-                            justifyContent: isMobile ? 'center' : 'flex-start'
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)';
-                            e.currentTarget.style.color = 'rgb(239, 68, 68)';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                            e.currentTarget.style.color = 'var(--text-secondary)';
-                        }}
+                        className={`
+                            sidebar-item w-full flex items-center transition-all duration-200 border-0 cursor-pointer bg-transparent text-sec
+                            hover:bg-red-500/5 dark:hover:bg-red-500/10 hover:text-red-500
+                            ${isMobile ? 'justify-center px-0' : 'justify-start px-3 gap-3'}
+                            ${isExtraSmall ? 'py-2 rounded-[10px]' : 'py-3 rounded-xl'}
+                        `}
                     >
                         <LogOut size={iconSize} />
                         {!isMobile && (
-                            <span style={{
-                                fontSize: '0.95rem',
-                                fontWeight: 500,
-                                fontFamily: "'Inter', sans-serif"
-                            }}>
+                            <span className="text-[0.95rem] font-medium font-inter">
                                 Logout
                             </span>
                         )}
@@ -312,41 +235,33 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                 </div>
             </aside>
 
-            {/* Main Content */}
-            <main style={{
-                flex: 1,
-                height: '100%',
-                overflowY: 'auto',
-                overflowX: 'hidden',
-                padding: mainPadding,
-                position: 'relative',
-                minWidth: 0 // Important for flex children to shrink properly
-            }}>
-                <div style={{
-                    maxWidth: '1200px',
-                    margin: '0 auto',
-                    height: '100%'
-                }}>
-                    {/* Header / Top bar area */}
-                    <div style={{
-                        marginBottom: headerMarginBottom,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                    }}>
-                        <h1 style={{
-                            fontSize: headerFontSize,
-                            fontWeight: 800,
-                            color: 'var(--text-primary)',
-                            fontFamily: "'Inter', sans-serif",
-                            margin: 0
-                        }}>
+            {/* Main Content Area */}
+            <main
+                className={`
+                    flex-1 h-full overflow-y-auto overflow-x-hidden relative min-w-0
+                    ${isExtraSmall ? 'p-3' : isSmall ? 'p-4' : 'p-8'}
+                `}
+            >
+                <div className="max-w-[1200px] mx-auto h-full flex flex-col">
+                    {/* Header */}
+                    <div
+                        className={`
+                            flex items-center justify-between
+                            ${isExtraSmall ? 'mb-4' : isSmall ? 'mb-5' : 'mb-8'}
+                        `}
+                    >
+                        <h1
+                            className={`
+                                font-extrabold text-primary font-inter m-0
+                                ${isExtraSmall ? 'text-xl' : isSmall ? 'text-2xl' : 'text-[2rem]'}
+                            `}
+                        >
                             {menuItems.find(i => i.id === activeTab)?.label}
                         </h1>
                     </div>
 
-                    {/* Content Area */}
-                    <div className="dashboard-content-area" style={{ height: '100%' }}>
+                    {/* Content Viewport */}
+                    <div className="dashboard-content-area flex-1">
                         {activeTab === 'projects' ? (
                             <DProjects />
                         ) : activeTab === 'tags' ? (
@@ -358,20 +273,11 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                         ) : activeTab === 'canary' ? (
                             <DCanary />
                         ) : (
-                            <div style={{
-                                width: '100%',
-                                height: '90%',
-                                borderRadius: isExtraSmall ? '16px' : '24px',
-                                border: `2px dashed ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: 'var(--text-secondary)',
-                                fontFamily: "'Inter', sans-serif",
-                                fontSize: isExtraSmall ? '0.85rem' : '1rem',
-                                padding: '16px',
-                                textAlign: 'center'
-                            }}>
+                            <div className={`
+                                w-full h-[90%] flex items-center justify-center text-center p-4
+                                border-2 border-dashed border-input-border text-sec font-inter
+                                ${isExtraSmall ? 'rounded-2xl text-sm' : 'rounded-3xl text-base'}
+                            `}>
                                 <span>Content for {menuItems.find(i => i.id === activeTab)?.label} will go here</span>
                             </div>
                         )}

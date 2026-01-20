@@ -5,13 +5,8 @@ import { X, Search } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 
-// Import SVG icons
-
 import MProjectView, { getStackIcon, getTechColor, Project } from './M-ProjectView';
 import MContributorView, { Contributor } from './M-ContributorView';
-
-
-// Static data removed in favor of Firestore fetching
 
 const ProjectCard = ({ project, index, onClick }: { project: Project; index: number; onClick: () => void }) => {
     const cardRef = useRef<HTMLDivElement>(null);
@@ -21,7 +16,6 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
 
     // Slideshow logic (Card Hover)
     useEffect(() => {
-        // eslint-disable-next-line no-undef
         let interval: ReturnType<typeof setInterval> | undefined;
         if (isHovered && project.images.length > 1) {
             interval = setInterval(() => {
@@ -53,7 +47,6 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
         });
     }, [index]);
 
-
     return (
         <motion.div
             onMouseEnter={() => setIsHovered(true)}
@@ -66,54 +59,33 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                 y: { duration: 0.2 },
                 layout: { duration: 0.4, type: "tween", ease: "easeOut" }
             }}
-            className="group flex flex-col h-full"
-            style={{
-                cursor: 'pointer',
-                backgroundColor: 'var(--card-bg)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                borderRadius: '20px',
-                overflow: 'hidden',
-                border: '1px solid var(--navbar-border)',
-                boxShadow: isHovered ? 'var(--card-shadow-hover)' : 'var(--card-shadow)',
-                willChange: 'transform, opacity',
-            }}
+            className={`
+                group flex flex-col h-full glass-panel cursor-pointer overflow-hidden
+                border border-[var(--navbar-border)] transition-shadow duration-300
+                ${isHovered ? 'shadow-xl' : 'shadow-md'}
+            `}
+            style={{ willChange: 'transform, opacity' }}
         >
-            <div
-                style={{
-                    position: 'relative',
-                    height: '200px',
-                    overflow: 'hidden',
-                    borderRadius: '20px 20px 0 0',
-                    willChange: 'transform'
-                }}
-            >
+            <div className="relative h-[200px] overflow-hidden rounded-t-[20px] will-change-transform">
                 <motion.div
                     layoutId={`project-image-${project.id}`}
                     transition={{ duration: 0.4, type: "tween", ease: "easeOut" }}
-                    style={{ position: 'absolute', inset: 0 }}
+                    className="absolute inset-0"
                 >
-                    <div style={{
-                        display: 'flex',
-                        height: '100%',
-                        width: `${project.images.length * 100}%`,
-                        transform: `translateX(-${(currentImageIndex * 100) / project.images.length}%)`,
-                        transition: 'transform 0.5s ease-in-out'
-                    }}>
+                    <div
+                        className="flex h-full transition-transform duration-500 ease-in-out"
+                        style={{
+                            width: `${project.images.length * 100}%`,
+                            transform: `translateX(-${(currentImageIndex * 100) / project.images.length}%)`,
+                        }}
+                    >
                         {project.images.map((img, i) => (
-                            <div key={i} style={{ width: `${100 / project.images.length}%`, height: '100%', position: 'relative', overflow: 'hidden' }}>
+                            <div key={i} style={{ width: `${100 / project.images.length}%` }} className="h-full relative overflow-hidden">
                                 <img
                                     src={img}
                                     alt={project.title}
-                                    style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        objectFit: 'cover',
-                                        transition: 'transform 0.5s ease',
-                                        transform: isHovered ? 'scale(1.05)' : 'scale(1)'
-                                    }}
+                                    className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
                                 />
-                                {/* Gradient Overlay for text readability (optional, but good for aesthetics) */}
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
                             </div>
                         ))}
@@ -121,7 +93,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                 </motion.div>
 
                 {/* Overlays: Tags / Contributors Slideshow */}
-                <div style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 10 }}>
+                <div className="absolute top-4 left-4 z-10">
                     <AnimatePresence mode="wait">
                         {!showContributors ? (
                             <motion.div
@@ -130,42 +102,19 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 10 }}
                                 transition={{ duration: 0.3 }}
-                                style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}
+                                className="flex gap-1.5 flex-wrap"
                             >
                                 {(project.tags || []).slice(0, 2).map((tag: any, i) => (
                                     <div
                                         key={i}
-                                        style={{
-                                            padding: '4px 10px',
-                                            borderRadius: '20px',
-                                            background: 'rgba(255, 255, 255, 0.4)',
-                                            backdropFilter: 'blur(12px)',
-                                            WebkitBackdropFilter: 'blur(12px)',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 600,
-                                            color: '#333',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px'
-                                        }}
+                                        className="px-2.5 py-1 rounded-full bg-white/40 backdrop-blur-md text-xs font-semibold text-gray-800 shadow-sm flex items-center gap-1"
                                     >
-                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: tag.color || '#3b82f6' }} />
+                                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: tag.color || '#3b82f6' }} />
                                         {tag.name}
                                     </div>
                                 ))}
                                 {(project.tags || []).length > 2 && (
-                                    <div style={{
-                                        padding: '4px 10px',
-                                        borderRadius: '20px',
-                                        background: 'rgba(0, 0, 0, 0.4)',
-                                        backdropFilter: 'blur(12px)',
-                                        WebkitBackdropFilter: 'blur(12px)',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 600,
-                                        color: '#fff',
-                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                                    }}>
+                                    <div className="px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-md text-xs font-semibold text-white shadow-sm">
                                         +{(project.tags || []).length - 2} More
                                     </div>
                                 )}
@@ -177,49 +126,26 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 10 }}
                                 transition={{ duration: 0.3 }}
-                                style={{ display: 'flex', alignItems: 'center' }}
+                                className="flex items-center"
                             >
-                                <div style={{ display: 'flex', paddingLeft: '4px' }}>
+                                <div className="flex pl-1">
                                     {(project.contributors || []).slice(0, 3).map((c, i) => (
                                         <div
                                             key={i}
-                                            style={{
-                                                width: '32px',
-                                                height: '32px',
-                                                borderRadius: '50%',
-                                                border: '2px solid white',
-                                                marginLeft: '-8px',
-                                                overflow: 'hidden',
-                                                background: '#f3f4f6',
-                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                                            }}
+                                            className="w-8 h-8 rounded-full border-2 border-white -ml-2 overflow-hidden bg-gray-100 shadow-sm"
                                             title={c.name}
                                         >
                                             {c.image ? (
-                                                <img src={c.image} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
                                             ) : (
-                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e5e7eb', color: '#6b7280', fontSize: '10px', fontWeight: 'bold' }}>
+                                                <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-500 text-[10px] font-bold">
                                                     {c.name.charAt(0)}
                                                 </div>
                                             )}
                                         </div>
                                     ))}
                                     {(project.contributors || []).length > 3 && (
-                                        <div style={{
-                                            width: '32px',
-                                            height: '32px',
-                                            borderRadius: '50%',
-                                            border: '2px solid white',
-                                            marginLeft: '-8px',
-                                            background: '#3b82f6',
-                                            color: 'white',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            fontSize: '0.7rem',
-                                            fontWeight: 'bold',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                                        }}>
+                                        <div className="w-8 h-8 rounded-full border-2 border-white -ml-2 bg-blue-500 text-white flex items-center justify-center text-[0.7rem] font-bold shadow-sm">
                                             +{(project.contributors || []).length - 3}
                                         </div>
                                     )}
@@ -230,17 +156,16 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                 </div>
             </div>
 
-            <div style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                <h3 className="font-inter font-extrabold text-2xl mb-2.5 text-[var(--text-primary)]">
+            <div className="p-6 flex flex-col flex-1">
+                <h3 className="heading-md mb-2.5 text-primary">
                     {project.title}
                 </h3>
                 <p
-                    className="font-inter text-base text-[var(--text-secondary)] leading-relaxed flex-1"
+                    className="text-body text-sec leading-relaxed flex-1 overflow-hidden"
                     style={{
                         display: '-webkit-box',
                         WebkitLineClamp: 3,
                         WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
                         textOverflow: 'ellipsis'
                     }}
                 >
@@ -250,8 +175,6 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
         </motion.div >
     );
 };
-
-
 
 const Projects = () => {
     const titleRef = useRef<HTMLHeadingElement>(null);
@@ -273,9 +196,9 @@ const Projects = () => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Fetch contributors from Firestore (Global Team List)
+    // Fetch Data
     useEffect(() => {
-        // Option 1: Map inside document
+        // Contributors
         const unsubDoc = onSnapshot(doc(db, 'Tags', 'Contributors'), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
@@ -295,7 +218,6 @@ const Projects = () => {
             }
         });
 
-        // Option 2: Individual documents in subcollection
         const unsubCol = onSnapshot(collection(db, 'Tags', 'Contributors', 'Profiles'), (snapshot) => {
             const loaded = snapshot.docs.map(d => {
                 const val = d.data();
@@ -313,7 +235,7 @@ const Projects = () => {
             });
         });
 
-        // Fetch Global Tags for Icons/Colors
+        // Tags
         const unsubTags = onSnapshot(doc(db, 'Tags', 'Tags'), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
@@ -336,7 +258,6 @@ const Projects = () => {
 
     const [rawProjects, setRawProjects] = useState<any[]>([]);
 
-    // Fetch projects from Firestore
     useEffect(() => {
         const unsub = onSnapshot(collection(db, 'Projects'), (snapshot) => {
             setRawProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -344,7 +265,6 @@ const Projects = () => {
         return () => unsub();
     }, []);
 
-    // Resolve projects with contributor details and metrics
     useEffect(() => {
         const loaded = rawProjects.map(data => {
             const v = data.Views || {};
@@ -353,7 +273,6 @@ const Projects = () => {
                 const name = c["Contributor Name"] || '';
                 const projectRole = c["Role at Project"];
 
-                // Optimized matching: Trim, Lowercase, and check for exact match
                 const fullContrib = availableContributors.find(cont => {
                     const cName = (cont.name || '').trim().toLowerCase();
                     const pName = name.trim().toLowerCase();
@@ -371,7 +290,6 @@ const Projects = () => {
 
             const resolveTag = (t: any) => {
                 const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
-                // Try to find in global tags
                 const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
 
                 return {
@@ -387,10 +305,7 @@ const Projects = () => {
                 .filter(t => t.name !== 'Unix');
 
             const rawTags = data.Tags ? Object.values(data.Tags) : [];
-            const normalizedTags = rawTags
-                .map(resolveTag)
-                .filter(t => t.name !== 'Unix');
-
+            const normalizedTags = rawTags.map(resolveTag).filter(t => t.name !== 'Unix');
             const displayTags = normalizedStack.length > 0 ? normalizedStack : normalizedTags;
 
             return {
@@ -414,14 +329,12 @@ const Projects = () => {
         });
         setProjectsData(loaded);
 
-        // Keep selected project in sync with latest resolved data
         if (selectedProject) {
             const updated = loaded.find(p => p.id === selectedProject.id);
             if (updated) setSelectedProject(updated);
         }
     }, [rawProjects, availableContributors, availableTags]);
 
-    // Levenshtein distance for fuzzy search
     const getLevenshteinDistance = (a: string, b: string) => {
         if (a.length === 0) return b.length;
         if (b.length === 0) return a.length;
@@ -444,31 +357,24 @@ const Projects = () => {
     };
 
     const filteredProjects = useMemo(() => {
-        // First filter by tags if any are selected
         let results = projectsData;
-
         if (selectedTags.length > 0) {
             results = results.filter(project => {
                 const projectTags = [
                     ...(project.stack || []).map(s => s.toLowerCase()),
                     ...(project.tags || []).map(t => t.name.toLowerCase())
                 ];
-                // Project must have ALL selected tags
                 return selectedTags.every(tag => projectTags.includes(tag.toLowerCase()));
             });
         }
-
         if (searchQuery.length < 2) return results;
 
         const query = searchQuery.toLowerCase();
-
         const scored = results.map(project => {
             let minDistance = Infinity;
-            // Check helper
             const checkTerm = (term: string) => {
                 const lower = term.toLowerCase();
                 if (lower.includes(query)) return 0;
-                // Check words for fuzzy match
                 const words = lower.split(/[\s-_]+/);
                 let d = Infinity;
                 words.forEach(w => {
@@ -476,28 +382,19 @@ const Projects = () => {
                 });
                 return d;
             };
-
-            // Calculate min distance across all fields
-            // Title
             minDistance = Math.min(minDistance, checkTerm(project.title || ''));
-            // Tags
             (project.tags || []).forEach(tag => {
                 minDistance = Math.min(minDistance, checkTerm(typeof tag === 'string' ? tag : tag.name));
             });
-            // Stack (Technologies)
             (project.stack || []).forEach(tech => {
                 minDistance = Math.min(minDistance, checkTerm(tech));
             });
-            // Contributors
             project.contributors.forEach(c => {
                 minDistance = Math.min(minDistance, checkTerm(c.name));
             });
-
             return { project, minDistance };
         });
 
-        // Filter: Allow partial matches (0 distance) or close fuzzy matches (distance <= 2)
-        // Sort: Closest matches first
         return scored
             .filter(item => item.minDistance <= 2)
             .sort((a, b) => a.minDistance - b.minDistance)
@@ -513,7 +410,6 @@ const Projects = () => {
     };
 
     useEffect(() => {
-        // Animate handwriting text
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
@@ -521,8 +417,6 @@ const Projects = () => {
             duration: 800,
             easing: 'easeOutQuad'
         });
-
-        // Animate title
         anime({
             targets: titleRef.current,
             opacity: [0, 1],
@@ -533,8 +427,6 @@ const Projects = () => {
         });
     }, []);
 
-    // Prevent body scrolling when modals are open
-    // Prevent body scrolling when modals are open and handle scrollbar compensation
     useEffect(() => {
         if (showProjectModal || showContributorModal) {
             const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
@@ -544,8 +436,6 @@ const Projects = () => {
             document.body.style.overflow = 'unset';
             document.body.style.paddingRight = '0px';
         }
-
-        // Cleanup on unmount
         return () => {
             document.body.style.overflow = 'unset';
             document.body.style.paddingRight = '0px';
@@ -553,88 +443,40 @@ const Projects = () => {
     }, [showProjectModal, showContributorModal]);
 
     return (
-        <div style={{
-            minHeight: '100vh',
-            backgroundColor: 'var(--bg-primary)',
-            transition: 'background-color 0.3s ease'
-        }} className="pt-32 pb-20">
+        <div className="min-h-screen bg-primary transition-colors duration-300 pt-32 pb-20">
             <div className="page-padding">
-                {/* Header */}
-                <div style={{ marginBottom: '60px', paddingLeft: '0' }}>
+                {/* Header - Reduced MB */}
+                <div className="mb-8 pl-0">
                     <div
                         ref={handwritingRef}
-                        style={{
-                            fontFamily: "'Rock Salt', cursive",
-                            fontSize: '2rem',
-                            color: 'rgb(59, 130, 246)', // Blue accent
-                            marginBottom: '-15px',
-                            marginLeft: '10px',
-                            opacity: 0
-                        }}
+                        className="text-2xl text-accent opacity-0 mb-[-15px] ml-2.5"
+                        style={{ fontFamily: "'Rock Salt', cursive" }}
                     >
                         Selected
                     </div>
                     <h1
                         ref={titleRef}
-                        className="text-5xl md:text-7xl lg:text-8xl"
-                        style={{
-                            fontFamily: "'Inter', sans-serif",
-                            fontWeight: 900,
-                            color: 'var(--text-primary)',
-                            margin: 0,
-                            opacity: 0,
-                            transition: 'color 0.3s ease'
-                        }}
+                        className="text-5xl md:text-7xl lg:text-8xl font-black text-primary m-0 opacity-0 transition-colors duration-300 font-inter"
                     >
                         Projects
                     </h1>
                 </div>
 
-                {/* Search Bar */}
-                <div style={{ marginBottom: '40px', maxWidth: '600px' }}>
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        backgroundColor: 'var(--card-bg)',
-                        backdropFilter: 'blur(12px)',
-                        WebkitBackdropFilter: 'blur(12px)',
-                        borderRadius: '16px',
-                        padding: '12px 20px',
-                        border: '1px solid var(--navbar-border)',
-                        boxShadow: 'var(--card-shadow)',
-                        transition: 'box-shadow 0.3s ease'
-                    }}
-                        onFocus={() => {
-                            // optional focus styles if needed via state or pure css
-                        }}
-                    >
-                        <Search size={20} style={{ color: 'var(--text-secondary)', marginRight: '12px' }} />
+                {/* Search Bar - Reduced MB */}
+                <div className="mb-6 max-w-[600px]">
+                    <div className="glass-surface flex items-center p-3 px-5 border border-[var(--navbar-border)] shadow-md transition-shadow duration-300">
+                        <Search size={20} className="text-sec mr-3" />
                         <input
                             type="text"
                             placeholder="Search projects by title, tags, or contributor..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            style={{
-                                border: 'none',
-                                background: 'transparent',
-                                color: 'var(--text-primary)',
-                                fontSize: '1rem',
-                                width: '100%',
-                                outline: 'none',
-                                fontFamily: "'Inter', sans-serif"
-                            }}
+                            className="border-none bg-transparent text-primary text-base w-full outline-none font-inter"
                         />
                         {searchQuery && (
                             <button
                                 onClick={() => setSearchQuery('')}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: 'var(--text-secondary)',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center'
-                                }}
+                                className="bg-none border-none text-sec cursor-pointer flex items-center"
                             >
                                 <X size={16} />
                             </button>
@@ -642,31 +484,14 @@ const Projects = () => {
                     </div>
                 </div>
 
-                {/* Filter Tags */}
-                <div style={{
-                    marginBottom: '40px',
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: windowWidth < 460 ? '8px' : '10px',
-                    alignItems: 'center'
-                }}>
-                    <span style={{
-                        fontSize: '0.75rem',
-                        fontWeight: 900,
-                        color: 'var(--text-secondary)',
-                        marginRight: '10px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.2em',
-                        opacity: 0.6
-                    }}>Filter View:</span>
+                {/* Filter Tags - Reduced MB */}
+                <div className={`mb-8 flex flex-wrap items-center ${windowWidth < 460 ? 'gap-2' : 'gap-2.5'}`}>
+                    <span className="text-xs font-black text-sec mr-2.5 uppercase tracking-widest opacity-60">
+                        Filter View:
+                    </span>
 
                     {/* Tags Container */}
-                    <div style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '8px',
-                        alignItems: 'center'
-                    }}>
+                    <div className="flex flex-wrap gap-2 items-center">
                         {availableTags.map(tag => {
                             const isActive = selectedTags.includes(tag.name);
                             const isUrl = tag.iconSvg && (tag.iconSvg.startsWith('http') || tag.iconSvg.includes('/o/'));
@@ -675,45 +500,27 @@ const Projects = () => {
                                 <button
                                     key={tag.id}
                                     onClick={() => toggleTag(tag.name)}
-                                    style={{
-                                        padding: windowWidth < 460 ? '6px 12px' : '8px 16px',
-                                        borderRadius: '14px',
-                                        border: '1px solid',
-                                        borderColor: isActive ? 'rgb(59, 130, 246)' : 'var(--navbar-border)',
-                                        backgroundColor: isActive ? 'rgba(59, 130, 246, 0.12)' : 'var(--card-bg)',
-                                        color: isActive ? 'rgb(59, 130, 246)' : 'var(--text-secondary)',
-                                        fontSize: windowWidth < 460 ? '0.75rem' : '0.85rem',
-                                        fontWeight: 700,
-                                        cursor: 'pointer',
-                                        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        backdropFilter: 'blur(12px)',
-                                        WebkitBackdropFilter: 'blur(12px)',
-                                        boxShadow: isActive ? '0 8px 16px -4px rgba(59, 130, 246, 0.25)' : 'none',
-                                        whiteSpace: 'nowrap',
-                                        transform: isActive ? 'scale(1.05)' : 'scale(1)',
-                                        zIndex: isActive ? 2 : 1
-                                    }}
-                                    className="tag-filter-btn"
+                                    className={`
+                                        flex items-center gap-2 rounded-xl border font-bold cursor-pointer transition-all duration-300
+                                        backdrop-blur-xl shadow-sm whitespace-nowrap
+                                        ${windowWidth < 460 ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'}
+                                        ${isActive
+                                            ? 'border-accent bg-[rgba(59,130,246,0.12)] text-accent scale-105 z-10 shadow-[0_8px_16px_-4px_rgba(59,130,246,0.25)]'
+                                            : 'border-[var(--navbar-border)] bg-[var(--card-bg)] text-sec'}
+                                    `}
                                 >
                                     {tag.iconSvg && (
                                         isUrl ? (
                                             <img
                                                 src={tag.iconSvg}
                                                 alt={tag.name}
-                                                style={{
-                                                    width: '16px',
-                                                    height: '16px',
-                                                    objectFit: 'contain',
-                                                    filter: isActive ? 'none' : 'grayscale(100%) opacity(0.6)'
-                                                }}
+                                                className={`w-4 h-4 object-contain ${isActive ? '' : 'grayscale opacity-60'}`}
                                             />
                                         ) : (
                                             <div
                                                 dangerouslySetInnerHTML={{ __html: tag.iconSvg }}
-                                                style={{ width: '16px', height: '16px', fill: 'currentColor', opacity: isActive ? 1 : 0.6 }}
+                                                className="w-4 h-4 fill-current"
+                                                style={{ opacity: isActive ? 1 : 0.6 }}
                                             />
                                         )
                                     )}
@@ -725,21 +532,7 @@ const Projects = () => {
                         {selectedTags.length > 0 && (
                             <button
                                 onClick={() => setSelectedTags([])}
-                                style={{
-                                    padding: '8px 12px',
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: 'rgb(59, 130, 246)',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 900,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s ease',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.1em',
-                                    marginLeft: '5px'
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
-                                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                                className="px-3 py-2 bg-transparent border-none text-accent text-xs font-black cursor-pointer transition-all duration-200 uppercase tracking-widest ml-1 hover:opacity-70"
                             >
                                 [ Reset ]
                             </button>
@@ -747,12 +540,8 @@ const Projects = () => {
                     </div>
                 </div>
 
-                {/* Projects Grid */}
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-                    gap: '40px'
-                }}>
+                {/* Projects Grid - Reduced Grid Gap */}
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
                     {filteredProjects.map((project, index) => (
                         <ProjectCard
                             key={project.id}

@@ -553,7 +553,7 @@ const DTags = () => {
                                         {searchQuery ? "No contributors match your search." : "No contributors yet."}
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 pb-12 overflow-visible">
+                                    <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 pb-12 overflow-visible">
                                         {filteredContributors.map((contributor) => (
                                             <div
                                                 key={contributor.id}
@@ -567,12 +567,13 @@ const DTags = () => {
                                                     boxShadow: isDark ? '0 10px 30px -10px rgba(0,0,0,0.3)' : '0 10px 30px -10px rgba(0,0,0,0.05)'
                                                 }}
                                             >
+                                                {/* Top: Image & Actions */}
                                                 <div className="flex items-center justify-between mb-4 sm:mb-5">
-                                                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl overflow-hidden border-2 p-1 shadow-md" style={{
+                                                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl overflow-hidden border-2 p-1 shadow-md shrink-0 transition-transform group-hover:scale-105" style={{
                                                         borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                                                         backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)'
                                                     }}>
-                                                        <div className="w-full h-full rounded-lg sm:rounded-xl overflow-hidden flex items-center justify-center">
+                                                        <div className="w-full h-full rounded-xl overflow-hidden flex items-center justify-center">
                                                             {contributor.imagePreview ? (
                                                                 <img src={contributor.imagePreview} alt={contributor.name} className="w-full h-full object-cover" />
                                                             ) : (
@@ -597,9 +598,13 @@ const DTags = () => {
                                                         </button>
                                                     </div>
                                                 </div>
+
+                                                {/* Bottom: Info */}
                                                 <div className="min-w-0">
                                                     <div className="font-bold text-primary text-lg sm:text-xl truncate mb-0.5 sm:mb-1">{contributor.name}</div>
-                                                    <div className="text-[10px] sm:text-xs font-medium text-sec bg-accent/5 px-2 py-0.5 sm:px-3 sm:py-1 rounded-full w-fit truncate max-w-full">{contributor.role}</div>
+                                                    <div className="text-[10px] sm:text-[11px] font-medium text-sec bg-accent/5 dark:bg-accent/10 px-2.5 py-1 rounded-full w-fit truncate max-w-full uppercase tracking-wider">
+                                                        {contributor.role}
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}

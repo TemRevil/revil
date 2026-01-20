@@ -1,5 +1,5 @@
 import { Home, Layers, FolderKanban, Mail, Moon, Sun } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 
 interface NavbarProps {
@@ -9,28 +9,47 @@ interface NavbarProps {
     isContactOpen?: boolean;
 }
 
-const Tooltip = ({ text, show }: { text: string, show: boolean }) => (
+const Tooltip = ({ text, show, isDark }: { text: string, show: boolean, isDark: boolean }) => (
     <div className={`nav-tooltip ${show ? 'show' : ''}`}>
         <div className="nav-tooltip-inner">
             {text}
-            <div className="nav-tooltip-arrow" />
         </div>
+        <div
+            className="nav-tooltip-arrow"
+            style={{
+                marginLeft: '-6px',
+                bottom: '-6px',
+                zIndex: -1,
+                // Using exact colors from inner to ensure merge
+                backgroundColor: isDark ? 'rgba(10, 10, 12, 0.4)' : 'rgba(255, 255, 255, 0.25)',
+                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255, 255, 255, 0.5)',
+                borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255, 255, 255, 0.5)',
+                backdropFilter: 'blur(32px) saturate(200%)',
+                WebkitBackdropFilter: 'blur(32px) saturate(200%)',
+            }}
+        />
     </div>
 );
 
 const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false }: NavbarProps) => {
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-    // Initialize theme from localStorage or system preference
+    const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+    // Initialize theme
     const [isDark, setIsDark] = useState(() => {
+        if (typeof window === 'undefined') return true;
         const savedTheme = localStorage.getItem('theme');
         if (savedTheme) {
             return savedTheme === 'dark';
         }
         return window.matchMedia('(prefers-color-scheme: dark)').matches;
     });
+
     const [hoveredTab, setHoveredTab] = useState<string | null>(null);
     const [autoTooltip, setAutoTooltip] = useState<string | null>(null);
     const [isHoveringNav, setIsHoveringNav] = useState(false);
+
+    // 0 = Projects, 1 = Mail
+    const cycleStepRef = useRef(0);
 
     const toggleTheme = () => {
         const newTheme = !isDark;
@@ -44,7 +63,6 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         }
     };
 
-    // Apply theme on mount
     useEffect(() => {
         if (isDark) {
             document.documentElement.classList.add('dark');
@@ -59,180 +77,152 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Auto-show tooltips logic
+    // Auto-show tooltips logic: Projects (3s) -> Contact (3s) -> 10s wait
     useEffect(() => {
-        let step = 0; // 0: Projects, 1: Contact, 2: Off? No, let's do 10s ON, 10s ON rotation
+        let cycleTimeout: NodeJS.Timeout;
 
-        const runRotation = () => {
+        const runCycle = () => {
             if (isHoveringNav) {
                 setAutoTooltip(null);
+                // If hovering, check again in 2s to see if we can resume
+                cycleTimeout = setTimeout(runCycle, 2000);
                 return;
             }
 
-            if (step === 0) {
-                // Show Projects if not already there
-                if (currentSection !== 'projects') {
-                    setAutoTooltip('projects');
-                } else {
-                    setAutoTooltip(null);
-                }
-                step = 1;
-            } else {
-                // Show Contact if not already open
-                if (!isContactOpen) {
-                    setAutoTooltip('mail');
-                } else {
-                    setAutoTooltip(null);
-                }
-                step = 0;
+            // Step 1: Show Projects (3s)
+            if (currentSection !== 'projects') {
+                setAutoTooltip('projects');
             }
+
+            cycleTimeout = setTimeout(() => {
+                setAutoTooltip(null);
+
+                // Gap between tooltips
+                cycleTimeout = setTimeout(() => {
+                    if (isHoveringNav) { runCycle(); return; }
+
+                    // Step 2: Show Contact (3s)
+                    if (!isContactOpen) {
+                        setAutoTooltip('mail');
+                    }
+
+                    cycleTimeout = setTimeout(() => {
+                        setAutoTooltip(null);
+
+                        // Step 3: Wait 10s before restart
+                        cycleTimeout = setTimeout(runCycle, 10000);
+                    }, 3000);
+                }, 400); // Tiny gap for smooth transition
+            }, 3000);
         };
 
-        // Start the rotation
-        const interval = setInterval(runRotation, 10000);
+        // Start immediately
+        runCycle();
 
-        // Initial run
-        runRotation();
-
-        return () => clearInterval(interval);
+        return () => {
+            clearTimeout(cycleTimeout);
+        };
     }, [currentSection, isContactOpen, isHoveringNav]);
 
-    const getButtonStyle = (tabName: string) => {
+    // Helper to get button class string based on state
+    const getButtonClass = (tabName: string) => {
         const isActive = currentSection === tabName || (tabName === 'home' && currentSection === 'view_link');
-        const isHovered = hoveredTab === tabName;
 
-        return {
-            padding: isMobile ? '8px' : '12px',
-            borderRadius: isMobile ? '8px' : '12px',
-            background: isActive
-                ? (isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.15)')
-                : isHovered
-                    ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.04)')
-                    : 'transparent',
-            border: isActive ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid transparent',
-            cursor: 'pointer',
-            color: isActive
-                ? '#3b82f6'
-                : isHovered
-                    ? (isDark ? '#ffffff' : '#1f2937')
-                    : (isDark ? '#9ca3af' : '#6b7280'),
-            transition: 'all 0.2s ease',
-            transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-        };
+        let classes = "btn-icon flex items-center justify-center transition-all duration-200";
+        classes += isMobile ? " p-2 rounded-xl" : " p-3 rounded-2xl";
+
+        if (isActive) {
+            classes += " bg-[rgba(59,130,246,0.15)] text-[#3b82f6] border border-[rgba(59,130,246,0.3)]";
+        } else {
+            classes += " hover:scale-110 border border-transparent text-muted hover:text-primary";
+        }
+        return classes;
     };
 
-    const getActionButtonStyle = (tabName: string) => {
-        const isHovered = hoveredTab === tabName;
-
-        return {
-            padding: isMobile ? '8px' : '12px',
-            borderRadius: isMobile ? '8px' : '12px',
-            background: isHovered
-                ? (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.04)')
-                : 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            color: isHovered
-                ? (isDark ? '#ffffff' : '#1f2937')
-                : (isDark ? '#9ca3af' : '#6b7280'),
-            transition: 'all 0.2s ease',
-            transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-        };
-    };
-
+    const iconSize = isMobile ? 18 : 22;
 
     return (
-        <nav style={{
-            position: 'fixed',
-            bottom: '24px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 50,
-            width: 'max-content',
-            maxWidth: '90%'
-        }}>
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: isMobile ? '6px' : '12px',
-                padding: isMobile ? '10px 16px' : '14px 24px',
-                background: isDark ? '#00000060' : '#ffffff40',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                borderRadius: isMobile ? '16px' : '24px',
-                boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.4)' : '0 8px 32px rgba(0, 0, 0, 0.1)',
-                border: 'none',
-                transition: 'all 0.3s ease'
-            }}
+        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[95%]">
+            <div
+                className={`
+                    flex items-center 
+                    ${isMobile ? 'gap-1.5 p-2.5 px-4 rounded-2xl' : 'gap-3 p-3 px-6 rounded-3xl'} 
+                    backdrop-blur-xl transition-all duration-300
+                    shadow-[0_8px_32px_rgba(0,0,0,0.1)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)]
+                `}
+                style={{
+                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.4)',
+                }}
                 onMouseEnter={() => {
                     setIsHoveringNav(true);
-                    setAutoTooltip(null); // Immediately dismiss any auto-tooltip
+                    setAutoTooltip(null);
                 }}
                 onMouseLeave={() => setIsHoveringNav(false)}
             >
                 {/* Left Section - Navigation Icons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '2px' : '4px' }}>
-                    <div style={{ position: 'relative' }}>
+                <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
+                    <div className="relative">
                         <button
-                            style={getButtonStyle('home')}
+                            className={getButtonClass('home')}
                             onClick={() => onNavigate?.('home')}
                             onMouseEnter={() => setHoveredTab('home')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <Home size={isMobile ? 18 : 20} strokeWidth={1.8} />
+                            <Home size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="🏠 Home" show={hoveredTab === 'home'} />
+                        <Tooltip text="🏠 Home" show={hoveredTab === 'home'} isDark={isDark} />
                     </div>
 
-                    <div style={{ position: 'relative' }}>
+                    <div className="relative">
                         <button
-                            style={getButtonStyle('stack')}
+                            className={getButtonClass('stack')}
                             onClick={() => onNavigate?.('stack')}
                             onMouseEnter={() => setHoveredTab('stack')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <Layers size={isMobile ? 18 : 20} strokeWidth={1.8} />
+                            <Layers size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="⚡ Stack" show={hoveredTab === 'stack'} />
+                        <Tooltip text="⚡ Stack" show={hoveredTab === 'stack'} isDark={isDark} />
                     </div>
 
-                    <div style={{ position: 'relative' }}>
+                    <div className="relative">
                         <button
-                            style={getButtonStyle('projects')}
+                            className={getButtonClass('projects')}
                             onClick={() => onNavigate?.('projects')}
                             onMouseEnter={() => setHoveredTab('projects')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <FolderKanban size={isMobile ? 18 : 20} strokeWidth={1.8} />
+                            <FolderKanban size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="🚀 Projects" show={hoveredTab === 'projects' || autoTooltip === 'projects'} />
+                        <Tooltip text="🚀 Projects" show={hoveredTab === 'projects' || autoTooltip === 'projects'} isDark={isDark} />
                     </div>
                 </div>
 
                 {/* Divider */}
-                <div style={{
-                    width: '1px',
-                    height: '24px',
-                    background: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-                    margin: isMobile ? '0 2px' : '0 6px',
-                    transition: 'background 0.3s ease'
-                }}></div>
+                <div
+                    className={`
+                        w-[1px] h-6 
+                        bg-[rgba(0,0,0,0.1)] dark:bg-[rgba(255,255,255,0.15)]
+                        transition-colors duration-300
+                        ${isMobile ? 'mx-1' : 'mx-1.5'}
+                    `}
+                />
 
                 {/* Right Section - Mail & Theme */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '2px' : '4px' }}>
-                    <div style={{ position: 'relative', width: isMobile ? '34px' : '44px', height: isMobile ? '34px' : '44px' }}>
+                <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
+                    <div
+                        className="relative"
+                        style={{ width: isMobile ? '36px' : '48px', height: isMobile ? '36px' : '48px' }}
+                    >
                         <motion.button
                             layoutId="contact-trigger"
+                            className={`
+                                btn-icon absolute inset-0 flex items-center justify-center
+                                ${isMobile ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'}
+                                text-muted hover:text-primary hover:bg-[rgba(0,0,0,0.04)] dark:hover:bg-[rgba(255,255,255,0.1)]
+                                hover:scale-110 transition-all duration-200
+                            `}
                             style={{
-                                ...getActionButtonStyle('mail'),
-                                position: 'absolute',
-                                inset: 0,
                                 zIndex: isContactOpen ? 0 : 1,
                                 opacity: isContactOpen ? 0 : 1,
                                 pointerEvents: isContactOpen ? 'none' : 'auto',
@@ -247,33 +237,37 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 mass: 1
                             }}
                         >
-                            <motion.div layoutId="contact-icon" style={{ display: 'flex' }}>
-                                <Mail size={isMobile ? 18 : 20} strokeWidth={2} />
+                            <motion.div layoutId="contact-icon" className="flex">
+                                <Mail size={iconSize} strokeWidth={2} />
                             </motion.div>
                         </motion.button>
-                        <Tooltip text="📩 Contact" show={hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)} />
+                        <Tooltip text="📩 Contact" show={hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)} isDark={isDark} />
 
-                        {/* Placeholder */}
                         {isContactOpen && (
-                            <div style={{
-                                ...getActionButtonStyle('mail'),
-                                opacity: 0.2,
-                                pointerEvents: 'none'
-                            }}>
-                                <Mail size={isMobile ? 18 : 20} strokeWidth={2} opacity={0} />
+                            <div className={`
+                                flex items-center justify-center opacity-20 pointer-events-none
+                                ${isMobile ? 'p-2' : 'p-3'}
+                            `}>
+                                <Mail size={iconSize} strokeWidth={2} className="opacity-0" />
                             </div>
                         )}
                     </div>
+
                     <button
                         onClick={toggleTheme}
                         onMouseEnter={() => setHoveredTab('theme')}
                         onMouseLeave={() => setHoveredTab(null)}
-                        style={getActionButtonStyle('theme')}
+                        className={`
+                            btn-icon flex items-center justify-center
+                            ${isMobile ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'}
+                            text-muted hover:text-primary hover:bg-[rgba(0,0,0,0.04)] dark:hover:bg-[rgba(255,255,255,0.1)]
+                            hover:scale-110 transition-all duration-200
+                        `}
                     >
                         {isDark ? (
-                            <Sun size={20} strokeWidth={1.8} />
+                            <Sun size={iconSize} strokeWidth={2} />
                         ) : (
-                            <Moon size={20} strokeWidth={1.8} />
+                            <Moon size={iconSize} strokeWidth={2} />
                         )}
                     </button>
                 </div>

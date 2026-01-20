@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import anime from 'animejs';
-
-// Import SVG icons
 import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 
@@ -18,24 +16,14 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
     const iconRef = useRef<HTMLImageElement>(null);
     const percentageRef = useRef<SVGSVGElement>(null);
     const [isHovered, setIsHovered] = useState(false);
-    const [isDark, setIsDark] = useState(false);
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
     useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
         const handleResize = () => setWindowWidth(window.innerWidth);
-
-        checkTheme();
         window.addEventListener('resize', handleResize);
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => {
-            observer.disconnect();
-            window.removeEventListener('resize', handleResize);
-        };
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Responsive sizing
     const isSmall = windowWidth <= 400;
     const fontSize = isSmall ? 28 : 48;
     const nameFontSize = isSmall ? '1.1rem' : '1.5rem';
@@ -44,7 +32,7 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
     let xPos = 0;
     const positions: number[] = [];
 
-    percentage.split('').forEach(_char => {
+    percentage.split('').forEach(() => {
         positions.push(xPos);
         xPos += letterSpacing;
     });
@@ -73,7 +61,7 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
             easing: 'easeOutQuad'
         });
 
-        // Handwriting animation for percentage (SVG stroke animation)
+        // Percentage handwriting animation
         if (percentageRef.current) {
             const letters = percentageRef.current.querySelectorAll('.percentage-letter');
 
@@ -95,12 +83,12 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
                     complete: () => {
                         anime({
                             targets: textEl,
-                            fill: [{ value: 'transparent' }, { value: 'rgb(59, 130, 246)' }],
+                            fill: [{ value: 'transparent' }, { value: 'var(--accent)' }],
                             duration: 150,
                             easing: 'easeOutQuad',
                             complete: () => {
-                                textEl.style.fill = 'rgb(59, 130, 246)';
-                                textEl.style.stroke = 'rgb(59, 130, 246)';
+                                textEl.style.fill = 'var(--accent)';
+                                textEl.style.stroke = 'var(--accent)';
                                 textEl.style.strokeOpacity = '0.3';
                             }
                         });
@@ -113,19 +101,15 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
     return (
         <div
             ref={itemRef}
-            className="stack-inner"
+            className="stack-inner opacity-0"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
-            style={{
-                opacity: 0,
-            }}
         >
-            {/* Icon */}
             <img
                 ref={iconRef}
                 src={icon}
                 alt={name}
-                className="stack-icon"
+                className="stack-icon transition-slow"
                 style={{
                     opacity: isHovered ? 1 : 0.35,
                     filter: isHovered ? 'none' : 'grayscale(100%) brightness(0.8)',
@@ -135,72 +119,44 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
 
             {/* Tooltip */}
             {information && (
-                <div style={{
-                    position: 'absolute',
-                    top: '-10px',
-                    left: isSmall ? '20px' : '50px',
-                    transform: isHovered ? 'translateY(-100%) scale(1)' : 'translateY(-90%) scale(0.9)',
-                    backgroundColor: isDark ? 'rgba(30, 30, 30, 0.7)' : 'rgba(255, 255, 255, 0.7)',
-                    color: 'var(--text-primary)',
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    fontSize: '0.85rem',
-                    width: isSmall ? '180px' : '220px',
-                    pointerEvents: 'none',
-                    opacity: isHovered ? 1 : 0,
-                    transition: 'opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                    zIndex: 20,
-                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                    backdropFilter: 'blur(12px)',
-                    WebkitBackdropFilter: 'blur(12px)',
-                    boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-                    textAlign: 'center',
-                    lineHeight: '1.4'
-                }}>
+                <div
+                    className="nav-tooltip-inner absolute z-50 text-center leading-relaxed"
+                    style={{
+                        top: '-10px',
+                        left: isSmall ? '20px' : '50px',
+                        width: isSmall ? '180px' : '220px',
+                        transform: isHovered ? 'translateY(-100%) scale(1)' : 'translateY(-90%) scale(0.9)',
+                        opacity: isHovered ? 1 : 0,
+                        pointerEvents: 'none',
+                        transition: 'opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                        whiteSpace: 'normal',
+                        fontWeight: 'normal',
+                        fontSize: '0.85rem'
+                    }}
+                >
                     {information}
-                    <div style={{
-                        position: 'absolute',
-                        bottom: '-6px',
-                        left: '20px',
-                        width: '12px',
-                        height: '12px',
-                        backgroundColor: isDark ? 'rgba(30, 30, 30, 0.7)' : 'rgba(255, 255, 255, 0.7)',
-                        transform: 'rotate(45deg)',
-                        borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                        borderRight: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                        backdropFilter: 'blur(12px)',
-                        WebkitBackdropFilter: 'blur(12px)'
-                    }} />
+                    <div className="nav-tooltip-arrow" />
                 </div>
             )}
 
-            {/* Text content - to the right of icon */}
-            <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                justifyContent: 'center'
-            }}>
-                {/* Name */}
-                <h3 style={{
-                    fontFamily: "'Inter', sans-serif",
-                    fontWeight: 900,
-                    fontSize: nameFontSize,
-                    color: 'var(--text-primary)',
-                    margin: 0,
-                    transition: 'color 0.3s ease'
-                }}>
+            <div className="flex flex-col items-start justify-center">
+                <h3
+                    className="transition-slow font-black m-0"
+                    style={{
+                        fontSize: nameFontSize,
+                        color: 'var(--text-primary)'
+                    }}
+                >
                     {name}
                 </h3>
 
-                {/* Percentage with SVG handwriting animation */}
-                <div style={{ marginTop: '4px' }}>
+                <div className="mt-1">
                     <svg
                         ref={percentageRef}
                         width={svgWidth}
                         height={svgHeight}
                         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                        style={{ overflow: 'visible' }}
+                        className="overflow-visible"
                     >
                         {percentage.split('').map((char, index) => (
                             <text
@@ -212,7 +168,7 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
                                 fontSize={fontSize}
                                 fontWeight="700"
                                 fill="transparent"
-                                stroke="rgb(59, 130, 246)"
+                                stroke="var(--accent)"
                                 strokeWidth="1.5"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
@@ -257,7 +213,7 @@ const Stack = () => {
     }, []);
 
     useEffect(() => {
-        // Animate handwriting text
+        // Animation sequence
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
@@ -266,7 +222,6 @@ const Stack = () => {
             easing: 'easeOutQuad'
         });
 
-        // Animate title
         anime({
             targets: titleRef.current,
             opacity: [0, 1],
@@ -276,7 +231,6 @@ const Stack = () => {
             easing: 'easeOutQuad'
         });
 
-        // Animate grid border
         anime({
             targets: gridRef.current,
             opacity: [0, 1],
@@ -287,53 +241,42 @@ const Stack = () => {
     }, []);
 
     return (
-        <div
-            className="min-h-screen max-w-full overflow-x-hidden flex flex-col justify-center bg-[var(--bg-primary)] transition-colors duration-300 pt-20 pb-40 page-padding"
-            style={{ fontFamily: 'Inter, sans-serif' }}
-        >
-            {/* Header */}
-            <div style={{ marginBottom: '60px' }}>
+        <div className="min-h-screen w-full overflow-x-hidden flex flex-col justify-center bg-primary transition-slow pt-20 pb-40 page-padding">
+
+            {/* Header Section */}
+            <div className="mb-14">
+                {/* "My Tech" - Increased size to text-3xl/4xl */}
                 <div
                     ref={handwritingRef}
+                    className="text-3xl md:text-4xl opacity-0 mb-[-10px] ml-2"
                     style={{
                         fontFamily: "'Rock Salt', cursive",
-                        fontSize: '2rem',
-                        color: 'rgb(59, 130, 246)',
-                        marginBottom: '-15px',
-                        marginLeft: '10px',
-                        opacity: 0
+                        color: 'var(--accent)'
                     }}
                 >
                     My Tech
                 </div>
+                {/* "Stack" - Massively increased size: 6xl -> 9xl, added font-black and leading-none */}
                 <h1
                     ref={titleRef}
-                    className="text-5xl md:text-7xl lg:text-8xl"
-                    style={{
-                        fontFamily: "'Inter', sans-serif",
-                        fontWeight: 900,
-                        color: 'var(--text-primary)',
-                        margin: 0,
-                        opacity: 0,
-                        transition: 'color 0.3s ease'
-                    }}
+                    className="text-6xl md:text-8xl lg:text-9xl font-black transition-slow opacity-0 m-0 leading-none"
+                    style={{ color: 'var(--text-primary)' }}
                 >
                     Stack
                 </h1>
             </div>
 
-            {/* Grid with border */}
+            {/* Grid Container */}
             <div
                 ref={gridRef}
-                style={{ position: 'relative', marginBottom: '80px', opacity: 0 }}
+                className="relative mb-20 opacity-0"
             >
-                {/* Corner squares */}
+                {/* Markers */}
                 <div className="marker marker-corner-tl"></div>
                 <div className="marker marker-corner-tr"></div>
                 <div className="marker marker-corner-bl"></div>
                 <div className="marker marker-corner-br"></div>
 
-                {/* Desktop/Tablet Edge markers (Controlled by CSS) */}
                 <div className="marker marker-edge-33 marker-edge-top"></div>
                 <div className="marker marker-edge-66 marker-edge-top"></div>
                 <div className="marker marker-edge-50 marker-edge-top"></div>
@@ -342,7 +285,7 @@ const Stack = () => {
                 <div className="marker marker-edge-66 marker-edge-bottom"></div>
                 <div className="marker marker-edge-50 marker-edge-bottom"></div>
 
-                {/* Grid items container */}
+                {/* Grid Items */}
                 <div className="stack-grid">
                     {stackItems.map((item, index) => (
                         <div key={item.name} className="stack-item">

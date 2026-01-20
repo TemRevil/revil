@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, HardDrive } from 'lucide-react';
+import { X, HardDrive } from 'lucide-react';
 import MFirebaseStorage from './M-FirebaseStorage';
 import firebaseIcon from '../../assets/svgs/firebase.svg';
 
@@ -24,7 +24,6 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
     const [color, setColor] = useState('#3b82f6');
     const [iconSvg, setIconSvg] = useState<string>('');
     const [iconFile, setIconFile] = useState<File | null>(null);
-    const [isDark, setIsDark] = useState(false);
     const [firebaseBrowserOpen, setFirebaseBrowserOpen] = useState(false);
 
     useEffect(() => {
@@ -33,7 +32,7 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
                 setName(initialData.name);
                 setColor(initialData.color);
                 setIconSvg(initialData.iconSvg || '');
-                setIconFile(null); // Reset file on open
+                setIconFile(null);
             } else {
                 setName('');
                 setColor('#3b82f6');
@@ -42,16 +41,6 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
             }
         }
     }, [isOpen, initialData]);
-
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
-
-    if (!isOpen) return null;
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -80,61 +69,44 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
     if (!isOpen) return null;
 
     return createPortal(
-        <div style={{
-            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1100,
-            animation: 'fadeIn 0.2s ease-out'
-        }}>
-            <div style={{
-                width: '90%', maxWidth: '500px',
-                backgroundColor: isDark ? 'rgba(20, 20, 20, 0.85)' : 'rgba(255, 255, 255, 0.85)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                borderRadius: '24px',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-                border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'}`,
-                overflow: 'hidden',
-                animation: 'scaleIn 0.2s ease-out'
-            }}>
-                <div style={{
-                    padding: '24px',
-                    borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                }}>
-                    <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)' }}>
+        <div className="modal-backdrop open">
+            <div className="modal-content animate-scale-in">
+                {/* Header */}
+                <div className="modal-header">
+                    <h2 className="heading-sm m-0">
                         {initialData ? 'Edit Tag' : 'New Tag'}
                     </h2>
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    <button
+                        onClick={onClose}
+                        className="btn-icon p-2 hover:bg-input-bg rounded-lg transition-fast"
+                    >
                         <X size={24} />
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                    {/* Preview */}
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '12px' }}>
-                        <div style={{
-                            padding: '8px 16px',
-                            borderRadius: '24px',
-                            backgroundColor: `${color}20`,
-                            color: color,
-                            display: 'flex', alignItems: 'center', gap: '8px',
-                            fontSize: '1rem', fontWeight: 600,
-                            border: `1px solid ${color}40`
-                        }}>
+                <form onSubmit={handleSubmit} className="modal-form">
+                    {/* Preview Badge */}
+                    <div className="flex justify-center p-3">
+                        <div
+                            className="flex items-center gap-2 px-4 py-2 rounded-full font-semibold border shadow-sm transition-all duration-300"
+                            style={{
+                                backgroundColor: `${color}15`,
+                                color: color,
+                                borderColor: `${color}30`,
+                                fontSize: '1rem'
+                            }}
+                        >
                             {iconSvg ? (
                                 iconSvg.trim().startsWith('http') ? (
-                                    <img src={iconSvg} alt="" style={{ width: '18px', height: '18px', objectFit: 'contain' }} />
+                                    <img src={iconSvg} alt="" className="w-[18px] h-[18px] object-contain" />
                                 ) : (
                                     <div
-                                        style={{ width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', color: 'inherit' }}
+                                        className="w-[18px] h-[18px] flex items-center justify-center overflow-hidden text-inherit"
                                         dangerouslySetInnerHTML={{ __html: iconSvg }}
                                     />
                                 )
                             ) : (
-                                <span style={{ width: '18px', height: '18px', borderRadius: '4px', backgroundColor: `${color}40` }} />
+                                <span className="w-[18px] h-[18px] rounded bg-current opacity-40" />
                             )}
                             {name || 'Tag Name'}
                         </div>
@@ -142,89 +114,67 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
 
                     {/* Name Input */}
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Tag Name</label>
+                        <label className="input-label">Tag Name</label>
                         <input
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             required
                             placeholder="e.g. React"
-                            style={{
-                                width: '100%', padding: '12px', borderRadius: '12px',
-                                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                                border: 'none', color: 'var(--text-primary)', outline: 'none'
-                            }}
+                            className="input-field"
                         />
                     </div>
 
                     {/* Color Picker */}
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Color</label>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <label className="input-label">Color Code</label>
+                        <div className="relative">
+                            {/* Prefix # */}
+                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted font-mono select-none z-10 text-lg">#</span>
+
+                            {/* Main Input - Drastically increased padding-left to fix overlap */}
                             <input
                                 type="text"
-                                value={color}
+                                value={color.replace('#', '')}
                                 onChange={(e) => {
-                                    let val = e.target.value;
-                                    if (!val.startsWith('#')) val = '#' + val;
-                                    if (/^#[0-9A-Fa-f]{0,6}$/.test(val)) setColor(val);
+                                    const val = e.target.value.replace(/[^0-9A-Fa-f]/g, '').slice(0, 6);
+                                    setColor(`#${val}`);
                                 }}
-                                placeholder="#3b82f6"
-                                style={{
-                                    flex: 1,
-                                    padding: '12px',
-                                    borderRadius: '12px 0 0 12px',
-                                    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                                    border: 'none',
-                                    color: 'var(--text-primary)',
-                                    outline: 'none',
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.95rem'
-                                }}
+                                placeholder="3B82F6"
+                                className="input-field w-full pr-14 font-mono uppercase text-lg"
+                                style={{ paddingLeft: '30px' }}
                             />
-                            <div style={{ position: 'relative' }}>
+
+                            {/* Internal Color Swatch */}
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-10">
                                 <input
                                     type="color"
                                     value={color.length === 7 ? color : '#3b82f6'}
                                     onChange={(e) => setColor(e.target.value)}
-                                    style={{
-                                        position: 'absolute',
-                                        width: '100%',
-                                        height: '100%',
-                                        opacity: 0,
-                                        cursor: 'pointer'
-                                    }}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                 />
-                                <div style={{
-                                    width: '48px',
-                                    height: '48px',
-                                    borderRadius: '0 12px 12px 0',
-                                    backgroundColor: color.length === 7 ? color : '#3b82f6',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`
-                                }}>
-                                    <Check size={20} color="white" style={{ opacity: 0.8 }} />
-                                </div>
+                                <div
+                                    className="w-full h-full rounded-md shadow-sm border border-input-border transition-all hover:scale-105"
+                                    style={{ backgroundColor: color.length === 7 ? color : '#3b82f6' }}
+                                />
                             </div>
                         </div>
                     </div>
 
                     {/* Icon Upload */}
                     <div>
-                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Icon (SVG)</label>
+                        <label className="input-label">Icon (SVG)</label>
 
-                        {/* Preview */}
+                        {/* Preview Box */}
                         {iconSvg && (
-                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-                                <div style={{ width: '64px', height: '64px', borderRadius: '12px', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                            <div className="flex justify-center mb-3">
+                                <div className="w-16 h-16 rounded-xl bg-input-bg flex items-center justify-center overflow-hidden border border-input-border">
                                     {iconSvg.trim().startsWith('http') ? (
-                                        <img src={iconSvg} alt="Preview" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
+                                        <img src={iconSvg} alt="Preview" className="w-12 h-12 object-contain" />
                                     ) : (
                                         <div
-                                            style={{ width: '48px', height: '48px', color: color, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+                                            className="w-12 h-12 flex items-center justify-center overflow-hidden"
+                                            style={{ color }}
                                             dangerouslySetInnerHTML={{ __html: iconSvg }}
                                         />
                                     )}
@@ -233,56 +183,30 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
                         )}
 
                         {/* Upload Buttons */}
-                        <div style={{ display: 'flex', gap: '12px' }}>
+                        <div className="flex gap-3">
                             {/* Local Upload */}
                             <div
                                 onClick={() => document.getElementById('tagIconUpload')?.click()}
-                                style={{
-                                    flex: 1,
-                                    border: `2px dashed ${isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}`,
-                                    borderRadius: '12px',
-                                    padding: '16px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    transition: 'all 0.2s'
-                                }}
+                                className="flex-1 border-2 border-dashed border-input-border rounded-xl p-4 text-center cursor-pointer bg-input-bg hover:bg-[var(--bg-secondary)] flex flex-col items-center gap-2 transition-all group"
                             >
-                                <HardDrive size={24} style={{ color: 'var(--text-secondary)' }} />
-                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Local File</span>
+                                <HardDrive size={24} className="text-sec group-hover:text-primary transition-colors" />
+                                <span className="text-xs text-sec group-hover:text-primary transition-colors">Local File</span>
                                 <input
                                     id="tagIconUpload"
                                     type="file"
                                     accept=".svg"
                                     onChange={handleFileChange}
-                                    style={{ display: 'none' }}
+                                    className="hidden"
                                 />
                             </div>
 
                             {/* Firebase Storage */}
                             <div
                                 onClick={() => setFirebaseBrowserOpen(true)}
-                                style={{
-                                    flex: 1,
-                                    border: '2px dashed rgba(255, 160, 0, 0.4)',
-                                    borderRadius: '12px',
-                                    padding: '16px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    backgroundColor: 'rgba(255, 160, 0, 0.05)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    transition: 'all 0.2s'
-                                }}
+                                className="flex-1 border-2 border-dashed border-amber-500/30 rounded-xl p-4 text-center cursor-pointer bg-amber-500/5 hover:bg-amber-500/10 flex flex-col items-center gap-2 transition-all group"
                             >
-                                <img src={firebaseIcon} alt="Firebase" style={{ width: '24px', height: '24px' }} />
-                                <span style={{ fontSize: '0.8rem', color: '#FFA000' }}>Firebase Storage</span>
+                                <img src={firebaseIcon} alt="Firebase" className="w-6 h-6 grayscale group-hover:grayscale-0 transition-all" />
+                                <span className="text-xs text-amber-600/70 group-hover:text-amber-600 transition-colors">Firebase Storage</span>
                             </div>
                         </div>
                     </div>
@@ -296,18 +220,22 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
                         title="Select Icon from Firebase"
                     />
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
-                        <button type="button" onClick={onClose} style={{
-                            padding: '12px 24px', borderRadius: '12px', border: 'none', background: 'transparent',
-                            color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500
-                        }}>
+                    <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-[var(--card-border)]">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="btn btn-secondary px-6"
+                        >
                             Cancel
                         </button>
-                        <button type="submit" style={{
-                            padding: '12px 24px', borderRadius: '12px', border: 'none',
-                            backgroundColor: color, color: 'white', cursor: 'pointer', fontWeight: 600,
-                            boxShadow: `0 4px 12px ${color}40`
-                        }}>
+                        <button
+                            type="submit"
+                            className="btn text-white font-semibold shadow-lg transition-transform hover:-translate-y-0.5 px-6"
+                            style={{
+                                backgroundColor: color,
+                                boxShadow: `0 4px 12px ${color}40`
+                            }}
+                        >
                             Save Tag
                         </button>
                     </div>
