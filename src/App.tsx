@@ -58,11 +58,16 @@ function App() {
     return () => clearTimeout(safety);
   }, [isDataReady, isWindowReady]);
 
-  // Initial Route Check
   useEffect(() => {
-    // Check if there is a path other than '/'
+    // Check if there is a path other than the base path
     const path = window.location.pathname;
-    if (path && path !== '/' && path.length > 1) {
+    const base = import.meta.env.BASE_URL;
+
+    // Normalize paths by removing trailing slashes for comparison
+    const normPath = path.replace(/\/$/, '');
+    const normBase = base.replace(/\/$/, '');
+
+    if (normPath !== normBase && normPath !== '') {
       // Assume it's a link code
       setCurrentSection('view_link');
     }

@@ -152,9 +152,9 @@ const DProjects = () => {
                     setAvailableTags(loaded);
                 }
             },
-            (err) => {
+            () => {
                 const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
-                console.warn(`[Connection] Tags sync: ${status}. Check diagnostic in lib/firebase.ts`, err);
+                setAlert({ show: true, type: 'warning', message: `Tags sync failed: ${status}` });
             }
         );
 
@@ -173,9 +173,9 @@ const DProjects = () => {
                     setAvailableContributors(loaded);
                 }
             },
-            (err) => {
+            () => {
                 const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
-                console.warn(`[Connection] Contributors sync: ${status}. Check diagnostic in lib/firebase.ts`, err);
+                setAlert({ show: true, type: 'warning', message: `Contributors sync failed: ${status}` });
             }
         );
 
@@ -268,7 +268,7 @@ const DProjects = () => {
                     setIsLoading(true);
                     await deleteDoc(doc(db, 'Projects', projectId));
                 } catch (error) {
-                    console.error("Error deleting project:", error);
+                    setAlert({ show: true, type: 'error', message: 'Failed to delete project.' });
                 } finally {
                     setIsLoading(false);
                 }
@@ -403,8 +403,7 @@ const DProjects = () => {
 
             setIsModalOpen(false);
         } catch (error) {
-            console.error("Error saving project:", error);
-            setAlert({ show: true, type: 'error', message: 'Failed to save project. Check console.' });
+            setAlert({ show: true, type: 'error', message: 'Failed to save project. Please check your data and try again.' });
         } finally {
             setIsLoading(false);
         }

@@ -5,6 +5,7 @@ import anime from 'animejs';
 import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Loader from '../reactbits/Loader';
+import Alert, { AlertType } from '../Alert';
 
 interface GeneratedLink {
     id: string;
@@ -155,6 +156,11 @@ const DLinks = () => {
     const [editName, setEditName] = useState('');
     const [editFor, setEditFor] = useState('');
     const [activityLink, setActivityLink] = useState<GeneratedLink | null>(null);
+    const [alert, setAlert] = useState<{ show: boolean; type: AlertType; message: string }>({
+        show: false,
+        type: 'success',
+        message: ''
+    });
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
@@ -182,7 +188,7 @@ const DLinks = () => {
                             name: item.Name,
                             forField: item.For,
                             code: item.Code || item.Rec_CLI,
-                            fullLink: `${window.location.origin}/${item.Code || item.Rec_CLI || ''}`,
+                            fullLink: `${window.location.origin}${import.meta.env.BASE_URL}${item.Code || item.Rec_CLI || ''}`,
                             viewed: item.Views > 0,
                             counts: item.Views || 0,
                             createdAt: new Date(),
@@ -241,7 +247,7 @@ const DLinks = () => {
             setName('');
             setForField('');
         } catch (error) {
-            console.error("Error generating link:", error);
+            setAlert({ show: true, type: 'error', message: 'Failed to generate link. Check your connection.' });
         } finally {
             setIsLoading(false);
         }
@@ -253,17 +259,18 @@ const DLinks = () => {
             setCopied(id);
             setTimeout(() => setCopied(null), 2000);
         } catch (err) {
-            console.error('Failed to copy:', err);
+            setAlert({ show: true, type: 'error', message: 'Failed to copy to clipboard.' });
         }
     };
 
     const handleDeleteLink = async (id: string) => {
+        if (!id) return;
+        setActiveMenu(null);
         try {
             const docRef = doc(db, 'Settings', 'Views');
             await updateDoc(docRef, { [id]: deleteField() });
-            setActiveMenu(null);
         } catch (error) {
-            console.error("Error deleting link:", error);
+            setAlert({ show: true, type: 'error', message: 'Failed to delete link.' });
         }
     };
 
@@ -286,7 +293,7 @@ const DLinks = () => {
             setEditName('');
             setEditFor('');
         } catch (error) {
-            console.error("Error updating link:", error);
+            setAlert({ show: true, type: 'error', message: 'Failed to update link details.' });
         }
     };
 
@@ -509,6 +516,14 @@ const DLinks = () => {
                 isDark={isDark}
                 linkName={activityLink?.name || 'Analytics'}
             />
+
+            {alert.show && (
+                <Alert
+                    type={alert.type}
+                    message={alert.message}
+                    onClose={() => setAlert(prev => ({ ...prev, show: false }))}
+                />
+            )}
         </div>
     );
 };

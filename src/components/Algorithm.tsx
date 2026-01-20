@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import Alert, { AlertType } from './Alert';
 
 interface AlgorithmProps {
     currentSection: string;
@@ -14,6 +15,12 @@ interface ProjectStats {
 }
 
 export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: AlgorithmProps) => {
+    const [alert, setAlert] = useState<{ show: boolean; type: AlertType; message: string }>({
+        show: false,
+        type: 'success',
+        message: ''
+    });
+
     // Session Start
     const sessionStart = useRef(Date.now());
 
@@ -112,7 +119,9 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
             // If we are in /red/JHONDA, pathParts is ['red', 'JHONDA']
             // If the repo name is 'red', we want JHONDA
-            const code = pathParts.length > 1 ? pathParts[pathParts.length - 1] : (pathParts.length === 1 && pathParts[0] !== 'revil' ? pathParts[0] : '');
+            // Extract the base path segments to filter them out
+            const baseParts = import.meta.env.BASE_URL.split('/').filter(Boolean);
+            const code = pathParts.length > baseParts.length ? pathParts[pathParts.length - 1] : '';
 
             if (!code) return;
             hasRecordedRef.current = true;
@@ -150,7 +159,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 // Always redirect home after processing code
                 setTimeout(() => onNavigate('home'), 500);
             } catch (error) {
-                console.error("Recording error:", error);
+                setAlert({ show: true, type: 'error', message: 'Failed to record link activity.' });
                 setTimeout(() => onNavigate('home'), 500);
             }
         };
@@ -269,7 +278,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 [`${linkId}.Rec_CLI`]: recString
             });
         } catch (err) {
-            console.error("Algo Final Sync Error", err);
+            setAlert({ show: true, type: 'error', message: 'Final sync failed. Some activity might not be saved.' });
         } finally {
             metrics.current.isSyncing = false;
         }
@@ -293,5 +302,15 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         };
     }, []);
 
-    return null; // Invisible component
+    return (
+        <>
+            {alert.show && (
+                <Alert
+                    type={alert.type}
+                    message={alert.message}
+                    onClose={() => setAlert(prev => ({ ...prev, show: false }))}
+                />
+            )}
+        </>
+    );
 };
