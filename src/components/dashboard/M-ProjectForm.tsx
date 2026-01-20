@@ -218,6 +218,15 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    const isVideo = (file: File | string) => {
+        if (typeof file === 'string') {
+            const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov'];
+            const url = file.split('?')[0].toLowerCase();
+            return videoExtensions.some(ext => url.endsWith(ext)) || url.includes('/videos/');
+        }
+        return file.type.startsWith('video/');
+    };
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const newFiles = Array.from(e.target.files);
@@ -480,11 +489,18 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
                                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                                 {formData.images.map((file, idx) => (
                                                     <div key={idx} className={`aspect-video rounded-lg overflow-hidden relative group ${isDark ? 'bg-white/5' : 'bg-gray-100'}`}>
-                                                        <img
-                                                            src={typeof file === 'string' ? file : URL.createObjectURL(file)}
-                                                            className="w-full h-full object-cover"
-                                                            alt={`Gallery ${idx + 1}`}
-                                                        />
+                                                        {isVideo(file) ? (
+                                                            <video
+                                                                src={typeof file === 'string' ? file : URL.createObjectURL(file)}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <img
+                                                                src={typeof file === 'string' ? file : URL.createObjectURL(file)}
+                                                                className="w-full h-full object-cover"
+                                                                alt={`Gallery ${idx + 1}`}
+                                                            />
+                                                        )}
                                                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                                             <button
                                                                 type="button"
@@ -514,10 +530,10 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
                                             >
                                                 <ImageIcon size={28} className={isDark ? 'text-gray-600' : 'text-gray-400'} />
                                                 <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>Click to upload</p>
-                                                <p className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>PNG, JPG, GIF up to 10MB</p>
+                                                <p className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>PNG, JPG, GIF, MP4 up to 50MB</p>
                                             </button>
                                         )}
-                                        <input ref={imagesInputRef} type="file" multiple accept="image/*" onChange={handleFileChange} className="hidden" />
+                                        <input ref={imagesInputRef} type="file" multiple accept="image/*,video/*" onChange={handleFileChange} className="hidden" />
                                     </div>
                                 </div>
                             </div>
@@ -775,14 +791,26 @@ const LiveProjectCard = ({ project, isDark }: { project: ProjectData; isDark: bo
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [showContributors, setShowContributors] = useState(false);
 
+    const sortedImages = [...project.images].sort((a, b) => {
+        const isVidA = typeof a === 'string'
+            ? (a.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || a.includes('/videos/'))
+            : a.type.startsWith('video/');
+        const isVidB = typeof b === 'string'
+            ? (b.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || b.includes('/videos/'))
+            : b.type.startsWith('video/');
+        if (isVidA && !isVidB) return -1;
+        if (!isVidA && isVidB) return 1;
+        return 0;
+    });
+
     useEffect(() => {
-        if (project.images.length > 1) {
+        if (sortedImages.length > 1) {
             const interval = setInterval(() => {
-                setCurrentImageIndex((prev) => (prev + 1) % project.images.length);
+                setCurrentImageIndex((prev) => (prev + 1) % sortedImages.length);
             }, 3000);
             return () => clearInterval(interval);
         }
-    }, [project.images.length]);
+    }, [sortedImages.length]);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -810,24 +838,49 @@ const LiveProjectCard = ({ project, isDark }: { project: ProjectData; isDark: bo
         >
             {/* Image Section */}
             <div style={{ position: 'relative', height: '200px', overflow: 'hidden' }}>
-                {project.images.length > 0 ? (
-                    project.images.map((img, i) => (
-                        <img
-                            key={i}
-                            src={typeof img === 'string' ? img : URL.createObjectURL(img)}
-                            alt={project.name}
-                            style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                opacity: i === currentImageIndex ? 1 : 0,
-                                transition: 'opacity 0.5s ease, transform 0.5s ease',
-                            }}
-                        />
-                    ))
+                {sortedImages.length > 0 ? (
+                    sortedImages.map((img, i) => {
+                        const isVid = typeof img === 'string'
+                            ? (img.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || img.includes('/videos/'))
+                            : img.type.startsWith('video/');
+
+                        return isVid ? (
+                            <video
+                                key={i}
+                                src={typeof img === 'string' ? img : URL.createObjectURL(img)}
+                                muted
+                                autoPlay
+                                loop
+                                playsInline
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    opacity: i === currentImageIndex ? 1 : 0,
+                                    transition: 'opacity 0.5s ease, transform 0.5s ease',
+                                }}
+                            />
+                        ) : (
+                            <img
+                                key={i}
+                                src={typeof img === 'string' ? img : URL.createObjectURL(img)}
+                                alt={project.name}
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    opacity: i === currentImageIndex ? 1 : 0,
+                                    transition: 'opacity 0.5s ease, transform 0.5s ease',
+                                }}
+                            />
+                        );
+                    })
                 ) : (
                     <div className={`w-full h-full flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-gray-100'}`}>
                         <ImageIcon size={48} className={isDark ? 'text-gray-600' : 'text-gray-400'} />

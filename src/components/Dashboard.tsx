@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import anime from 'animejs';
 import { Layout, Eye, Settings, Bird, LogOut, Tag, User } from 'lucide-react';
 import DProjects from './dashboard/D-Projects';
@@ -6,7 +6,6 @@ import DTags from './dashboard/D-Tags';
 import DLinks from './dashboard/D-Links';
 import DSettings from './dashboard/D-Settings';
 import DCanary from './dashboard/D-Canary';
-// import userImg from '../assets/imgs/user.jpg';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
@@ -19,10 +18,6 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [activeTab, setActiveTab] = useState('projects');
     const [profileImage, setProfileImage] = useState<string>('');
-
-    // Touch state for swipe navigation (using refs for performance)
-    const touchStartRef = useRef<{ x: number, y: number } | null>(null);
-    const touchEndRef = useRef<{ x: number, y: number } | null>(null);
 
     // Responsive breakpoints
     const isExtraSmall = windowWidth < 400;  // 320px - 399px
@@ -114,65 +109,11 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const avatarSize = isExtraSmall ? '28px' : '32px';
     const logoMarginBottom = isExtraSmall ? '20px' : '32px';
 
-    // Touch handlers
-    const minSwipeDistance = 50;
-
-    const onTouchStart = (e: React.TouchEvent) => {
-        touchEndRef.current = null;
-        touchStartRef.current = {
-            x: e.targetTouches[0].clientX,
-            y: e.targetTouches[0].clientY
-        };
-    };
-
-    const onTouchMove = (e: React.TouchEvent) => {
-        touchEndRef.current = {
-            x: e.targetTouches[0].clientX,
-            y: e.targetTouches[0].clientY
-        };
-    };
-
-    const onTouchEnd = () => {
-        if (!touchStartRef.current || !touchEndRef.current) return;
-
-        const xDistance = touchStartRef.current.x - touchEndRef.current.x;
-        const yDistance = touchStartRef.current.y - touchEndRef.current.y;
-
-        const isHorizontal = Math.abs(xDistance) > Math.abs(yDistance);
-
-        const currentIndex = menuItems.findIndex(item => item.id === activeTab);
-        let nextIndex = currentIndex;
-
-        if (isHorizontal) {
-            // Horizontal Swipe
-            if (xDistance > minSwipeDistance) {
-                // Swipe Left (R->L) -> Next Tab (Standard)
-                nextIndex = (currentIndex + 1) % menuItems.length;
-            } else if (xDistance < -minSwipeDistance) {
-                // Swipe Right (L->R) -> Previous Tab (Standard)
-                nextIndex = (currentIndex - 1 + menuItems.length) % menuItems.length;
-            }
-        } else {
-            // Vertical Swipe
-            if (yDistance > minSwipeDistance) {
-                // Swipe Up (Bottom->Top) -> Next Tab
-                nextIndex = (currentIndex + 1) % menuItems.length;
-            } else if (yDistance < -minSwipeDistance) {
-                // Swipe Down (Top->Bottom) -> Previous Tab
-                nextIndex = (currentIndex - 1 + menuItems.length) % menuItems.length;
-            }
-        }
-
-        if (nextIndex !== currentIndex) {
-            setActiveTab(menuItems[nextIndex].id);
-        }
-    };
-
     return (
         <div
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
             style={{
                 width: '100%',
                 height: '100vh',
@@ -180,7 +121,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                 backgroundColor: isDark ? '#0a0a0a' : '#f3f4f6',
                 position: 'relative',
                 overflow: 'hidden',
-                touchAction: 'none' // Prevent browser scrolling to allow full touch control
+                touchAction: 'pan-y'
             }}>
             {/* Decorative Background Blobs */}
             <div className="blob-container">

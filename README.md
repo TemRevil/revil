@@ -1,120 +1,101 @@
-# Portfolio Project
+# Revil
+![Version](https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&style=flat-square)
+![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&style=flat-square)
+![Firebase](https://img.shields.io/badge/Firebase-Backend-FFCA28?logo=firebase&style=flat-square)
 
-A modern, responsive portfolio website built with React and Vite.
-
-## Quick Start
-
-### Development
-```bash
-npm run dev
-```
-This will start the development server at `http://localhost:5173/`
-
-### Build
-```bash
-npm run build
-```
-This will create an optimized production build in the `dist` folder.
-
-### Preview Build
-```bash
-npm run preview
-```
-
-## Tech Stack
-
-- **React 19.2.0** - UI library
-- **Vite 7.2.4** - Build tool and dev server
-- **CSS** - Styling with reusable design system
-- **Firebase** - Hosting and backend services (ready to configure)
-
-## CSS Design System
-
-The project includes a comprehensive CSS design system located in `src/index.css` with:
-
-- **Root Variables**: Colors, typography, spacing, shadows, transitions
-- **Typography Utilities**: Headings, text sizes, font weights, text colors
-- **Background Utilities**: Solid colors, gradients, glassmorphism
-- **Layout Utilities**: Flexbox, grid, spacing, containers
-- **Component Base Styles**: Buttons, cards, inputs
-- **Animations**: Fade in, slide up, slide down, scale in
-- **Dark Mode Support**: Built-in dark theme via `[data-theme="dark"]`
-
-### Using the Design System
-
-```jsx
-// Example button
-<button className="btn btn-primary btn-lg">Click Me</button>
-
-// Example card with glassmorphism
-<div className="card-glass">
-  <h3 className="heading-3">Title</h3>
-  <p className="text-secondary">Description</p>
-</div>
-
-// Example layout
-<div className="container">
-  <div className="flex items-center justify-between gap-4">
-    <div>Content</div>
-  </div>
-</div>
-```
-
-## Firebase Setup
-
-Firebase CLI is installed globally. To configure Firebase for this project:
-
-1. Login to Firebase:
-```bash
-firebase login
-```
-
-2. Initialize Firebase in the project:
-```bash
-firebase init
-```
-
-3. Select the services you want (Hosting, Firestore, Functions, etc.)
-
-4. Deploy to Firebase:
-```bash
-firebase deploy
-```
-
-## Project Structure
-
-```
-revil/
-├── public/          # Static assets
-├── src/
-│   ├── assets/      # Images, fonts, etc.
-│   ├── App.jsx      # Main App component
-│   ├── App.css      # App-specific styles
-│   ├── index.css    # Design system & global styles
-│   └── main.jsx     # Entry point
-├── index.html       # HTML template
-├── package.json     # Dependencies
-└── vite.config.js   # Vite configuration
-```
-
-## Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run lint` - Run ESLint
-
-## Next Steps
-
-The foundation is set up! You can now start building your portfolio:
-
-1. Customize the design system colors and fonts in `src/index.css`
-2. Create components for your portfolio sections
-3. Build pages (Home, About, Projects, Contact, etc.)
-4. Add content and assets
-5. Configure Firebase for hosting/backend
-6. Deploy your portfolio
+**Revil** is a premium, ultra-responsive developer portfolio ecosystem designed for high-end digital presence. It consists of a stunning user-facing showcase and a powerful, real-time Administrative Dashboard to manage every facet of a professional career.
 
 ---
 
-Built with ❤️ using React + Vite
+## ✨ Core Pillars
+
+### 🎨 High-Fidelity UI/UX
+Designed with a "Ceramic-Glass" aesthetic, Revil features:
+- **Liquid Navigation**: Ultra-smooth page transitions and scroll-aware animations powered by **Anime.js** and **Framer Motion**.
+- **Adaptive Precision**: A hand-crafted CSS design system providing a seamless experience from 320px mobile devices to 4K displays.
+- **Atmospheric Themes**: Intelligent Dark/Light mode system with deep glassmorphism and animated background blobs.
+
+### 🛡️ The Admin Dashboard (Canary)
+A private, real-time command center built for elite project management:
+- **Project Orchestrator**: Add, edit, and organize projects with dynamic image cropping and multi-tag filtering.
+- **Canary Engine**: A built-in mail inbox for direct client communication and a meeting calendar with **Google Calendar API** synchronization.
+- **The "Algorithm"**: Proprietary session tracking that monitors project engagement, stack time, and visitor intent.
+- **Link Architect**: Generate trackable custom URLs for specific clients to monitor when they view your portfolio.
+
+### ⚡ Technical Excellence
+- **React 19 & Vite**: Leveraging the latest in front-end performance and concurrent rendering.
+- **Real-time Firestore**: Live data synchronization across all devices without page refreshes.
+- **Cloud Infrastructure**: Scalable backend logic using Firebase Cloud Functions and secure file handling via Firebase Storage.
+
+---
+
+## 🚀 Experience it Locally
+
+### Prerequisites
+- Node.js (v18+)
+- Firebase CLI (`npm install -g firebase-tools`)
+
+### Installation
+```bash
+# Clone the repository
+git clone https://github.com/temrevil/red.git
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+### Environment Configuration
+Create a `.env` file in the root directory and add your Firebase credentials:
+```env
+VITE_FIREBASE_API_KEY=your_key
+VITE_FIREBASE_AUTH_DOMAIN=your_domain
+VITE_FIREBASE_PROJECT_ID=your_id
+VITE_FIREBASE_STORAGE_BUCKET=your_bucket
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_id
+VITE_FIREBASE_APP_ID=your_app_id
+```
+
+---
+
+## 📂 Architecture Overview
+
+```text
+src/
+├── components/          # React components
+│   ├── dashboard/       # Specialized Admin Dashboard modules
+│   ├── reactbits/       # Premium UI components (Loaders, etc.)
+│   └── M-*.tsx          # Reusable Modals
+├── lib/                 # Core engine (Firebase, logic)
+├── style.css            # Elite Design System & global utilities
+├── App.tsx              # Navigation & Global Logic
+└── Algorithm.tsx        # Interaction Tracking Engine
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Domain | Technology |
+| :--- | :--- |
+| **Framework** | [React 19](https://react.dev/), [Vite 7](https://vitejs.dev/) |
+| **Backend** | [Firebase](https://firebase.google.com/) (Firestore, Functions, Storage) |
+| **Animation** | [Anime.js](https://animejs.com/), [Framer Motion](https://www.framer.com/motion/) |
+| **Icons** | [Lucide React](https://lucide.dev/) |
+| **Styling** | Vanilla CSS (Custom Design System), Tailwind Utility Layer |
+| **Logic** | TypeScript |
+
+---
+
+## 📜 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+Built with precision for the next generation of web presence.
+**[Visit Website](https://temrevil.com)** • **Developed by Revil**

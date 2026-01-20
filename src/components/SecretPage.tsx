@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'lucide-react';
-import { getAuth, GoogleAuthProvider, signInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup as authSignInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
@@ -49,7 +49,7 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
         setLoading(true);
 
         try {
-            const result = await signInWithPopup(auth, provider);
+            const result = await authSignInWithPopup(auth, provider);
             const details = getAdditionalUserInfo(result);
 
             if (details?.isNewUser) {

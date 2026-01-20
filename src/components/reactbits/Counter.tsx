@@ -1,55 +1,78 @@
 import { motion, useSpring, useTransform } from 'motion/react';
 import { useEffect } from 'react';
 
-interface NumberProps {
-    mv: any;
-    number: number;
-    height: number;
-}
-
-function Number({ mv, number, height }: NumberProps) {
-    let y = useTransform(mv, (latest: any) => {
-        let placeValue = (latest as number) % 10;
-        let offset = (10 + number - placeValue) % 10;
-        let memo = offset * height;
-        if (offset > 5) {
-            memo -= 10 * height;
-        }
-        return memo;
-    });
-
-    return (
-        <motion.span className="counter-number" style={{ y }}>
-            {number}
-        </motion.span>
-    );
-}
-
 interface DigitProps {
-    value: number | string;
+    value: number | string; // power of 10 or "."
     height: number;
-    animatedValue: any;
+    parentAnimatedValue: any;
     digitStyle?: React.CSSProperties;
+    discrete?: boolean;
 }
 
-function Digit({ value, height, animatedValue, digitStyle }: DigitProps) {
+function Digit({ value, height, parentAnimatedValue, digitStyle, discrete }: DigitProps) {
     if (value === '.') {
         return (
-            <span
-                className="counter-digit"
+            <div
+                className="rb-counter-digit"
                 style={{ height, ...digitStyle, width: 'fit-content' }}
             >
                 .
-            </span>
+            </div>
         );
     }
 
+    const placeValuePower = value as number;
+
+    // Standard roll logic: 0 through 9 in a vertical column
+    const y = useTransform(parentAnimatedValue, (v: any) => {
+        const totalValue = Math.max(0, v as number);
+        const placeValue = totalValue / placeValuePower;
+
+        // For discrete mode, we want to snap to the integer digit.
+        // We use Math.floor to get the digit, but we must be careful with transitions.
+        const currentDigit = discrete ? Math.floor(placeValue + 0.0001) % 10 : placeValue % 10;
+
+        // Snap to exact pixel center to avoid bleeding edges
+        return -currentDigit * height;
+    });
+
     return (
-        <span className="counter-digit" style={{ height, ...digitStyle }}>
-            {Array.from({ length: 10 }, (_, i) => (
-                <Number key={i} mv={animatedValue} number={i} height={height} />
-            ))}
-        </span>
+        <div className="rb-counter-digit" style={{ height, width: 'auto', ...digitStyle }}>
+            {/* Invisible anchor digit: This is the most reliable way to set width for bold fonts */}
+            <div style={{
+                visibility: 'hidden',
+                pointerEvents: 'none',
+                userSelect: 'none',
+                height: height,
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 0.05em'
+            }}>8</div>
+
+            <motion.div
+                style={{
+                    y,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: height * 10,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    zIndex: 1
+                }}
+            >
+                {Array.from({ length: 11 }, (_, i) => (
+                    <div
+                        key={i}
+                        className="rb-counter-number"
+                        style={{ height, minHeight: height, maxHeight: height }}
+                    >
+                        {i % 10}
+                    </div>
+                ))}
+            </motion.div>
+        </div>
     );
 }
 
@@ -59,8 +82,6 @@ interface CounterProps {
     padding?: number;
     places?: (number | string)[];
     gap?: number;
-    borderRadius?: number;
-    horizontalPadding?: number;
     textColor?: string;
     fontWeight?: string | number;
     containerStyle?: React.CSSProperties;
@@ -69,6 +90,7 @@ interface CounterProps {
     gradientHeight?: number;
     gradientFrom?: string;
     gradientTo?: string;
+    discrete?: boolean;
 }
 
 export default function Counter({
@@ -77,8 +99,6 @@ export default function Counter({
     padding = 0,
     places,
     gap = 8,
-    borderRadius = 4,
-    horizontalPadding = 8,
     textColor = 'inherit',
     fontWeight = 'inherit',
     containerStyle,
@@ -87,32 +107,34 @@ export default function Counter({
     gradientHeight = 16,
     gradientFrom = 'black',
     gradientTo = 'transparent',
+    discrete = false,
 }: CounterProps) {
     const height = fontSize + padding;
 
-    // Auto-calculate places if not provided
-    const computedPlaces = places || [...value.toString()].map((ch, i, a) => {
-        if (ch === '.') return '.';
-        // Calculate powers of 10 for each position
-        return 10 ** (a.indexOf('.') === -1 ? a.length - i - 1 : i < a.indexOf('.') ? a.indexOf('.') - i - 1 : -(i - a.indexOf('.')));
-    });
+    // Stable computed places logic with correct typing
+    const computedPlaces: (number | string)[] = places || (function () {
+        const stringVal = Math.floor(value).toString();
+        return stringVal.split('').map((_, i, a) => {
+            return Math.pow(10, a.length - i - 1);
+        });
+    })();
 
-    const animatedValue = useSpring(value, {
+    const animatedValue = useSpring(Number(value), {
         stiffness: 100,
-        damping: 15,
+        damping: 20,
     });
 
     useEffect(() => {
-        animatedValue.set(value);
+        animatedValue.set(Number(value));
     }, [value, animatedValue]);
 
     return (
-        <div className="counter-container" style={{ ...containerStyle }}>
+        <div className="rb-counter-container" style={{ ...containerStyle }}>
             <div
-                className="counter-counter"
+                className="rb-counter-counter"
                 style={{
                     fontSize,
-                    lineHeight: 1,
+                    height,
                     gap,
                     color: textColor,
                     fontWeight,
@@ -121,77 +143,34 @@ export default function Counter({
             >
                 {computedPlaces.map((place, i) => (
                     <Digit
-                        key={i}
+                        key={`${place}-${i}`}
                         value={place}
                         height={height}
-                        animatedValue={useTransform(animatedValue, (v) =>
-                            place === '.' ? 0 : Math.abs(v as number) / (place as number)
-                        )}
+                        discrete={discrete}
+                        parentAnimatedValue={animatedValue}
                         digitStyle={digitStyle}
                     />
                 ))}
             </div>
 
-            <div className="gradient-container">
-                <div
-                    className="top-gradient"
-                    style={{
-                        height: gradientHeight,
-                        background: `linear-gradient(to bottom, ${gradientFrom}, ${gradientTo})`,
-                    }}
-                />
-                <div
-                    className="bottom-gradient"
-                    style={{
-                        height: gradientHeight,
-                        background: `linear-gradient(to top, ${gradientFrom}, ${gradientTo})`,
-                    }}
-                />
-            </div>
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                .counter-container {
-                    position: relative;
-                    display: inline-block;
-                }
-                .counter-counter {
-                    display: flex;
-                    overflow: hidden;
-                }
-                .counter-digit {
-                    position: relative;
-                    width: 1ch;
-                    font-variant-numeric: tabular-nums;
-                }
-                .counter-number {
-                    position: absolute;
-                    top: 0;
-                    right: 0;
-                    bottom: 0;
-                    left: 0;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-                .gradient-container {
-                    position: absolute;
-                    inset: 0;
-                    pointer-events: none;
-                    z-index: 10;
-                }
-                .top-gradient {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                }
-                .bottom-gradient {
-                    position: absolute;
-                    bottom: 0;
-                    left: 0;
-                    right: 0;
-                }
-            `}} />
+            {gradientHeight > 0 && (
+                <div className="rb-gradient-container">
+                    <div
+                        className="rb-top-gradient"
+                        style={{
+                            height: gradientHeight,
+                            background: `linear-gradient(to bottom, ${gradientFrom}, ${gradientTo})`,
+                        }}
+                    />
+                    <div
+                        className="rb-bottom-gradient"
+                        style={{
+                            height: gradientHeight,
+                            background: `linear-gradient(to top, ${gradientFrom}, ${gradientTo})`,
+                        }}
+                    />
+                </div>
+            )}
         </div>
     );
 }

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
-import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
+import { useRef } from 'react';
 
 // Import SVG icons
 import htmlIcon from '../assets/svgs/html.svg';
@@ -14,6 +15,10 @@ import firebaseIcon from '../assets/svgs/firebase.svg';
 import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Counter from './reactbits/Counter';
+
+const isVideoFile = (url: string) => {
+    return url.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || url.includes('/videos/');
+};
 
 export const getStackIcon = (name: string) => {
     const lowerName = name.toLowerCase();
@@ -65,6 +70,388 @@ interface MProjectViewProps {
     onContributorClick: (contributor: any) => void;
 }
 
+const GlassPanel = ({ children, style, className = "", isDark }: any) => (
+    <div className={className} style={{
+        background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.15)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        borderRadius: '32px',
+        border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'}`,
+        padding: '30px',
+        ...style
+    }}>
+        {children}
+    </div>
+);
+
+const VideoPlayer = React.memo(({ src, isActive, isMobile }: { src: string, isActive: boolean, isMobile: boolean }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [playing, setPlaying] = useState(true);
+    const [muted, setMuted] = useState(true);
+    const [progress, setProgress] = useState(0);
+    const [userInteracted, setUserInteracted] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+
+    // Pause when tab/window becomes hidden
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.hidden && playing && videoRef.current) {
+                videoRef.current.pause();
+                setPlaying(false);
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [playing]);
+
+
+    useEffect(() => {
+        let isCancelled = false;
+        const video = videoRef.current;
+        if (!video) return;
+
+        const handlePlay = async () => {
+            try {
+                if (isActive) {
+                    if (video.paused) await video.play();
+                    if (isCancelled) video.pause();
+                } else {
+                    video.pause();
+                    video.currentTime = 0;
+                    setUserInteracted(false);
+                    setMuted(true);
+                    setPlaying(true);
+                }
+            } catch (err) {
+                // Ignore AbortError
+            }
+        };
+
+        handlePlay();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [isActive]);
+
+    const togglePlay = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const video = videoRef.current;
+        if (!video) return;
+
+        if (video.paused) {
+            // If first time playing, start from beginning
+            if (!userInteracted) {
+                video.currentTime = 0;
+                setUserInteracted(true);
+            }
+            video.play().catch(e => console.warn("Play failed", e));
+            setPlaying(true);
+        } else {
+            video.pause();
+            setPlaying(false);
+        }
+    };
+
+    const toggleMute = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const video = videoRef.current;
+        if (!video) return;
+
+        const newMuted = !muted;
+        setMuted(newMuted);
+
+        // Sync with actual video element if needed (though prop should handle it)
+        // If un-muting for the first time, trigger full playback from beginning
+        if (!newMuted && !userInteracted) {
+            video.currentTime = 0;
+            setUserInteracted(true);
+            video.play().catch(() => { });
+            setPlaying(true);
+        }
+    };
+
+    const handleTimeUpdate = () => {
+        if (videoRef.current && !isDragging) {
+            const video = videoRef.current;
+
+            // Sync playing state if desynced
+            if (!video.paused && !playing) setPlaying(true);
+            if (video.paused && playing) setPlaying(false);
+
+            // Preview Loop: until user interacts, play frames around (0-3s)
+            if (!userInteracted && video.currentTime >= 3) {
+                video.currentTime = 0;
+            }
+
+            const p = (video.currentTime / video.duration) * 100;
+            setProgress(p);
+        }
+    };
+
+    const handleScrub = (e: any) => {
+        if (!containerRef.current || !videoRef.current) return;
+
+        // Find the progress section element
+        const progressContainer = e.currentTarget.closest('[data-testid="progress-container"]');
+        if (!progressContainer) return;
+
+        const rect = progressContainer.getBoundingClientRect();
+        const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+        const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+        const ratio = x / rect.width;
+
+        const newTime = ratio * videoRef.current.duration;
+        videoRef.current.currentTime = newTime;
+        setProgress(ratio * 100);
+
+        if (!userInteracted) setUserInteracted(true);
+    };
+
+    // Global listener for dragging
+    useEffect(() => {
+        if (!isDragging) return;
+
+        const onMouseMove = (e: MouseEvent) => {
+            const progressContainer = document.querySelector('[data-testid="progress-container"]');
+            if (progressContainer && videoRef.current) {
+                const rect = progressContainer.getBoundingClientRect();
+                const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+                const ratio = x / rect.width;
+                videoRef.current.currentTime = ratio * videoRef.current.duration;
+                setProgress(ratio * 100);
+            }
+        };
+
+        const onMouseUp = () => {
+            setIsDragging(false);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+    }, [isDragging]);
+
+    const toggleFullscreen = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (containerRef.current) {
+            if (!document.fullscreenElement) {
+                if (containerRef.current.requestFullscreen) {
+                    containerRef.current.requestFullscreen();
+                } else if ((containerRef.current as any).webkitRequestFullscreen) {
+                    (containerRef.current as any).webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+    };
+
+    return (
+        <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000' }}>
+            <video
+                ref={videoRef}
+                src={src}
+                loop={userInteracted} // Only full loop if user interacts
+                muted={muted}
+                playsInline
+                autoPlay // Try to autoplay muted preview loop
+                onTimeUpdate={handleTimeUpdate}
+                onClick={togglePlay}
+                style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    cursor: 'pointer',
+                    display: 'block',
+                    margin: '0 auto'
+                }}
+            />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)', pointerEvents: 'none' }} />
+
+            {/* Custom Blurry Controls - Separated UI */}
+            <AnimatePresence>
+                {isActive && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        style={{
+                            position: 'absolute',
+                            inset: 0,
+                            pointerEvents: 'none',
+                        }}
+                    >
+                        {/* 1. Large Centered Play/Pause Toggle */}
+                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
+                            <AnimatePresence>
+                                {(!userInteracted || !playing) && (
+                                    <motion.div
+                                        initial={{ scale: 0.8, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        exit={{ scale: 0.8, opacity: 0 }}
+                                        whileHover={{ scale: 1.1, backgroundColor: 'rgba(255,255,255,0.15)' }}
+                                        style={{
+                                            width: isMobile ? '54px' : '80px',
+                                            height: isMobile ? '54px' : '80px',
+                                            background: 'rgba(255,255,255,0.08)',
+                                            backdropFilter: 'blur(32px)',
+                                            WebkitBackdropFilter: 'blur(32px)',
+                                            borderRadius: '50%',
+                                            border: '1px solid rgba(255,255,255,0.2)',
+                                            color: 'white',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            pointerEvents: 'auto',
+                                            cursor: 'pointer', zIndex: 12,
+                                            boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+                                        }}
+                                        onClick={togglePlay}
+                                    >
+                                        <div style={{ marginLeft: isMobile ? '3px' : '5px' }}>
+                                            <Play size={isMobile ? 22 : 32} fill="white" strokeWidth={1.5} />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        {/* 2. Bottom Controls Wrapper */}
+                        <div
+                            style={{
+                                position: 'absolute',
+                                bottom: isMobile ? '12px' : '20px',
+                                left: '0',
+                                right: '0',
+                                padding: isMobile ? '0 12px' : '0 25px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'stretch',
+                                gap: isMobile ? '6px' : '8px',
+                                pointerEvents: 'none',
+                                zIndex: 10,
+                                transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+                            }}
+                        >
+                            {/* Progress Bar (Always Top) */}
+                            <div
+                                style={{
+                                    width: '100%',
+                                    background: isMobile ? 'transparent' : 'rgba(255, 255, 255, 0.1)',
+                                    backdropFilter: isMobile ? 'none' : 'blur(24px)',
+                                    borderRadius: isMobile ? '0' : '16px',
+                                    border: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.15)',
+                                    padding: isMobile ? '0' : '0 20px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    pointerEvents: 'auto',
+                                    height: isMobile ? '20px' : '32px',
+                                    cursor: 'pointer'
+                                }}
+                                data-testid="progress-container"
+                                onMouseDown={(e) => {
+                                    setIsDragging(true);
+                                    handleScrub(e);
+                                }}
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div style={{ flex: 1, height: isMobile ? '3px' : '5px', background: isMobile ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)', borderRadius: '4px', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{
+                                        position: 'absolute',
+                                        left: 0,
+                                        top: 0,
+                                        height: '100%',
+                                        width: `${progress}%`,
+                                        background: 'linear-gradient(90deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%)',
+                                        boxShadow: '0 0 15px rgba(96, 165, 250, 0.4)',
+                                        transition: isDragging ? 'none' : 'width 0.1s linear',
+                                        borderRadius: '4px'
+                                    }} />
+                                    {/* Thumb Indicator */}
+                                    <div style={{
+                                        position: 'absolute',
+                                        left: `${progress}%`,
+                                        top: '50%',
+                                        transform: 'translate(-50%, -50%)',
+                                        width: '16px',
+                                        height: '16px',
+                                        background: 'white',
+                                        borderRadius: '50%',
+                                        boxShadow: '0 0 10px rgba(0,0,0,0.5)',
+                                        opacity: isDragging ? 1 : 0,
+                                        transition: 'opacity 0.2s'
+                                    }} />
+                                </div>
+                            </div>
+
+                            {/* Hub Row (Buttons under progress) */}
+                            <div style={{ display: 'flex', gap: '12px', justifyContent: isMobile ? 'space-between' : 'flex-end', alignItems: 'center' }}>
+                                {/* Desktop Play Button Hub */}
+                                {!isMobile && (
+                                    <div style={{
+                                        background: 'rgba(255, 255, 255, 0.1)',
+                                        backdropFilter: 'blur(24px)',
+                                        borderRadius: '16px',
+                                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        pointerEvents: 'auto',
+                                        height: '40px',
+                                        width: '60px', // Fixed width for consistent hit area
+                                        overflow: 'hidden'
+                                    }}>
+                                        <button onClick={togglePlay} style={{ width: '100%', height: '100%', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {(userInteracted && playing) ? <Pause size={18} fill="white" style={{ pointerEvents: 'none' }} /> : <Play size={18} fill="white" style={{ pointerEvents: 'none' }} />}
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Action Hub */}
+                                <div
+                                    style={{
+                                        background: 'rgba(255, 255, 255, 0.1)',
+                                        backdropFilter: 'blur(24px)',
+                                        borderRadius: isMobile ? '12px' : '16px',
+                                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                                        padding: 0, // Remove padding, buttons fill space
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 0, // Remove gap, use button padding
+                                        pointerEvents: 'auto',
+                                        height: isMobile ? '36px' : '40px',
+                                        overflow: 'hidden'
+                                    }}
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    {isMobile && (
+                                        <button onClick={togglePlay} style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {(userInteracted && playing) ? <Pause size={16} fill="white" style={{ pointerEvents: 'none' }} /> : <Play size={16} fill="white" style={{ pointerEvents: 'none' }} />}
+                                        </button>
+                                    )}
+                                    <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                                        <button onClick={toggleMute} style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {muted ? <VolumeX size={16} style={{ pointerEvents: 'none' }} /> : <Volume2 size={16} style={{ pointerEvents: 'none' }} />}
+                                        </button>
+                                        <button onClick={toggleFullscreen} style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Maximize size={16} style={{ pointerEvents: 'none' }} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+});
+
 const MProjectView = ({ project: initialProject, onClose, onContributorClick }: MProjectViewProps) => {
     const [project, setProject] = useState<Project>(initialProject);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -73,6 +460,130 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const [isMobile, setIsMobile] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [availableTags, setAvailableTags] = useState<any[]>([]);
+
+    const sortedMedia = React.useMemo(() => {
+        return [...(project.images || [])].sort((a, b) => {
+            const isVidA = a.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || a.includes('/videos/');
+            const isVidB = b.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || b.includes('/videos/');
+            if (isVidA && !isVidB) return -1;
+            if (!isVidA && isVidB) return 1;
+            return 0;
+        });
+    }, [project.images]);
+
+    // Auto-slide Gallery
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval> | undefined;
+        const currentMedia = sortedMedia[currentImageIndex];
+        const isCurrentVideo = currentMedia && isVideoFile(currentMedia);
+
+        if (sortedMedia && sortedMedia.length > 1 && !isHovered && !isCurrentVideo) {
+            interval = setInterval(() => {
+                setCurrentImageIndex((prev) => (prev + 1) % sortedMedia.length);
+            }, 5000);
+        }
+        return () => clearInterval(interval);
+    }, [sortedMedia, isHovered, currentImageIndex]);
+
+    const handleNext = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setCurrentImageIndex((prev) => (prev + 1) % sortedMedia.length);
+    };
+
+    const handlePrev = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setCurrentImageIndex((prev) => (prev - 1 + sortedMedia.length) % sortedMedia.length);
+    };
+
+    const handleClose = () => {
+        onClose();
+    };
+
+    const handleGithubClick = async () => {
+        if (!project.repoLink) return;
+        try {
+            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const snap = await getDoc(projectRef);
+            if (snap.exists()) {
+                const currentViews = snap.data().Views || {};
+                const newVal = (parseInt(currentViews.Github || "0") + 1).toString();
+                await updateDoc(projectRef, {
+                    "Views.Github": newVal
+                });
+            }
+        } catch (err) {
+            console.warn("Could not increment github views:", err);
+        }
+    };
+
+    const handleLiveClick = async () => {
+        if (!project.liveLink && !project.demoLink) return;
+        try {
+            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const snap = await getDoc(projectRef);
+            if (snap.exists()) {
+                const currentViews = snap.data().Views || {};
+                const newVal = (parseInt(currentViews.Live || "0") + 1).toString();
+                await updateDoc(projectRef, {
+                    "Views.Live": newVal
+                });
+            }
+        } catch (err) {
+            console.warn("Could not increment live views:", err);
+        }
+    };
+
+    const handleDownloadClick = async () => {
+        if (!project.downloadLink) return;
+        try {
+            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const snap = await getDoc(projectRef);
+            if (snap.exists()) {
+                const currentViews = snap.data().Views || {};
+                const newVal = (parseInt(currentViews.Download || "0") + 1).toString();
+                await updateDoc(projectRef, {
+                    "Views.Download": newVal
+                });
+            }
+        } catch (err) {
+            console.warn("Could not increment download views:", err);
+        }
+    };
+
+
+    const displayTitle = (project.title || project.name || 'Untitled Project').toUpperCase();
+    const displayFullDescription = project.fullDescription || project.description || 'No description available.';
+
+    const displayTags = (project.tags && project.tags.length > 0 && typeof project.tags[0] === 'object')
+        ? project.tags.map(t => {
+            // Try to find in global tags again for latest icon/color
+            const globalTag = availableTags.find(gt => gt.name.toLowerCase() === t.name.toLowerCase());
+            return {
+                name: t.name,
+                color: t.color || globalTag?.color || getTechColor(t.name),
+                icon: t.iconSvg || globalTag?.iconSvg || getStackIcon(t.name)
+            };
+        })
+        : [
+            ...(project.stack || []).map(tech => {
+                const globalTag = availableTags.find(gt => gt.name.toLowerCase() === tech.toLowerCase());
+                return {
+                    name: tech,
+                    color: globalTag?.color || getTechColor(tech),
+                    icon: globalTag?.iconSvg || getStackIcon(tech)
+                };
+            }),
+            ...(project.tags || []).map(t => {
+                const isString = typeof t === 'string';
+                const name = isString ? t : t.name;
+                const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
+                return {
+                    name: name,
+                    color: isString ? (globalTag?.color || getTechColor(name)) : (t.color || globalTag?.color || getTechColor(name)),
+                    icon: isString ? (globalTag?.iconSvg || getStackIcon(t)) : (t.iconSvg || globalTag?.iconSvg || getStackIcon(t.name))
+                };
+            })
+        ];
 
     // Keep internal project state in sync with incoming props
     useEffect(() => {
@@ -188,130 +699,6 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
-    // Auto-slide Gallery
-    useEffect(() => {
-        let interval: ReturnType<typeof setInterval> | undefined;
-        if (project.images && project.images.length > 1 && !isHovered) {
-            interval = setInterval(() => {
-                setCurrentImageIndex((prev) => (prev + 1) % project.images.length);
-            }, 5000);
-        }
-        return () => clearInterval(interval);
-    }, [project.images, isHovered]);
-
-    const handleNext = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setCurrentImageIndex((prev) => (prev + 1) % project.images.length);
-    };
-
-    const handlePrev = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setCurrentImageIndex((prev) => (prev - 1 + project.images.length) % project.images.length);
-    };
-
-    const handleClose = () => {
-        onClose();
-    };
-
-    const handleGithubClick = async () => {
-        if (!project.repoLink) return;
-        try {
-            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
-            const snap = await getDoc(projectRef);
-            if (snap.exists()) {
-                const currentViews = snap.data().Views || {};
-                const newVal = (parseInt(currentViews.Github || "0") + 1).toString();
-                await updateDoc(projectRef, {
-                    "Views.Github": newVal
-                });
-            }
-        } catch (err) {
-            console.warn("Could not increment github views:", err);
-        }
-    };
-
-    const handleLiveClick = async () => {
-        if (!project.liveLink && !project.demoLink) return;
-        try {
-            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
-            const snap = await getDoc(projectRef);
-            if (snap.exists()) {
-                const currentViews = snap.data().Views || {};
-                const newVal = (parseInt(currentViews.Live || "0") + 1).toString();
-                await updateDoc(projectRef, {
-                    "Views.Live": newVal
-                });
-            }
-        } catch (err) {
-            console.warn("Could not increment live views:", err);
-        }
-    };
-
-    const handleDownloadClick = async () => {
-        if (!project.downloadLink) return;
-        try {
-            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
-            const snap = await getDoc(projectRef);
-            if (snap.exists()) {
-                const currentViews = snap.data().Views || {};
-                const newVal = (parseInt(currentViews.Download || "0") + 1).toString();
-                await updateDoc(projectRef, {
-                    "Views.Download": newVal
-                });
-            }
-        } catch (err) {
-            console.warn("Could not increment download views:", err);
-        }
-    };
-
-
-    const displayTitle = (project.title || project.name || 'Untitled Project').toUpperCase();
-    const displayFullDescription = project.fullDescription || project.description || 'No description available.';
-
-    const displayTags = (project.tags && project.tags.length > 0 && typeof project.tags[0] === 'object')
-        ? project.tags.map(t => {
-            // Try to find in global tags again for latest icon/color
-            const globalTag = availableTags.find(gt => gt.name.toLowerCase() === t.name.toLowerCase());
-            return {
-                name: t.name,
-                color: t.color || globalTag?.color || getTechColor(t.name),
-                icon: t.iconSvg || globalTag?.iconSvg || getStackIcon(t.name)
-            };
-        })
-        : [
-            ...(project.stack || []).map(tech => {
-                const globalTag = availableTags.find(gt => gt.name.toLowerCase() === tech.toLowerCase());
-                return {
-                    name: tech,
-                    color: globalTag?.color || getTechColor(tech),
-                    icon: globalTag?.iconSvg || getStackIcon(tech)
-                };
-            }),
-            ...(project.tags || []).map(t => {
-                const isString = typeof t === 'string';
-                const name = isString ? t : t.name;
-                const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
-                return {
-                    name: name,
-                    color: isString ? (globalTag?.color || getTechColor(name)) : (t.color || globalTag?.color || getTechColor(name)),
-                    icon: isString ? (globalTag?.iconSvg || getStackIcon(t)) : (t.iconSvg || globalTag?.iconSvg || getStackIcon(t.name))
-                };
-            })
-        ];
-
-    const GlassPanel = ({ children, style, className = "" }: any) => (
-        <div className={className} style={{
-            background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.15)',
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
-            borderRadius: '32px',
-            border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'}`,
-            padding: '30px',
-            ...style
-        }}>
-            {children}
-        </div>
-    );
 
     return createPortal(
         <motion.div
@@ -331,7 +718,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
             {/* Dynamic Background Blur */}
             <div style={{
                 position: 'absolute', inset: -50,
-                backgroundImage: `url(${project.images[currentImageIndex]})`,
+                backgroundImage: `url(${sortedMedia[currentImageIndex]})`,
                 backgroundSize: 'cover', backgroundPosition: 'center',
                 filter: 'blur(80px) brightness(0.35)', opacity: 0.7,
                 transition: 'background-image 1.5s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -393,9 +780,12 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                             position: 'relative',
                             width: isMobile ? '100%' : '85%',
                             maxWidth: '1200px',
+                            maxHeight: '80vh', // Prevent vertical overflow
                             zIndex: 1,
                             borderRadius: isMobile ? '16px' : '32px',
                             boxShadow: '0 50px 100px rgba(0,0,0,0.5)',
+                            display: 'flex',
+                            flexDirection: 'column'
                         }}>
                             <motion.div
                                 layoutId={`project-image-${project.id}`}
@@ -406,14 +796,15 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                     position: 'relative',
                                     width: '100%',
                                     height: 'auto',
-                                    aspectRatio: '16/9',
+                                    aspectRatio: isMobile ? '16/9' : '16/9',
+                                    maxHeight: '80vh',
                                     borderRadius: isMobile ? '16px' : '32px',
                                     overflow: 'hidden',
-                                    background: '#0a0a0a',
+                                    background: '#000',
                                     willChange: 'transform'
                                 }}
                             >
-                                {project.images.map((img, i) => (
+                                {sortedMedia.map((media, i) => (
                                     <div key={i} style={{
                                         position: 'absolute', inset: 0,
                                         opacity: i === currentImageIndex ? 1 : 0,
@@ -421,45 +812,53 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                         transition: 'all 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
                                         zIndex: i === currentImageIndex ? 1 : 0
                                     }}>
-                                        <img src={img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
-                                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)' }} />
+                                        {isVideoFile(media) ? (
+                                            <VideoPlayer src={media} isActive={i === currentImageIndex} isMobile={isMobile} />
+                                        ) : (
+                                            <>
+                                                <img src={media} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                                                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)' }} />
+                                            </>
+                                        )}
                                     </div>
                                 ))}
 
                                 {/* Manual Nav Controls */}
-                                {project.images.length > 1 && (
+                                {sortedMedia.length > 1 && (
                                     <>
                                         <button onClick={handlePrev} style={{
-                                            position: 'absolute', left: isMobile ? '8px' : '30px', top: '50%', transform: 'translateY(-50%)',
-                                            width: isMobile ? '36px' : '60px', height: isMobile ? '36px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
+                                            position: 'absolute', left: isMobile ? '4px' : '30px', top: '50%', transform: 'translateY(-50%)',
+                                            width: isMobile ? '32px' : '60px', height: isMobile ? '32px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
                                             backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                                            zIndex: 20, transition: 'all 0.3s'
-                                        }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; if (!isMobile) e.currentTarget.style.left = '25px'; }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; if (!isMobile) e.currentTarget.style.left = '30px'; }}>
-                                            <ChevronLeft size={isMobile ? 18 : 28} />
+                                            zIndex: 25, transition: 'all 0.3s'
+                                        }}>
+                                            <ChevronLeft size={isMobile ? 16 : 28} />
                                         </button>
                                         <button onClick={handleNext} style={{
-                                            position: 'absolute', right: isMobile ? '8px' : '30px', top: '50%', transform: 'translateY(-50%)',
-                                            width: isMobile ? '36px' : '60px', height: isMobile ? '36px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
+                                            position: 'absolute', right: isMobile ? '4px' : '30px', top: '50%', transform: 'translateY(-50%)',
+                                            width: isMobile ? '32px' : '60px', height: isMobile ? '32px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
                                             backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                                            zIndex: 20, transition: 'all 0.3s'
-                                        }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; if (!isMobile) e.currentTarget.style.right = '25px'; }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; if (!isMobile) e.currentTarget.style.right = '30px'; }}>
-                                            <ChevronRight size={isMobile ? 18 : 28} />
+                                            zIndex: 25, transition: 'all 0.3s'
+                                        }}>
+                                            <ChevronRight size={isMobile ? 16 : 28} />
                                         </button>
                                     </>
                                 )}
 
-                                {/* Indicator Dots */}
-                                <div style={{ position: 'absolute', bottom: '30px', left: '0', right: '0', display: 'flex', justifyContent: 'center', gap: '12px', zIndex: 10 }}>
-                                    {project.images.map((_, i) => (
-                                        <div key={i} onClick={() => setCurrentImageIndex(i)} style={{
-                                            width: i === currentImageIndex ? '40px' : '10px', height: '10px', borderRadius: '5px',
-                                            background: 'white', opacity: i === currentImageIndex ? 1 : 0.3,
-                                            cursor: 'pointer', transition: 'all 0.4s'
-                                        }} />
-                                    ))}
-                                </div>
+                                {/* Indicator Dots (Hidden on mobile to save space) */}
+                                {!isMobile && (
+                                    <div style={{ position: 'absolute', bottom: '30px', left: '0', right: '0', display: 'flex', justifyContent: 'center', gap: '12px', zIndex: 10 }}>
+                                        {sortedMedia.map((_, i) => (
+                                            <div key={i} onClick={() => setCurrentImageIndex(i)} style={{
+                                                width: i === currentImageIndex ? '40px' : '10px', height: '10px', borderRadius: '5px',
+                                                background: 'white', opacity: i === currentImageIndex ? 1 : 0.3,
+                                                cursor: 'pointer', transition: 'all 0.4s'
+                                            }} />
+                                        ))}
+                                    </div>
+                                )}
                             </motion.div>
                         </div>
 
@@ -493,9 +892,8 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                         padding: isMobile ? '20px' : '0 0 60px 0',
                         marginTop: isMobile ? '0' : '40px'
                     }}>
-                        {/* Primary Info */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
-                            <GlassPanel>
+                            <GlassPanel isDark={isDark}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
                                     <div style={{ padding: '6px 14px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', borderRadius: '50px', fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em' }}>More Details</div>
                                     <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }} />
@@ -512,7 +910,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                 }}>{displayFullDescription}</p>
                             </GlassPanel>
 
-                            <GlassPanel>
+                            <GlassPanel isDark={isDark}>
                                 <h3 style={{ margin: '0 0 35px 0', fontSize: '0.85rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.25em', color: '#60a5fa' }}>Technological Blueprint</h3>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px' }}>
                                     {displayTags.map((tag, i) => (
@@ -532,14 +930,28 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                             e.currentTarget.style.transform = 'translateY(0)';
                                             e.currentTarget.style.boxShadow = 'none';
                                         }}>
-                                            <div style={{ width: '28px', height: '28px', color: tag.color }}>
+                                            <div style={{ width: '28px', height: '28px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                 {tag.icon ? (
-                                                    typeof tag.icon === 'string' && tag.icon.startsWith('<svg') ?
-                                                        <div style={{ width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: tag.icon }} /> :
-                                                        <img src={tag.icon} style={{ width: '100%', height: '100%', filter: `drop-shadow(0 0 8px ${tag.color}88)` }} alt="" />
-                                                ) : <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: tag.color, boxShadow: `0 0 10px ${tag.color}` }} />}
+                                                    (typeof tag.icon === 'string' && (tag.icon.startsWith('http') || tag.icon.includes('/o/'))) ?
+                                                        <img
+                                                            src={tag.icon}
+                                                            style={{
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                objectFit: 'contain',
+                                                                filter: `drop-shadow(0 0 8px ${tag.color}88)`
+                                                            }}
+                                                            alt={tag.name}
+                                                        />
+                                                        : (typeof tag.icon === 'string' && tag.icon.startsWith('<svg')) ?
+                                                            <div
+                                                                style={{ width: '100%', height: '100%', color: tag.color }}
+                                                                dangerouslySetInnerHTML={{ __html: tag.icon }}
+                                                            />
+                                                            : <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: tag.color, boxShadow: `0 0 10px ${tag.color}` }} />
+                                                ) : <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: tag.color, boxShadow: `0 0 10px ${tag.color}` }} />}
                                             </div>
-                                            <span style={{ fontSize: '0.95rem', fontWeight: 900, color: 'white' }}>{tag.name}</span>
+                                            <span style={{ fontSize: windowWidth < 480 ? '0.85rem' : '0.95rem', fontWeight: 900, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag.name}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -705,11 +1117,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                         <div style={{ marginBottom: '8px' }}>
                                             <Counter
                                                 value={typeof project.githubViews === 'number' ? project.githubViews : 0}
-                                                fontSize={28}
+                                                fontSize={30}
+                                                padding={8}
                                                 textColor="white"
                                                 fontWeight={950}
                                                 gradientHeight={0}
                                                 gap={2}
+                                                discrete={true}
                                             />
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Github</div>
@@ -718,11 +1132,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                         <div style={{ marginBottom: '8px' }}>
                                             <Counter
                                                 value={typeof project.liveViews === 'number' ? project.liveViews : 0}
-                                                fontSize={28}
+                                                fontSize={30}
+                                                padding={8}
                                                 textColor="white"
                                                 fontWeight={950}
                                                 gradientHeight={0}
                                                 gap={2}
+                                                discrete={true}
                                             />
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Live</div>
@@ -731,11 +1147,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                         <div style={{ marginBottom: '8px' }}>
                                             <Counter
                                                 value={typeof project.downloadViews === 'number' ? project.downloadViews : 0}
-                                                fontSize={28}
+                                                fontSize={30}
+                                                padding={8}
                                                 textColor="white"
                                                 fontWeight={950}
                                                 gradientHeight={0}
                                                 gap={2}
+                                                discrete={true}
                                             />
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Downloads</div>
@@ -744,11 +1162,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                         <div style={{ marginBottom: '8px' }}>
                                             <Counter
                                                 value={typeof project.views === 'number' ? project.views : 0}
-                                                fontSize={28}
+                                                fontSize={30}
+                                                padding={8}
                                                 textColor="white"
                                                 fontWeight={950}
                                                 gradientHeight={0}
                                                 gap={2}
+                                                discrete={true}
                                             />
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Views</div>

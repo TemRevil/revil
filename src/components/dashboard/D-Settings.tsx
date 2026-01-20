@@ -14,9 +14,7 @@ import MHandlingProject, { HandlingProject } from './M-HandlingProject';
 import MStackItem, { StackItemData } from './M-StackItem';
 import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
-// // import userImg from '../assets/imgs/user.jpg';
 // Replaced failing ui-avatars.com with a local icon-based placeholder logic
-const DEFAULT_USER_IMG = '';
 
 
 interface StackItem {
@@ -75,9 +73,9 @@ const createImage = (url: string, useCrossOrigin: boolean = true): Promise<HTMLI
 const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<File> => {
     return new Promise(async (resolve, reject) => {
         try {
-            console.log('[getCroppedImg] Starting crop for:', imageSrc);
+
             const image = await createImage(imageSrc);
-            console.log('[getCroppedImg] Image created successfully');
+
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
 
@@ -112,7 +110,7 @@ const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<File> => {
                     reject(new Error('Canvas is empty'));
                     return;
                 }
-                console.log('[getCroppedImg] Blob created successfully, size:', blob.size);
+
                 const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
                 resolve(file);
             }, 'image/jpeg');
@@ -161,7 +159,7 @@ export default function DSettings() {
     const [heroImageFile, setHeroImageFile] = useState<File | null>(null);
     const heroImageInputRef = useRef<HTMLInputElement>(null);
 
-    const [profileImagePreview, setProfileImagePreview] = useState<string>(DEFAULT_USER_IMG);
+    const [profileImagePreview, setProfileImagePreview] = useState<string>('');
     const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
     const profileImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -490,12 +488,24 @@ export default function DSettings() {
 
             const selectedTz = timezones.find(tz => tz.value === selectedTimezone);
 
+            // Calculate timezone offset string correctly (handling .5 offsets)
+            const absOffset = Math.abs(selectedTimezone);
+            const hours = Math.floor(absOffset);
+            const minutes = Math.round((absOffset % 1) * 60);
+            const fallbackTzStr = `UTC${selectedTimezone >= 0 ? '+' : '-'}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
             const payload = {
                 'Current Availability': `${availability}%`,
-                'Current Time': selectedTz ? selectedTz.label : `UTC${selectedTimezone >= 0 ? '+' : ''}${String(selectedTimezone).padStart(2, '0')}:00`,
+                'Current Time': selectedTz ? selectedTz.label : fallbackTzStr,
                 'Projects Being Handled': projectsMap,
+                // Add raw values for easier parsing and consistency
+                'availabilityPercent': availability,
+                'timezoneOffset': selectedTimezone
             };
-            await setDoc(doc(db, 'Settings', 'Availability'), payload, { merge: true });
+
+            // Use setDoc WITHOUT merge: true to ensure the 'Projects Being Handled' map is fully replaced
+            // This ensures that deleted projects are actually removed from Firestore
+            await setDoc(doc(db, 'Settings', 'Availability'), payload);
         } catch (error) {
             console.error("Error saving availability:", error);
             setAlert({ show: true, type: 'error', message: 'Failed to save availability settings' });
@@ -575,7 +585,7 @@ export default function DSettings() {
                 const data = profileSnap.data();
                 setProfileName(data.name ?? 'Your Name');
                 setProfileTitle(data.title ?? 'Job Title');
-                setProfileImagePreview(data.imageUrl ?? DEFAULT_USER_IMG);
+                setProfileImagePreview(data.imageUrl ?? '');
                 setProfileImageFile(null);
                 setProfileImageBackupPreview(null);
                 setProfileImageBackupFile(null);
@@ -593,7 +603,25 @@ export default function DSettings() {
             const availSnap = await getDoc(doc(db, 'Settings', 'Availability'));
             if (availSnap.exists()) {
                 const availData = availSnap.data();
-                setAvailability(availData.percent ?? availability);
+                if (availData.availabilityPercent !== undefined) {
+                    setAvailability(availData.availabilityPercent);
+                } else if (availData['Current Availability']) {
+                    const percentage = parseInt(availData['Current Availability'].replace('%', ''));
+                    if (!isNaN(percentage)) setAvailability(percentage);
+                }
+
+                if (availData.timezoneOffset !== undefined) {
+                    setSelectedTimezone(availData.timezoneOffset);
+                }
+
+                const projectsMap = availData['Projects Being Handled'] as { [key: string]: Omit<HandlingProject, 'id'> };
+                if (projectsMap) {
+                    const projectsArray: HandlingProject[] = Object.entries(projectsMap).map(([id, projectData]) => ({
+                        id,
+                        ...projectData
+                    }));
+                    setHandlingProjects(projectsArray);
+                }
             }
 
             setHasUnsavedChanges(false);
@@ -640,20 +668,28 @@ export default function DSettings() {
                 const data = docSnapshot.data();
 
                 // Parse and set availability
-                const availabilityString = data['Current Availability'] as string;
-                if (availabilityString) {
-                    const percentage = parseInt(availabilityString.replace('%', ''));
-                    if (!isNaN(percentage)) {
-                        setAvailability(percentage);
+                if (data.availabilityPercent !== undefined) {
+                    setAvailability(data.availabilityPercent);
+                } else {
+                    const availabilityString = data['Current Availability'] as string;
+                    if (availabilityString) {
+                        const percentage = parseInt(availabilityString.replace('%', ''));
+                        if (!isNaN(percentage)) {
+                            setAvailability(percentage);
+                        }
                     }
                 }
 
                 // Parse and set timezone
-                const timezoneString = data['Current Time'] as string;
-                if (timezoneString) {
-                    const offsetMatch = timezoneString.match(/UTC([+-]\d{2}):\d{2}/);
-                    if (offsetMatch && offsetMatch[1]) {
-                        setSelectedTimezone(parseInt(offsetMatch[1]));
+                if (data.timezoneOffset !== undefined) {
+                    setSelectedTimezone(data.timezoneOffset);
+                } else {
+                    const timezoneString = data['Current Time'] as string;
+                    if (timezoneString) {
+                        const offsetMatch = timezoneString.match(/UTC([+-]\d{2}):\d{2}/);
+                        if (offsetMatch && offsetMatch[1]) {
+                            setSelectedTimezone(parseInt(offsetMatch[1]));
+                        }
                     }
                 }
 
@@ -1114,7 +1150,7 @@ export default function DSettings() {
                             onClick={() => handleTabChange(tab.id)}
                             className={`
                                 settings-tab-btn flex items-center gap-2 px-5 py-3 rounded-lg border-none cursor-pointer font-sans font-semibold text-sm whitespace-nowrap transition-all
-                                ${isActive ? 'tab-active bg-blue-500/15 text-blue-500' : 'bg-transparent text-gray-500 hover:bg-gray-500/5 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}
+                                ${isActive ? 'tab-active bg-blue-500/15 text-blue-500' : 'bg-transparent text-gray-500 hover:bg-blue-500/10 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400'}
                             `}
                         >
                             <Icon size={18} />
@@ -1284,24 +1320,24 @@ export default function DSettings() {
                                     <Plus size={18} /> <span className="hidden sm:inline">Add Stack</span>
                                 </button>
                             </div>
-                            <div className="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 content-start">
+                            <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-6 content-start">
                                 {stackItems.length === 0 ? (
                                     <div className="col-span-full text-center p-12 text-sec">No stack items. Add your tech stack!</div>
                                 ) : stackItems.map(item => (
-                                    <div key={item.id} className="p-5 rounded-2xl bg-gray-500/5 border border-gray-500/5 flex flex-col gap-3 relative">
-                                        <div className="absolute top-3 right-3 flex gap-1">
-                                            <button onClick={() => { setEditingStack(item); setStackModalOpen(true); }} className="btn-icon"><Edit2 size={16} /></button>
-                                            <button onClick={() => handleDeleteStack(item.id)} className="btn-icon text-red-500 hover:bg-red-500/10"><Trash2 size={16} /></button>
+                                    <div key={item.id} className="p-6 rounded-2xl bg-gray-500/5 border border-gray-500/5 flex flex-col gap-3.5 relative">
+                                        <div className="absolute top-4 right-4 flex gap-1">
+                                            <button onClick={() => { setEditingStack(item); setStackModalOpen(true); }} className="btn-icon p-1.5"><Edit2 size={16} /></button>
+                                            <button onClick={() => handleDeleteStack(item.id)} className="btn-icon p-1.5 text-red-500 hover:bg-red-500/10"><Trash2 size={16} /></button>
                                         </div>
-                                        {item.icon ? <img src={item.icon} alt={item.name} className="w-14 h-14 opacity-80 object-contain" /> : <Code size={56} className="text-gray-500/50" />}
-                                        <h4 className="heading-sm">{item.name}</h4>
+                                        {item.icon ? <img src={item.icon} alt={item.name} className="w-16 h-16 opacity-90 object-contain" /> : <Code size={60} className="text-gray-500/50" />}
+                                        <h4 className="heading-sm text-base">{item.name}</h4>
                                         <div>
-                                            <div className="flex-row-between mb-1">
+                                            <div className="flex-row-between mb-1.5">
                                                 <span className="text-xs text-sec">Proficiency</span>
-                                                <span className="text-xs font-semibold text-blue-500">{item.percentage}%</span>
+                                                <span className="text-xs font-bold text-blue-500">{item.percentage}%</span>
                                             </div>
-                                            <div className="h-1.5 bg-gray-500/10 rounded-sm overflow-hidden">
-                                                <div className="h-full bg-blue-500 rounded-sm" style={{ width: `${item.percentage}%` }} />
+                                            <div className="h-1.5 bg-gray-500/10 rounded-full overflow-hidden">
+                                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${item.percentage}%` }} />
                                             </div>
                                         </div>
                                     </div>
@@ -1318,7 +1354,7 @@ export default function DSettings() {
                                 <User size={22} className="mr-3" />
                                 Hero Section Image
                             </h3>
-                            <div className="group relative overflow-hidden max-w-[360px] mx-auto md:mx-0 rounded-md bg-zinc-900/50 flex items-center justify-center border border-white/5" style={{ paddingTop: '125%' }}>
+                            <div className="group relative overflow-hidden w-full max-w-full mx-auto md:mx-0 rounded-md bg-zinc-900/50 flex items-center justify-center border border-white/5" style={{ paddingTop: '133%' }}>
                                 {heroImagePreview ? (
                                     <img src={heroImagePreview} alt="Hero Preview" className="absolute inset-0 w-full h-full object-cover rounded-md" />
                                 ) : (
@@ -1367,7 +1403,7 @@ export default function DSettings() {
                                 <User size={22} className="mr-3" />
                                 Profile
                             </h3>
-                            <div className="flex flex-row sm:flex-row items-center gap-4">
+                            <div className="flex flex-col md:flex-row items-center gap-6">
                                 <div className="group relative flex-shrink-0">
                                     <div className="w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-blue-400 p-0.5 flex-shrink-0 mx-auto sm:mx-0 bg-zinc-900/50 flex items-center justify-center">
                                         {profileImagePreview ? (

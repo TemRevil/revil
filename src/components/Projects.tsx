@@ -119,6 +119,115 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                         ))}
                     </div>
                 </motion.div>
+
+                {/* Overlays: Tags / Contributors Slideshow */}
+                <div style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 10 }}>
+                    <AnimatePresence mode="wait">
+                        {!showContributors ? (
+                            <motion.div
+                                key="tags"
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                transition={{ duration: 0.3 }}
+                                style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}
+                            >
+                                {(project.tags || []).slice(0, 2).map((tag: any, i) => (
+                                    <div
+                                        key={i}
+                                        style={{
+                                            padding: '4px 10px',
+                                            borderRadius: '20px',
+                                            background: 'rgba(255, 255, 255, 0.4)',
+                                            backdropFilter: 'blur(12px)',
+                                            WebkitBackdropFilter: 'blur(12px)',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            color: '#333',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: tag.color || '#3b82f6' }} />
+                                        {tag.name}
+                                    </div>
+                                ))}
+                                {(project.tags || []).length > 2 && (
+                                    <div style={{
+                                        padding: '4px 10px',
+                                        borderRadius: '20px',
+                                        background: 'rgba(0, 0, 0, 0.4)',
+                                        backdropFilter: 'blur(12px)',
+                                        WebkitBackdropFilter: 'blur(12px)',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                        color: '#fff',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                    }}>
+                                        +{(project.tags || []).length - 2} More
+                                    </div>
+                                )}
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key="contributors"
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                transition={{ duration: 0.3 }}
+                                style={{ display: 'flex', alignItems: 'center' }}
+                            >
+                                <div style={{ display: 'flex', paddingLeft: '4px' }}>
+                                    {(project.contributors || []).slice(0, 3).map((c, i) => (
+                                        <div
+                                            key={i}
+                                            style={{
+                                                width: '32px',
+                                                height: '32px',
+                                                borderRadius: '50%',
+                                                border: '2px solid white',
+                                                marginLeft: '-8px',
+                                                overflow: 'hidden',
+                                                background: '#f3f4f6',
+                                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                            }}
+                                            title={c.name}
+                                        >
+                                            {c.image ? (
+                                                <img src={c.image} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e5e7eb', color: '#6b7280', fontSize: '10px', fontWeight: 'bold' }}>
+                                                    {c.name.charAt(0)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                    {(project.contributors || []).length > 3 && (
+                                        <div style={{
+                                            width: '32px',
+                                            height: '32px',
+                                            borderRadius: '50%',
+                                            border: '2px solid white',
+                                            marginLeft: '-8px',
+                                            background: '#3b82f6',
+                                            color: 'white',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '0.7rem',
+                                            fontWeight: 'bold',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                        }}>
+                                            +{(project.contributors || []).length - 3}
+                                        </div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             </div>
 
             <div style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -155,6 +264,14 @@ const Projects = () => {
     const [selectedContributor, setSelectedContributor] = useState<Contributor | null>(null);
     const [showContributorModal, setShowContributorModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+
+    useEffect(() => {
+        const handleResize = () => setWindowWidth(window.innerWidth);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     // Fetch contributors from Firestore (Global Team List)
     useEffect(() => {
@@ -327,11 +444,25 @@ const Projects = () => {
     };
 
     const filteredProjects = useMemo(() => {
-        if (searchQuery.length < 2) return projectsData;
+        // First filter by tags if any are selected
+        let results = projectsData;
+
+        if (selectedTags.length > 0) {
+            results = results.filter(project => {
+                const projectTags = [
+                    ...(project.stack || []).map(s => s.toLowerCase()),
+                    ...(project.tags || []).map(t => t.name.toLowerCase())
+                ];
+                // Project must have ALL selected tags
+                return selectedTags.every(tag => projectTags.includes(tag.toLowerCase()));
+            });
+        }
+
+        if (searchQuery.length < 2) return results;
 
         const query = searchQuery.toLowerCase();
 
-        const scored = projectsData.map(project => {
+        const scored = results.map(project => {
             let minDistance = Infinity;
             // Check helper
             const checkTerm = (term: string) => {
@@ -371,7 +502,15 @@ const Projects = () => {
             .filter(item => item.minDistance <= 2)
             .sort((a, b) => a.minDistance - b.minDistance)
             .map(item => item.project);
-    }, [searchQuery, projectsData]);
+    }, [searchQuery, projectsData, selectedTags]);
+
+    const toggleTag = (tagName: string) => {
+        setSelectedTags(prev =>
+            prev.includes(tagName)
+                ? prev.filter(t => t !== tagName)
+                : [...prev, tagName]
+        );
+    };
 
     useEffect(() => {
         // Animate handwriting text
@@ -503,6 +642,111 @@ const Projects = () => {
                     </div>
                 </div>
 
+                {/* Filter Tags */}
+                <div style={{
+                    marginBottom: '40px',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: windowWidth < 460 ? '8px' : '10px',
+                    alignItems: 'center'
+                }}>
+                    <span style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 900,
+                        color: 'var(--text-secondary)',
+                        marginRight: '10px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.2em',
+                        opacity: 0.6
+                    }}>Filter View:</span>
+
+                    {/* Tags Container */}
+                    <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                        alignItems: 'center'
+                    }}>
+                        {availableTags.map(tag => {
+                            const isActive = selectedTags.includes(tag.name);
+                            const isUrl = tag.iconSvg && (tag.iconSvg.startsWith('http') || tag.iconSvg.includes('/o/'));
+
+                            return (
+                                <button
+                                    key={tag.id}
+                                    onClick={() => toggleTag(tag.name)}
+                                    style={{
+                                        padding: windowWidth < 460 ? '6px 12px' : '8px 16px',
+                                        borderRadius: '14px',
+                                        border: '1px solid',
+                                        borderColor: isActive ? 'rgb(59, 130, 246)' : 'var(--navbar-border)',
+                                        backgroundColor: isActive ? 'rgba(59, 130, 246, 0.12)' : 'var(--card-bg)',
+                                        color: isActive ? 'rgb(59, 130, 246)' : 'var(--text-secondary)',
+                                        fontSize: windowWidth < 460 ? '0.75rem' : '0.85rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        backdropFilter: 'blur(12px)',
+                                        WebkitBackdropFilter: 'blur(12px)',
+                                        boxShadow: isActive ? '0 8px 16px -4px rgba(59, 130, 246, 0.25)' : 'none',
+                                        whiteSpace: 'nowrap',
+                                        transform: isActive ? 'scale(1.05)' : 'scale(1)',
+                                        zIndex: isActive ? 2 : 1
+                                    }}
+                                    className="tag-filter-btn"
+                                >
+                                    {tag.iconSvg && (
+                                        isUrl ? (
+                                            <img
+                                                src={tag.iconSvg}
+                                                alt={tag.name}
+                                                style={{
+                                                    width: '16px',
+                                                    height: '16px',
+                                                    objectFit: 'contain',
+                                                    filter: isActive ? 'none' : 'grayscale(100%) opacity(0.6)'
+                                                }}
+                                            />
+                                        ) : (
+                                            <div
+                                                dangerouslySetInnerHTML={{ __html: tag.iconSvg }}
+                                                style={{ width: '16px', height: '16px', fill: 'currentColor', opacity: isActive ? 1 : 0.6 }}
+                                            />
+                                        )
+                                    )}
+                                    {tag.name}
+                                </button>
+                            );
+                        })}
+
+                        {selectedTags.length > 0 && (
+                            <button
+                                onClick={() => setSelectedTags([])}
+                                style={{
+                                    padding: '8px 12px',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'rgb(59, 130, 246)',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.1em',
+                                    marginLeft: '5px'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+                                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+                            >
+                                [ Reset ]
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 {/* Projects Grid */}
                 <div style={{
                     display: 'grid',
@@ -515,6 +759,9 @@ const Projects = () => {
                             project={project}
                             index={index}
                             onClick={() => {
+                                window.dispatchEvent(new CustomEvent('revil:project_open', {
+                                    detail: { id: project.id, title: project.title }
+                                }));
                                 setSelectedProject(project);
                                 setShowProjectModal(true);
                             }}
@@ -529,7 +776,10 @@ const Projects = () => {
                     {showProjectModal && selectedProject && (
                         <MProjectView
                             project={selectedProject}
-                            onClose={() => setShowProjectModal(false)}
+                            onClose={() => {
+                                window.dispatchEvent(new CustomEvent('revil:project_close'));
+                                setShowProjectModal(false);
+                            }}
                             onContributorClick={(contributor: Contributor) => {
                                 setSelectedContributor(contributor);
                                 setShowContributorModal(true);

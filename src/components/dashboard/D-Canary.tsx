@@ -4,12 +4,13 @@ import anime from 'animejs';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
-import MContact from '../M-Contact';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../../lib/firebase';
+
 import Alert, { AlertType } from '../Alert';
 import MConfirmModal from './M-ConfirmModal';
-
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzJZ8765KTWuky_Gg6ZiRXFGm1EFs0_a-IHUkz2MYvBepPp2VE9CnWKVaJ1Q-xArAk/exec";
+import MContact from '../M-Contact';
+import Loader from '../reactbits/Loader';
 
 interface Meeting {
     id: string;
@@ -20,7 +21,7 @@ interface Meeting {
     link?: string;
     reason?: string;
     userTimezone?: number;
-    googleEventId?: string; // Stores the Google ID to prevent duplicates
+    googleEventId?: string;
 }
 
 interface Attachment {
@@ -54,6 +55,7 @@ const DCanary = () => {
     const [viewDate, setViewDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [direction, setDirection] = useState(0);
+    const [isLoading, setIsLoading] = useState(false);
 
     const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
     const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -95,7 +97,7 @@ const DCanary = () => {
                         link: m.MeetingLink,
                         reason: m["What For"],
                         userTimezone: m.UserTimezone || -(new Date().getTimezoneOffset() / 60),
-                        googleEventId: m.GoogleEventId // Load ID from DB
+                        googleEventId: m.GoogleEventId
                     };
                 });
                 setMeetings(meetingsList);
@@ -112,13 +114,10 @@ const DCanary = () => {
                     attachments: e["Files Attached"] || []
                 })).sort((a, b) => b.timestamp - a.timestamp);
                 setEmails(emailsList);
-                if (emailsList.length > 0 && !selectedEmail) {
-                    setSelectedEmail(emailsList[0]);
-                }
             }
         });
         return () => unsubscribe();
-    }, [selectedEmail]);
+    }, []);
 
     useEffect(() => {
         const handleResize = () => setWindowWidth(window.innerWidth);
@@ -134,7 +133,6 @@ const DCanary = () => {
         return () => observer.disconnect();
     }, []);
 
-    // Tab transition handler
     const handleTabChange = (newTab: 'bookings' | 'mails') => {
         if (newTab === activeSection || isTransitioning) return;
 
@@ -144,7 +142,6 @@ const DCanary = () => {
         directionRef.current = direction;
         setIsTransitioning(true);
 
-        // Exit animation
         anime({
             targets: '.canary-section',
             translateX: [0, -direction * 30],
@@ -157,7 +154,6 @@ const DCanary = () => {
         });
     };
 
-    // Entrance animation
     useEffect(() => {
         const runAnimation = () => {
             const targets = document.querySelectorAll('.canary-section');
@@ -211,16 +207,6 @@ const DCanary = () => {
         setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + delta, 1));
     };
 
-    const handleMonthSelect = (monthIdx: number) => {
-        setDirection(monthIdx > viewDate.getMonth() ? 1 : -1);
-        setViewDate(new Date(viewDate.getFullYear(), monthIdx, 1));
-    };
-
-    const handleYearSelect = (year: number) => {
-        setDirection(year > viewDate.getFullYear() ? 1 : -1);
-        setViewDate(new Date(year, viewDate.getMonth(), 1));
-    };
-
     const changeModalMonth = (delta: number) => {
         setModalDirection(delta);
         setModalViewDate(new Date(modalViewDate.getFullYear(), modalViewDate.getMonth() + delta, 1));
@@ -236,47 +222,59 @@ const DCanary = () => {
     };
 
     const handleDelete = async (id: string, meeting?: Meeting) => {
+        setIsLoading(true);
         try {
-            // 1. Delete from Firestore
-            const docRef = doc(db, 'Settings', 'Canary');
-            await updateDoc(docRef, {
-                [`Meetings.${id}`]: deleteField()
-            });
-
-            // 2. Sync with Google Calendar
+            // 1. Sync with Google Calendar FIRST (before deleting from DB)
             if (meeting?.email && meeting?.date && meeting?.time) {
                 const tz = meeting.userTimezone ?? -(new Date().getTimezoneOffset() / 60);
 
-                // Calculate time for legacy search if needed
+                // Calculate time for legacy search (Crucial for fallback deletion)
                 const timeParts = meeting.time.split(' ');
                 const [hStr, mStr] = timeParts[0].split(':');
                 let h = parseInt(hStr);
                 if (timeParts[1] === 'PM' && h !== 12) h += 12;
                 if (timeParts[1] === 'AM' && h === 12) h = 0;
+
+                // Construct the UTC date object
                 const start = new Date(Date.UTC(meeting.date.getFullYear(), meeting.date.getMonth(), meeting.date.getDate(), h, parseInt(mStr)) - (tz * 3600000));
 
-                fetch(GOOGLE_SCRIPT_URL, {
-                    method: "POST",
-                    body: JSON.stringify({
+                try {
+                    const syncMeeting = httpsCallable(functions, 'syncMeeting');
+
+                    // Call backend to cancel event
+                    await syncMeeting({
                         action: 'cancel',
-                        eventId: meeting.googleEventId, // Use ID if we have it
-                        email: meeting.email,
-                        startTime: start.toISOString() // Fallback for legacy events
-                    })
-                }).catch(err => console.error("Google Sync Delete Error:", err));
+                        eventId: meeting.googleEventId, // Priority 1: Try ID
+                        email: meeting.email,           // Priority 2: Search by Email
+                        name: meeting.title,            // Priority 3: Search by Client Name (Title)
+                        startTime: start.toISOString()  // Used to find the specific Day
+                    });
+
+
+                } catch (syncErr) {
+                    console.error("Google Sync Delete Error:", syncErr);
+                    setAlert({ type: 'warning', message: 'Deleted from app, but calendar sync failed.' });
+                }
             }
+
+            // 2. Delete from Firestore
+            const docRef = doc(db, 'Settings', 'Canary');
+            await updateDoc(docRef, {
+                [`Meetings.${id}`]: deleteField()
+            });
 
             setAlert({ type: 'success', message: 'Session cancelled successfully' });
         } catch (error) {
             console.error(error);
             setAlert({ type: 'error', message: 'Failed to cancel session' });
+        } finally {
+            setIsLoading(false);
         }
     };
 
     const handleSaveMeeting = async () => {
         if (!editingMeeting) return;
 
-        // 0. Find Original Meeting to check for changes and handle legacy events
         const originalMeeting = meetings.find(m => m.id === editingMeeting.id);
         if (!originalMeeting) return;
 
@@ -289,7 +287,6 @@ const DCanary = () => {
             return;
         }
 
-        // Collision Check
         if (isTimeChanged || isDateChanged) {
             const isOccupied = meetings.some(m =>
                 m.id !== editingMeeting.id &&
@@ -303,8 +300,8 @@ const DCanary = () => {
             }
         }
 
+        setIsLoading(true);
         try {
-            // Prepare Common Data
             const tz = editingMeeting.userTimezone ?? -(new Date().getTimezoneOffset() / 60);
             const timeParts = editingMeeting.time.split(' ');
             const [hStr, mStr] = timeParts[0].split(':');
@@ -315,28 +312,20 @@ const DCanary = () => {
             const start = new Date(Date.UTC(editingMeeting.date.getFullYear(), editingMeeting.date.getMonth(), editingMeeting.date.getDate(), h, parseInt(mStr)) - (tz * 3600000));
             const end = new Date(start.getTime() + 3600000);
 
-            let newGoogleId = editingMeeting.googleEventId;
-
-            // --- GOOGLE CALENDAR SYNC ---
+            let newGoogleId = editingMeeting.googleEventId; // --- GOOGLE CALENDAR SYNC ---
             if (editingMeeting.email) {
-                // CASE A: We have a Google Event ID (Clean Update)
+                const syncMeeting = httpsCallable(functions, 'syncMeeting');
                 if (editingMeeting.googleEventId) {
-                    await fetch(GOOGLE_SCRIPT_URL, {
-                        method: "POST",
-                        body: JSON.stringify({
-                            action: 'update',
-                            eventId: editingMeeting.googleEventId,
-                            name: editingMeeting.title,
-                            email: editingMeeting.email,
-                            reason: editingMeeting.reason || '',
-                            startTime: start.toISOString(),
-                            endTime: end.toISOString()
-                        })
+                    await syncMeeting({
+                        action: 'update',
+                        eventId: editingMeeting.googleEventId,
+                        name: editingMeeting.title,
+                        email: editingMeeting.email,
+                        reason: editingMeeting.reason || '',
+                        startTime: start.toISOString(),
+                        endTime: end.toISOString()
                     });
-                }
-                // CASE B: Legacy Event (No ID) -> Duplicate Fix
-                else {
-                    // 1. Calculate OLD start time to find and delete the old event
+                } else {
                     const oldTimeParts = originalMeeting.time.split(' ');
                     const [oldHStr, oldMStr] = oldTimeParts[0].split(':');
                     let oldH = parseInt(oldHStr);
@@ -345,37 +334,28 @@ const DCanary = () => {
 
                     const oldStart = new Date(Date.UTC(originalMeeting.date.getFullYear(), originalMeeting.date.getMonth(), originalMeeting.date.getDate(), oldH, parseInt(oldMStr)) - (tz * 3600000));
 
-                    // 2. Delete the old event using Email + Time lookup
-                    await fetch(GOOGLE_SCRIPT_URL, {
-                        method: "POST",
-                        body: JSON.stringify({
-                            action: 'cancel',
-                            email: originalMeeting.email,
-                            startTime: oldStart.toISOString()
-                        })
+                    await syncMeeting({
+                        action: 'cancel',
+                        email: originalMeeting.email,
+                        startTime: oldStart.toISOString()
                     });
 
-                    // 3. Create NEW event at new time
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
-                        method: "POST",
-                        body: JSON.stringify({
-                            action: 'create',
-                            name: editingMeeting.title,
-                            email: editingMeeting.email,
-                            reason: editingMeeting.reason || '',
-                            startTime: start.toISOString(),
-                            endTime: end.toISOString()
-                        })
+                    const response = await syncMeeting({
+                        action: 'create',
+                        name: editingMeeting.title,
+                        email: editingMeeting.email,
+                        reason: editingMeeting.reason || '',
+                        startTime: start.toISOString(),
+                        endTime: end.toISOString()
                     });
 
-                    const resData = await response.json();
+                    const resData = response.data as any;
                     if (resData.status === 'success' && resData.id) {
-                        newGoogleId = resData.id; // Capture ID so it's not legacy anymore
+                        newGoogleId = resData.id;
                     }
                 }
             }
 
-            // --- FIRESTORE UPDATE ---
             const docRef = doc(db, 'Settings', 'Canary');
             const day = editingMeeting.date.getDate().toString().padStart(2, '0');
             const mon = (editingMeeting.date.getMonth() + 1).toString().padStart(2, '0');
@@ -388,7 +368,6 @@ const DCanary = () => {
                 [`Meetings.${editingMeeting.id}.Name`]: editingMeeting.title
             };
 
-            // Save the ID to prevent future duplicates
             if (newGoogleId) {
                 updatePayload[`Meetings.${editingMeeting.id}.GoogleEventId`] = newGoogleId;
             }
@@ -400,6 +379,8 @@ const DCanary = () => {
         } catch (error) {
             console.error(error);
             setAlert({ type: 'error', message: 'Failed to update session' });
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -424,7 +405,6 @@ const DCanary = () => {
     const handleReplyEmail = (email: Email) => {
         const subject = `Re: Contact via Form`;
         const body = `\n\nOn ${new Date(email.timestamp).toLocaleString()}, ${email.name} wrote:\n> ${email.message}`;
-        // Gmail Compose Link
         const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email.email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         window.open(gmailUrl, '_blank');
         setOpenOptionsId(null);
@@ -488,13 +468,14 @@ const DCanary = () => {
 
     return (
         <div className="w-full h-full flex flex-col gap-6" style={{ opacity: 1 }}>
+            <Loader isOpen={isLoading} isFullScreen={true} />
             {/* Header Navbar */}
             <div className="glass-surface p-1.5 rounded-xl flex gap-2 overflow-x-auto shrink-0 w-fit self-center min-[960px]:self-start">
                 <button
                     onClick={() => handleTabChange('bookings')}
                     className={`
                         flex items-center gap-2 px-5 py-2.5 rounded-lg border-none cursor-pointer font-sans font-bold text-sm whitespace-nowrap transition-all
-                        ${activeSection === 'bookings' ? 'bg-blue-500/15 text-blue-500' : 'bg-transparent text-gray-500 hover:bg-gray-500/5 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}
+                        ${activeSection === 'bookings' ? 'bg-blue-500/15 text-blue-500' : 'bg-transparent text-gray-500 hover:bg-blue-500/10 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400'}
                     `}
                 >
                     <CalendarIcon size={16} />
@@ -504,7 +485,7 @@ const DCanary = () => {
                     onClick={() => handleTabChange('mails')}
                     className={`
                         flex items-center gap-2 px-5 py-2.5 rounded-lg border-none cursor-pointer font-sans font-bold text-sm whitespace-nowrap transition-all
-                        ${activeSection === 'mails' ? 'bg-blue-500/15 text-blue-500' : 'bg-transparent text-gray-500 hover:bg-gray-500/5 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}
+                        ${activeSection === 'mails' ? 'bg-blue-500/15 text-blue-500' : 'bg-transparent text-gray-500 hover:bg-blue-500/10 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400'}
                     `}
                 >
                     <Mail size={16} />
@@ -518,9 +499,9 @@ const DCanary = () => {
             </div>
 
             {activeSection === 'bookings' ? (
-                <div className="canary-section grid grid-cols-1 min-[960px]:grid-cols-[1.8fr_1fr] gap-8">
+                <div className="canary-section grid grid-cols-1 lg:grid-cols-canary gap-8 items-start lg:items-stretch">
                     {/* Left: Calendar Component */}
-                    <div className="canary-panel w-full h-full min-h-[500px] min-[960px]:min-h-[700px] flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm relative overflow-visible"
+                    <div className="canary-panel w-full h-fit flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm relative overflow-visible"
                         style={{
                             backgroundColor: containerBg,
                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -531,34 +512,11 @@ const DCanary = () => {
                         {/* Integrated Navigation Inside Box */}
                         <div className="flex items-center justify-between relative z-10 mb-4">
                             <div className="flex flex-col">
-                                <span className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-500/80 mb-2">Calendar Navigation</span>
                                 <div className="flex items-center gap-4">
                                     <h3 className="text-2xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>
                                         {MONTHS[viewDate.getMonth()]} {viewDate.getFullYear()}
                                     </h3>
-                                    <div className="flex items-center gap-1 p-1 rounded-xl bg-black/5 dark:bg-white/5 border border-white/5">
-                                        <select
-                                            value={viewDate.getMonth()}
-                                            onChange={(e) => handleMonthSelect(parseInt(e.target.value))}
-                                            className="bg-transparent border-none font-bold text-[10px] uppercase tracking-wider text-center outline-none cursor-pointer appearance-none px-2"
-                                            style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}
-                                        >
-                                            {MONTHS.map((m, i) => (
-                                                <option key={m} value={i} style={{ backgroundColor: isDark ? '#1a1a1a' : '#fff' }}>{m.substring(0, 3)}</option>
-                                            ))}
-                                        </select>
-                                        <div className="w-[1px] h-3 bg-white/10" />
-                                        <select
-                                            value={viewDate.getFullYear()}
-                                            onChange={(e) => handleYearSelect(parseInt(e.target.value))}
-                                            className="bg-transparent border-none font-bold text-[10px] uppercase tracking-wider text-center outline-none cursor-pointer appearance-none px-2"
-                                            style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}
-                                        >
-                                            {[2024, 2025, 2026, 2027, 2028].map(y => (
-                                                <option key={y} value={y} style={{ backgroundColor: isDark ? '#1a1a1a' : '#fff' }}>{y}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+
                                 </div>
                             </div>
 
@@ -648,14 +606,14 @@ const DCanary = () => {
                     </div>
 
                     {/* Meeting List - Right Panel */}
-                    <div className="canary-panel flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm h-full min-h-[500px] min-[960px]:min-h-[700px]"
+                    <div className="canary-panel flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm lg:h-full h-fit"
                         style={{
                             backgroundColor: containerBg,
                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                             backdropFilter: 'blur(20px)'
                         }}>
                         <div className="flex flex-col gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-500/80">Selected Schedule</span>
+
                             <h3 className="text-2xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>
                                 {selectedDate.toLocaleDateString('default', { weekday: 'long', day: 'numeric', month: 'short' })}
                             </h3>
@@ -726,7 +684,7 @@ const DCanary = () => {
                 </div>
             ) : (
                 /* Mails Section */
-                <div className="canary-section grid grid-cols-1 min-[960px]:grid-cols-[1fr_2fr] gap-6 md:gap-8 h-full min-h-[600px] max-h-[900px]">
+                <div className="canary-section grid grid-cols-1 lg:grid-cols-mail gap-6 md:gap-8 h-full min-h-[600px] max-h-[900px]">
                     {/* Left: Mails List */}
                     <div className="canary-panel flex flex-col gap-4 p-6 md:p-8 rounded-[24px] md:rounded-[32px] border shadow-sm h-full overflow-hidden"
                         style={{
@@ -735,7 +693,7 @@ const DCanary = () => {
                             backdropFilter: 'blur(20px)'
                         }}>
                         <div className="flex flex-col gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-500/80">All Messages</span>
+
                             <h3 className="text-2xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>Inbox</h3>
                         </div>
 
@@ -806,41 +764,114 @@ const DCanary = () => {
                             <AnimatePresence mode="wait">
                                 <motion.div
                                     key={selectedEmail.id}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -10 }}
-                                    className="flex flex-col gap-8 h-full overflow-y-auto pr-2 custom-scrollbar"
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -20 }}
+                                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                                    className="flex flex-col gap-6 h-full overflow-y-auto pr-2 custom-scrollbar"
                                 >
-                                    <div className="flex flex-col gap-2 relative">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-500/80">Received Message</span>
-                                            <span className="text-[10px] opacity-40 font-bold">{new Date(selectedEmail.timestamp).toLocaleString()}</span>
+                                    {/* Header & Actions */}
+                                    <div className="flex flex-col gap-6">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex items-center gap-4">
+
+                                                <div className="flex flex-col gap-1">
+                                                    <h2 className="text-xl md:text-2xl font-bold m-0 leading-tight" style={{ color: isDark ? '#fff' : '#000' }}>
+                                                        {selectedEmail.name}
+                                                    </h2>
+                                                    <div className="flex items-center gap-2 text-xs font-medium opacity-50">
+                                                        <span>{new Date(selectedEmail.timestamp).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                                        <span>•</span>
+                                                        <span>{new Date(selectedEmail.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => handleReplyEmail(selectedEmail)}
+                                                    className="p-2.5 md:px-4 md:py-2 rounded-xl bg-blue-500 text-white shadow-lg shadow-blue-500/20 hover:bg-blue-600 active:scale-95 transition-all flex items-center gap-2"
+                                                    title="Reply via Gmail"
+                                                >
+                                                    <Reply size={18} />
+                                                    <span className="hidden md:inline font-bold text-sm">Reply</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => setConfirmDelete(selectedEmail.id)}
+                                                    className="p-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 active:scale-95 transition-all border border-transparent hover:border-red-500/20"
+                                                    title="Delete Message"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
                                         </div>
-                                        <h2 className="text-3xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>{selectedEmail.name}</h2>
-                                        <div className="flex items-center gap-2 text-sm opacity-60">
-                                            <Mail size={14} />
-                                            <span>{selectedEmail.email}</span>
+
+                                        {/* Metadata Card */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 rounded-2xl border"
+                                            style={{
+                                                backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.5)',
+                                                borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-black/5 dark:bg-white/5 opacity-70">
+                                                    <Mail size={14} />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] uppercase font-bold opacity-40">Email Address</span>
+                                                    <span className="text-sm font-semibold select-all" style={{ color: isDark ? '#fff' : '#000' }}>{selectedEmail.email}</span>
+                                                </div>
+                                            </div>
+
                                             {selectedEmail.number && (
-                                                <>
-                                                    <span className="opacity-20">|</span>
-                                                    <span>{selectedEmail.number}</span>
-                                                    {selectedEmail.whatsapp && <span className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-500 text-[10px] font-black uppercase">WhatsApp</span>}
-                                                </>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-black/5 dark:bg-white/5 opacity-70">
+                                                        <Clock size={14} className="rotate-0" />
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] uppercase font-bold opacity-40">Phone Number</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-semibold select-all" style={{ color: isDark ? '#fff' : '#000' }}>{selectedEmail.number}</span>
+                                                            {selectedEmail.whatsapp && (
+                                                                <a
+                                                                    href={`https://wa.me/${selectedEmail.number.replace(/\D/g, '')}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="px-1.5 py-0.5 rounded bg-green-500/15 text-green-500 text-[9px] font-black uppercase tracking-wider border border-green-500/20 hover:bg-green-500/25 transition-colors cursor-pointer no-underline"
+                                                                    title="Chat on WhatsApp"
+                                                                >
+                                                                    WA
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             )}
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-col gap-4 p-6 rounded-3xl" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)' }}>
-                                        <p className="m-0 text-sm md:text-base leading-relaxed whitespace-pre-wrap" style={{ color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)' }}>
-                                            {selectedEmail.message}
-                                        </p>
+                                    <div className="my-2 h-[1px] w-full bg-gradient-to-r from-transparent via-black/5 dark:via-white/10 to-transparent" />
+
+                                    {/* Message Body */}
+                                    <div className="flex flex-col gap-2">
+                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ml-1">Message Content</span>
+                                        <div className="p-4 md:p-6 rounded-[24px]" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+                                            <p className="m-0 text-sm md:text-base leading-loose whitespace-pre-wrap font-medium opacity-90" style={{ color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)' }}>
+                                                {selectedEmail.message}
+                                            </p>
+                                        </div>
                                     </div>
 
+                                    {/* Attachments */}
                                     {selectedEmail.attachments.length > 0 && (
-                                        <div className="flex flex-col gap-4">
-                                            <div className="flex items-center gap-2">
-                                                <Paperclip size={16} className="opacity-40" />
-                                                <span className="text-xs font-black uppercase tracking-widest opacity-40">Attachments ({selectedEmail.attachments.length})</span>
+                                        <div className="flex flex-col gap-4 mt-2">
+                                            <div className="flex items-center justify-between pb-2 border-b border-dashed" style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>
+                                                <div className="flex items-center gap-2">
+                                                    <Paperclip size={16} className="text-blue-500" />
+                                                    <span className="text-xs font-black uppercase tracking-widest opacity-60">
+                                                        Attachments ({selectedEmail.attachments.length})
+                                                    </span>
+                                                </div>
                                             </div>
                                             <div className="flex flex-wrap gap-3">
                                                 {selectedEmail.attachments.map(renderAttachmentCard)}
@@ -859,140 +890,7 @@ const DCanary = () => {
                 </div>
             )
             }
-            ) : (
-            /* Mails Section */
-            <div className="canary-section grid grid-cols-1 min-[960px]:grid-cols-[1fr_2fr] gap-6 md:gap-8 h-full min-h-[600px] max-h-[900px]">
-                {/* Left: Mails List */}
-                <div className="canary-panel flex flex-col gap-4 p-6 md:p-8 rounded-[24px] md:rounded-[32px] border shadow-sm h-full overflow-hidden"
-                    style={{
-                        backgroundColor: containerBg,
-                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                        backdropFilter: 'blur(20px)'
-                    }}>
-                    <div className="flex flex-col gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-500/80">All Messages</span>
-                        <h3 className="text-2xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>Inbox</h3>
-                    </div>
 
-                    <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1 mr-1 custom-scrollbar">
-                        {emails.length > 0 ? (
-                            emails.map((email) => (
-                                <div
-                                    key={email.id}
-                                    onClick={() => setSelectedEmail(email)}
-                                    className={`group relative p-3 md:p-4 rounded-xl md:rounded-2xl border transition-all cursor-pointer ${selectedEmail?.id === email.id ? 'shadow-md' : 'hover:translate-x-1 hover:border-gray-300 dark:hover:border-white/20'}`}
-                                    style={{
-                                        borderColor: selectedEmail?.id === email.id ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
-                                        backgroundColor: selectedEmail?.id === email.id ? (isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)') : (isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.4)')
-                                    }}
-                                >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex flex-col gap-1 overflow-hidden flex-1 min-w-0">
-                                            <h4 className="text-sm font-bold m-0 truncate" style={{ color: isDark ? '#fff' : '#000' }}>{email.name}</h4>
-                                            <p className="m-0 text-[11px] opacity-60 line-clamp-1">{email.message}</p>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className="text-[9px] font-bold opacity-40">{new Date(email.timestamp).toLocaleDateString()}</span>
-                                                {email.attachments.length > 0 && (
-                                                    <div className="flex items-center gap-1 text-[9px] font-bold text-blue-500">
-                                                        <Paperclip size={10} />
-                                                        <span>{email.attachments.length}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Options Menu Button */}
-                                        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const rect = e.currentTarget.getBoundingClientRect();
-                                                    setMenuPos({
-                                                        top: rect.bottom + 4,
-                                                        right: window.innerWidth - rect.right
-                                                    });
-                                                    setOpenOptionsId(openOptionsId === email.id ? null : email.id);
-                                                }}
-                                                className={`p-1.5 rounded-lg border-none bg-transparent cursor-pointer transition-all ${openOptionsId === email.id ? 'text-blue-500 bg-blue-500/10' : 'opacity-0 group-hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5'}`}
-                                            >
-                                                <MoreVertical size={16} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center opacity-30 gap-3">
-                                <Mail size={28} />
-                                <span className="text-[10px] font-bold uppercase tracking-widest">No Messages</span>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Right: Mail View */}
-                <div className="canary-panel flex flex-col gap-6 p-6 md:p-8 rounded-[24px] md:rounded-[32px] border shadow-sm h-full overflow-hidden"
-                    style={{
-                        backgroundColor: containerBg,
-                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                        backdropFilter: 'blur(20px)'
-                    }}>
-                    {selectedEmail ? (
-                        <AnimatePresence mode="wait">
-                            <motion.div
-                                key={selectedEmail.id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -10 }}
-                                className="flex flex-col gap-8 h-full overflow-y-auto pr-2 custom-scrollbar"
-                            >
-                                <div className="flex flex-col gap-2 relative">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-black uppercase tracking-[0.25em] text-blue-500/80">Received Message</span>
-                                        <span className="text-[10px] opacity-40 font-bold">{new Date(selectedEmail.timestamp).toLocaleString()}</span>
-                                    </div>
-                                    <h2 className="text-3xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>{selectedEmail.name}</h2>
-                                    <div className="flex items-center gap-2 text-sm opacity-60">
-                                        <Mail size={14} />
-                                        <span>{selectedEmail.email}</span>
-                                        {selectedEmail.number && (
-                                            <>
-                                                <span className="opacity-20">|</span>
-                                                <span>{selectedEmail.number}</span>
-                                                {selectedEmail.whatsapp && <span className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-500 text-[10px] font-black uppercase">WhatsApp</span>}
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col gap-4 p-6 rounded-3xl" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)' }}>
-                                    <p className="m-0 text-sm md:text-base leading-relaxed whitespace-pre-wrap" style={{ color: isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)' }}>
-                                        {selectedEmail.message}
-                                    </p>
-                                </div>
-
-                                {selectedEmail.attachments.length > 0 && (
-                                    <div className="flex flex-col gap-4">
-                                        <div className="flex items-center gap-2">
-                                            <Paperclip size={16} className="opacity-40" />
-                                            <span className="text-xs font-black uppercase tracking-widest opacity-40">Attachments ({selectedEmail.attachments.length})</span>
-                                        </div>
-                                        <div className="flex flex-wrap gap-3">
-                                            {selectedEmail.attachments.map(renderAttachmentCard)}
-                                        </div>
-                                    </div>
-                                )}
-                            </motion.div>
-                        </AnimatePresence>
-                    ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center opacity-30 gap-3">
-                            <Mail size={48} />
-                            <span className="text-sm font-bold uppercase tracking-widest">Select a message to view</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-)}
             {/* Modal */}
             {
                 typeof document !== 'undefined' && createPortal(
@@ -1182,153 +1080,163 @@ const DCanary = () => {
                 )
             }
 
-
             {/* Confirmation & Feedback */}
             {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
             <MConfirmModal
                 isOpen={!!confirmDelete}
-                title="Cancel Session"
-                message="Are you sure you want to cancel this session? This action cannot be undone."
+                title={activeSection === 'mails' ? "Delete Message" : "Cancel Session"}
+                message={activeSection === 'mails'
+                    ? "Are you sure you want to delete this message? This action cannot be undone."
+                    : "Are you sure you want to cancel this session? This action cannot be undone."
+                }
                 type="danger"
-                confirmText="Cancel Session"
+                confirmText={activeSection === 'mails' ? "Delete Message" : "Cancel Session"}
                 onConfirm={() => {
                     if (confirmDelete) {
-                        const meeting = meetings.find(m => m.id === confirmDelete);
-                        handleDelete(confirmDelete, meeting);
-                        setConfirmDelete(null);
-                        setEditingMeeting(null);
+                        if (activeSection === 'mails') {
+                            handleDeleteEmail(confirmDelete);
+                        } else {
+                            const meeting = meetings.find(m => m.id === confirmDelete);
+                            handleDelete(confirmDelete, meeting);
+                            setConfirmDelete(null);
+                            setEditingMeeting(null);
+                        }
                     }
                 }}
                 onClose={() => setConfirmDelete(null)}
             />
 
             {/* Specialized Booking Modal */}
-        </AnimatePresence >
-
-    {/* Email Options Menu Portal */ }
-    {
-        openOptionsId && createPortal(
-            <>
-                {/* Backdrop to close menu */}
-                <div
-                    className="fixed inset-0 z-[999]"
-                    onClick={() => setOpenOptionsId(null)}
+            {isBookingOpen && (
+                <MContact
+                    onClose={() => setIsBookingOpen(false)}
+                    initialTab="meeting"
+                    hideTabs={true}
                 />
-                <div className="fixed z-[1000] glass-panel min-w-[140px] p-2 animate-pop flex flex-col gap-1 shadow-2xl" style={{
-                    top: `${menuPos.top}px`,
-                    right: `${menuPos.right}px`,
-                    borderRadius: '16px',
-                    backgroundColor: isDark ? 'rgba(10, 10, 12, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                    border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
-                    backdropFilter: 'blur(20px)'
-                }}>
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            const email = emails.find(e => e.id === openOptionsId);
-                            if (email) handleReplyEmail(email);
-                        }}
-                        className="w-full text-left flex items-center gap-2 bg-transparent border-none cursor-pointer rounded-lg text-sm p-2.5 transition-colors"
-                        style={{
-                            color: isDark ? '#60a5fa' : '#2563eb',
-                            fontFamily: "'Inter', sans-serif"
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(37, 99, 235, 0.05)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                        <Reply size={16} /> Reply
-                    </button>
+            )}
 
-                    <div className="mx-2 my-0.5 h-[1px]" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
-
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDelete(openOptionsId);
-                            setOpenOptionsId(null);
-                        }}
-                        className="w-full text-left flex items-center gap-2 bg-transparent border-none cursor-pointer rounded-lg text-sm p-2.5 transition-colors"
-                        style={{
-                            color: 'rgb(239, 68, 68)',
-                            fontFamily: "'Inter', sans-serif"
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                        <Trash2 size={16} /> Delete
-                    </button>
-                </div>
-            </>,
-            document.body
-        )
-    }
-
-    {/* Attachment Preview Modal */ }
-    {
-        typeof document !== 'undefined' && createPortal(
-            <AnimatePresence>
-                {previewAttachment && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setPreviewAttachment(null)}
-                        className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 sm:p-8"
-                    >
+            {/* Email Options Menu Portal & Attachment Preview (Omitted for brevity as they are unchanged) */}
+            {
+                openOptionsId && createPortal(
+                    <>
                         <div
-                            className="relative max-w-5xl max-h-full w-full rounded-2xl overflow-hidden shadow-2xl bg-black"
-                            onClick={(e) => e.stopPropagation()}
-                        >
+                            className="fixed inset-0 z-[999]"
+                            onClick={() => setOpenOptionsId(null)}
+                        />
+                        <div className="fixed z-[1000] glass-panel min-w-[140px] p-2 animate-pop flex flex-col gap-1 shadow-2xl" style={{
+                            top: `${menuPos.top}px`,
+                            right: `${menuPos.right}px`,
+                            borderRadius: '16px',
+                            backgroundColor: isDark ? 'rgba(10, 10, 12, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                            border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                            backdropFilter: 'blur(20px)'
+                        }}>
                             <button
-                                onClick={() => setPreviewAttachment(null)}
-                                className="absolute top-4 right-4 z-50 p-2 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-md transition-colors"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const email = emails.find(e => e.id === openOptionsId);
+                                    if (email) handleReplyEmail(email);
+                                }}
+                                className="w-full text-left flex items-center gap-2 bg-transparent border-none cursor-pointer rounded-lg text-sm p-2.5 transition-colors"
+                                style={{
+                                    color: isDark ? '#60a5fa' : '#2563eb',
+                                    fontFamily: "'Inter', sans-serif"
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(37, 99, 235, 0.05)'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
-                                <X size={24} />
+                                <Reply size={16} /> Reply
                             </button>
 
-                            <div className="flex w-full h-full items-center justify-center bg-zinc-900">
-                                {/\.(jpg|jpeg|png|gif|webp)$/i.test(previewAttachment.name) ? (
-                                    <img
-                                        src={previewAttachment.url}
-                                        alt={previewAttachment.name}
-                                        className="max-w-full max-h-[85vh] object-contain"
-                                    />
-                                ) : /\.(mp4|webm|ogg)$/i.test(previewAttachment.name) ? (
-                                    <video
-                                        controls
-                                        autoPlay
-                                        src={previewAttachment.url}
-                                        className="max-w-full max-h-[85vh]"
-                                    />
-                                ) : (
-                                    <iframe
-                                        src={previewAttachment.url}
-                                        title={previewAttachment.name}
-                                        className="w-full h-[85vh] bg-white"
-                                    />
-                                )}
-                            </div>
+                            <div className="mx-2 my-0.5 h-[1px]" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
 
-                            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-white">
-                                <div className="flex items-center justify-between">
-                                    <span className="font-bold truncate">{previewAttachment.name}</span>
-                                    <a
-                                        href={previewAttachment.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-2 text-sm font-bold"
-                                    >
-                                        <ExternalLink size={14} /> Open Original
-                                    </a>
-                                </div>
-                            </div>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setConfirmDelete(openOptionsId);
+                                    setOpenOptionsId(null);
+                                }}
+                                className="w-full text-left flex items-center gap-2 bg-transparent border-none cursor-pointer rounded-lg text-sm p-2.5 transition-colors"
+                                style={{
+                                    color: 'rgb(239, 68, 68)',
+                                    fontFamily: "'Inter', sans-serif"
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                <Trash2 size={16} /> Delete
+                            </button>
                         </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>,
-            document.body
-        )
-    }
+                    </>,
+                    document.body
+                )
+            }
+
+            {
+                typeof document !== 'undefined' && createPortal(
+                    <AnimatePresence>
+                        {previewAttachment && (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setPreviewAttachment(null)}
+                                className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 sm:p-8"
+                            >
+                                <div
+                                    className="relative max-w-5xl max-h-full w-full rounded-2xl overflow-hidden shadow-2xl bg-black"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <button
+                                        onClick={() => setPreviewAttachment(null)}
+                                        className="absolute top-4 right-4 z-50 p-2 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-md transition-colors"
+                                    >
+                                        <X size={24} />
+                                    </button>
+
+                                    <div className="flex w-full h-full items-center justify-center bg-zinc-900">
+                                        {/\.(jpg|jpeg|png|gif|webp)$/i.test(previewAttachment.name) ? (
+                                            <img
+                                                src={previewAttachment.url}
+                                                alt={previewAttachment.name}
+                                                className="max-w-full max-h-[85vh] object-contain"
+                                            />
+                                        ) : /\.(mp4|webm|ogg)$/i.test(previewAttachment.name) ? (
+                                            <video
+                                                controls
+                                                autoPlay
+                                                src={previewAttachment.url}
+                                                className="max-w-full max-h-[85vh]"
+                                            />
+                                        ) : (
+                                            <iframe
+                                                src={previewAttachment.url}
+                                                title={previewAttachment.name}
+                                                className="w-full h-[85vh] bg-white"
+                                            />
+                                        )}
+                                    </div>
+
+                                    <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-white">
+                                        <div className="flex items-center justify-between">
+                                            <span className="font-bold truncate">{previewAttachment.name}</span>
+                                            <a
+                                                href={previewAttachment.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-2 text-sm font-bold"
+                                            >
+                                                <ExternalLink size={14} /> Open Original
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>,
+                    document.body
+                )
+            }
         </div >
     );
 };

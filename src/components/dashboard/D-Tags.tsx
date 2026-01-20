@@ -388,7 +388,7 @@ const DTags = () => {
     const iconSize = isExtraSmall ? 16 : 18;
 
     return (
-        <div className="h-[90%] flex flex-col" style={{ gap: gap }}>
+        <div className="h-[90%] flex flex-col" style={{ gap: gap, touchAction: 'pan-y' }}>
             <Loader isOpen={isLoading} isFullScreen={true} />
             {/* Header Actions */}
             <div className="flex justify-between items-center" style={{
@@ -490,11 +490,11 @@ const DTags = () => {
                                         {searchQuery ? "No tags match your search." : "No tags yet. Click the + button to add one."}
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-12 overflow-visible">
+                                    <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 pb-12 overflow-visible">
                                         {filteredTags.map((tag: any) => (
                                             <div
                                                 key={tag.id}
-                                                className="tags-card flex flex-col p-5 rounded-3xl transition-all duration-300 relative group"
+                                                className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group"
                                                 style={{
                                                     backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255, 255, 255, 0.4)',
                                                     backdropFilter: 'blur(16px)',
@@ -504,8 +504,8 @@ const DTags = () => {
                                                     boxShadow: isDark ? '0 10px 30px -10px rgba(0,0,0,0.3)' : '0 10px 30px -10px rgba(0,0,0,0.05)'
                                                 }}
                                             >
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden p-2.5 shadow-inner" style={{
+                                                <div className="flex items-center justify-between mb-4 sm:mb-5">
+                                                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden p-2 sm:p-3 shadow-inner" style={{
                                                         backgroundColor: `${tag.color}15`,
                                                         color: tag.color,
                                                         border: `1px solid ${tag.color}25`
@@ -514,32 +514,32 @@ const DTags = () => {
                                                             tag.iconSvg.trim().startsWith('http') ? (
                                                                 <img src={tag.iconSvg} alt={tag.name} className="w-full h-full object-contain" />
                                                             ) : (
-                                                                <div className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+                                                                <div className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:fill-current"
                                                                     dangerouslySetInnerHTML={{ __html: tag.iconSvg }}
                                                                 />
                                                             )
                                                         ) : (
-                                                            <Tag size={28} />
+                                                            <Tag size={isSmall ? 24 : 32} />
                                                         )}
                                                     </div>
-                                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
+                                                    <div className={`flex gap-1 transition-all ${isSmall ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0'}`}>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); setEditingTag(tag); setTagModalOpen(true); }}
-                                                            className="p-2.5 rounded-xl border-none bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 cursor-pointer transition-colors"
+                                                            className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border-none bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 cursor-pointer transition-colors"
                                                         >
-                                                            <Edit2 size={18} />
+                                                            <Edit2 size={isSmall ? 14 : 18} />
                                                         </button>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleDeleteTag(tag.id); }}
-                                                            className="p-2.5 rounded-xl border-none bg-red-500/10 hover:bg-red-500/20 text-red-500 cursor-pointer transition-colors"
+                                                            className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border-none bg-red-500/10 hover:bg-red-500/20 text-red-500 cursor-pointer transition-colors"
                                                         >
-                                                            <Trash2 size={18} />
+                                                            <Trash2 size={isSmall ? 14 : 18} />
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <div>
-                                                    <div className="font-bold text-primary text-xl lg:text-2xl truncate mb-1">{tag.name}</div>
-                                                    <div className="text-xs font-mono uppercase tracking-widest opacity-40">{tag.color}</div>
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-primary text-lg sm:text-xl lg:text-2xl truncate mb-0.5 sm:mb-1">{tag.name}</div>
+                                                    <div className="text-[10px] sm:text-xs font-mono uppercase tracking-widest opacity-40 truncate">{tag.color}</div>
                                                 </div>
                                             </div>
                                         ))}
@@ -553,11 +553,11 @@ const DTags = () => {
                                         {searchQuery ? "No contributors match your search." : "No contributors yet."}
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-12 overflow-visible">
+                                    <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 pb-12 overflow-visible">
                                         {filteredContributors.map((contributor) => (
                                             <div
                                                 key={contributor.id}
-                                                className="tags-card flex flex-col p-6 rounded-3xl transition-all duration-300 relative group"
+                                                className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group"
                                                 style={{
                                                     opacity: revealedSections.contributors ? 1 : 0,
                                                     backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255, 255, 255, 0.4)',
@@ -567,39 +567,39 @@ const DTags = () => {
                                                     boxShadow: isDark ? '0 10px 30px -10px rgba(0,0,0,0.3)' : '0 10px 30px -10px rgba(0,0,0,0.05)'
                                                 }}
                                             >
-                                                <div className="flex items-start justify-between mb-5">
-                                                    <div className="w-20 h-20 rounded-3xl overflow-hidden border-2 p-1" style={{
+                                                <div className="flex items-center justify-between mb-4 sm:mb-5">
+                                                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl overflow-hidden border-2 p-1 shadow-md" style={{
                                                         borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                                                         backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)'
                                                     }}>
-                                                        <div className="w-full h-full rounded-2xl overflow-hidden flex items-center justify-center">
+                                                        <div className="w-full h-full rounded-lg sm:rounded-xl overflow-hidden flex items-center justify-center">
                                                             {contributor.imagePreview ? (
                                                                 <img src={contributor.imagePreview} alt={contributor.name} className="w-full h-full object-cover" />
                                                             ) : (
-                                                                <span className="text-3xl font-bold bg-gradient-to-br from-purple-500 to-blue-500 bg-clip-text text-transparent">
+                                                                <span className="text-xl sm:text-2xl font-bold bg-gradient-to-br from-purple-500 to-blue-500 bg-clip-text text-transparent">
                                                                     {contributor.name.charAt(0).toUpperCase()}
                                                                 </span>
                                                             )}
                                                         </div>
                                                     </div>
-                                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0">
+                                                    <div className={`flex gap-1 transition-all ${isSmall ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0'}`}>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); setEditingContributor(contributor); setContribModalOpen(true); }}
-                                                            className="p-2.5 rounded-xl border-none bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 cursor-pointer transition-colors"
+                                                            className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border-none bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 cursor-pointer transition-colors"
                                                         >
-                                                            <Edit2 size={18} />
+                                                            <Edit2 size={isSmall ? 14 : 18} />
                                                         </button>
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleDeleteContributor(contributor.id!); }}
-                                                            className="p-2.5 rounded-xl border-none bg-red-500/10 hover:bg-red-500/20 text-red-500 cursor-pointer transition-colors"
+                                                            className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border-none bg-red-500/10 hover:bg-red-500/20 text-red-500 cursor-pointer transition-colors"
                                                         >
-                                                            <Trash2 size={18} />
+                                                            <Trash2 size={isSmall ? 14 : 18} />
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <div>
-                                                    <div className="font-bold text-primary text-2xl truncate mb-1">{contributor.name}</div>
-                                                    <div className="text-sm font-medium text-sec bg-accent/5 px-3 py-1 rounded-full w-fit">{contributor.role}</div>
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-primary text-lg sm:text-xl truncate mb-0.5 sm:mb-1">{contributor.name}</div>
+                                                    <div className="text-[10px] sm:text-xs font-medium text-sec bg-accent/5 px-2 py-0.5 sm:px-3 sm:py-1 rounded-full w-fit truncate max-w-full">{contributor.role}</div>
                                                 </div>
                                             </div>
                                         ))}
