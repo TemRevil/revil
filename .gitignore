@@ -29,5 +29,10 @@ dist-ssr
 .env.*.local
 
 # Firebase
+firestore.rules
+storage.rules
+functions/
 .firebase/
 .firebaserc
+firestore.indexes.json
+cors.json
