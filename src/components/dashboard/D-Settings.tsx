@@ -1532,37 +1532,35 @@ export default function DSettings() {
             {
                 hasUnsavedChanges && (
                     <div
-                        className="fixed bottom-10 left-0 right-0 z-[5000] flex animate-slide-up pointer-events-none"
+                        className="fixed bottom-10 z-[5000] flex animate-slide-up pointer-events-none"
+                        style={{
+                            left: '50%',
+                            transform: 'translateX(calc(-50% + (var(--sidebar-width, 0px) / 2)))'
+                        }}
                     >
-                        {/* The Spacer - This takes up exactly the space of the sidebar */}
-                        <div style={{ width: 'var(--sidebar-width, 0px)' }} className="shrink-0" />
+                        <div className="flex items-center gap-3 sm:gap-4 p-2.5 sm:p-4 rounded-full shadow-2xl border pointer-events-auto" style={{
+                            background: isDark ? 'rgba(10, 10, 12, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                            backdropFilter: 'blur(32px)',
+                            WebkitBackdropFilter: 'blur(32px)',
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
+                        }}>
+                            <button
+                                id="apply-all-btn"
+                                onClick={handleApplyAll}
+                                className="btn-primary px-5 sm:px-8 py-2.5 sm:py-3 rounded-full shadow-2xl shadow-blue-500/20 text-[13px] sm:text-[15px] font-bold flex items-center gap-2 hover:scale-105 transition-all whitespace-nowrap"
+                            >
+                                <Save size={18} className="sm:w-5 sm:h-5" /> Apply Settings
+                            </button>
 
-                        {/* The Centering Box - Centered in the remaining space */}
-                        <div className="flex-1 flex justify-center px-4">
-                            <div className="flex items-center gap-3 sm:gap-4 p-2.5 sm:p-4 rounded-full shadow-2xl border pointer-events-auto" style={{
-                                background: isDark ? 'rgba(10, 10, 12, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                                backdropFilter: 'blur(32px)',
-                                WebkitBackdropFilter: 'blur(32px)',
-                                borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
-                            }}>
-                                <button
-                                    id="apply-all-btn"
-                                    onClick={handleApplyAll}
-                                    className="btn-primary px-5 sm:px-8 py-2.5 sm:py-3 rounded-full shadow-2xl shadow-blue-500/20 text-[13px] sm:text-[15px] font-bold flex items-center gap-2 hover:scale-105 transition-all whitespace-nowrap"
-                                >
-                                    <Save size={18} className="sm:w-5 sm:h-5" /> Apply Settings
-                                </button>
-
-                                <button
-                                    onClick={handleCancelAll}
-                                    className={`px-5 sm:px-6 py-2.5 sm:py-3 rounded-full border transition-all font-semibold text-[13px] sm:text-[14px] whitespace-nowrap ${isDark
-                                        ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
-                                        : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
-                                        }`}
-                                >
-                                    Cancel
-                                </button>
-                            </div>
+                            <button
+                                onClick={handleCancelAll}
+                                className={`px-5 sm:px-6 py-2.5 sm:py-3 rounded-full border transition-all font-semibold text-[13px] sm:text-[14px] whitespace-nowrap ${isDark
+                                    ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
+                                    : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
+                                    }`}
+                            >
+                                Cancel
+                            </button>
                         </div>
                     </div>
                 )
