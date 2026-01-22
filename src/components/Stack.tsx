@@ -136,6 +136,13 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
                             whiteSpace: 'normal',
                             fontWeight: 'normal',
                             fontSize: '0.85rem',
+                            // Enforce stronger background for readability
+                            backgroundColor: 'var(--tooltip-bg, rgba(20, 20, 25, 0.8))',
+                            backdropFilter: 'blur(16px)',
+                            WebkitBackdropFilter: 'blur(16px)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+                            color: 'var(--tooltip-text, inherit)'
                         }}
                     >
                         {information}
@@ -144,8 +151,11 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
                     <div
                         className="nav-tooltip-arrow"
                         style={{
-                            left: '20px', // Align arrow to the left side where tooltip connects
-                            marginLeft: '0'
+                            left: '20px',
+                            marginLeft: '0',
+                            backgroundColor: 'var(--tooltip-bg, rgba(20, 20, 25, 0.8))',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRight: '1px solid rgba(255, 255, 255, 0.15)'
                         }}
                     />
                 </div>

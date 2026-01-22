@@ -52,6 +52,10 @@
   --blob-color-1: rgba(44, 108, 188, 0.4);
   --blob-color-2: rgba(113, 195, 247, 0.35);
   --blob-color-3: rgba(246, 246, 246, 0.25);
+
+  /* Tooltip Specific */
+  --tooltip-bg: rgba(255, 255, 255, 0.85);
+  --tooltip-text: #000000;
 }
 
 .dark {
@@ -88,6 +92,10 @@
   --blob-color-1: rgba(44, 108, 188, 0.2);
   --blob-color-2: rgba(113, 195, 247, 0.15);
   --blob-color-3: rgba(255, 255, 255, 0.08);
+
+  /* Tooltip Specific */
+  --tooltip-bg: rgba(20, 20, 25, 0.85);
+  --tooltip-text: #ffffff;
 }
 
 /* ========================================
