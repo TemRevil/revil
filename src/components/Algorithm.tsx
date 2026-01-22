@@ -106,20 +106,63 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         };
     }, []);
 
-    // 2.5 Initial Link Recording & Verification
+    // 2.5 Global Analytics Tracking
+    useEffect(() => {
+        const trackGlobalVisit = async () => {
+            // Avoid tracking site visits when in dashboard or secret pages
+            if (currentSection === 'dashboard' || currentSection === 'secret') return;
+
+            try {
+                const docRef = doc(db, 'Settings', 'Analytics');
+                const docSnap = await getDoc(docRef);
+
+                const hasVisited = localStorage.getItem('revil_visitor_active');
+                const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+                let updateData: any = {};
+
+                if (!docSnap.exists()) {
+                    // Initialize if doesn't exist
+                    updateData = {
+                        TotalViews: 1,
+                        UniqueViews: 1,
+                        Daily: {
+                            [today]: { total: 1, unique: 1 }
+                        }
+                    };
+                    localStorage.setItem('revil_visitor_active', 'true');
+                } else {
+                    const data = docSnap.data();
+                    const daily = data.Daily || {};
+                    const todayStats = daily[today] || { total: 0, unique: 0 };
+
+                    updateData['TotalViews'] = (data.TotalViews || 0) + 1;
+                    updateData[`Daily.${today}.total`] = todayStats.total + 1;
+
+                    if (!hasVisited) {
+                        updateData['UniqueViews'] = (data.UniqueViews || 0) + 1;
+                        updateData[`Daily.${today}.unique`] = todayStats.unique + 1;
+                        localStorage.setItem('revil_visitor_active', 'true');
+                    }
+                }
+
+                await updateDoc(docRef, updateData);
+            } catch (error) {
+                console.error("Global Analytics Error:", error);
+            }
+        };
+
+        trackGlobalVisit();
+    }, []);
+
+    // 2.6 Initial Link Recording & Verification
     const hasRecordedRef = useRef(false);
     useEffect(() => {
         const recordLink = async () => {
             if (hasRecordedRef.current) return;
 
             const path = window.location.pathname;
-            // Handle both root (/) and subdirectory (/red/) cases
-            // We want the part after the project's base path
             const pathParts = path.split('/').filter(Boolean);
-
-            // If we are in /red/JHONDA, pathParts is ['red', 'JHONDA']
-            // If the repo name is 'red', we want JHONDA
-            // Extract the base path segments to filter them out
             const baseParts = import.meta.env.BASE_URL.split('/').filter(Boolean);
             const code = pathParts.length > baseParts.length ? pathParts[pathParts.length - 1] : '';
 

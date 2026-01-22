@@ -1,11 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Check, RefreshCw, ExternalLink, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase } from 'lucide-react';
+import { Copy, Check, RefreshCw, ExternalLink, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase, TrendingUp, Users, Eye, Calendar } from 'lucide-react';
 import anime from 'animejs';
+import { motion } from 'motion/react';
 import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Loader from '../reactbits/Loader';
 import Alert, { AlertType } from '../Alert';
+
+interface AnalyticsData {
+    TotalViews: number;
+    UniqueViews: number;
+    Daily: Record<string, { total: number; unique: number }>;
+}
 
 interface GeneratedLink {
     id: string;
@@ -18,6 +25,128 @@ interface GeneratedLink {
     createdAt: Date;
     recCLI: string;
 }
+
+// Sparkline/Analysis Chart Component
+const VisitorChart = ({ dailyData, isDark }: { dailyData: Record<string, { total: number; unique: number }>, isDark: boolean }) => {
+    const dataPoints = useMemo(() => {
+        const sortedDates = Object.keys(dailyData).sort();
+        // Get last 14 days or all if less
+        const slice = sortedDates.slice(-14);
+        return slice.map(date => ({
+            date: date.split('-').slice(1).join('/'), // MM/DD
+            total: dailyData[date].total,
+            unique: dailyData[date].unique
+        }));
+    }, [dailyData]);
+
+    if (dataPoints.length < 2) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center opacity-40">
+                <TrendingUp size={32} className="mb-2" />
+                <span className="text-sm font-bold uppercase tracking-widest">Collecting Traffic Data...</span>
+            </div>
+        );
+    }
+
+    const maxVal = Math.max(...dataPoints.map(d => d.total), 10);
+    const width = 1000;
+    const height = 250;
+    const padding = 40;
+
+    const getX = (i: number) => (i / (dataPoints.length - 1)) * (width - padding * 2) + padding;
+    const getY = (v: number) => height - ((v / maxVal) * (height - padding * 2) + padding);
+
+    // Path for Total Views
+    const totalPath = dataPoints.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.total)}`).join(' ');
+    const totalArea = `${totalPath} L ${getX(dataPoints.length - 1)} ${height} L ${getX(0)} ${height} Z`;
+
+    // Path for Unique Views
+    const uniquePath = dataPoints.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.unique)}`).join(' ');
+
+    return (
+        <div className="relative w-full h-[300px] mt-4">
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
+                <defs>
+                    <linearGradient id="totalGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="rgba(59, 130, 246, 0.3)" />
+                        <stop offset="100%" stopColor="rgba(59, 130, 246, 0.0)" />
+                    </linearGradient>
+                </defs>
+
+                {/* Grid Lines */}
+                {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
+                    <line
+                        key={i}
+                        x1={padding}
+                        y1={getY(maxVal * p)}
+                        x2={width - padding}
+                        y2={getY(maxVal * p)}
+                        stroke={isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}
+                        strokeDasharray="4 4"
+                    />
+                ))}
+
+                {/* Areas */}
+                <motion.path
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 1 }}
+                    d={totalArea}
+                    fill="url(#totalGradient)"
+                />
+
+                {/* Lines */}
+                <motion.path
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 1 }}
+                    transition={{ duration: 1.5, ease: "easeInOut" }}
+                    d={totalPath}
+                    fill="none"
+                    stroke="rgb(59, 130, 246)"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+
+                <motion.path
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 0.6 }}
+                    transition={{ duration: 2, ease: "easeInOut", delay: 0.5 }}
+                    d={uniquePath}
+                    fill="none"
+                    stroke="#8b5cf6"
+                    strokeWidth="3"
+                    strokeDasharray="8 6"
+                    strokeLinecap="round"
+                />
+
+                {/* Points */}
+                {dataPoints.map((d, i) => (
+                    <g key={i} className="group/point">
+                        <circle
+                            cx={getX(i)}
+                            cy={getY(d.total)}
+                            r="6"
+                            fill={isDark ? "#121212" : "#fff"}
+                            stroke="rgb(59, 130, 246)"
+                            strokeWidth="3"
+                            className="transition-all duration-300 group-hover/point:r-8"
+                        />
+                        <text
+                            x={getX(i)}
+                            y={height - 5}
+                            textAnchor="middle"
+                            className="text-[14px] fill-current opacity-40 font-bold"
+                            style={{ fill: isDark ? '#fff' : '#000' }}
+                        >
+                            {d.date}
+                        </text>
+                    </g>
+                ))}
+            </svg>
+        </div>
+    );
+};
 
 const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; onClose: () => void; data: string; isDark: boolean; linkName: string }) => {
     if (!isOpen) return null;
@@ -135,17 +264,8 @@ const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; o
 const DLinks = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isDark, setIsDark] = useState(false);
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
 
-    // Responsive sizing matching D-Projects
-    const isExtraSmall = windowWidth < 400;
-    const isSmall = windowWidth < 640;
-    const tableColumns = isExtraSmall
-        ? 'minmax(180px, 1.5fr) 120px 200px 70px 56px'
-        : isSmall
-            ? 'minmax(200px, 1.8fr) 150px 250px 80px 56px'
-            : 'minmax(220px, 2fr) 180px 320px 100px 60px';
-    const tableMinWidth = isExtraSmall ? '650px' : isSmall ? '750px' : '900px';
     const [name, setName] = useState('');
     const [forField, setForField] = useState('');
     const [generatedLinks, setGeneratedLinks] = useState<GeneratedLink[]>([]);
@@ -164,19 +284,16 @@ const DLinks = () => {
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        const handleResize = () => setWindowWidth(window.innerWidth);
         checkTheme();
-        window.addEventListener('resize', handleResize);
         const observer = new MutationObserver(checkTheme);
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         return () => {
-            window.removeEventListener('resize', handleResize);
             observer.disconnect();
         };
     }, []);
 
     useEffect(() => {
-        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Views'), (docSnap) => {
+        const unsubLinks = onSnapshot(doc(db, 'Settings', 'Views'), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 const linksArray: GeneratedLink[] = [];
@@ -200,7 +317,17 @@ const DLinks = () => {
                 setGeneratedLinks(linksArray);
             }
         });
-        return () => unsubscribe();
+
+        const unsubAnalytics = onSnapshot(doc(db, 'Settings', 'Analytics'), (docSnap) => {
+            if (docSnap.exists()) {
+                setAnalytics(docSnap.data() as AnalyticsData);
+            }
+        });
+
+        return () => {
+            unsubLinks();
+            unsubAnalytics();
+        };
     }, []);
 
     useEffect(() => {
@@ -246,6 +373,7 @@ const DLinks = () => {
             await updateDoc(docRef, { [nextId]: payload });
             setName('');
             setForField('');
+            setAlert({ show: true, type: 'success', message: 'Campaign link generated successfully!' });
         } catch (error) {
             setAlert({ show: true, type: 'error', message: 'Failed to generate link. Check your connection.' });
         } finally {
@@ -318,118 +446,178 @@ const DLinks = () => {
     };
 
     return (
-        <div className="links-section-container flex flex-col gap-8 h-full opacity-0">
+        <div className="links-section-container flex flex-row gap-8 h-full opacity-0 overflow-hidden">
             <Loader isOpen={isLoading} isFullScreen={true} />
 
-            {/* Link Generator Section */}
-            <div className="glass-panel p-6 sm:p-10">
-                <div className="flex flex-col sm:flex-row gap-6 mb-8">
-                    <div className="flex-1 min-w-[200px] flex flex-col gap-2.5">
-                        <label className="input-label m-0">Name</label>
-                        <input
-                            type="text"
-                            className="input-field"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Enter link name..."
-                        />
-                    </div>
-                    <div className="flex-1 min-w-[200px] flex flex-col gap-2.5">
-                        <label className="input-label m-0">For</label>
-                        <input
-                            type="text"
-                            className="input-field"
-                            value={forField}
-                            onChange={(e) => setForField(e.target.value)}
-                            placeholder="What is this link for..."
-                        />
+            {/* Left Column: Analysis Magic Place */}
+            <div className="flex-[1.4] flex flex-col gap-8 overflow-y-auto custom-scrollbar pr-2 pb-12">
+
+                {/* Site Pulse Header */}
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="heading-lg m-0 flex items-center gap-3">
+                            <Activity className="text-blue-500 animate-pulse" size={32} />
+                            Site Analysis
+                        </h1>
+                        <p className="text-muted mt-1">Real-time visitor patterns and engagement</p>
                     </div>
                 </div>
 
-                <button
-                    onClick={generateCode}
-                    disabled={!name.trim() || !forField.trim()}
-                    className="btn btn-primary w-full px-8 py-4 rounded-xl shadow-md"
-                >
-                    <RefreshCw size={18} />
-                    Generate Link
-                </button>
-            </div>
-
-            {/* Generated Links Table */}
-            <div className="glass-panel flex-1 flex flex-col overflow-hidden">
-                <div className="flex-1 overflow-auto custom-scrollbar">
-                    <div className="min-w-[800px]">
-                        {/* Table Header */}
-                        <div className="grid p-4 border-b text-sec font-semibold text-sm" style={{
-                            gridTemplateColumns: tableColumns,
-                            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                            minWidth: tableMinWidth
-                        }}>
-                            <div>NAME</div>
-                            <div>FOR</div>
-                            <div>LINK</div>
-                            <div className="text-center">COUNTS</div>
-                            <div style={{ textAlign: 'right' }}>ACTIONS</div>
+                {/* Counter Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <div className="glass-panel p-8 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                            <Eye size={48} />
                         </div>
-
-                        {/* Table Body */}
-                        <div className="min-w-0">
-                            {generatedLinks.length === 0 ? (
-                                <div className="p-12 text-center text-sec">
-                                    No links generated yet. Fill in the name and purpose above to create one.
-                                </div>
-                            ) : (
-                                generatedLinks.map((link) => (
-                                    <div key={link.id} className="grid p-4 border-b items-center transition-colors cursor-pointer"
-                                        style={{
-                                            gridTemplateColumns: tableColumns,
-                                            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                                            minWidth: tableMinWidth
-                                        }}
-                                        onClick={() => setActivityLink(link)}
-                                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                    >
-                                        {/* Name & Icon Col */}
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0"
-                                                style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-                                                <ExternalLink size={18} className="text-sec opacity-40" />
-                                            </div>
-                                            <div className="font-semibold text-primary truncate pr-2">{link.name}</div>
-                                        </div>
-
-                                        <div className="text-sm text-sec opacity-70 truncate pr-4">{link.forField}</div>
-                                        <div className="flex items-center gap-3 overflow-hidden">
-                                            <code className="flex-1 p-2 px-4 bg-[var(--input-bg)] rounded-lg text-xs font-mono truncate text-primary border border-[var(--input-border)]">
-                                                {link.fullLink}
-                                            </code>
-                                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                <button onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
-                                                    className="btn-icon !p-1.5 rounded-lg"
-                                                    style={copied === link.id ? { backgroundColor: 'var(--success)', color: 'white' } : {}}>
-                                                    {copied === link.id ? <Check size={14} /> : <Copy size={14} />}
-                                                </button>
-                                                <a href={link.fullLink} target="_blank" rel="noopener noreferrer"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="btn-icon !p-1.5 rounded-lg">
-                                                    <ExternalLink size={14} />
-                                                </a>
-                                            </div>
-                                        </div>
-                                        <div className="text-center font-bold text-primary">{link.counts}</div>
-                                        <div className="text-right">
-                                            <button onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
-                                                className={`p-2 rounded-lg border-none bg-transparent cursor-pointer transition-all ${activeMenu === link.id ? 'text-blue-500 bg-blue-500/10' : 'text-sec hover:bg-black/5 dark:hover:bg-white/5'}`}>
-                                                <MoreVertical size={20} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
+                        <div className="flex flex-col gap-2">
+                            <span className="text-xs uppercase font-black tracking-widest text-blue-500">Total Reach</span>
+                            <span className="text-4xl font-black text-primary">{analytics?.TotalViews?.toLocaleString() || '0'}</span>
+                            <div className="flex items-center gap-2 mt-4 text-xs font-bold text-muted">
+                                <span className="bg-blue-500/10 text-blue-500 px-2 py-1 rounded">GLOBAL VIEWS</span>
+                                <span>Impressions on site</span>
+                            </div>
                         </div>
                     </div>
+
+                    <div className="glass-panel p-8 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                            <Users size={48} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <span className="text-xs uppercase font-black tracking-widest text-purple-500">Unique Souls</span>
+                            <span className="text-4xl font-black text-primary">{analytics?.UniqueViews?.toLocaleString() || '0'}</span>
+                            <div className="flex items-center gap-2 mt-4 text-xs font-bold text-muted">
+                                <span className="bg-purple-500/10 text-purple-500 px-2 py-1 rounded">IDENTITY TRACKED</span>
+                                <span>Unique device count</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="glass-panel p-8 relative overflow-hidden group lg:hidden xl:flex">
+                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                            <Calendar size={48} />
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <span className="text-xs uppercase font-black tracking-widest text-emerald-500">Today's Pulse</span>
+                            <span className="text-4xl font-black text-primary">{analytics?.Daily?.[new Date().toISOString().split('T')[0]]?.total || '0'}</span>
+                            <div className="flex items-center gap-2 mt-4 text-xs font-bold text-muted">
+                                <span className="bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded">LIVE TRAFFIC</span>
+                                <span>Views in 24h</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Analysis Chart */}
+                <div className="glass-panel p-10 flex flex-col gap-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 className="heading-sm m-0">Traffic Trends</h3>
+                            <p className="text-xs text-muted opacity-60">Visualizing view patterns over the last 14 days</p>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="flex items-center gap-2 text-xs font-bold text-blue-500">
+                                <div className="w-3 h-3 rounded-full bg-blue-500" /> Total
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-bold text-purple-500">
+                                <div className="w-3 h-3 rounded-full bg-purple-500" /> Unique
+                            </div>
+                        </div>
+                    </div>
+                    <VisitorChart dailyData={analytics?.Daily || {}} isDark={isDark} />
+                </div>
+
+                {/* Link Generator Area - Re-styled */}
+                <div className="glass-panel p-10 border-dashed border-2">
+                    <div className="flex flex-col gap-1 mb-6">
+                        <h3 className="heading-sm m-0">Campaign Architect</h3>
+                        <p className="text-xs text-muted">Craft new entrance points for analysis</p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-6 mb-8">
+                        <div className="flex-1 min-w-[200px] flex flex-col gap-2.5">
+                            <label className="input-label m-0">Target Name</label>
+                            <input
+                                type="text"
+                                className="input-field"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="Client or Source Name"
+                            />
+                        </div>
+                        <div className="flex-1 min-w-[200px] flex flex-col gap-2.5">
+                            <label className="input-label m-0">Campaign Context</label>
+                            <input
+                                type="text"
+                                className="input-field"
+                                value={forField}
+                                onChange={(e) => setForField(e.target.value)}
+                                placeholder="e.g. Portfolio Review, Job Req"
+                            />
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={generateCode}
+                        disabled={!name.trim() || !forField.trim()}
+                        className="btn btn-primary w-full px-8 py-5 rounded-2xl shadow-xl shadow-blue-500/10 group transition-all"
+                    >
+                        <RefreshCw size={20} className="group-active:rotate-180 transition-transform duration-500" />
+                        Initialize Campaign
+                    </button>
+                </div>
+            </div>
+
+            {/* Right Column: Mini Link Browser */}
+            <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+                <div className="flex items-center justify-between">
+                    <h3 className="heading-sm m-0">Active Portals</h3>
+                    <span className="text-xs font-mono opacity-40">{generatedLinks.length} TOTAL</span>
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-3">
+                    {generatedLinks.length === 0 ? (
+                        <div className="p-12 text-center text-sec glass-surface rounded-3xl border-dashed">
+                            Empty portal list.
+                        </div>
+                    ) : (
+                        generatedLinks.map((link) => (
+                            <div key={link.id}
+                                onClick={() => setActivityLink(link)}
+                                className="glass-panel p-4 flex flex-col gap-4 group cursor-pointer hover:border-blue-500/30 transition-all border border-transparent"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                                            <ExternalLink size={14} className="text-blue-500" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="font-bold text-sm truncate max-w-[150px]">{link.name}</span>
+                                            <span className="text-[10px] opacity-40 uppercase tracking-tighter">{link.forField}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex flex-col items-end">
+                                            <span className="font-black text-blue-500 text-lg">{link.counts}</span>
+                                            <span className="text-[8px] font-bold opacity-30 mt-[-4px]">HITS</span>
+                                        </div>
+                                        <button onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
+                                            className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded-lg transition-all">
+                                            <MoreVertical size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <code className="flex-1 p-2 bg-black/10 dark:bg-black/40 rounded-lg text-[10px] font-mono truncate">
+                                        {link.fullLink}
+                                    </code>
+                                    <button onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
+                                        className="p-2 hover:bg-blue-500/10 text-blue-500 rounded-lg transition-all">
+                                        {copied === link.id ? <Check size={14} /> : <Copy size={14} />}
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
 
@@ -449,7 +637,7 @@ const DLinks = () => {
                             style={{ color: 'var(--text-primary)', fontFamily: "'Inter', sans-serif" }}
                             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}
                             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                            <Activity size={16} /> Info
+                            <Activity size={16} /> Analysis
                         </button>
                         <button onClick={(e) => {
                             e.stopPropagation();
