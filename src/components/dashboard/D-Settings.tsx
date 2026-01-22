@@ -1531,9 +1531,12 @@ export default function DSettings() {
             {/* Sticky Action Bar */}
             {
                 hasUnsavedChanges && (
-                    <div className="sticky bottom-8 z-[5000] w-full flex justify-center mt-8 animate-slide-up pointer-events-none">
+                    <div className="fixed bottom-10 z-[5000] flex justify-center animate-slide-up pointer-events-none" style={{
+                        left: 'var(--sidebar-width, 0px)',
+                        right: 0
+                    }}>
                         <div className="flex items-center gap-3 sm:gap-4 p-2.5 sm:p-4 rounded-full shadow-2xl border pointer-events-auto" style={{
-                            background: isDark ? 'rgba(10, 10, 12, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                            background: isDark ? 'rgba(10, 10, 12, 0.92)' : 'rgba(255, 255, 255, 0.92)',
                             backdropFilter: 'blur(32px)',
                             WebkitBackdropFilter: 'blur(32px)',
                             borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
@@ -1543,7 +1546,7 @@ export default function DSettings() {
                                 onClick={handleApplyAll}
                                 className="btn-primary px-5 sm:px-8 py-2.5 sm:py-3 rounded-full shadow-2xl shadow-blue-500/20 text-[13px] sm:text-[15px] font-bold flex items-center gap-2 hover:scale-105 transition-all whitespace-nowrap"
                             >
-                                <Save size={18} className="sm:w-5 sm:h-5" /> Apply
+                                <Save size={18} className="sm:w-5 sm:h-5" /> Apply Settings
                             </button>
 
                             <button

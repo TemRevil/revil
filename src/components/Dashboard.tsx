@@ -108,6 +108,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
             className="w-full h-screen flex bg-primary relative overflow-hidden touch-pan-y"
+            style={{ '--sidebar-width': sidebarWidth } as any}
         >
             {/* Decorative Background Blobs */}
             <div className="blob-container">
