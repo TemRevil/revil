@@ -1528,35 +1528,34 @@ export default function DSettings() {
                 initialData={editingStack}
             />
 
-            {/* Sticky Action Bar */}
-            {
-                hasUnsavedChanges && (
-                    <div className="sticky bottom-6 left-1/2 -translate-x-1/2 z-[5000] p-4 mt-auto animate-slide-up flex justify-center items-center gap-4 rounded-full shadow-2xl w-max mx-auto" style={{
-                        background: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)',
-                        backdropFilter: 'blur(32px)',
-                        WebkitBackdropFilter: 'blur(32px)',
-                        border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)'
-                    }}>
-                        <button
-                            id="apply-all-btn"
-                            onClick={handleApplyAll}
-                            className="btn-primary px-8 py-3 rounded-full shadow-2xl shadow-blue-500/20 text-[15px] font-bold flex items-center gap-2 hover:scale-105 transition-all"
-                        >
-                            <Save size={20} /> Apply Changes
-                        </button>
+            {/* Floating Action Bar (Portal to Body for true fixed positioning) */}
+            {hasUnsavedChanges && createPortal(
+                <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[9999] p-4 animate-slide-up flex justify-center items-center gap-4 rounded-full shadow-2xl w-max" style={{
+                    background: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)',
+                    backdropFilter: 'blur(32px)',
+                    WebkitBackdropFilter: 'blur(32px)',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)'
+                }}>
+                    <button
+                        id="apply-all-btn"
+                        onClick={handleApplyAll}
+                        className="btn-primary px-8 py-3 rounded-full shadow-2xl shadow-blue-500/20 text-[15px] font-bold flex items-center gap-2 hover:scale-105 transition-all"
+                    >
+                        <Save size={20} /> Apply Changes
+                    </button>
 
-                        <button
-                            onClick={handleCancelAll}
-                            className={`px-6 py-3 rounded-full border transition-all font-semibold text-[14px] ${isDark
-                                ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
-                                : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
-                                }`}
-                        >
-                            Cancel Changes
-                        </button>
-                    </div>
-                )
-            }
+                    <button
+                        onClick={handleCancelAll}
+                        className={`px-6 py-3 rounded-full border transition-all font-semibold text-[14px] ${isDark
+                            ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
+                            : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
+                            }`}
+                    >
+                        Cancel Changes
+                    </button>
+                </div>,
+                document.body
+            )}
 
             {/* Firebase Browser */}
             <MFirebaseStorage
