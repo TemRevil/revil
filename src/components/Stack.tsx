@@ -136,15 +136,18 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
                             whiteSpace: 'normal',
                             fontWeight: 'normal',
                             fontSize: '0.85rem',
-                            backgroundColor: 'rgba(20, 20, 25, 0.6)',
-                            backdropFilter: 'blur(12px)',
-                            WebkitBackdropFilter: 'blur(12px)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
                         }}
                     >
                         {information}
                     </div>
+                    {/* Restored Arrow - Rotation handled by CSS class .nav-tooltip-arrow (45deg) */}
+                    <div
+                        className="nav-tooltip-arrow"
+                        style={{
+                            left: '20px', // Align arrow to the left side where tooltip connects
+                            marginLeft: '0'
+                        }}
+                    />
                 </div>
             )}
 
