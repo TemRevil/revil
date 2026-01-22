@@ -117,7 +117,6 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
                 }}
             />
 
-            {/* Tooltip */}
             {information && (
                 <div
                     className="absolute z-50 pointer-events-auto cursor-pointer"
@@ -127,8 +126,8 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
                         width: isSmall ? '180px' : '220px',
                         transform: isHovered ? 'translateY(-100%) scale(1)' : 'translateY(-90%) scale(0.9)',
                         opacity: isHovered ? 1 : 0,
-                        transition: 'opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                        pointerEvents: isHovered ? 'auto' : 'none'
+                        transition: 'opacity 0.15s ease-out, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+                        pointerEvents: isHovered ? 'auto' : 'none',
                     }}
                 >
                     <div
@@ -136,12 +135,16 @@ const StackItem = ({ icon, name, percentage, delay, information }: StackItemProp
                         style={{
                             whiteSpace: 'normal',
                             fontWeight: 'normal',
-                            fontSize: '0.85rem'
+                            fontSize: '0.85rem',
+                            backgroundColor: 'rgba(20, 20, 25, 0.6)',
+                            backdropFilter: 'blur(12px)',
+                            WebkitBackdropFilter: 'blur(12px)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
                         }}
                     >
                         {information}
                     </div>
-                    <div className="nav-tooltip-arrow" />
                 </div>
             )}
 
