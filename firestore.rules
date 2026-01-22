@@ -1,0 +1,32 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Admin check function
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'temrevil@gmail.com';
+    }
+
+    // Publicly readable but admin-only write for most settings
+    match /Settings/{document} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Allow interaction tracking for everyone
+    match /Settings/Views {
+      allow update: if true;
+    }
+
+    // Allow users to book meetings and send messages
+    match /Settings/Canary {
+      allow update: if true;
+    }
+
+    // Default: allow admin read/write everything, deny others
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

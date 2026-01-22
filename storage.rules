@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'temrevil@gmail.com';
+    }
+
+    // Allow anyone to read files
+    match /{allPaths=**} {
+      allow read: if true;
+    }
+
+    // Allow message attachments to be uploaded by anyone
+    match /emails/{emailId}/{fileName} {
+      allow write: if request.resource.size < 5 * 1024 * 1024 // 5MB limit
+                   && (request.resource.contentType.matches('image/.*') ||
+                       request.resource.contentType.matches('application/pdf') ||
+                       request.resource.contentType.matches('video/.*'));
+    }
+
+    // Full write access for the admin
+    match /{allPaths=**} {
+      allow write: if isAdmin();
+    }
+  }
+}

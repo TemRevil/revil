@@ -50,11 +50,16 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
 
         try {
             const result = await authSignInWithPopup(auth, provider);
-            const details = getAdditionalUserInfo(result);
+            const user = result.user;
 
-            if (details?.isNewUser) {
-                await deleteUser(result.user);
-                setError('Wrong Shot.');
+            if (user.email !== 'temrevil@gmail.com') {
+                const details = getAdditionalUserInfo(result);
+                if (details?.isNewUser) {
+                    await deleteUser(user);
+                } else {
+                    await auth.signOut();
+                }
+                setError('Unauthorized Identity.');
                 return;
             }
 
