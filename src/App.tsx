@@ -11,7 +11,6 @@ import Dashboard from './components/Dashboard';
 import { ChevronRight } from 'lucide-react';
 import Loader from './components/reactbits/Loader';
 import { Algorithm } from './components/Algorithm';
-import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 // Redirection/Link checking logic moved to Algorithm component to avoid Bloat in App.tsx
 
@@ -276,7 +275,6 @@ function App() {
     >
       <Loader isOpen={appLoading} isFullScreen={true} />
       <Algorithm currentSection={currentSection} isContactOpen={isContactModalOpen} onNavigate={navigateTo} />
-      <PWAInstallPrompt />
       {renderSection()}
       {currentSection !== 'secret' && (
         <button
