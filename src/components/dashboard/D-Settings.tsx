@@ -1530,23 +1530,23 @@ export default function DSettings() {
 
             {/* Floating Action Bar (Portal to Body for true fixed positioning) */}
             {hasUnsavedChanges && createPortal(
-                <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[9999] p-4 animate-slide-up flex justify-center items-center gap-4 rounded-full shadow-2xl w-max" style={{
-                    background: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)',
+                <div className="fixed bottom-6 inset-x-0 mx-auto w-fit max-w-[calc(100vw-2rem)] z-[10000] p-3 sm:p-4 animate-slide-up flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4 rounded-3xl sm:rounded-full shadow-2xl" style={{
+                    background: isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.7)',
                     backdropFilter: 'blur(32px)',
                     WebkitBackdropFilter: 'blur(32px)',
-                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)'
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.1)',
                 }}>
                     <button
                         id="apply-all-btn"
                         onClick={handleApplyAll}
-                        className="btn-primary px-8 py-3 rounded-full shadow-2xl shadow-blue-500/20 text-[15px] font-bold flex items-center gap-2 hover:scale-105 transition-all"
+                        className="btn-primary w-full sm:w-auto px-6 sm:px-8 py-3 rounded-2xl sm:rounded-full shadow-xl shadow-blue-500/20 text-[14px] sm:text-[15px] font-bold flex items-center justify-center gap-2 hover:scale-105 transition-all"
                     >
-                        <Save size={20} /> Apply Changes
+                        <Save size={18} /> <span>Apply Changes</span>
                     </button>
 
                     <button
                         onClick={handleCancelAll}
-                        className={`px-6 py-3 rounded-full border transition-all font-semibold text-[14px] ${isDark
+                        className={`w-full sm:w-auto px-6 py-3 rounded-2xl sm:rounded-full border transition-all font-semibold text-[13px] sm:text-[14px] flex items-center justify-center ${isDark
                             ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
                             : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
                             }`}
