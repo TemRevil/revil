@@ -1531,12 +1531,12 @@ export default function DSettings() {
             {/* Sticky Action Bar */}
             {
                 hasUnsavedChanges && (
-                    <div className="fixed bottom-8 inset-x-0 mx-auto z-[5000] w-[90%] sm:w-fit px-4 flex justify-center animate-slide-up">
-                        <div className="flex items-center gap-3 sm:gap-4 p-2.5 sm:p-4 rounded-full shadow-2xl border" style={{
-                            background: isDark ? 'rgba(10, 10, 12, 0.85)' : 'rgba(255, 255, 255, 0.85)',
+                    <div className="sticky bottom-8 z-[5000] w-full flex justify-center mt-8 animate-slide-up pointer-events-none">
+                        <div className="flex items-center gap-3 sm:gap-4 p-2.5 sm:p-4 rounded-full shadow-2xl border pointer-events-auto" style={{
+                            background: isDark ? 'rgba(10, 10, 12, 0.9)' : 'rgba(255, 255, 255, 0.9)',
                             backdropFilter: 'blur(32px)',
                             WebkitBackdropFilter: 'blur(32px)',
-                            borderColor: 'rgba(255, 255, 255, 0.12)',
+                            borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
                         }}>
                             <button
                                 id="apply-all-btn"
