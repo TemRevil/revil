@@ -714,7 +714,7 @@ const DCanary = () => {
                                                 <h4 className="text-sm font-bold m-0 truncate" style={{ color: isDark ? '#fff' : '#000' }}>{email.name}</h4>
                                                 <p className="m-0 text-[11px] opacity-60 line-clamp-1">{email.message}</p>
                                                 <div className="flex items-center gap-2 mt-1">
-                                                    <span className="text-[9px] font-bold opacity-40">{new Date(email.timestamp).toLocaleDateString()}</span>
+                                                    <span className="text-[9px] font-bold opacity-40">{new Date(email.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                                                     {email.attachments.length > 0 && (
                                                         <div className="flex items-center gap-1 text-[9px] font-bold text-blue-500">
                                                             <Paperclip size={10} />
@@ -780,7 +780,7 @@ const DCanary = () => {
                                                         {selectedEmail.name}
                                                     </h2>
                                                     <div className="flex items-center gap-2 text-xs font-medium opacity-50">
-                                                        <span>{new Date(selectedEmail.timestamp).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                                        <span>{new Date(selectedEmail.timestamp).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
                                                         <span>•</span>
                                                         <span>{new Date(selectedEmail.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
                                                     </div>
