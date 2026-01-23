@@ -113,38 +113,43 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             if (currentSection === 'dashboard' || currentSection === 'secret') return;
 
             try {
-                const docRef = doc(db, 'Settings', 'Analytics');
+                const docRef = doc(db, 'Settings', 'Views');
                 const docSnap = await getDoc(docRef);
 
                 const hasVisited = localStorage.getItem('revil_visitor_active');
                 const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
-                let updateData: any = {};
+                let currentTotal = 0;
+                let currentUnique = 0;
+                let daily = {} as any;
 
-                if (!docSnap.exists()) {
-                    // Initialize if doesn't exist
-                    updateData = {
-                        TotalViews: 1,
-                        UniqueViews: 1,
-                        Daily: {
-                            [today]: { total: 1, unique: 1 }
-                        }
-                    };
-                    localStorage.setItem('revil_visitor_active', 'true');
-                } else {
+                if (docSnap.exists()) {
                     const data = docSnap.data();
-                    const daily = data.Daily || {};
-                    const todayStats = daily[today] || { total: 0, unique: 0 };
-
-                    updateData['TotalViews'] = (data.TotalViews || 0) + 1;
-                    updateData[`Daily.${today}.total`] = todayStats.total + 1;
-
-                    if (!hasVisited) {
-                        updateData['UniqueViews'] = (data.UniqueViews || 0) + 1;
-                        updateData[`Daily.${today}.unique`] = todayStats.unique + 1;
-                        localStorage.setItem('revil_visitor_active', 'true');
-                    }
+                    const main = data.Main || {};
+                    currentTotal = parseInt(main["Total Reach"] || '0');
+                    currentUnique = parseInt(main["Reach (Per Device)"] || '0');
+                    daily = data.Daily || {};
                 }
+
+                const newTotal = currentTotal + 1;
+                const todayStats = daily[today] || { total: 0, unique: 0 };
+                const newTodayTotal = todayStats.total + 1;
+                let newUnique = currentUnique;
+                let newTodayUnique = todayStats.unique;
+
+                if (!hasVisited) {
+                    newUnique = currentUnique + 1;
+                    newTodayUnique = todayStats.unique + 1;
+                    localStorage.setItem('revil_visitor_active', 'true');
+                }
+
+                const updateData: any = {
+                    "Main.Total Reach": String(newTotal),
+                    "Main.Reach (Per Device)": String(newUnique),
+                    "Main.Today's Viewers": String(newTodayTotal),
+                    [`Daily.${today}.total`]: newTodayTotal,
+                    [`Daily.${today}.unique`]: newTodayUnique
+                };
 
                 await updateDoc(docRef, updateData);
             } catch (error) {

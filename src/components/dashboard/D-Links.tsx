@@ -1,16 +1,19 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Check, RefreshCw, ExternalLink, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase, TrendingUp, Users, Eye, Calendar } from 'lucide-react';
+import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase, TrendingUp, Users, Eye, Calendar, Plus, Filter, ArrowUpRight } from 'lucide-react';
 import anime from 'animejs';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Loader from '../reactbits/Loader';
 import Alert, { AlertType } from '../Alert';
 
 interface AnalyticsData {
-    TotalViews: number;
-    UniqueViews: number;
+    Main?: {
+        "Total Reach": string;
+        "Reach (Per Device)": string;
+        "Today's Viewers": string;
+    };
     Daily: Record<string, { total: number; unique: number }>;
 }
 
@@ -26,127 +29,7 @@ interface GeneratedLink {
     recCLI: string;
 }
 
-// Sparkline/Analysis Chart Component
-const VisitorChart = ({ dailyData, isDark }: { dailyData: Record<string, { total: number; unique: number }>, isDark: boolean }) => {
-    const dataPoints = useMemo(() => {
-        const sortedDates = Object.keys(dailyData).sort();
-        // Get last 14 days or all if less
-        const slice = sortedDates.slice(-14);
-        return slice.map(date => ({
-            date: date.split('-').slice(1).join('/'), // MM/DD
-            total: dailyData[date].total,
-            unique: dailyData[date].unique
-        }));
-    }, [dailyData]);
 
-    if (dataPoints.length < 2) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center opacity-40">
-                <TrendingUp size={32} className="mb-2" />
-                <span className="text-sm font-bold uppercase tracking-widest">Collecting Traffic Data...</span>
-            </div>
-        );
-    }
-
-    const maxVal = Math.max(...dataPoints.map(d => d.total), 10);
-    const width = 1000;
-    const height = 250;
-    const padding = 40;
-
-    const getX = (i: number) => (i / (dataPoints.length - 1)) * (width - padding * 2) + padding;
-    const getY = (v: number) => height - ((v / maxVal) * (height - padding * 2) + padding);
-
-    // Path for Total Views
-    const totalPath = dataPoints.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.total)}`).join(' ');
-    const totalArea = `${totalPath} L ${getX(dataPoints.length - 1)} ${height} L ${getX(0)} ${height} Z`;
-
-    // Path for Unique Views
-    const uniquePath = dataPoints.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d.unique)}`).join(' ');
-
-    return (
-        <div className="relative w-full h-[300px] mt-4">
-            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
-                <defs>
-                    <linearGradient id="totalGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="rgba(59, 130, 246, 0.3)" />
-                        <stop offset="100%" stopColor="rgba(59, 130, 246, 0.0)" />
-                    </linearGradient>
-                </defs>
-
-                {/* Grid Lines */}
-                {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
-                    <line
-                        key={i}
-                        x1={padding}
-                        y1={getY(maxVal * p)}
-                        x2={width - padding}
-                        y2={getY(maxVal * p)}
-                        stroke={isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}
-                        strokeDasharray="4 4"
-                    />
-                ))}
-
-                {/* Areas */}
-                <motion.path
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 1 }}
-                    d={totalArea}
-                    fill="url(#totalGradient)"
-                />
-
-                {/* Lines */}
-                <motion.path
-                    initial={{ pathLength: 0, opacity: 0 }}
-                    animate={{ pathLength: 1, opacity: 1 }}
-                    transition={{ duration: 1.5, ease: "easeInOut" }}
-                    d={totalPath}
-                    fill="none"
-                    stroke="rgb(59, 130, 246)"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                />
-
-                <motion.path
-                    initial={{ pathLength: 0, opacity: 0 }}
-                    animate={{ pathLength: 1, opacity: 0.6 }}
-                    transition={{ duration: 2, ease: "easeInOut", delay: 0.5 }}
-                    d={uniquePath}
-                    fill="none"
-                    stroke="#8b5cf6"
-                    strokeWidth="3"
-                    strokeDasharray="8 6"
-                    strokeLinecap="round"
-                />
-
-                {/* Points */}
-                {dataPoints.map((d, i) => (
-                    <g key={i} className="group/point">
-                        <circle
-                            cx={getX(i)}
-                            cy={getY(d.total)}
-                            r="6"
-                            fill={isDark ? "#121212" : "#fff"}
-                            stroke="rgb(59, 130, 246)"
-                            strokeWidth="3"
-                            className="transition-all duration-300 group-hover/point:r-8"
-                        />
-                        <text
-                            x={getX(i)}
-                            y={height - 5}
-                            textAnchor="middle"
-                            className="text-[14px] fill-current opacity-40 font-bold"
-                            style={{ fill: isDark ? '#fff' : '#000' }}
-                        >
-                            {d.date}
-                        </text>
-                    </g>
-                ))}
-            </svg>
-        </div>
-    );
-};
 
 const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; onClose: () => void; data: string; isDark: boolean; linkName: string }) => {
     if (!isOpen) return null;
@@ -281,6 +164,27 @@ const DLinks = () => {
         type: 'success',
         message: ''
     });
+    const [activeSection, setActiveSection] = useState<'analysis' | 'campaigns'>('analysis');
+    const [isTransitioning, setIsTransitioning] = useState(false);
+    const directionRef = useRef<number>(1);
+    const hasAnimatedRef = useRef<string | null>(null);
+    const [revealedSections, setRevealedSections] = useState<Record<string, boolean>>({
+        analysis: false,
+        campaigns: false
+    });
+
+    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    useEffect(() => {
+        const handleResize = () => setWindowWidth(window.innerWidth);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    const isExtraSmall = windowWidth < 400;
+
+    const tabPadding = isExtraSmall ? '8px 12px' : '10px 16px';
+    const tabFontSize = isExtraSmall ? '13px' : '15px';
+    const iconSize = isExtraSmall ? 16 : 18;
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
@@ -292,10 +196,64 @@ const DLinks = () => {
         };
     }, []);
 
+    const handleSectionChange = (newSection: 'analysis' | 'campaigns') => {
+        if (newSection === activeSection || isTransitioning) return;
+
+        hasAnimatedRef.current = null;
+        setRevealedSections(prev => ({ ...prev, [newSection]: false }));
+
+        const indices: Record<string, number> = { analysis: 0, campaigns: 1 };
+        const direction = indices[newSection] > indices[activeSection] ? 1 : -1;
+        directionRef.current = direction;
+        setIsTransitioning(true);
+
+        anime({
+            targets: '.links-tab-content',
+            translateX: [0, -direction * 30],
+            opacity: [1, 0],
+            duration: 150,
+            easing: 'easeInQuad',
+            complete: () => {
+                setActiveSection(newSection);
+            }
+        });
+    };
+
     useEffect(() => {
-        const unsubLinks = onSnapshot(doc(db, 'Settings', 'Views'), (docSnap) => {
+        const runAnimation = () => {
+            const targets = document.querySelectorAll('.links-tab-content');
+            if (targets.length === 0) return;
+            if (hasAnimatedRef.current === activeSection) return;
+
+            hasAnimatedRef.current = activeSection;
+
+            const timeline = anime.timeline({
+                easing: 'easeOutExpo',
+                complete: () => {
+                    setRevealedSections(prev => ({ ...prev, [activeSection]: true }));
+                    setIsTransitioning(false);
+                }
+            });
+
+            timeline.add({
+                targets: '.links-tab-content',
+                opacity: [0, 1],
+                translateX: [directionRef.current * 40, 0],
+                duration: 300
+            }, 0);
+        };
+
+        runAnimation();
+        const tid = setTimeout(runAnimation, 30);
+        return () => clearTimeout(tid);
+    }, [activeSection]);
+
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'Settings', 'Views'), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
+
+                // Process Links
                 const linksArray: GeneratedLink[] = [];
                 Object.keys(data).forEach(key => {
                     if (!isNaN(parseInt(key))) {
@@ -315,19 +273,13 @@ const DLinks = () => {
                 });
                 linksArray.sort((a, b) => parseInt(b.id) - parseInt(a.id));
                 setGeneratedLinks(linksArray);
+
+                // Process Analytics
+                setAnalytics(data as AnalyticsData);
             }
         });
 
-        const unsubAnalytics = onSnapshot(doc(db, 'Settings', 'Analytics'), (docSnap) => {
-            if (docSnap.exists()) {
-                setAnalytics(docSnap.data() as AnalyticsData);
-            }
-        });
-
-        return () => {
-            unsubLinks();
-            unsubAnalytics();
-        };
+        return () => unsub();
     }, []);
 
     useEffect(() => {
@@ -446,177 +398,259 @@ const DLinks = () => {
     };
 
     return (
-        <div className="links-section-container flex flex-row gap-8 h-full opacity-0 overflow-hidden">
+        <div className="links-section-container flex flex-col gap-8 h-full opacity-0 overflow-y-auto lg:overflow-hidden p-1 sm:p-0">
             <Loader isOpen={isLoading} isFullScreen={true} />
 
-            {/* Left Column: Analysis Magic Place */}
-            <div className="flex-[1.4] flex flex-col gap-8 overflow-y-auto custom-scrollbar pr-2 pb-12">
 
-                {/* Site Pulse Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="heading-lg m-0 flex items-center gap-3">
-                            <Activity className="text-blue-500 animate-pulse" size={32} />
-                            Site Analysis
-                        </h1>
-                        <p className="text-muted mt-1">Real-time visitor patterns and engagement</p>
-                    </div>
-                </div>
-
-                {/* Counter Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                    <div className="glass-panel p-8 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Eye size={48} />
-                        </div>
-                        <div className="flex flex-col gap-2">
-                            <span className="text-xs uppercase font-black tracking-widest text-blue-500">Total Reach</span>
-                            <span className="text-4xl font-black text-primary">{analytics?.TotalViews?.toLocaleString() || '0'}</span>
-                            <div className="flex items-center gap-2 mt-4 text-xs font-bold text-muted">
-                                <span className="bg-blue-500/10 text-blue-500 px-2 py-1 rounded">GLOBAL VIEWS</span>
-                                <span>Impressions on site</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="glass-panel p-8 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Users size={48} />
-                        </div>
-                        <div className="flex flex-col gap-2">
-                            <span className="text-xs uppercase font-black tracking-widest text-purple-500">Unique Souls</span>
-                            <span className="text-4xl font-black text-primary">{analytics?.UniqueViews?.toLocaleString() || '0'}</span>
-                            <div className="flex items-center gap-2 mt-4 text-xs font-bold text-muted">
-                                <span className="bg-purple-500/10 text-purple-500 px-2 py-1 rounded">IDENTITY TRACKED</span>
-                                <span>Unique device count</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="glass-panel p-8 relative overflow-hidden group lg:hidden xl:flex">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Calendar size={48} />
-                        </div>
-                        <div className="flex flex-col gap-2">
-                            <span className="text-xs uppercase font-black tracking-widest text-emerald-500">Today's Pulse</span>
-                            <span className="text-4xl font-black text-primary">{analytics?.Daily?.[new Date().toISOString().split('T')[0]]?.total || '0'}</span>
-                            <div className="flex items-center gap-2 mt-4 text-xs font-bold text-muted">
-                                <span className="bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded">LIVE TRAFFIC</span>
-                                <span>Views in 24h</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Analysis Chart */}
-                <div className="glass-panel p-10 flex flex-col gap-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <div>
-                            <h3 className="heading-sm m-0">Traffic Trends</h3>
-                            <p className="text-xs text-muted opacity-60">Visualizing view patterns over the last 14 days</p>
-                        </div>
-                        <div className="flex gap-4">
-                            <div className="flex items-center gap-2 text-xs font-bold text-blue-500">
-                                <div className="w-3 h-3 rounded-full bg-blue-500" /> Total
-                            </div>
-                            <div className="flex items-center gap-2 text-xs font-bold text-purple-500">
-                                <div className="w-3 h-3 rounded-full bg-purple-500" /> Unique
-                            </div>
-                        </div>
-                    </div>
-                    <VisitorChart dailyData={analytics?.Daily || {}} isDark={isDark} />
-                </div>
-
-                {/* Link Generator Area - Re-styled */}
-                <div className="glass-panel p-10 border-dashed border-2">
-                    <div className="flex flex-col gap-1 mb-6">
-                        <h3 className="heading-sm m-0">Campaign Architect</h3>
-                        <p className="text-xs text-muted">Craft new entrance points for analysis</p>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-6 mb-8">
-                        <div className="flex-1 min-w-[200px] flex flex-col gap-2.5">
-                            <label className="input-label m-0">Target Name</label>
-                            <input
-                                type="text"
-                                className="input-field"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                placeholder="Client or Source Name"
-                            />
-                        </div>
-                        <div className="flex-1 min-w-[200px] flex flex-col gap-2.5">
-                            <label className="input-label m-0">Campaign Context</label>
-                            <input
-                                type="text"
-                                className="input-field"
-                                value={forField}
-                                onChange={(e) => setForField(e.target.value)}
-                                placeholder="e.g. Portfolio Review, Job Req"
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={generateCode}
-                        disabled={!name.trim() || !forField.trim()}
-                        className="btn btn-primary w-full px-8 py-5 rounded-2xl shadow-xl shadow-blue-500/10 group transition-all"
-                    >
-                        <RefreshCw size={20} className="group-active:rotate-180 transition-transform duration-500" />
-                        Initialize Campaign
-                    </button>
-                </div>
+            {/* Section Tabs */}
+            <div className="flex overflow-x-auto" style={{
+                gap: isExtraSmall ? '4px' : '8px',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                padding: isExtraSmall ? '4px' : '6px',
+                borderRadius: isExtraSmall ? '12px' : '14px',
+                width: isExtraSmall ? '100%' : 'fit-content'
+            }}>
+                <button
+                    onClick={() => handleSectionChange('analysis')}
+                    className="flex items-center whitespace-nowrap cursor-pointer transition-all font-semibold"
+                    style={{
+                        gap: isExtraSmall ? '6px' : '8px',
+                        padding: tabPadding,
+                        borderRadius: isExtraSmall ? '8px' : '10px',
+                        backgroundColor: activeSection === 'analysis'
+                            ? (isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)')
+                            : 'transparent',
+                        color: activeSection === 'analysis' ? 'rgb(59, 130, 246)' : 'var(--text-secondary)',
+                        fontSize: tabFontSize,
+                        flex: isExtraSmall ? 1 : 'none'
+                    }}
+                >
+                    <Activity size={iconSize} />
+                    {isExtraSmall ? 'Analysis' : 'Site Analysis'}
+                </button>
+                <button
+                    onClick={() => handleSectionChange('campaigns')}
+                    className="flex items-center whitespace-nowrap cursor-pointer transition-all font-semibold"
+                    style={{
+                        gap: isExtraSmall ? '6px' : '8px',
+                        padding: tabPadding,
+                        borderRadius: isExtraSmall ? '8px' : '10px',
+                        backgroundColor: activeSection === 'campaigns'
+                            ? (isDark ? 'rgba(168, 85, 247, 0.2)' : 'rgba(168, 85, 247, 0.1)')
+                            : 'transparent',
+                        color: activeSection === 'campaigns' ? 'rgb(168, 85, 247)' : 'var(--text-secondary)',
+                        fontSize: tabFontSize,
+                        flex: isExtraSmall ? 1 : 'none'
+                    }}
+                >
+                    <Plus size={iconSize} />
+                    {isExtraSmall ? generatedLinks.length : `Portals (${generatedLinks.length})`}
+                </button>
             </div>
 
-            {/* Right Column: Mini Link Browser */}
-            <div className="flex-1 flex flex-col gap-6 overflow-hidden">
-                <div className="flex items-center justify-between">
-                    <h3 className="heading-sm m-0">Active Portals</h3>
-                    <span className="text-xs font-mono opacity-40">{generatedLinks.length} TOTAL</span>
-                </div>
+            <div className="flex-1 relative overflow-hidden">
+                <div className="links-tab-content h-full overflow-y-auto custom-scrollbar pr-1"
+                    style={{ opacity: revealedSections[activeSection] ? 1 : 0 }}>
 
-                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-3">
-                    {generatedLinks.length === 0 ? (
-                        <div className="p-12 text-center text-sec glass-surface rounded-3xl border-dashed">
-                            Empty portal list.
-                        </div>
-                    ) : (
-                        generatedLinks.map((link) => (
-                            <div key={link.id}
-                                onClick={() => setActivityLink(link)}
-                                className="glass-panel p-4 flex flex-col gap-4 group cursor-pointer hover:border-blue-500/30 transition-all border border-transparent"
-                            >
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                                            <ExternalLink size={14} className="text-blue-500" />
+                    {activeSection === 'analysis' ? (
+                        <div className="flex flex-col gap-8 pb-12">
+                            <div className="flex flex-col gap-1">
+                                <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Site Pulse</h1>
+                                <p className="text-muted text-sm">Real-time visitor patterns and engagement</p>
+                            </div>
+
+                            {/* Counter Cards */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div className="glass-panel p-6 sm:p-8 relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                        <Eye className="w-10 h-10 sm:w-12 sm:h-12" />
+                                    </div>
+                                    <div className="flex flex-col gap-1 sm:gap-2">
+                                        <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-blue-500">Total Reach</span>
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Total Reach"] || '0'}</span>
+                                            {/* Simulated Trend */}
+                                            <span className="text-[10px] font-bold text-emerald-500 flex items-center bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                                <TrendingUp size={10} className="mr-1" /> +12%
+                                            </span>
                                         </div>
-                                        <div className="flex flex-col">
-                                            <span className="font-bold text-sm truncate max-w-[150px]">{link.name}</span>
-                                            <span className="text-[10px] opacity-40 uppercase tracking-tighter">{link.forField}</span>
+                                        <div className="flex items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
+                                            <span className="bg-blue-500/10 text-blue-500 px-2 py-1 rounded">GLOBAL VIEWS</span>
+                                            <span className="hidden sm:inline">Impressions on site</span>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex flex-col items-end">
-                                            <span className="font-black text-blue-500 text-lg">{link.counts}</span>
-                                            <span className="text-[8px] font-bold opacity-30 mt-[-4px]">HITS</span>
+                                </div>
+
+                                <div className="glass-panel p-6 sm:p-8 relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                        <Users className="w-10 h-10 sm:w-12 sm:h-12" />
+                                    </div>
+                                    <div className="flex flex-col gap-1 sm:gap-2">
+                                        <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-purple-500">Reach (Per Device)</span>
+                                        <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Reach (Per Device)"] || '0'}</span>
+                                        <div className="flex items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
+                                            <span className="bg-purple-500/10 text-purple-500 px-2 py-1 rounded">IDENTITY TRACKED</span>
+                                            <span className="hidden sm:inline">Unique device count</span>
                                         </div>
-                                        <button onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
-                                            className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-white/10 rounded-lg transition-all">
-                                            <MoreVertical size={16} />
+                                    </div>
+                                </div>
+
+                                <div className="glass-panel p-6 sm:p-8 relative overflow-hidden group sm:col-span-2 lg:col-span-1">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                        <Calendar size={48} className="w-10 h-10 sm:w-12 sm:h-12" />
+                                    </div>
+                                    <div className="flex flex-col gap-1 sm:gap-2">
+                                        <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-emerald-500">Today's Viewers</span>
+                                        <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Today's Viewers"] || '0'}</span>
+                                        <div className="flex items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
+                                            <span className="bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded">LIVE TRAFFIC</span>
+                                            <span className="hidden sm:inline">Views in 24h</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+
+
+                        </div>
+
+                    ) : (
+                        <div className="flex flex-col gap-8 pb-12 lg:pr-4">
+                            <div className="flex flex-col gap-1">
+                                <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Portal HQ</h1>
+                                <p className="text-muted text-sm">Configure and monitor entrance campaigns</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+                                {/* Generator Sidebar */}
+                                <div className="xl:col-span-4 flex flex-col gap-6">
+                                    <div className="glass-panel p-8 border-dashed border-2 relative overflow-hidden group">
+                                        <div className="absolute -top-10 -right-10 w-40 h-40 bg-blue-500/5 blur-3xl rounded-full" />
+
+                                        <div className="flex flex-col gap-1 mb-6 relative z-10">
+                                            <h3 className="heading-sm m-0 flex items-center gap-2">
+                                                <Plus size={18} className="text-blue-500" />
+                                                Campaign Architect
+                                            </h3>
+                                            <p className="text-[11px] text-muted font-medium">Generate a new secure tracking link</p>
+                                        </div>
+
+                                        <div className="flex flex-col gap-5 mb-6 relative z-10">
+                                            <div className="flex flex-col gap-2">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted opacity-60">Target Identifier</label>
+                                                <input
+                                                    type="text"
+                                                    className="input-field !py-3 !text-sm"
+                                                    value={name}
+                                                    onChange={(e) => setName(e.target.value)}
+                                                    placeholder="e.g. Google HR"
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted opacity-60">Portal Context</label>
+                                                <input
+                                                    type="text"
+                                                    className="input-field !py-3 !text-sm"
+                                                    value={forField}
+                                                    onChange={(e) => setForField(e.target.value)}
+                                                    placeholder="e.g. Senior Role Application"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={generateCode}
+                                            disabled={!name.trim() || !forField.trim()}
+                                            className="btn btn-primary w-full py-4 rounded-xl shadow-lg shadow-blue-500/10 group transition-all relative z-10 overflow-hidden"
+                                        >
+                                            <RefreshCw size={18} className="group-active:rotate-180 transition-transform duration-500" />
+                                            Deploy Portal
                                         </button>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <code className="flex-1 p-2 bg-black/10 dark:bg-black/40 rounded-lg text-[10px] font-mono truncate">
-                                        {link.fullLink}
-                                    </code>
-                                    <button onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
-                                        className="p-2 hover:bg-blue-500/10 text-blue-500 rounded-lg transition-all">
-                                        {copied === link.id ? <Check size={14} /> : <Copy size={14} />}
-                                    </button>
+
+                                {/* Link Explorer */}
+                                <div className="xl:col-span-8 flex flex-col gap-6">
+                                    <div className="flex items-center justify-between px-1">
+                                        <span className="text-[10px] font-black opacity-30 uppercase tracking-[0.2em]">Active Portals ({generatedLinks.length})</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {generatedLinks.length === 0 ? (
+                                            <div className="col-span-full p-12 text-center text-sec glass-surface rounded-3xl border-dashed">
+                                                Empty portal list.
+                                            </div>
+                                        ) : (
+                                            generatedLinks.map((link) => (
+                                                <motion.div
+                                                    key={link.id}
+                                                    layout
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    onClick={() => setActivityLink(link)}
+                                                    className="glass-panel p-5 flex flex-col gap-5 group cursor-pointer hover:border-blue-500/30 transition-all border border-transparent relative overflow-hidden h-fit"
+                                                >
+                                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[60px] opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                                                    <div className="flex items-start justify-between relative z-10">
+                                                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                                                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-500">
+                                                                <Activity size={22} className="text-blue-500" />
+                                                            </div>
+                                                            <div className="flex flex-col min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-black text-sm tracking-tight text-primary truncate">{link.name}</span>
+                                                                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/10 uppercase tracking-widest shrink-0">Active</span>
+                                                                </div>
+                                                                <span className="text-[11px] text-muted opacity-50 font-medium truncate mt-0.5">{link.forField}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-4 shrink-0">
+                                                            <div className="flex flex-col items-end">
+                                                                <div className="flex items-baseline gap-1">
+                                                                    <span className="text-2xl font-black text-primary leading-none group-hover:text-blue-500 transition-colors">{link.counts}</span>
+                                                                    <span className="text-[9px] font-bold text-muted uppercase tracking-tighter">Hits</span>
+                                                                </div>
+                                                                <div className="w-12 h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
+                                                                    <motion.div
+                                                                        className="h-full bg-blue-500"
+                                                                        initial={{ width: 0 }}
+                                                                        animate={{ width: `${Math.min(link.counts * 2, 100)}%` }}
+                                                                        transition={{ duration: 1, delay: 0.2 }}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
+                                                                className="p-2 hover:bg-white/10 rounded-xl transition-all text-muted opacity-0 group-hover:opacity-100">
+                                                                <MoreVertical size={18} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-3 relative z-10">
+                                                        <div className="flex-1 relative group/link">
+                                                            <div className="relative flex items-center gap-3 px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-2xl group-hover:border-blue-500/30 transition-all overflow-hidden shadow-sm">
+                                                                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                                                                <code className="flex-1 text-[11px] font-mono text-[var(--text-primary)] truncate tracking-tight font-semibold">
+                                                                    {link.fullLink}
+                                                                </code>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
+                                                            className="w-11 h-11 flex items-center justify-center bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-2xl border border-blue-500/20 transition-all shadow-lg shadow-blue-500/5 shrink-0"
+                                                            title="Copy Link"
+                                                        >
+                                                            {copied === link.id ? <Check size={18} /> : <Copy size={18} />}
+                                                        </button>
+                                                    </div>
+                                                </motion.div>
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        ))
+                        </div>
                     )}
                 </div>
             </div>
