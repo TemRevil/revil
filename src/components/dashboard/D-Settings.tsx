@@ -1313,24 +1313,24 @@ export default function DSettings() {
 
                 {activeTab === 'stack' && (
                     <div className="settings-section flex flex-col gap-6" style={{ opacity: revealedTabs.stack ? 1 : 0 }}>
-                        <div className="settings-panel glass-panel p-6 flex-1 flex flex-col gap-6" style={{ opacity: revealedTabs.stack ? 1 : 0 }}>
+                        <div className="settings-panel glass-panel p-3 sm:p-4 md:p-6 flex-1 flex flex-col gap-3 sm:gap-4 md:gap-6" style={{ opacity: revealedTabs.stack ? 1 : 0 }}>
                             <div className="flex-row-between">
                                 <h3 className="heading-md text-base sm:text-lg md:text-xl">Tech Stack</h3>
                                 <button onClick={() => setStackModalOpen(true)} className="btn btn-primary" aria-label="Add stack">
                                     <Plus size={18} /> <span className="hidden sm:inline">Add Stack</span>
                                 </button>
                             </div>
-                            <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-6 content-start">
+                            <div className="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-6 content-start">
                                 {stackItems.length === 0 ? (
                                     <div className="col-span-full text-center p-12 text-sec">No stack items. Add your tech stack!</div>
                                 ) : stackItems.map(item => (
-                                    <div key={item.id} className="p-6 rounded-2xl bg-gray-500/5 border border-gray-500/5 flex flex-col gap-3.5 relative">
-                                        <div className="absolute top-4 right-4 flex gap-1">
-                                            <button onClick={() => { setEditingStack(item); setStackModalOpen(true); }} className="btn-icon p-1.5"><Edit2 size={16} /></button>
-                                            <button onClick={() => handleDeleteStack(item.id)} className="btn-icon p-1.5 text-red-500 hover:bg-red-500/10"><Trash2 size={16} /></button>
+                                    <div key={item.id} className="p-3 sm:p-4 md:p-6 rounded-xl sm:rounded-2xl bg-gray-500/5 border border-gray-500/5 flex flex-col gap-2 sm:gap-3 md:gap-3.5 relative min-w-0">
+                                        <div className="absolute top-2 right-2 sm:top-3 sm:right-3 md:top-4 md:right-4 flex gap-0.5 sm:gap-1">
+                                            <button onClick={() => { setEditingStack(item); setStackModalOpen(true); }} className="btn-icon p-1 sm:p-1.5"><Edit2 size={14} className="sm:w-4 sm:h-4" /></button>
+                                            <button onClick={() => handleDeleteStack(item.id)} className="btn-icon p-1 sm:p-1.5 text-red-500 hover:bg-red-500/10"><Trash2 size={14} className="sm:w-4 sm:h-4" /></button>
                                         </div>
-                                        {item.icon ? <img src={item.icon} alt={item.name} className="w-16 h-16 opacity-90 object-contain" /> : <Code size={60} className="text-gray-500/50" />}
-                                        <h4 className="heading-sm text-base">{item.name}</h4>
+                                        {item.icon ? <img src={item.icon} alt={item.name} className="w-10 h-10 sm:w-12 sm:h-12 md:w-16 md:h-16 opacity-90 object-contain" /> : <Code size={40} className="text-gray-500/50 sm:w-12 sm:h-12 md:w-[60px] md:h-[60px]" />}
+                                        <h4 className="heading-sm text-xs sm:text-sm md:text-base truncate">{item.name}</h4>
                                         <div>
                                             <div className="flex-row-between mb-1.5">
                                                 <span className="text-xs text-sec">Proficiency</span>
