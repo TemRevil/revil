@@ -14,9 +14,9 @@ import firebaseIcon from '../assets/svgs/firebase.svg';
 
 import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import Counter from './reactbits/Counter';
 
-const isVideoFile = (url: string) => {
+
+export const isVideoFile = (url: string) => {
     return url.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || url.includes('/videos/');
 };
 
@@ -84,7 +84,7 @@ const GlassPanel = ({ children, style, className = "", isDark }: any) => (
     </div>
 );
 
-const VideoPlayer = React.memo(({ src, isActive, isMobile }: { src: string, isActive: boolean, isMobile: boolean }) => {
+const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: string, isActive: boolean, isMobile: boolean, style?: React.CSSProperties }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [playing, setPlaying] = useState(true);
@@ -254,7 +254,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile }: { src: string, isAc
     };
 
     return (
-        <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#000' }}>
+        <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, ...style }}>
             <video
                 ref={videoRef}
                 src={src}
@@ -270,10 +270,12 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile }: { src: string, isAc
                     objectFit: 'contain',
                     cursor: 'pointer',
                     display: 'block',
-                    margin: '0 auto'
+                    margin: '0 auto',
+                    position: 'relative',
+                    zIndex: 1
                 }}
             />
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)', pointerEvents: 'none', zIndex: 2 }} />
 
             {/* Custom Blurry Controls - Separated UI */}
             <AnimatePresence>
@@ -308,7 +310,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile }: { src: string, isAc
                                             color: 'white',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                                             pointerEvents: 'auto',
-                                            cursor: 'pointer', zIndex: 12,
+                                            cursor: 'pointer', zIndex: 6,
                                             boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
                                         }}
                                         onClick={togglePlay}
@@ -334,7 +336,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile }: { src: string, isAc
                                 alignItems: 'stretch',
                                 gap: isMobile ? '6px' : '8px',
                                 pointerEvents: 'none',
-                                zIndex: 10,
+                                zIndex: 5,
                                 transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
                             }}
                         >
@@ -805,22 +807,25 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                     willChange: 'transform' // Ensure hardware acceleration
                                 }}
                             >
-                                <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
+                                <div style={{ position: 'absolute', inset: 0 }}>
                                     {sortedMedia.map((media, i) => (
                                         <div key={i} style={{
                                             position: 'absolute', inset: 0,
                                             opacity: i === currentImageIndex ? 1 : 0,
                                             transform: i === currentImageIndex ? 'scale(1)' : 'scale(1.08)',
                                             transition: 'all 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                                            zIndex: i === currentImageIndex ? 2 : 0 // Ensure active slide covers base layer
+                                            pointerEvents: i === currentImageIndex ? 'auto' : 'none',
+                                            zIndex: i === currentImageIndex
+                                                ? (isVideoFile(media) ? 3 : 1)
+                                                : 0
                                         }}>
                                             {isVideoFile(media) ? (
                                                 <VideoPlayer src={media} isActive={i === currentImageIndex} isMobile={isMobile} />
                                             ) : (
-                                                <>
-                                                    <img src={media} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
-                                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)' }} />
-                                                </>
+                                                <div style={{ position: 'absolute', inset: 0 }}>
+                                                    <img src={media} style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, zIndex: 1 }} alt="" />
+                                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)', zIndex: 2 }} />
+                                                </div>
                                             )}
                                         </div>
                                     ))}
@@ -834,7 +839,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                             width: isMobile ? '32px' : '60px', height: isMobile ? '32px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
                                             backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                                            zIndex: 25, transition: 'all 0.3s'
+                                            zIndex: 8, transition: 'all 0.3s'
                                         }}>
                                             <ChevronLeft size={isMobile ? 16 : 28} />
                                         </button>
@@ -843,7 +848,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                             width: isMobile ? '32px' : '60px', height: isMobile ? '32px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
                                             backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                                            zIndex: 25, transition: 'all 0.3s'
+                                            zIndex: 8, transition: 'all 0.3s'
                                         }}>
                                             <ChevronRight size={isMobile ? 16 : 28} />
                                         </button>
@@ -852,7 +857,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
 
                                 {/* Indicator Dots (Hidden on mobile to save space) */}
                                 {!isMobile && (
-                                    <div style={{ position: 'absolute', bottom: '30px', left: '0', right: '0', display: 'flex', justifyContent: 'center', gap: '12px', zIndex: 10 }}>
+                                    <div style={{ position: 'absolute', bottom: '30px', left: '0', right: '0', display: 'flex', justifyContent: 'center', gap: '12px', zIndex: 2 }}>
                                         {sortedMedia.map((_, i) => (
                                             <div key={i} onClick={() => setCurrentImageIndex(i)} style={{
                                                 width: i === currentImageIndex ? '40px' : '10px', height: '10px', borderRadius: '5px',
@@ -1118,61 +1123,33 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px' }}>
                                     <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                         <div style={{ marginBottom: '8px' }}>
-                                            <Counter
-                                                value={typeof project.githubViews === 'number' ? project.githubViews : 0}
-                                                fontSize={30}
-                                                padding={8}
-                                                textColor="white"
-                                                fontWeight={950}
-                                                gradientHeight={0}
-                                                gap={2}
-                                                discrete={true}
-                                            />
+                                            <span style={{ fontSize: '30px', fontWeight: 950, color: 'white' }}>
+                                                {typeof project.githubViews === 'number' ? project.githubViews : 0}
+                                            </span>
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Github</div>
                                     </div>
                                     <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                         <div style={{ marginBottom: '8px' }}>
-                                            <Counter
-                                                value={typeof project.liveViews === 'number' ? project.liveViews : 0}
-                                                fontSize={30}
-                                                padding={8}
-                                                textColor="white"
-                                                fontWeight={950}
-                                                gradientHeight={0}
-                                                gap={2}
-                                                discrete={true}
-                                            />
+                                            <span style={{ fontSize: '30px', fontWeight: 950, color: 'white' }}>
+                                                {typeof project.liveViews === 'number' ? project.liveViews : 0}
+                                            </span>
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Live</div>
                                     </div>
                                     <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                         <div style={{ marginBottom: '8px' }}>
-                                            <Counter
-                                                value={typeof project.downloadViews === 'number' ? project.downloadViews : 0}
-                                                fontSize={30}
-                                                padding={8}
-                                                textColor="white"
-                                                fontWeight={950}
-                                                gradientHeight={0}
-                                                gap={2}
-                                                discrete={true}
-                                            />
+                                            <span style={{ fontSize: '30px', fontWeight: 950, color: 'white' }}>
+                                                {typeof project.downloadViews === 'number' ? project.downloadViews : 0}
+                                            </span>
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Downloads</div>
                                     </div>
                                     <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                         <div style={{ marginBottom: '8px' }}>
-                                            <Counter
-                                                value={typeof project.views === 'number' ? project.views : 0}
-                                                fontSize={30}
-                                                padding={8}
-                                                textColor="white"
-                                                fontWeight={950}
-                                                gradientHeight={0}
-                                                gap={2}
-                                                discrete={true}
-                                            />
+                                            <span style={{ fontSize: '30px', fontWeight: 950, color: 'white' }}>
+                                                {typeof project.views === 'number' ? project.views : 0}
+                                            </span>
                                         </div>
                                         <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Views</div>
                                     </div>
@@ -1197,7 +1174,8 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                     50% { transform: translateY(15px); opacity: 1; }
                     100% { transform: translateY(15px); opacity: 0; } 
                 }
-                ::-webkit-scrollbar { display: none; }
+                .modal-scroll-container::-webkit-scrollbar { display: none; }
+                .creators-scroll-container::-webkit-scrollbar { display: none; }
                 * { scroll-behavior: smooth; }
             ` }} />
         </motion.div>,

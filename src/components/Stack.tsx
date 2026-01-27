@@ -112,28 +112,19 @@ const Stack = () => {
 
     // Fetch Stack Items
     useEffect(() => {
-        console.log('[Stack] Setting up Firestore listener for Tech Stack...');
         const unsubStack = onSnapshot(doc(db, 'Settings', 'Tech Stack'), (docSnap) => {
-            console.log('[Stack] Tech Stack snapshot received, exists:', docSnap.exists());
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                console.log('[Stack] Raw Firestore data:', data);
-                console.log('[Stack] Data keys:', Object.keys(data));
 
                 const items = Object.entries(data)
                     .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([key, item]: [string, any]) => {
-                        console.log(`[Stack] Processing item ${key}:`, item);
-                        console.log(`[Stack] item.Icon:`, item.Icon);
+                    .map(([, item]: [string, any]) => {
                         return {
                             icon: item.Icon || item.icon,
                             name: item.Name || item.name
                         };
                     });
-                console.log('[Stack] Processed items:', items);
                 setStackItems(items);
-            } else {
-                console.log('[Stack] Tech Stack document does NOT exist!');
             }
         }, (error) => {
             console.error('[Stack] Firestore error:', error);
@@ -163,25 +154,25 @@ const Stack = () => {
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
-            translateX: [-30, 0],
-            duration: 800,
-            easing: 'easeOutQuad'
+            translateX: [-20, 0],
+            duration: 600,
+            easing: 'easeOutExpo'
         });
 
         anime({
             targets: titleRef.current,
             opacity: [0, 1],
-            translateX: [-50, 0],
-            duration: 1000,
-            delay: 200,
-            easing: 'easeOutQuad'
+            translateX: [-30, 0],
+            duration: 800,
+            delay: 100,
+            easing: 'easeOutExpo'
         });
 
         anime({
             targets: containerRef.current,
             opacity: [0, 1],
-            duration: 1000,
-            delay: 400,
+            duration: 800,
+            delay: 200,
             easing: 'easeOutQuad'
         });
     }, []);

@@ -5,8 +5,57 @@ import { X, Search } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 
-import MProjectView, { getStackIcon, getTechColor, Project } from './M-ProjectView';
+import MProjectView, { getStackIcon, getTechColor, Project, isVideoFile } from './M-ProjectView';
 import MContributorView, { Contributor } from './M-ContributorView';
+
+const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        if (isActive) {
+            // Jump to random time when becoming active to show "random frames"
+            if (video.duration) {
+                video.currentTime = Math.random() * video.duration;
+            }
+            video.play().catch(() => { });
+        } else {
+            video.pause();
+        }
+    }, [isActive]);
+
+    // YouTube-style "pick a random starting point" 
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        const setRandomTime = () => {
+            if (video.duration) {
+                video.currentTime = Math.random() * video.duration;
+            }
+        };
+
+        if (video.readyState >= 1) {
+            setRandomTime();
+        } else {
+            video.addEventListener('loadedmetadata', setRandomTime);
+            return () => video.removeEventListener('loadedmetadata', setRandomTime);
+        }
+    }, []);
+
+    return (
+        <video
+            ref={videoRef}
+            src={src}
+            muted
+            loop
+            playsInline
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+        />
+    );
+};
 
 const ProjectCard = ({ project, index, onClick }: { project: Project; index: number; onClick: () => void }) => {
     const cardRef = useRef<HTMLDivElement>(null);
@@ -79,16 +128,23 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                             transform: `translateX(-${(currentImageIndex * 100) / project.images.length}%)`,
                         }}
                     >
-                        {project.images.map((img, i) => (
-                            <div key={i} style={{ width: `${100 / project.images.length}%` }} className="h-full relative overflow-hidden">
-                                <img
-                                    src={img}
-                                    alt={project.title}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
-                            </div>
-                        ))}
+                        {project.images.map((img, i) => {
+                            const isVideo = isVideoFile(img);
+                            return (
+                                <div key={i} style={{ width: `${100 / project.images.length}%` }} className="h-full relative overflow-hidden">
+                                    {isVideo ? (
+                                        <CardVideo src={img} isActive={isHovered && currentImageIndex === i} />
+                                    ) : (
+                                        <img
+                                            src={img}
+                                            alt={project.title}
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                        />
+                                    )}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
 
@@ -413,17 +469,17 @@ const Projects = () => {
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
-            translateX: [-30, 0],
-            duration: 800,
-            easing: 'easeOutQuad'
+            translateX: [-20, 0],
+            duration: 600,
+            easing: 'easeOutExpo'
         });
         anime({
             targets: titleRef.current,
             opacity: [0, 1],
-            translateX: [-50, 0],
-            duration: 1000,
-            delay: 200,
-            easing: 'easeOutQuad'
+            translateX: [-30, 0],
+            duration: 800,
+            delay: 150,
+            easing: 'easeOutExpo'
         });
     }, []);
 

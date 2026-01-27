@@ -5,8 +5,6 @@ import { doc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import anime from 'animejs';
 
-// Mock data removed in favor of real-time Firebase data
-
 export interface ProjectData {
     id?: string;
     name: string;

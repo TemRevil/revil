@@ -89,8 +89,6 @@ const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributor
     const [socials, setSocials] = useState({
         github: '', linkedin: '', facebook: '', instagram: '', portfolio: ''
     });
-    // const [isDark, setIsDark] = useState(false);
-
     // Cropper State
     const [crop, setCrop] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
@@ -126,16 +124,6 @@ const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributor
             setOriginalImageSrc(null);
         }
     }, [isOpen, initialData]);
-
-    /*
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
-    */
 
     const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
         setCroppedAreaPixels(croppedAreaPixels);

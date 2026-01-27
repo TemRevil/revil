@@ -5,7 +5,6 @@ import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Briefcase, C
 const DEFAULT_HERO_URL = "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FHero.image.jpg?alt=media&token=1d698d9b-468a-42e7-92c6-b9cb127a5fc6";
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
-// import firebaseIcon from '../../assets/svgs/firebase.svg';
 import { doc, onSnapshot, setDoc, updateDoc, deleteField, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, getMetadata } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
