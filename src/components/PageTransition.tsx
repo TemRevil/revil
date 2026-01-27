@@ -6,12 +6,13 @@ interface PageTransitionProps {
     onCurtainCovered: () => void;
     onTransitionComplete: () => void;
     nextSectionName?: string;
+    direction?: number;
 }
 
-const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplete, nextSectionName = '' }: PageTransitionProps) => {
+const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplete, nextSectionName = '', direction = 0 }: PageTransitionProps) => {
     const curtainRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
-    const [currentDirection, setCurrentDirection] = useState<'top' | 'bottom' | 'right'>('top');
+    const [currentDirection, setCurrentDirection] = useState<'top' | 'bottom' | 'right' | 'left'>('top');
 
     const displayName = nextSectionName.charAt(0).toUpperCase() + nextSectionName.slice(1);
 
@@ -19,7 +20,6 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
 
     useEffect(() => {
         const handleResize = () => {
-            // Responsive font size: 1/6th of screen width, max 100px, min 40px
             setFontSize(Math.max(40, Math.min(window.innerWidth / 6, 100)));
         };
 
@@ -42,16 +42,20 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
 
     useEffect(() => {
         if (isTransitioning && curtainRef.current) {
-            let direction: 'top' | 'bottom' | 'right' = 'top';
+            let selectedDir: 'top' | 'bottom' | 'right' | 'left' = 'top';
 
-            if (nextSectionName === 'secret') {
-                direction = 'right';
-            } else {
-                const directions: ('top' | 'bottom')[] = ['top', 'bottom'];
-                direction = directions[Math.floor(Math.random() * directions.length)];
-            }
+            // Logic:
+            // direction > 0 (Next/Down): Page comes from Bottom. Curtain should wipe Up (from Bottom).
+            // direction < 0 (Prev/Up): Page comes from Top. Curtain should wipe Down (from Top).
+            // direction = 2 (Secret): Page comes from Right. Curtain should wipe Left (from Right).
+            // direction = -2 (Exit Secret): Page comes from Left. Curtain should wipe Right (from Left).
 
-            setCurrentDirection(direction);
+            if (direction === 2) selectedDir = 'right';
+            else if (direction === -2) selectedDir = 'left';
+            else if (direction > 0) selectedDir = 'bottom';
+            else selectedDir = 'top';
+
+            setCurrentDirection(selectedDir);
 
             curtainRef.current.style.display = 'block';
 
@@ -63,20 +67,24 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
             curtainRef.current.style.bottom = 'auto';
             curtainRef.current.style.right = 'auto';
 
-            if (direction === 'right') {
+            if (selectedDir === 'right') {
                 // Horizontal: Start from right (covering moves Left)
-                // Initial: Width 0, Anchored Right
                 curtainRef.current.style.width = '0%';
                 curtainRef.current.style.left = 'auto';
                 curtainRef.current.style.right = '0';
+            } else if (selectedDir === 'left') {
+                // Horizontal: Start from left (covering moves Right)
+                curtainRef.current.style.width = '0%';
+                curtainRef.current.style.left = '0';
+                curtainRef.current.style.right = 'auto';
             } else {
                 // Vertical
                 curtainRef.current.style.height = '0%';
-                curtainRef.current.style.top = direction === 'top' ? '0' : 'auto';
-                curtainRef.current.style.bottom = direction === 'bottom' ? '0' : 'auto';
+                curtainRef.current.style.top = selectedDir === 'top' ? '0' : 'auto';
+                curtainRef.current.style.bottom = selectedDir === 'bottom' ? '0' : 'auto';
             }
 
-            const animationProps = direction === 'right'
+            const animationProps = (selectedDir === 'right' || selectedDir === 'left')
                 ? { width: ['0%', '100%'] }
                 : { height: ['0%', '100%'] };
 
@@ -84,7 +92,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
             anime({
                 targets: curtainRef.current,
                 ...animationProps,
-                duration: 500,
+                duration: 150,
                 easing: 'easeOutQuart',
                 complete: () => {
                     // Handwriting animation
@@ -98,8 +106,8 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                             anime({
                                 targets: textEl,
                                 strokeDashoffset: [estimatedLength, 0],
-                                duration: 120,
-                                delay: index * 40,
+                                duration: 100,
+                                delay: index * 30,
                                 easing: 'easeOutQuad',
                                 begin: () => {
                                     textEl.style.visibility = 'visible';
@@ -109,12 +117,12 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                                 complete: () => {
                                     anime({
                                         targets: textEl,
-                                        fill: [{ value: 'transparent' }, { value: 'white' }],
-                                        duration: 100,
+                                        fill: [{ value: 'transparent' }, { value: 'var(--text-primary)' }],
+                                        duration: 60,
                                         easing: 'easeOutQuad',
                                         complete: () => {
-                                            textEl.style.fill = 'white';
-                                            textEl.style.stroke = 'white';
+                                            textEl.style.fill = 'var(--text-primary)';
+                                            textEl.style.stroke = 'var(--text-primary)';
                                             textEl.style.strokeOpacity = '0.3';
                                         }
                                     });
@@ -128,26 +136,31 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                     setTimeout(() => {
                         // Exit phase
                         if (curtainRef.current) {
-                            if (direction === 'right') {
-                                // Exit: Shrink towards Left
-                                // Anchor changes to Left
+                            if (selectedDir === 'right') {
+                                // Exit: Anchor Left, Shrink Width
                                 curtainRef.current.style.left = '0';
                                 curtainRef.current.style.right = 'auto';
+                            } else if (selectedDir === 'left') {
+                                // Exit: Anchor Right, Shrink Width (Reveals from Left)
+                                curtainRef.current.style.left = 'auto';
+                                curtainRef.current.style.right = '0';
                             } else {
-                                // Exit: Shrink towards opposite vertical side
-                                curtainRef.current.style.top = direction === 'top' ? 'auto' : '0';
-                                curtainRef.current.style.bottom = direction === 'top' ? '0' : 'auto';
+                                // Vertical
+                                // Top Entry -> Exit Anchor Bottom (Wipe Down)
+                                // Bottom Entry -> Exit Anchor Top (Wipe Up)
+                                curtainRef.current.style.top = selectedDir === 'top' ? 'auto' : '0';
+                                curtainRef.current.style.bottom = selectedDir === 'top' ? '0' : 'auto';
                             }
                         }
 
-                        const exitProps = direction === 'right'
+                        const exitProps = (selectedDir === 'right' || selectedDir === 'left')
                             ? { width: ['100%', '0%'] }
                             : { height: ['100%', '0%'] };
 
                         anime({
                             targets: curtainRef.current,
                             ...exitProps,
-                            duration: 450,
+                            duration: 150,
                             easing: 'easeInQuart',
                             complete: () => {
                                 if (curtainRef.current) {
@@ -166,17 +179,17 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                                 onTransitionComplete();
                             }
                         });
-                    }, 500);
+                    }, 400);
                 }
             });
         }
-    }, [isTransitioning, onCurtainCovered, onTransitionComplete, displayName, fontSize]);
+    }, [isTransitioning, onCurtainCovered, onTransitionComplete, displayName, fontSize, direction]);
 
     return (
         <div
             ref={curtainRef}
             className={`fixed inset-0 overflow-hidden z-50 ${currentDirection}`}
-            style={{ backgroundColor: 'var(--accent)', display: 'none' }}
+            style={{ backgroundColor: 'transparent', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', display: 'none' }}
         >
             <div className="absolute flex items-center justify-center" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', height: '100%' }}>
                 <svg
@@ -200,7 +213,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                                 strokeWidth="2"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
-                                style={{ paintOrder: 'stroke fill', visibility: 'hidden', fill: 'transparent', stroke: 'white', strokeOpacity: 1 }}
+                                style={{ paintOrder: 'stroke fill', visibility: 'hidden', fill: 'transparent', stroke: 'var(--text-primary)', strokeOpacity: 1 }}
                             >
                                 {char}
                             </text>

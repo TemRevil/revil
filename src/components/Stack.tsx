@@ -2,240 +2,164 @@ import { useEffect, useRef, useState } from 'react';
 import anime from 'animejs';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { Github, Instagram, Linkedin, Twitter, Facebook, Mail, Link as LinkIcon, Twitch, Youtube, Code } from 'lucide-react';
 
 interface StackItemProps {
     icon: string;
     name: string;
-    percentage: string;
     delay: number;
-    information?: string;
 }
 
-const StackItem = ({ icon, name, percentage, delay, information }: StackItemProps) => {
+const StackItem = ({ icon, name }: StackItemProps) => {
     const itemRef = useRef<HTMLDivElement>(null);
-    const iconRef = useRef<HTMLImageElement>(null);
-    const percentageRef = useRef<SVGSVGElement>(null);
     const [isHovered, setIsHovered] = useState(false);
-    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+    const [imgError, setImgError] = useState(false);
 
-    useEffect(() => {
-        const handleResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
-    const isSmall = windowWidth <= 400;
-    const fontSize = isSmall ? 28 : 48;
-    const nameFontSize = isSmall ? '1.1rem' : '1.5rem';
-
-    const letterSpacing = fontSize * 0.55;
-    let xPos = 0;
-    const positions: number[] = [];
-
-    percentage.split('').forEach(() => {
-        positions.push(xPos);
-        xPos += letterSpacing;
-    });
-
-    const svgWidth = xPos + 10;
-    const svgHeight = fontSize * 1.4;
-
-    useEffect(() => {
-        // Animate item entrance
-        anime({
-            targets: itemRef.current,
-            opacity: [0, 1],
-            translateY: [30, 0],
-            duration: 800,
-            delay: delay,
-            easing: 'easeOutQuad'
-        });
-
-        // Animate icon
-        anime({
-            targets: iconRef.current,
-            opacity: [0, 0.35],
-            scale: [0.8, 1],
-            duration: 1000,
-            delay: delay + 200,
-            easing: 'easeOutQuad'
-        });
-
-        // Percentage handwriting animation
-        if (percentageRef.current) {
-            const letters = percentageRef.current.querySelectorAll('.percentage-letter');
-
-            letters.forEach((letter, index) => {
-                const textEl = letter as SVGTextElement;
-                const estimatedLength = fontSize * 3;
-
-                anime({
-                    targets: textEl,
-                    strokeDashoffset: [estimatedLength, 0],
-                    duration: 200,
-                    delay: delay + 500 + (index * 80),
-                    easing: 'easeOutQuad',
-                    begin: () => {
-                        textEl.style.visibility = 'visible';
-                        textEl.style.strokeDasharray = `${estimatedLength}`;
-                        textEl.style.strokeDashoffset = `${estimatedLength}`;
-                    },
-                    complete: () => {
-                        anime({
-                            targets: textEl,
-                            fill: [{ value: 'transparent' }, { value: 'var(--accent)' }],
-                            duration: 150,
-                            easing: 'easeOutQuad',
-                            complete: () => {
-                                textEl.style.fill = 'var(--accent)';
-                                textEl.style.stroke = 'var(--accent)';
-                                textEl.style.strokeOpacity = '0.3';
-                            }
-                        });
-                    }
-                });
-            });
-        }
-    }, [delay, fontSize, percentage]);
+    const showFallback = !icon || imgError;
 
     return (
         <div
             ref={itemRef}
-            className="stack-inner opacity-0"
+            className="w-full h-full min-h-[220px] flex items-center justify-center p-2"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
-            <img
-                ref={iconRef}
-                src={icon}
-                alt={name}
-                className="stack-icon transition-slow"
-                style={{
-                    opacity: isHovered ? 1 : 0.35,
-                    filter: isHovered ? 'none' : 'grayscale(100%) brightness(0.8)',
-                    transform: isHovered ? 'scale(1.1)' : 'scale(1)'
-                }}
-            />
-
-            {information && (
-                <div
-                    className="absolute z-50 pointer-events-auto cursor-pointer"
-                    style={{
-                        top: '-10px',
-                        left: isSmall ? '20px' : '50px',
-                        width: isSmall ? '180px' : '220px',
-                        transform: isHovered ? 'translateY(-100%) scale(1)' : 'translateY(-90%) scale(0.9)',
-                        opacity: isHovered ? 1 : 0,
-                        transition: 'opacity 0.15s ease-out, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
-                        pointerEvents: isHovered ? 'auto' : 'none',
-                    }}
-                >
+            <div className={`flex items-center justify-center transition-all duration-300 ${isHovered ? 'scale-110' : ''}`}>
+                {showFallback ? (
+                    <Code size={120} className="text-zinc-400" />
+                ) : (
                     <div
-                        className="nav-tooltip-inner text-center leading-relaxed"
                         style={{
-                            whiteSpace: 'normal',
-                            fontWeight: 'normal',
-                            fontSize: '0.85rem',
-                            // Enforce stronger background for readability
-                            backgroundColor: 'var(--tooltip-bg, rgba(20, 20, 25, 0.8))',
-                            backdropFilter: 'blur(16px)',
-                            WebkitBackdropFilter: 'blur(16px)',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-                            color: 'var(--tooltip-text, inherit)'
+                            width: '150px',
+                            height: '150px',
+                            backgroundImage: `url(${icon})`,
+                            backgroundSize: 'contain',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat',
+                            opacity: isHovered ? 1 : 0.6,
+                            filter: isHovered ? 'grayscale(0%)' : 'grayscale(100%)',
+                            transition: 'all 0.3s ease'
                         }}
-                    >
-                        {information}
-                    </div>
-                    {/* Restored Arrow - Rotation handled by CSS class .nav-tooltip-arrow (45deg) */}
-                    <div
-                        className="nav-tooltip-arrow"
-                        style={{
-                            left: '20px',
-                            marginLeft: '0',
-                            backgroundColor: 'var(--tooltip-bg, rgba(20, 20, 25, 0.8))',
-                            borderBottom: '1px solid rgba(255, 255, 255, 0.15)',
-                            borderRight: '1px solid rgba(255, 255, 255, 0.15)'
-                        }}
+                        title={name}
+                        onError={() => setImgError(true)}
                     />
-                </div>
-            )}
-
-            <div className="flex flex-col items-start justify-center">
-                <h3
-                    className="transition-slow font-black m-0"
-                    style={{
-                        fontSize: nameFontSize,
-                        color: 'var(--text-primary)'
-                    }}
-                >
-                    {name}
-                </h3>
-
-                <div className="mt-1">
-                    <svg
-                        ref={percentageRef}
-                        width={svgWidth}
-                        height={svgHeight}
-                        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                        className="overflow-visible"
-                    >
-                        {percentage.split('').map((char, index) => (
-                            <text
-                                key={index}
-                                className="percentage-letter"
-                                x={positions[index]}
-                                y={fontSize}
-                                fontFamily="'Kalam', cursive"
-                                fontSize={fontSize}
-                                fontWeight="700"
-                                fill="transparent"
-                                stroke="var(--accent)"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                style={{
-                                    paintOrder: 'stroke fill',
-                                    visibility: 'hidden'
-                                }}
-                            >
-                                {char}
-                            </text>
-                        ))}
-                    </svg>
-                </div>
+                )}
             </div>
         </div>
     );
 };
 
+const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: number }) => {
+    const iconRef = useRef<HTMLAnchorElement>(null);
+
+    // Icon mapping
+    const getIcon = (name: string) => {
+        const lower = name.toLowerCase();
+        if (lower.includes('github')) return Github;
+        if (lower.includes('linkedin')) return Linkedin;
+        if (lower.includes('instagram')) return Instagram;
+        if (lower.includes('twitter') || lower.includes('x.com')) return Twitter;
+        if (lower.includes('facebook')) return Facebook;
+        if (lower.includes('youtube')) return Youtube;
+        if (lower.includes('twitch')) return Twitch;
+        if (lower.includes('mail') || lower.includes('@')) return Mail;
+        return LinkIcon;
+    };
+
+    const Icon = getIcon(name);
+
+    useEffect(() => {
+        anime({
+            targets: iconRef.current,
+            opacity: [0, 1],
+            translateX: [20, 0],
+            duration: 800,
+            delay: delay,
+            easing: 'easeOutQuad'
+        });
+    }, [delay]);
+
+    return (
+        <a
+            ref={iconRef}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group relative flex items-center justify-center p-3 rounded-xl transition-all duration-300 hover:bg-white/5"
+        >
+            <Icon
+                size={36}
+                className="text-muted group-hover:text-primary transition-colors duration-300"
+                strokeWidth={1.5}
+            />
+
+            {/* Tooltip - Left on desktop, Top on mobile */}
+            <span className="absolute lg:right-full lg:mr-3 lg:top-1/2 lg:-translate-y-1/2 lg:bottom-auto lg:left-auto lg:translate-x-0 bottom-full mb-3 lg:mb-0 left-1/2 -translate-x-1/2 lg:left-auto px-3 py-1.5 bg-white backdrop-blur-md border border-zinc-200 rounded-lg text-xs font-bold text-black opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 shadow-xl">
+                {name}
+            </span>
+        </a>
+    );
+
+};
+
 const Stack = () => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const handwritingRef = useRef<HTMLDivElement>(null);
-    const gridRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const [stackItems, setStackItems] = useState<any[]>([]);
+    const [socialLinks, setSocialLinks] = useState<{ name: string, url: string }[]>([]);
 
+    // Fetch Stack Items
     useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'Settings', 'Tech Stack'), (docSnap) => {
+        console.log('[Stack] Setting up Firestore listener for Tech Stack...');
+        const unsubStack = onSnapshot(doc(db, 'Settings', 'Tech Stack'), (docSnap) => {
+            console.log('[Stack] Tech Stack snapshot received, exists:', docSnap.exists());
             if (docSnap.exists()) {
                 const data = docSnap.data();
+                console.log('[Stack] Raw Firestore data:', data);
+                console.log('[Stack] Data keys:', Object.keys(data));
+
                 const items = Object.entries(data)
                     .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([_, item]: [string, any]) => ({
-                        icon: item.Icon,
-                        name: item.Name,
-                        percentage: (item["Proficiency Level"] || 0) + '%',
-                        information: item.Information
-                    }));
+                    .map(([key, item]: [string, any]) => {
+                        console.log(`[Stack] Processing item ${key}:`, item);
+                        console.log(`[Stack] item.Icon:`, item.Icon);
+                        return {
+                            icon: item.Icon || item.icon,
+                            name: item.Name || item.name
+                        };
+                    });
+                console.log('[Stack] Processed items:', items);
                 setStackItems(items);
+            } else {
+                console.log('[Stack] Tech Stack document does NOT exist!');
+            }
+        }, (error) => {
+            console.error('[Stack] Firestore error:', error);
+        });
+
+        // Fetch Social Links
+        const unsubAccount = onSnapshot(doc(db, 'Settings', 'Account'), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data && data['Social Links']) {
+                    const links = Object.entries(data['Social Links']).map(([name, url]) => ({
+                        name,
+                        url: url as string
+                    }));
+                    setSocialLinks(links);
+                }
             }
         });
-        return () => unsub();
+
+        return () => {
+            unsubStack();
+            unsubAccount();
+        };
     }, []);
 
     useEffect(() => {
-        // Animation sequence
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
@@ -254,9 +178,9 @@ const Stack = () => {
         });
 
         anime({
-            targets: gridRef.current,
+            targets: containerRef.current,
             opacity: [0, 1],
-            duration: 800,
+            duration: 1000,
             delay: 400,
             easing: 'easeOutQuad'
         });
@@ -267,7 +191,6 @@ const Stack = () => {
 
             {/* Header Section */}
             <div className="mb-14">
-                {/* "My Tech" - Increased size to text-3xl/4xl */}
                 <div
                     ref={handwritingRef}
                     className="text-3xl md:text-4xl opacity-0 mb-[-10px] ml-2"
@@ -278,7 +201,6 @@ const Stack = () => {
                 >
                     My Tech
                 </div>
-                {/* "Stack" - Massively increased size: 6xl -> 9xl, added font-black and leading-none */}
                 <h1
                     ref={titleRef}
                     className="text-6xl md:text-8xl lg:text-9xl font-black transition-slow opacity-0 m-0 leading-none"
@@ -288,39 +210,52 @@ const Stack = () => {
                 </h1>
             </div>
 
-            {/* Grid Container */}
-            <div
-                ref={gridRef}
-                className="relative mb-20 opacity-0"
-            >
-                {/* Markers */}
-                <div className="marker marker-corner-tl"></div>
-                <div className="marker marker-corner-tr"></div>
-                <div className="marker marker-corner-bl"></div>
-                <div className="marker marker-corner-br"></div>
+            <div ref={containerRef} className="flex flex-col lg:flex-row gap-12 lg:gap-20 opacity-0 bg-transparent">
 
-                <div className="marker marker-edge-33 marker-edge-top"></div>
-                <div className="marker marker-edge-66 marker-edge-top"></div>
-                <div className="marker marker-edge-50 marker-edge-top"></div>
+                {/* Tech Stack Grid */}
+                <div className="flex-1 relative">
+                    {/* Markers */}
+                    <div className="marker marker-corner-tl"></div>
+                    <div className="marker marker-corner-tr"></div>
+                    <div className="marker marker-corner-bl"></div>
+                    <div className="marker marker-corner-br"></div>
 
-                <div className="marker marker-edge-33 marker-edge-bottom"></div>
-                <div className="marker marker-edge-66 marker-edge-bottom"></div>
-                <div className="marker marker-edge-50 marker-edge-bottom"></div>
+                    <div className="marker marker-edge-33 marker-edge-top"></div>
+                    <div className="marker marker-edge-66 marker-edge-top"></div>
+                    <div className="marker marker-edge-50 marker-edge-top"></div>
 
-                {/* Grid Items */}
-                <div className="stack-grid">
-                    {stackItems.map((item, index) => (
-                        <div key={item.name} className="stack-item">
-                            <StackItem
-                                icon={item.icon}
-                                name={item.name}
-                                percentage={item.percentage}
-                                delay={500 + (index * 150)}
-                                information={item.information}
-                            />
-                        </div>
-                    ))}
+                    <div className="marker marker-edge-33 marker-edge-bottom"></div>
+                    <div className="marker marker-edge-66 marker-edge-bottom"></div>
+                    <div className="marker marker-edge-50 marker-edge-bottom"></div>
+
+                    <div className="stack-grid">
+                        {stackItems.map((item, index) => (
+                            <div key={index} className="stack-item">
+                                <StackItem
+                                    icon={item.icon}
+                                    name={item.name}
+                                    delay={500 + (index * 50)}
+                                />
+                            </div>
+                        ))}
+                    </div>
                 </div>
+
+                {/* Social Links Sidebar */}
+                {socialLinks.length > 0 && (
+                    <div className="w-full lg:w-24 shrink-0 flex flex-row lg:flex-col justify-center lg:justify-start items-center gap-4 lg:pt-8 bg-transparent">
+                        <div className="hidden lg:block w-px h-12 bg-gradient-to-b from-transparent to-gray-500/20 mb-2"></div>
+                        {socialLinks.map((link, index) => (
+                            <SocialIcon
+                                key={link.name}
+                                name={link.name}
+                                url={link.url}
+                                delay={800 + (index * 100)}
+                            />
+                        ))}
+                        <div className="hidden lg:block w-px h-full bg-gradient-to-t from-transparent to-gray-500/20 mt-2 flex-1"></div>
+                    </div>
+                )}
             </div>
         </div>
     );

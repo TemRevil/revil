@@ -788,10 +788,11 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                             flexDirection: 'column'
                         }}>
                             <motion.div
-                                layoutId={`project-image-${project.id}`}
                                 onMouseEnter={() => setIsHovered(true)}
                                 onMouseLeave={() => setIsHovered(false)}
-                                transition={{ duration: 0.3, ease: "easeOut" }}
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ duration: 0.4, ease: "easeOut" }}
                                 style={{
                                     position: 'relative',
                                     width: '100%',
@@ -801,27 +802,29 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                     borderRadius: isMobile ? '16px' : '32px',
                                     overflow: 'hidden',
                                     background: '#000',
-                                    willChange: 'transform'
+                                    willChange: 'transform' // Ensure hardware acceleration
                                 }}
                             >
-                                {sortedMedia.map((media, i) => (
-                                    <div key={i} style={{
-                                        position: 'absolute', inset: 0,
-                                        opacity: i === currentImageIndex ? 1 : 0,
-                                        transform: i === currentImageIndex ? 'scale(1)' : 'scale(1.08)',
-                                        transition: 'all 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                                        zIndex: i === currentImageIndex ? 1 : 0
-                                    }}>
-                                        {isVideoFile(media) ? (
-                                            <VideoPlayer src={media} isActive={i === currentImageIndex} isMobile={isMobile} />
-                                        ) : (
-                                            <>
-                                                <img src={media} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
-                                                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)' }} />
-                                            </>
-                                        )}
-                                    </div>
-                                ))}
+                                <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
+                                    {sortedMedia.map((media, i) => (
+                                        <div key={i} style={{
+                                            position: 'absolute', inset: 0,
+                                            opacity: i === currentImageIndex ? 1 : 0,
+                                            transform: i === currentImageIndex ? 'scale(1)' : 'scale(1.08)',
+                                            transition: 'all 1.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                                            zIndex: i === currentImageIndex ? 2 : 0 // Ensure active slide covers base layer
+                                        }}>
+                                            {isVideoFile(media) ? (
+                                                <VideoPlayer src={media} isActive={i === currentImageIndex} isMobile={isMobile} />
+                                            ) : (
+                                                <>
+                                                    <img src={media} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)' }} />
+                                                </>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
 
                                 {/* Manual Nav Controls */}
                                 {sortedMedia.length > 1 && (
@@ -1197,7 +1200,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                 ::-webkit-scrollbar { display: none; }
                 * { scroll-behavior: smooth; }
             ` }} />
-        </motion.div >,
+        </motion.div>,
         document.body
     );
 };

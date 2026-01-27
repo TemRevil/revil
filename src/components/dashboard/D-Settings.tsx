@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
-import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Briefcase, Clock, ChevronDown, HardDrive, ZoomIn, Check } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Briefcase, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link } from 'lucide-react';
 const DEFAULT_HERO_URL = "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FHero.image.jpg?alt=media&token=1d698d9b-468a-42e7-92c6-b9cb127a5fc6";
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
@@ -166,6 +166,9 @@ export default function DSettings() {
     // Profile info state (editable)
     const [profileName, setProfileName] = useState<string>('Your Name');
     const [profileTitle, setProfileTitle] = useState<string>('Job Title');
+    const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
+    const [newLinkName, setNewLinkName] = useState('');
+    const [newLinkUrl, setNewLinkUrl] = useState('');
     const [isEditingProfile, setIsEditingProfile] = useState(false);
 
     // For immediate revert on Cancel
@@ -427,10 +430,16 @@ export default function DSettings() {
         const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'), (snap) => {
             if (snap.exists()) {
                 const data = snap.data();
-                // Only update if not currently dirty with unsaved local changes
                 if (data.imageUrl && !profileImageDirty) setProfileImagePreview(data.imageUrl);
                 if (data.name && !isEditingProfile && !profileInfoDirty) setProfileName(data.name);
                 if (data.title && !isEditingProfile && !profileInfoDirty) setProfileTitle(data.title);
+                if (data['Social Links'] && !isEditingProfile && !profileInfoDirty) {
+                    const links = Object.entries(data['Social Links']).map(([name, url]) => ({
+                        name,
+                        url: url as string
+                    }));
+                    setSocialLinks(links);
+                }
             }
         }, (err) => {
             console.error('Error fetching profile settings', err);
@@ -941,10 +950,19 @@ export default function DSettings() {
         setHasUnsavedChanges(false);
     };
 
-    // Persist profile name/title to Firestore (used by Apply All)
+    // Persist profile name/title/links to Firestore (used by Apply All)
     const handleSaveProfileInfo = async () => {
         try {
-            await setDoc(doc(db, 'Settings', 'Account'), { name: profileName, title: profileTitle }, { merge: true });
+            const linksMap = socialLinks.reduce((acc, link) => {
+                acc[link.name] = link.url;
+                return acc;
+            }, {} as Record<string, string>);
+
+            await setDoc(doc(db, 'Settings', 'Account'), {
+                name: profileName,
+                title: profileTitle,
+                'Social Links': linksMap
+            }, { merge: true });
         } catch (err) {
             console.error('Error saving profile info', err);
             setAlert({ show: true, type: 'error', message: 'Failed to update profile.' });
@@ -1506,6 +1524,85 @@ export default function DSettings() {
                                         <input ref={profileImageInputRef} type="file" accept="image/*" onChange={handleProfileImageUpload} style={{ display: 'none' }} />
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Social Links Editor */}
+                        <div className="settings-panel md:col-span-8 glass-panel p-6 flex flex-col gap-4" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
+                            <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
+                                <Link size={22} className="mr-3" />
+                                Social Links
+                            </h3>
+                            <div className="flex flex-col gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                    <div className="sm:col-span-4">
+                                        <label className="text-xs text-muted mb-1 block">Platform Name</label>
+                                        <input
+                                            className="input-field w-full"
+                                            placeholder="e.g. GitHub"
+                                            value={newLinkName}
+                                            onChange={(e) => setNewLinkName(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="sm:col-span-6">
+                                        <label className="text-xs text-muted mb-1 block">URL</label>
+                                        <input
+                                            className="input-field w-full"
+                                            placeholder="https://..."
+                                            value={newLinkUrl}
+                                            onChange={(e) => setNewLinkUrl(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <button
+                                            className="btn btn-primary w-full justify-center"
+                                            disabled={socialLinks.length >= 5 || !newLinkName || !newLinkUrl}
+                                            onClick={() => {
+                                                if (socialLinks.length < 5 && newLinkName && newLinkUrl) {
+                                                    setSocialLinks([...socialLinks, { name: newLinkName, url: newLinkUrl }]);
+                                                    setNewLinkName('');
+                                                    setNewLinkUrl('');
+                                                    setHasUnsavedChanges(true);
+                                                }
+                                            }}
+                                        >
+                                            <Plus size={18} /> <span className="hidden sm:inline">Add</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {socialLinks.length > 0 ? (
+                                    <div className="flex flex-col gap-2 mt-2">
+                                        {socialLinks.map((link, index) => (
+                                            <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                                                        <Link size={14} className="text-primary" />
+                                                    </div>
+                                                    <div className="flex flex-col overflow-hidden">
+                                                        <span className="font-bold text-sm truncate">{link.name}</span>
+                                                        <span className="text-xs text-muted truncate">{link.url}</span>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                    onClick={() => {
+                                                        const newLinks = [...socialLinks];
+                                                        newLinks.splice(index, 1);
+                                                        setSocialLinks(newLinks);
+                                                        setHasUnsavedChanges(true);
+                                                    }}
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center p-6 border border-dashed border-white/10 rounded-xl text-muted text-sm">
+                                        No social links added yet. Add up to 5 links.
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

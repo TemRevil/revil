@@ -434,15 +434,7 @@ const Hero = ({ onLoaded, isReady = true }: { onLoaded?: () => void; isReady?: b
 
     return (
         <div className="min-h-screen w-full flex items-center justify-center overflow-hidden relative pt-20 pb-32 transition-slow">
-            {/* Animated Background Blobs */}
-            <div className="blob-container">
-                <div className="blob blob-1"></div>
-                <div className="blob blob-2"></div>
-                <div className="blob blob-3"></div>
-                <div className="blob blob-4"></div>
-                <div className="blob blob-5"></div>
-                <div className="blob blob-6"></div>
-            </div>
+
 
             {/* Wall texture - subtle grain pattern */}
             <div className="absolute inset-0 pointer-events-none" style={{

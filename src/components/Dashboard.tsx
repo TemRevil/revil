@@ -110,15 +110,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
             className="w-full h-screen flex bg-primary relative overflow-hidden touch-pan-y"
             style={{ '--sidebar-width': sidebarWidth } as any}
         >
-            {/* Decorative Background Blobs */}
-            <div className="blob-container">
-                <div className="blob blob-1"></div>
-                <div className="blob blob-2"></div>
-                <div className="blob blob-3"></div>
-                <div className="blob blob-4"></div>
-                <div className="blob blob-5"></div>
-                <div className="blob blob-6"></div>
-            </div>
+
 
             {/* Sidebar */}
             <aside

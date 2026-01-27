@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { LayoutGroup, AnimatePresence } from 'framer-motion';
+import { LayoutGroup, AnimatePresence, motion } from 'framer-motion';
 import Hero from './components/Hero';
 import Navbar from './components/Navbar';
 import Stack from './components/Stack';
@@ -11,12 +11,6 @@ import Dashboard from './components/Dashboard';
 import { ChevronRight } from 'lucide-react';
 import Loader from './components/reactbits/Loader';
 import { Algorithm } from './components/Algorithm';
-
-// Redirection/Link checking logic moved to Algorithm component to avoid Bloat in App.tsx
-
-
-// Redirection and analytics logic moved to Algorithm.tsx
-
 
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
@@ -30,9 +24,7 @@ function App() {
   const [isWindowReady, setIsWindowReady] = useState(false);
 
   useEffect(() => {
-    // Phase 1: Window/Assets Load
     const handleLoad = () => setIsWindowReady(true);
-
     if (document.readyState === 'complete') {
       setIsWindowReady(true);
     } else {
@@ -42,62 +34,64 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Phase 2: Orchestration - Hide loader when both are ready
     if (isDataReady && isWindowReady) {
       setAppLoading(false);
     } else {
       setAppLoading(true);
     }
-
-    // Safety timeout: don't stay infinite if something hangs (e.g. broken script/data)
     const safety = setTimeout(() => {
       setAppLoading(false);
     }, 8000);
-
-    return () => clearTimeout(safety);
     return () => clearTimeout(safety);
   }, [isDataReady, isWindowReady]);
 
   useEffect(() => {
-    // Check if there is a path other than the base path
     const path = window.location.pathname;
     const base = import.meta.env.BASE_URL;
-
-    // Normalize paths by removing trailing slashes for comparison
     const normPath = path.replace(/\/$/, '');
     const normBase = base.replace(/\/$/, '');
-
     if (normPath !== normBase && normPath !== '') {
-      // Assume it's a link code
       setCurrentSection('view_link');
     }
   }, []);
 
+  const [direction, setDirection] = useState(0);
+
+  // Helper to get the current scrollable container by ID
+  const getScrollContainer = (sectionName: Section) => {
+    return document.getElementById(`section-${sectionName}`) as HTMLDivElement | null;
+  };
+
   const navigateTo = useCallback((section: Section) => {
     if (section !== currentSection && !isTransitioning) {
+      const order: Section[] = ['home', 'stack', 'projects'];
+      const currIdx = order.indexOf(currentSection);
+      const nextIdx = order.indexOf(section);
+
+      let dir = 0;
+      if (section === 'secret') {
+        dir = 2;
+      } else if (currentSection === 'secret') {
+        dir = -2;
+      } else if (currIdx !== -1 && nextIdx !== -1) {
+        dir = nextIdx > currIdx ? 1 : -1;
+      }
+
+      setDirection(dir);
       setNextSection(section);
+      setCurrentSection(section);
       setIsTransitioning(true);
     }
   }, [currentSection, isTransitioning]);
 
-  // Called when curtain fully covers the screen - change section now
-  const handleCurtainCovered = useCallback(() => {
-    setCurrentSection(nextSection);
-    window.scrollTo(0, 0);
-  }, [nextSection]);
+  const handleCurtainCovered = useCallback(() => { }, []);
 
-  // Called when transition animation is completely done
   const handleTransitionComplete = useCallback(() => {
     setIsTransitioning(false);
   }, []);
 
-  const openContactModal = useCallback(() => {
-    setIsContactModalOpen(true);
-  }, []);
-
-  const closeContactModal = useCallback(() => {
-    setIsContactModalOpen(false);
-  }, []);
+  const openContactModal = useCallback(() => setIsContactModalOpen(true), []);
+  const closeContactModal = useCallback(() => setIsContactModalOpen(false), []);
 
   const renderSection = () => {
     switch (currentSection) {
@@ -111,16 +105,14 @@ function App() {
         return <SecretPage onNavigate={navigateTo} />;
       case 'dashboard':
         return <Dashboard onNavigate={navigateTo} />;
-
       case 'view_link':
-        // Show Hero while Algorithm processes the link in background
         return <Hero onLoaded={() => setIsDataReady(true)} isReady={!appLoading} />;
       default:
         return <Hero isReady={!appLoading} />;
     }
   };
 
-  // Setup touch coordinates for swipe detection
+  // --- Touch Logic (Mobile) ---
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
   const touchStartY = useRef(0);
@@ -136,55 +128,43 @@ function App() {
     if (currentSection === 'dashboard') return;
     touchEndX.current = e.targetTouches[0].clientX;
     touchEndY.current = e.targetTouches[0].clientY;
-
-    // Optional: add visual feedback logic here if wanted later
   };
 
   const handleTouchEnd = () => {
-    // Prevent swipe navigation when modal is open or in dashboard
     if (isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') {
-      touchStartX.current = 0;
-      touchEndX.current = 0;
-      touchStartY.current = 0;
-      touchEndY.current = 0;
+      touchStartX.current = 0; touchEndX.current = 0; touchStartY.current = 0; touchEndY.current = 0;
       return;
     }
 
-    const SWIPE_THRESHOLD = 70;
+    const SWIPE_THRESHOLD = 80; // slightly more sensitive
     const deltaX = touchStartX.current - touchEndX.current;
     const deltaY = touchStartY.current - touchEndY.current;
 
-    // Detect intent by comparing magnitude of X vs Y
+    const container = getScrollContainer(currentSection);
+    if (!container) return;
+
+    // Use a small buffer (5px)
+    const scrolledToBottom = Math.ceil(container.clientHeight + container.scrollTop) >= container.scrollHeight - 5;
+    const scrolledToTop = container.scrollTop <= 5;
+
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      // Horizontal Swipe
-      // Right to Left (deltaX positive) -> Secret
       if (deltaX > SWIPE_THRESHOLD && currentSection !== 'secret') {
         navigateTo('secret');
       }
     } else {
-      // Vertical Swipe
-      const scrolledToBottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 5;
-      const scrolledToTop = window.scrollY <= 5;
-
-      // Down to Up (deltaY positive) -> Next Page (if at bottom)
       if (deltaY > SWIPE_THRESHOLD && scrolledToBottom) {
         if (currentSection === 'home' || currentSection === 'view_link') navigateTo('stack');
         else if (currentSection === 'stack') navigateTo('projects');
       }
-      // Up to Down (deltaY negative) -> Previous Page (if at top)
       else if (deltaY < -SWIPE_THRESHOLD && scrolledToTop) {
         if (currentSection === 'projects') navigateTo('stack');
         else if (currentSection === 'stack') navigateTo('home');
       }
     }
-
-    // Reset
-    touchStartX.current = 0;
-    touchEndX.current = 0;
-    touchStartY.current = 0;
-    touchEndY.current = 0;
+    touchStartX.current = 0; touchEndX.current = 0; touchStartY.current = 0; touchEndY.current = 0;
   };
 
+  // --- Wheel/Scroll Logic (Desktop) ---
   const lastNavigationTime = useRef(0);
   const scrollAccumulator = useRef(0);
   const lastScrollEventTime = useRef(0);
@@ -194,35 +174,58 @@ function App() {
       if (isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') return;
       if (isTransitioning) return;
 
+      const container = getScrollContainer(currentSection);
+      if (!container) return;
+
       const now = Date.now();
-      if (now - lastScrollEventTime.current > 200) scrollAccumulator.current = 0;
+
+      // If user stopped scrolling for a while, reset pressure.
+      // But we allow rapid consecutive events to accumulate.
+      if (now - lastScrollEventTime.current > 150) {
+        scrollAccumulator.current = 0;
+      }
       lastScrollEventTime.current = now;
 
-      if (now - lastNavigationTime.current < 1500) return;
+      // Cooldown to prevent double-skipping pages
+      if (now - lastNavigationTime.current < 600) return;
 
       const isScrollDown = e.deltaY > 0;
       const isScrollUp = e.deltaY < 0;
-      const scrolledToBottom = Math.ceil(window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 5;
-      const scrolledToTop = window.scrollY <= 5;
-      const THRESHOLD = 100;
+
+      // Check if at edges (5px buffer)
+      const scrolledToBottom = Math.ceil(container.clientHeight + container.scrollTop) >= container.scrollHeight - 5;
+      const scrolledToTop = container.scrollTop <= 5;
+
+      // HIGH SENSITIVITY:
+      // A typical mouse wheel "notch" is often 100 deltaY. A trackpad swipe can be anything.
+      // Setting THRESHOLD to 20 ensures that even a gentle continuation triggers it.
+      const THRESHOLD = 20;
 
       if (isScrollDown && scrolledToBottom) {
+        // We are at the bottom.
+        // Add the scroll "pressure" to the accumulator.
         scrollAccumulator.current += e.deltaY;
+
         if (scrollAccumulator.current > THRESHOLD) {
           if (currentSection === 'home' || currentSection === 'view_link') navigateTo('stack');
           else if (currentSection === 'stack') navigateTo('projects');
+
           scrollAccumulator.current = 0;
           lastNavigationTime.current = now;
         }
       } else if (isScrollUp && scrolledToTop) {
+        // We are at the top.
         scrollAccumulator.current += e.deltaY;
+
         if (scrollAccumulator.current < -THRESHOLD) {
           if (currentSection === 'projects') navigateTo('stack');
           else if (currentSection === 'stack') navigateTo('home');
+
           scrollAccumulator.current = 0;
           lastNavigationTime.current = now;
         }
       } else {
+        // We are in the middle of the content, reset navigation pressure
         scrollAccumulator.current = 0;
       }
     };
@@ -247,35 +250,85 @@ function App() {
     };
   }, [currentSection, isTransitioning, navigateTo, isContactModalOpen, closeContactModal]);
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const mainContainer = mainRef.current;
+    if (!mainContainer) return;
 
     const preventPullToRefresh = (e: TouchEvent) => {
+      const container = getScrollContainer(currentSection);
+      if (!container) return;
       const isPullingDown = e.touches[0].clientY > touchStartY.current;
-      const scrolledToTop = window.scrollY <= 5;
+      const scrolledToTop = container.scrollTop <= 5;
+
       if (scrolledToTop && isPullingDown && !isContactModalOpen && currentSection !== 'dashboard') {
         if (e.cancelable) e.preventDefault();
       }
     };
 
-    container.addEventListener('touchmove', preventPullToRefresh, { passive: false });
-    return () => container.removeEventListener('touchmove', preventPullToRefresh);
+    mainContainer.addEventListener('touchmove', preventPullToRefresh, { passive: false });
+    return () => mainContainer.removeEventListener('touchmove', preventPullToRefresh);
   }, [currentSection, isContactModalOpen]);
+
+  const variants = {
+    enter: (direction: number) => {
+      if (Math.abs(direction) === 2) {
+        return { x: direction === 2 ? '100%' : '-100%', y: 0, opacity: 1, scale: 1 };
+      }
+      return { y: direction > 0 ? '100vh' : '-100vh', x: 0, opacity: 1, scale: 0.95 };
+    },
+    center: { x: 0, y: 0, opacity: 1, scale: 1 },
+    exit: (direction: number) => {
+      if (Math.abs(direction) === 2) {
+        return { x: direction === 2 ? '-100%' : '100%', y: 0, opacity: 1, scale: 1 };
+      }
+      return { y: direction < 0 ? '100vh' : '-100vh', x: 0, opacity: 1, scale: 0.95 };
+    }
+  };
 
   return (
     <main
-      ref={containerRef}
-      className="relative"
+      ref={mainRef}
+      className="relative w-full h-screen overflow-hidden"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       <Loader isOpen={appLoading} isFullScreen={true} />
       <Algorithm currentSection={currentSection} isContactOpen={isContactModalOpen} onNavigate={navigateTo} />
-      {renderSection()}
+
+      {(currentSection === 'home' || currentSection === 'view_link' || currentSection === 'dashboard' || currentSection === 'secret') && (
+        <div className="blob-container" style={{ zIndex: 0 }}>
+          <div className="blob blob-1"></div>
+          <div className="blob blob-2"></div>
+          <div className="blob blob-3"></div>
+          <div className="blob blob-4"></div>
+          <div className="blob blob-5"></div>
+          <div className="blob blob-6"></div>
+        </div>
+      )}
+
+      <AnimatePresence initial={false} custom={direction} mode="popLayout">
+        <motion.div
+          key={currentSection}
+          id={`section-${currentSection}`}
+          custom={direction}
+          variants={variants}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={{
+            x: { type: "spring", stiffness: 300, damping: 30 },
+            y: { type: "spring", stiffness: 300, damping: 30 },
+            opacity: { duration: 0.2 },
+            scale: { duration: 0.3 }
+          }}
+          className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar"
+        >
+          {renderSection()}
+        </motion.div>
+      </AnimatePresence>
       {currentSection !== 'secret' && (
         <button
           onClick={() => navigateTo('secret')}
@@ -327,6 +380,7 @@ function App() {
         onCurtainCovered={handleCurtainCovered}
         onTransitionComplete={handleTransitionComplete}
         nextSectionName={nextSection}
+        direction={direction}
       />
     </main>
   );

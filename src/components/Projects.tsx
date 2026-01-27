@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import anime from 'animejs';
 import { X, Search } from 'lucide-react';
 import { db } from '../lib/firebase';
@@ -67,10 +67,10 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
             style={{ willChange: 'transform, opacity' }}
         >
             <div className="relative h-[200px] overflow-hidden rounded-t-[20px] will-change-transform">
-                <motion.div
-                    layoutId={`project-image-${project.id}`}
-                    transition={{ duration: 0.4, type: "tween", ease: "easeOut" }}
+                {/* Slideshow Overlay */}
+                <div
                     className="absolute inset-0"
+                    style={{ pointerEvents: 'none' }}
                 >
                     <div
                         className="flex h-full transition-transform duration-500 ease-in-out"
@@ -84,13 +84,13 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                 <img
                                     src={img}
                                     alt={project.title}
-                                    className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                 />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
                             </div>
                         ))}
                     </div>
-                </motion.div>
+                </div>
 
                 {/* Overlays: Tags / Contributors Slideshow */}
                 <div className="absolute top-4 left-4 z-10">
@@ -543,7 +543,7 @@ const Projects = () => {
                     </div>
                 </div>
 
-                {/* Projects Grid - Reduced Grid Gap */}
+                {/* Projects Grid */}
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
                     {filteredProjects.map((project, index) => (
                         <ProjectCard
@@ -560,9 +560,7 @@ const Projects = () => {
                         />
                     ))}
                 </div>
-            </div>
 
-            <LayoutGroup>
                 {/* Modals */}
                 <AnimatePresence>
                     {showProjectModal && selectedProject && (
@@ -579,7 +577,8 @@ const Projects = () => {
                         />
                     )}
                 </AnimatePresence>
-            </LayoutGroup>
+            </div>
+
             {showContributorModal && selectedContributor && (
                 <MContributorView
                     contributor={selectedContributor}
