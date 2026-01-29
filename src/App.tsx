@@ -11,6 +11,10 @@ import Dashboard from './components/Dashboard';
 import { ChevronRight } from 'lucide-react';
 import Loader from './components/reactbits/Loader';
 import { Algorithm } from './components/Algorithm';
+import MCV from './components/M-CV';
+import MProjectView from './components/M-ProjectView';
+import MContributorView from './components/M-ContributorView';
+import { Project } from './components/M-ProjectView';
 
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
@@ -22,6 +26,12 @@ function App() {
   const [appLoading, setAppLoading] = useState(true);
   const [isDataReady, setIsDataReady] = useState(false);
   const [isWindowReady, setIsWindowReady] = useState(false);
+  const [isCVModalOpen, setIsCVModalOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [selectedContributor, setSelectedContributor] = useState<any | null>(null);
+  const [showContributorModal, setShowContributorModal] = useState(false);
+  const [hasAutoOpenedCV, setHasAutoOpenedCV] = useState(false);
 
   useEffect(() => {
     const handleLoad = () => setIsWindowReady(true);
@@ -54,6 +64,14 @@ function App() {
       setCurrentSection('view_link');
     }
   }, []);
+
+  const handleHeroAnimationComplete = useCallback(() => {
+    const isInterviewerMode = sessionStorage.getItem('revil_interviewer_mode') === 'true';
+    if (isInterviewerMode && !hasAutoOpenedCV && (currentSection === 'home' || currentSection === 'view_link')) {
+      setHasAutoOpenedCV(true);
+      setIsCVModalOpen(true);
+    }
+  }, [hasAutoOpenedCV, currentSection]);
 
   const [direction, setDirection] = useState(0);
 
@@ -93,10 +111,23 @@ function App() {
   const openContactModal = useCallback(() => setIsContactModalOpen(true), []);
   const closeContactModal = useCallback(() => setIsContactModalOpen(false), []);
 
+  const openCVModal = useCallback(() => setIsCVModalOpen(true), []);
+  const closeCVModal = useCallback(() => setIsCVModalOpen(false), []);
+
+  const handleProjectClick = useCallback((project: any) => {
+    setSelectedProject(project);
+    setShowProjectModal(true);
+  }, []);
+
+  const handleContributorClick = useCallback((contributor: any) => {
+    setSelectedContributor(contributor);
+    setShowContributorModal(true);
+  }, []);
+
   const renderSection = () => {
     switch (currentSection) {
       case 'home':
-        return <Hero onLoaded={() => setIsDataReady(true)} isReady={!appLoading} />;
+        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
       case 'stack':
         return <Stack />;
       case 'projects':
@@ -106,9 +137,9 @@ function App() {
       case 'dashboard':
         return <Dashboard onNavigate={navigateTo} />;
       case 'view_link':
-        return <Hero onLoaded={() => setIsDataReady(true)} isReady={!appLoading} />;
+        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
       default:
-        return <Hero isReady={!appLoading} />;
+        return <Hero onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
     }
   };
 
@@ -367,11 +398,42 @@ function App() {
       )}
       <LayoutGroup>
         {(currentSection !== 'dashboard') && (
-          <Navbar onNavigate={navigateTo} currentSection={currentSection} onOpenContact={openContactModal} isContactOpen={isContactModalOpen} />
+          <Navbar
+            onNavigate={navigateTo}
+            currentSection={currentSection}
+            onOpenContact={openContactModal}
+            isContactOpen={isContactModalOpen}
+            onOpenCV={openCVModal}
+            isCVOpen={isCVModalOpen}
+          />
         )}
         <AnimatePresence>
           {isContactModalOpen && (
             <MContact onClose={closeContactModal} />
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {isCVModalOpen && (
+            <MCV onClose={closeCVModal} onProjectClick={handleProjectClick} />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showProjectModal && selectedProject && (
+            <MProjectView
+              project={selectedProject}
+              onClose={() => setShowProjectModal(false)}
+              onContributorClick={handleContributorClick}
+            />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showContributorModal && selectedContributor && (
+            <MContributorView
+              contributor={selectedContributor}
+              onClose={() => setShowContributorModal(false)}
+            />
           )}
         </AnimatePresence>
       </LayoutGroup>

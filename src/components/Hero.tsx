@@ -314,7 +314,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
 };
 
 
-const Hero = ({ onLoaded, isReady = true }: { onLoaded?: () => void; isReady?: boolean }) => {
+const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: () => void; onAnimationComplete?: () => void; isReady?: boolean }) => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const imageRef = useRef<HTMLDivElement>(null);
     const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -430,7 +430,15 @@ const Hero = ({ onLoaded, isReady = true }: { onLoaded?: () => void; isReady?: b
             direction: 'alternate',
             loop: true
         });
-    }, [isReady, timing.name, timing.rest]);
+        // Notify parent when entrance animations are finished
+        const revealTimeout = setTimeout(() => {
+            if (onAnimationComplete) onAnimationComplete();
+        }, timing.rest + 1700); // 1200 duration + 500 startDelay
+
+        return () => {
+            clearTimeout(revealTimeout);
+        };
+    }, [isReady, timing.name, timing.rest, onAnimationComplete]);
 
     return (
         <div className="min-h-screen w-full flex items-center justify-center overflow-hidden relative pt-20 pb-32 transition-slow">

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase, TrendingUp, Users, Eye, Calendar, Plus, Filter, ArrowUpRight } from 'lucide-react';
+import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase, TrendingUp, Users, Eye, Calendar, Plus } from 'lucide-react';
 import anime from 'animejs';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Loader from '../reactbits/Loader';
@@ -27,6 +27,7 @@ interface GeneratedLink {
     counts: number;
     createdAt: Date;
     recCLI: string;
+    interviewer: boolean;
 }
 
 
@@ -267,7 +268,8 @@ const DLinks = () => {
                             viewed: item.Views > 0,
                             counts: item.Views || 0,
                             createdAt: new Date(),
-                            recCLI: item.Rec_CLI || ''
+                            recCLI: item.Rec_CLI || '',
+                            interviewer: !!item.Interviewer
                         });
                     }
                 });
@@ -281,6 +283,17 @@ const DLinks = () => {
 
         return () => unsub();
     }, []);
+
+    const toggleInterviewerMode = async (linkId: string, currentState: boolean) => {
+        try {
+            const nextState = !currentState;
+            const docRef = doc(db, 'Settings', 'Views');
+            await updateDoc(docRef, { [`${linkId}.Interviewer`]: nextState });
+            setAlert({ show: true, type: 'success', message: `Interviewer Mode ${nextState ? 'Activated' : 'Deactivated'} for link.` });
+        } catch (error) {
+            setAlert({ show: true, type: 'error', message: 'Failed to toggle Interviewer Mode' });
+        }
+    };
 
     useEffect(() => {
         if (generatedLinks.length > 0) {
@@ -454,9 +467,11 @@ const DLinks = () => {
 
                     {activeSection === 'analysis' ? (
                         <div className="flex flex-col gap-8 pb-12">
-                            <div className="flex flex-col gap-1">
-                                <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Site Pulse</h1>
-                                <p className="text-muted text-sm">Real-time visitor patterns and engagement</p>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+                                <div className="flex flex-col gap-1">
+                                    <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Site Pulse</h1>
+                                    <p className="text-muted text-sm">Real-time visitor patterns and engagement</p>
+                                </div>
                             </div>
 
                             {/* Counter Cards */}
@@ -636,13 +651,25 @@ const DLinks = () => {
                                                                 </code>
                                                             </div>
                                                         </div>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
-                                                            className="w-11 h-11 flex items-center justify-center bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-2xl border border-blue-500/20 transition-all shadow-lg shadow-blue-500/5 shrink-0"
-                                                            title="Copy Link"
-                                                        >
-                                                            {copied === link.id ? <Check size={18} /> : <Copy size={18} />}
-                                                        </button>
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); toggleInterviewerMode(link.id, link.interviewer); }}
+                                                                className={`w-11 h-11 flex items-center justify-center rounded-2xl border transition-all shadow-lg shrink-0 ${link.interviewer
+                                                                    ? 'bg-blue-500/20 text-blue-500 border-blue-500/30'
+                                                                    : 'bg-white/5 text-muted border-white/10 hover:bg-white/10'
+                                                                    }`}
+                                                                title="Interviewer Mode"
+                                                            >
+                                                                <Users size={18} className={link.interviewer ? 'animate-pulse' : ''} />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
+                                                                className="w-11 h-11 flex items-center justify-center bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-2xl border border-blue-500/20 transition-all shadow-lg shadow-blue-500/5 shrink-0"
+                                                                title="Copy Link"
+                                                            >
+                                                                {copied === link.id ? <Check size={18} /> : <Copy size={18} />}
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </motion.div>
                                             ))

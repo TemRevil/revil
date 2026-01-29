@@ -20,8 +20,6 @@ interface StackItem {
     id: string;
     name: string;
     icon: string;
-    percentage: number;
-    information?: string;
 }
 
 
@@ -730,9 +728,7 @@ export default function DSettings() {
                     items.push({
                         id: key,
                         name: value.Name,
-                        icon: value.Icon,
-                        percentage: value['Proficiency Level'],
-                        information: value.Information
+                        icon: value.Icon
                     });
                 });
                 // Sort by ID (assuming numeric IDs)
@@ -806,9 +802,7 @@ export default function DSettings() {
 
             const payload = {
                 Name: data.name,
-                Icon: iconUrl,
-                'Proficiency Level': data.percentage,
-                Information: data.information || ''
+                Icon: iconUrl
             };
 
             await setDoc(doc(db, 'Settings', 'Tech Stack'), { [id]: payload }, { merge: true });
@@ -1348,15 +1342,7 @@ export default function DSettings() {
                                         </div>
                                         {item.icon ? <img src={item.icon} alt={item.name} className="w-10 h-10 sm:w-12 sm:h-12 md:w-16 md:h-16 opacity-90 object-contain" /> : <Code size={40} className="text-gray-500/50 sm:w-12 sm:h-12 md:w-[60px] md:h-[60px]" />}
                                         <h4 className="heading-sm text-xs sm:text-sm md:text-base truncate">{item.name}</h4>
-                                        <div>
-                                            <div className="flex-row-between mb-1.5">
-                                                <span className="text-xs text-sec">Proficiency</span>
-                                                <span className="text-xs font-bold text-blue-500">{item.percentage}%</span>
-                                            </div>
-                                            <div className="h-1.5 bg-gray-500/10 rounded-full overflow-hidden">
-                                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${item.percentage}%` }} />
-                                            </div>
-                                        </div>
+
                                     </div>
                                 ))}
                             </div>
@@ -1415,193 +1401,196 @@ export default function DSettings() {
                             )}
                         </div>
 
-                        <div className="settings-panel md:col-span-8 glass-panel p-6 flex flex-col gap-4" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
-                            <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
-                                <User size={22} className="mr-3" />
-                                Profile
-                            </h3>
-                            <div className="flex flex-col md:flex-row items-center gap-6">
-                                <div className="group relative flex-shrink-0">
-                                    <div className="w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-blue-400 p-0.5 flex-shrink-0 mx-auto sm:mx-0 bg-zinc-900/50 flex items-center justify-center">
-                                        {profileImagePreview ? (
-                                            <img src={profileImagePreview} alt="Profile Preview" className="w-full h-full object-cover rounded-full" />
-                                        ) : (
-                                            <User size={40} className="text-white/20" />
-                                        )}
-                                    </div>
-
-                                    <div className="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity bg-white/10 backdrop-blur-sm rounded-full">
-                                        <button
-                                            aria-label="Upload profile image"
-                                            onClick={() => profileImageInputRef.current?.click()}
-                                            className="w-10 h-10 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center hover:bg-blue-500/20 transition"
-                                        >
-                                            <Upload size={16} />
-                                        </button>
-
-                                        <button
-                                            aria-label="Browse profile image"
-                                            onClick={() => { setFirebaseSelectTarget('profile'); setFirebaseBrowserOpen(true); }}
-                                            className="w-10 h-10 rounded-full bg-orange-400/10 border border-orange-400/20 text-orange-400 flex items-center justify-center hover:bg-orange-400/20 transition"
-                                        >
-                                            <HardDrive size={16} />
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="w-full flex-1">
-                                    <div className="flex flex-col sm:flex-row gap-3 w-full">
-                                        <div className="sm:text-left flex-1">
-                                            {!isEditingProfile ? (
-                                                <>
-                                                    <div className="font-bold">{profileName}</div>
-                                                    <div className="text-sec text-sm opacity-70">{profileTitle}</div>
-                                                    {profileImageResolution ? (
-                                                        <p className="text-muted text-xs mt-1">
-                                                            Resolution: <span className="font-mono text-xs">{profileImageResolution}</span>
-                                                            {profileImageSize && <span className="text-muted"> &nbsp;•&nbsp; <span className="font-mono text-xs">{profileImageSize}</span></span>}
-                                                            {profileImageSizeLoading && <span className="text-muted"> &nbsp;•&nbsp; <span className="text-xs">checking...</span></span>}
-                                                        </p>
-                                                    ) : null}
-                                                    <p className="text-muted text-xs mt-2">Profile image is used across the site</p>
-                                                </>
+                        <div className="md:col-span-8 flex flex-col gap-6">
+                            {/* Profile */}
+                            <div className="settings-panel glass-panel p-6 flex flex-col gap-4" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
+                                <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
+                                    <User size={22} className="mr-3" />
+                                    Profile
+                                </h3>
+                                <div className="flex flex-col md:flex-row items-center gap-6">
+                                    <div className="group relative flex-shrink-0">
+                                        <div className="w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-blue-400 p-0.5 flex-shrink-0 mx-auto sm:mx-0 bg-zinc-900/50 flex items-center justify-center">
+                                            {profileImagePreview ? (
+                                                <img src={profileImagePreview} alt="Profile Preview" className="w-full h-full object-cover rounded-full" />
                                             ) : (
-                                                <div className="flex flex-col gap-2">
-                                                    <input className="input-field" value={profileName} onChange={(e) => { setProfileName(e.target.value); setHasUnsavedChanges(true); }} placeholder="Full name" />
-                                                    <input className="input-field" value={profileTitle} onChange={(e) => { setProfileTitle(e.target.value); setHasUnsavedChanges(true); }} placeholder="Job title" />
-                                                </div>
+                                                <User size={40} className="text-white/20" />
                                             )}
-
                                         </div>
 
-                                        <div className="flex items-center gap-2 self-start sm:self-auto">
-                                            {!isEditingProfile ? (
-                                                <button onClick={() => { setProfileBackup({ name: profileName, title: profileTitle }); setIsEditingProfile(true); }} className="btn btn-secondary px-3 py-2">
-                                                    <Edit2 size={16} />
-                                                    <span className="hidden sm:inline ml-2">Edit</span>
-                                                </button>
-                                            ) : (
-                                                <>
-                                                    <button onClick={() => {
-                                                        // Stage changes locally; Apply Changes will persist to Firebase
-                                                        setHasUnsavedChanges(true);
-                                                        setProfileInfoDirty(true);
-                                                        setIsEditingProfile(false);
-                                                        setProfileBackup(null);
-                                                        setAlert({ show: true, type: 'success', message: 'Profile changes staged. Click Apply Changes at the bottom of the page to save permanently.' });
-                                                        setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
-                                                    }} className="btn btn-primary px-3 py-2"><Save size={16} /><span className="hidden sm:inline ml-2">Save</span>
+                                        <div className="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity bg-white/10 backdrop-blur-sm rounded-full">
+                                            <button
+                                                aria-label="Upload profile image"
+                                                onClick={() => profileImageInputRef.current?.click()}
+                                                className="w-10 h-10 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center hover:bg-blue-500/20 transition"
+                                            >
+                                                <Upload size={16} />
+                                            </button>
+
+                                            <button
+                                                aria-label="Browse profile image"
+                                                onClick={() => { setFirebaseSelectTarget('profile'); setFirebaseBrowserOpen(true); }}
+                                                className="w-10 h-10 rounded-full bg-orange-400/10 border border-orange-400/20 text-orange-400 flex items-center justify-center hover:bg-orange-400/20 transition"
+                                            >
+                                                <HardDrive size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="w-full flex-1">
+                                        <div className="flex flex-col sm:flex-row gap-3 w-full">
+                                            <div className="sm:text-left flex-1">
+                                                {!isEditingProfile ? (
+                                                    <>
+                                                        <div className="font-bold">{profileName}</div>
+                                                        <div className="text-sec text-sm opacity-70">{profileTitle}</div>
+                                                        {profileImageResolution ? (
+                                                            <p className="text-muted text-xs mt-1">
+                                                                Resolution: <span className="font-mono text-xs">{profileImageResolution}</span>
+                                                                {profileImageSize && <span className="text-muted"> &nbsp;•&nbsp; <span className="font-mono text-xs">{profileImageSize}</span></span>}
+                                                                {profileImageSizeLoading && <span className="text-muted"> &nbsp;•&nbsp; <span className="text-xs">checking...</span></span>}
+                                                            </p>
+                                                        ) : null}
+                                                        <p className="text-muted text-xs mt-2">Profile image is used across the site</p>
+                                                    </>
+                                                ) : (
+                                                    <div className="flex flex-col gap-2">
+                                                        <input className="input-field" value={profileName} onChange={(e) => { setProfileName(e.target.value); setHasUnsavedChanges(true); }} placeholder="Full name" />
+                                                        <input className="input-field" value={profileTitle} onChange={(e) => { setProfileTitle(e.target.value); setHasUnsavedChanges(true); }} placeholder="Job title" />
+                                                    </div>
+                                                )}
+
+                                            </div>
+
+                                            <div className="flex items-center gap-2 self-start sm:self-auto">
+                                                {!isEditingProfile ? (
+                                                    <button onClick={() => { setProfileBackup({ name: profileName, title: profileTitle }); setIsEditingProfile(true); }} className="btn btn-secondary px-3 py-2">
+                                                        <Edit2 size={16} />
+                                                        <span className="hidden sm:inline ml-2">Edit</span>
                                                     </button>
-                                                    <button onClick={() => {
-                                                        if (profileBackup) {
-                                                            setProfileName(profileBackup.name);
-                                                            setProfileTitle(profileBackup.title);
+                                                ) : (
+                                                    <>
+                                                        <button onClick={() => {
+                                                            // Stage changes locally; Apply Changes will persist to Firebase
+                                                            setHasUnsavedChanges(true);
+                                                            setProfileInfoDirty(true);
+                                                            setIsEditingProfile(false);
                                                             setProfileBackup(null);
-                                                        }
-                                                        setIsEditingProfile(false);
-                                                    }} className="btn btn-secondary px-3 py-2"><X size={16} /><span className="hidden sm:inline ml-2">Cancel</span></button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-3 flex items-center justify-between">
-                                        <div className="flex gap-2 items-center">
-                                            {profileImageDirty ? (
-                                                <>
-                                                    <button onClick={() => {
-                                                        // Stage upload - actual upload will happen when Apply Changes is clicked
-                                                        setHasUnsavedChanges(true);
-                                                        setAlert({ show: true, type: 'success', message: 'Profile image staged. Click Apply Changes to save to Firebase.' });
-                                                        setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
-                                                    }} className="btn btn-primary px-3 py-2" disabled={profileImageUploading}>{profileImageUploading ? 'Saving...' : (<><Save size={16} /><span className="hidden sm:inline ml-2">Save Image</span></>)}</button>
-                                                    <button onClick={handleCancelProfileImageChange} className="btn btn-secondary px-3 py-2"><X size={16} /><span className="hidden sm:inline ml-2">Cancel</span></button>
-                                                </>
-                                            ) : null}
+                                                            setAlert({ show: true, type: 'success', message: 'Profile changes staged. Click Apply Changes at the bottom of the page to save permanently.' });
+                                                            setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+                                                        }} className="btn btn-primary px-3 py-2"><Save size={16} /><span className="hidden sm:inline ml-2">Save</span>
+                                                        </button>
+                                                        <button onClick={() => {
+                                                            if (profileBackup) {
+                                                                setProfileName(profileBackup.name);
+                                                                setProfileTitle(profileBackup.title);
+                                                                setProfileBackup(null);
+                                                            }
+                                                            setIsEditingProfile(false);
+                                                        }} className="btn btn-secondary px-3 py-2"><X size={16} /><span className="hidden sm:inline ml-2">Cancel</span></button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
 
-                                        <input ref={profileImageInputRef} type="file" accept="image/*" onChange={handleProfileImageUpload} style={{ display: 'none' }} />
+                                        <div className="mt-3 flex items-center justify-between">
+                                            <div className="flex gap-2 items-center">
+                                                {profileImageDirty ? (
+                                                    <>
+                                                        <button onClick={() => {
+                                                            // Stage upload - actual upload will happen when Apply Changes is clicked
+                                                            setHasUnsavedChanges(true);
+                                                            setAlert({ show: true, type: 'success', message: 'Profile image staged. Click Apply Changes to save to Firebase.' });
+                                                            setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+                                                        }} className="btn btn-primary px-3 py-2" disabled={profileImageUploading}>{profileImageUploading ? 'Saving...' : (<><Save size={16} /><span className="hidden sm:inline ml-2">Save Image</span></>)}</button>
+                                                        <button onClick={handleCancelProfileImageChange} className="btn btn-secondary px-3 py-2"><X size={16} /><span className="hidden sm:inline ml-2">Cancel</span></button>
+                                                    </>
+                                                ) : null}
+                                            </div>
+
+                                            <input ref={profileImageInputRef} type="file" accept="image/*" onChange={handleProfileImageUpload} style={{ display: 'none' }} />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Social Links Editor */}
-                        <div className="settings-panel md:col-span-8 glass-panel p-6 flex flex-col gap-4" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
-                            <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
-                                <Link size={22} className="mr-3" />
-                                Social Links
-                            </h3>
-                            <div className="flex flex-col gap-4">
-                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                                    <div className="sm:col-span-4">
-                                        <label className="text-xs text-muted mb-1 block">Platform Name</label>
-                                        <input
-                                            className="input-field w-full"
-                                            placeholder="e.g. GitHub"
-                                            value={newLinkName}
-                                            onChange={(e) => setNewLinkName(e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="sm:col-span-6">
-                                        <label className="text-xs text-muted mb-1 block">URL</label>
-                                        <input
-                                            className="input-field w-full"
-                                            placeholder="https://..."
-                                            value={newLinkUrl}
-                                            onChange={(e) => setNewLinkUrl(e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="sm:col-span-2">
-                                        <button
-                                            className="btn btn-primary w-full justify-center"
-                                            disabled={socialLinks.length >= 5 || !newLinkName || !newLinkUrl}
-                                            onClick={() => {
-                                                if (socialLinks.length < 5 && newLinkName && newLinkUrl) {
-                                                    setSocialLinks([...socialLinks, { name: newLinkName, url: newLinkUrl }]);
-                                                    setNewLinkName('');
-                                                    setNewLinkUrl('');
-                                                    setHasUnsavedChanges(true);
-                                                }
-                                            }}
-                                        >
-                                            <Plus size={18} /> <span className="hidden sm:inline">Add</span>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {socialLinks.length > 0 ? (
-                                    <div className="flex flex-col gap-2 mt-2">
-                                        {socialLinks.map((link, index) => (
-                                            <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                                                <div className="flex items-center gap-3 overflow-hidden">
-                                                    <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                                                        <Link size={14} className="text-primary" />
-                                                    </div>
-                                                    <div className="flex flex-col overflow-hidden">
-                                                        <span className="font-bold text-sm truncate">{link.name}</span>
-                                                        <span className="text-xs text-muted truncate">{link.url}</span>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                    onClick={() => {
-                                                        const newLinks = [...socialLinks];
-                                                        newLinks.splice(index, 1);
-                                                        setSocialLinks(newLinks);
+                            {/* Social Links Editor */}
+                            <div className="settings-panel glass-panel p-6 flex flex-col gap-4" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
+                                <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
+                                    <Link size={22} className="mr-3" />
+                                    Social Links
+                                </h3>
+                                <div className="flex flex-col gap-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                        <div className="sm:col-span-4">
+                                            <label className="text-xs text-muted mb-1 block">Platform Name</label>
+                                            <input
+                                                className="input-field w-full"
+                                                placeholder="e.g. GitHub"
+                                                value={newLinkName}
+                                                onChange={(e) => setNewLinkName(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="sm:col-span-6">
+                                            <label className="text-xs text-muted mb-1 block">URL</label>
+                                            <input
+                                                className="input-field w-full"
+                                                placeholder="https://..."
+                                                value={newLinkUrl}
+                                                onChange={(e) => setNewLinkUrl(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="sm:col-span-2">
+                                            <button
+                                                className="btn btn-primary w-full justify-center"
+                                                disabled={socialLinks.length >= 5 || !newLinkName || !newLinkUrl}
+                                                onClick={() => {
+                                                    if (socialLinks.length < 5 && newLinkName && newLinkUrl) {
+                                                        setSocialLinks([...socialLinks, { name: newLinkName, url: newLinkUrl }]);
+                                                        setNewLinkName('');
+                                                        setNewLinkUrl('');
                                                         setHasUnsavedChanges(true);
-                                                    }}
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        ))}
+                                                    }
+                                                }}
+                                            >
+                                                <Plus size={18} /> <span className="hidden sm:inline">Add</span>
+                                            </button>
+                                        </div>
                                     </div>
-                                ) : (
-                                    <div className="text-center p-6 border border-dashed border-white/10 rounded-xl text-muted text-sm">
-                                        No social links added yet. Add up to 5 links.
-                                    </div>
-                                )}
+
+                                    {socialLinks.length > 0 ? (
+                                        <div className="flex flex-col gap-2 mt-2">
+                                            {socialLinks.map((link, index) => (
+                                                <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                                                    <div className="flex items-center gap-3 overflow-hidden">
+                                                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+                                                            <Link size={14} className="text-primary" />
+                                                        </div>
+                                                        <div className="flex flex-col overflow-hidden">
+                                                            <span className="font-bold text-sm truncate">{link.name}</span>
+                                                            <span className="text-xs text-muted truncate">{link.url}</span>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                        onClick={() => {
+                                                            const newLinks = [...socialLinks];
+                                                            newLinks.splice(index, 1);
+                                                            setSocialLinks(newLinks);
+                                                            setHasUnsavedChanges(true);
+                                                        }}
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center p-6 border border-dashed border-white/10 rounded-xl text-muted text-sm">
+                                            No social links added yet. Add up to 5 links.
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>

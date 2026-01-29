@@ -1,9 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, Folder, FileImage, ChevronRight, ChevronLeft, Search } from 'lucide-react';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../lib/firebase';
-import Loader from '../reactbits/Loader';
+
+const Spinner = () => (
+    <div className="flex flex-col items-center gap-3">
+        <div className="relative w-10 h-10">
+            <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
+            <div className="absolute inset-0 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+        <span className="text-[10px] font-bold text-blue-500/80 uppercase tracking-widest animate-pulse">Syncing...</span>
+    </div>
+);
 
 interface FirebaseFile {
     name: string;
@@ -122,7 +132,16 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
 
     return createPortal(
         <div className="modal-backdrop open animate-fade-in" style={{ zIndex: 1300 }}>
-            <div className="modal-content glass-panel animate-scale-in" style={{ maxWidth: '700px', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <div
+                className="modal-content glass-panel animate-scale-in transition-all duration-300 ease-in-out"
+                style={{
+                    maxWidth: '700px',
+                    maxHeight: '80vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: selectedFile && !selectedFile.isFolder ? 'auto' : '600px' // Dynamic height with transition
+                }}
+            >
                 {/* Header */}
                 <div className="modal-header" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
                     <div className="flex items-center gap-3">
@@ -185,8 +204,22 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4">
-                    {filteredFiles.length === 0 ? (
+                <div className="flex-1 overflow-y-auto p-4 relative">
+                    <AnimatePresence>
+                        {isLoading && (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="absolute inset-0 flex items-center justify-center bg-black/[0.1] dark:bg-white/[0.05] backdrop-blur-[4px] z-10 rounded-lg"
+                            >
+                                <Spinner />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {filteredFiles.length === 0 && !isLoading ? (
                         <div className="text-center py-12 text-sec">
                             {searchQuery ? 'No files match your search' : 'No files in this folder'}
                         </div>

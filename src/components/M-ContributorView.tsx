@@ -34,7 +34,7 @@ const MContributorView = ({ contributor, onClose }: MContributorViewProps) => {
             backgroundColor: 'rgba(0, 0, 0, 0.4)',
             backdropFilter: 'blur(8px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1200,
+            zIndex: 2300,
             animation: 'fadeIn 0.2s ease-out'
         }}>
             <div className="glass-panel-deep" style={{

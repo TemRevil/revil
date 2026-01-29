@@ -198,6 +198,14 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                         sessionStorage.setItem('revil_link_id', foundId);
                         metrics.current.baseMetrics = existingRec;
 
+                        // Check for Interviewer Mode
+                        const linkData = data[foundId] as any;
+                        if (linkData?.Interviewer) {
+                            sessionStorage.setItem('revil_interviewer_mode', 'true');
+                        } else {
+                            sessionStorage.removeItem('revil_interviewer_mode');
+                        }
+
                         await updateDoc(docRef, {
                             [`${foundId}.Views`]: currentViews + 1
                         });

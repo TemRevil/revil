@@ -1,5 +1,5 @@
-import { Home, Layers, FolderKanban, Mail, Moon, Sun } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 interface NavbarProps {
@@ -7,6 +7,8 @@ interface NavbarProps {
     currentSection?: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
     onOpenContact?: () => void;
     isContactOpen?: boolean;
+    onOpenCV?: () => void;
+    isCVOpen?: boolean;
 }
 
 const Tooltip = ({ text, show, isDark }: { text: string, show: boolean, isDark: boolean }) => (
@@ -31,7 +33,7 @@ const Tooltip = ({ text, show, isDark }: { text: string, show: boolean, isDark: 
     </div>
 );
 
-const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false }: NavbarProps) => {
+const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false, onOpenCV, isCVOpen = false }: NavbarProps) => {
     const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
 
     // Initialize theme
@@ -49,7 +51,8 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
     const [isHoveringNav, setIsHoveringNav] = useState(false);
 
     // 0 = Projects, 1 = Mail
-    const cycleStepRef = useRef(0);
+    // cycleStepRef is currently not used but kept as a comment for logic reference if needed later
+    // const cycleStepRef = useRef(0);
 
     const toggleTheme = () => {
         const newTheme = !isDark;
@@ -195,6 +198,43 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             <FolderKanban size={iconSize} strokeWidth={2} />
                         </button>
                         <Tooltip text="🚀 Projects" show={hoveredTab === 'projects' || autoTooltip === 'projects'} isDark={isDark} />
+                    </div>
+
+                    <div
+                        className="relative"
+                        style={{ width: isMobile ? '36px' : '48px', height: isMobile ? '36px' : '48px' }}
+                    >
+                        <motion.button
+                            layoutId="cv-trigger"
+                            className={`
+                                btn-icon absolute inset-0 flex items-center justify-center
+                                ${isMobile ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'}
+                                text-muted hover:text-primary hover:bg-[rgba(0,0,0,0.04)] dark:hover:bg-[rgba(255,255,255,0.1)]
+                                hover:scale-110 transition-all duration-200
+                            `}
+                            style={{
+                                zIndex: isCVOpen ? 0 : 1,
+                                opacity: isCVOpen ? 0 : 1,
+                                pointerEvents: isCVOpen ? 'none' : 'auto',
+                            }}
+                            onClick={onOpenCV}
+                            onMouseEnter={() => setHoveredTab('cv')}
+                            onMouseLeave={() => setHoveredTab(null)}
+                        >
+                            <motion.div layoutId="cv-icon" className="flex">
+                                <FileText size={iconSize} strokeWidth={2} />
+                            </motion.div>
+                        </motion.button>
+                        <Tooltip text="📄 Digital CV" show={hoveredTab === 'cv'} isDark={isDark} />
+
+                        {isCVOpen && (
+                            <div className={`
+                                flex items-center justify-center opacity-20 pointer-events-none
+                                ${isMobile ? 'p-2' : 'p-3'}
+                            `}>
+                                <FileText size={iconSize} strokeWidth={2} className="opacity-0" />
+                            </div>
+                        )}
                     </div>
                 </div>
 

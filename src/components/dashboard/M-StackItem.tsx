@@ -9,8 +9,6 @@ export interface StackItemData {
     name: string;
     icon: string;
     iconFile?: File | null;
-    percentage: number;
-    information?: string;
 }
 
 interface MStackItemProps {
@@ -24,8 +22,6 @@ const MStackItem = ({ isOpen, onClose, onSave, initialData }: MStackItemProps) =
     const [name, setName] = useState('');
     const [icon, setIcon] = useState('');
     const [iconFile, setIconFile] = useState<File | null>(null);
-    const [percentage, setPercentage] = useState(50);
-    const [information, setInformation] = useState('');
     const [firebaseBrowserOpen, setFirebaseBrowserOpen] = useState(false);
     const iconInputRef = useRef<HTMLInputElement>(null);
 
@@ -34,14 +30,10 @@ const MStackItem = ({ isOpen, onClose, onSave, initialData }: MStackItemProps) =
             setName(initialData.name);
             setIcon(initialData.icon);
             setIconFile(null);
-            setPercentage(initialData.percentage);
-            setInformation(initialData.information || '');
         } else {
             setName('');
             setIcon('');
             setIconFile(null);
-            setPercentage(50);
-            setInformation('');
         }
     }, [initialData, isOpen]);
 
@@ -123,33 +115,11 @@ const MStackItem = ({ isOpen, onClose, onSave, initialData }: MStackItemProps) =
                             </div>
                             <p className="text-center sm:text-left text-muted text-[10px] mt-1 pl-1">SVG files recommended for best quality</p>
                         </div>
-                        <div>
-                            <label className="input-label">Information</label>
-                            <textarea
-                                value={information}
-                                onChange={(e) => setInformation(e.target.value)}
-                                placeholder="Add some details about this technology..."
-                                className="input-field h-20 resize-y"
-                            />
-                        </div>
-                        <div>
-                            <div className="flex-row-between mb-2">
-                                <label className="input-label mb-0">Proficiency Level</label>
-                                <span className="font-bold text-blue-500">{percentage}%</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={percentage}
-                                onChange={(e) => setPercentage(Number(e.target.value))}
-                                className="w-full cursor-pointer accent-blue-500"
-                            />
-                        </div>
-                        <div className="flex justify-end gap-3">
+
+                        <div className="flex justify-end gap-3 mt-4">
                             <button onClick={onClose} className="btn btn-secondary">Cancel</button>
                             <button
-                                onClick={() => onSave({ id: initialData?.id, name, icon, iconFile, percentage, information })}
+                                onClick={() => onSave({ id: initialData?.id, name, icon, iconFile })}
                                 disabled={!name.trim() || !icon}
                                 className="btn btn-primary"
                             >

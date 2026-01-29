@@ -712,7 +712,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                 position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
                 backgroundColor: 'rgba(0, 0, 0, 0.85)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                zIndex: 1100,
+                zIndex: 2100,
                 overflow: 'hidden',
                 fontFamily: "'Inter', sans-serif",
                 userSelect: 'none', // Added user-select: none to the modal overlay
@@ -729,7 +729,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
 
             {/* Close Button - Ultra Minimal */}
             <button onClick={handleClose} style={{
-                position: 'absolute', top: isMobile ? '20px' : '40px', right: isMobile ? '20px' : '40px', zIndex: 1200,
+                position: 'absolute', top: isMobile ? '20px' : '40px', right: isMobile ? '20px' : '40px', zIndex: 2200,
                 width: isMobile ? '44px' : '56px', height: isMobile ? '44px' : '56px', borderRadius: '50%',
                 background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.15)',
                 color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',

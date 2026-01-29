@@ -573,12 +573,12 @@ const Projects = () => {
                                             <img
                                                 src={tag.iconSvg}
                                                 alt={tag.name}
-                                                className={`w-4 h-4 object-contain ${isActive ? '' : 'grayscale opacity-60'}`}
+                                                className={`w-8 h-8 object-contain ${isActive ? '' : 'grayscale opacity-60'}`}
                                             />
                                         ) : (
                                             <div
                                                 dangerouslySetInnerHTML={{ __html: tag.iconSvg }}
-                                                className="w-4 h-4 fill-current"
+                                                className="w-8 h-8 fill-current"
                                                 style={{ opacity: isActive ? 1 : 0.6 }}
                                             />
                                         )
