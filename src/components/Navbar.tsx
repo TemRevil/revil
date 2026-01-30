@@ -2,16 +2,20 @@ import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText } from 'lucide-re
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
+type NavigateSection = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
+
+type NavigateFn = (section: NavigateSection) => void;
+
 interface NavbarProps {
-    onNavigate?: (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
-    currentSection?: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
+    onNavigate?: NavigateFn;
+    currentSection?: NavigateSection;
     onOpenContact?: () => void;
     isContactOpen?: boolean;
     onOpenCV?: () => void;
     isCVOpen?: boolean;
 }
 
-const Tooltip = ({ text, show, isDark }: { text: string, show: boolean, isDark: boolean }) => (
+const Tooltip = ({ text, show, isDark }: { text: string; show: boolean; isDark: boolean }) => (
     <div className={`nav-tooltip ${show ? 'show' : ''}`}>
         <div className="nav-tooltip-inner">
             {text}

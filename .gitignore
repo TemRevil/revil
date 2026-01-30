@@ -1,3 +1,13 @@
+node_modules/
+dist/
+dev-dist/
+build/
+functions/lib/
+.env
+.parcel-cache/
+/.idea/
+/.vscode/
+*.log
 # Logs
 logs
 *.log

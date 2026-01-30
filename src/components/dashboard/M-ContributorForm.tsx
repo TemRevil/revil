@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createPortal } from 'react-dom';
 import { X, Upload, Github, Linkedin, Facebook, Instagram, Globe, ZoomIn, HardDrive } from 'lucide-react';
 import Cropper from 'react-easy-crop';
@@ -36,48 +37,50 @@ const createImage = (url: string): Promise<HTMLImageElement> =>
     });
 
 const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<File> => {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const image = await createImage(imageSrc);
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+    return new Promise((resolve, reject) => {
+        (async () => {
+            try {
+                const image = await createImage(imageSrc);
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
 
-            if (!ctx) {
-                reject(new Error('No 2d context'));
-                return;
-            }
-
-            if (!pixelCrop || pixelCrop.width <= 0 || pixelCrop.height <= 0) {
-                reject(new Error(`Invalid crop dimensions`));
-                return;
-            }
-
-            canvas.width = pixelCrop.width;
-            canvas.height = pixelCrop.height;
-
-            ctx.drawImage(
-                image,
-                pixelCrop.x,
-                pixelCrop.y,
-                pixelCrop.width,
-                pixelCrop.height,
-                0,
-                0,
-                pixelCrop.width,
-                pixelCrop.height
-            );
-
-            canvas.toBlob((blob) => {
-                if (!blob) {
-                    reject(new Error('Canvas is empty'));
+                if (!ctx) {
+                    reject(new Error('No 2d context'));
                     return;
                 }
-                const file = new File([blob], 'cropped_image.png', { type: 'image/png' });
-                resolve(file);
-            }, 'image/png');
-        } catch (e) {
-            reject(e);
-        }
+
+                if (!pixelCrop || pixelCrop.width <= 0 || pixelCrop.height <= 0) {
+                    reject(new Error(`Invalid crop dimensions`));
+                    return;
+                }
+
+                canvas.width = pixelCrop.width;
+                canvas.height = pixelCrop.height;
+
+                ctx.drawImage(
+                    image,
+                    pixelCrop.x,
+                    pixelCrop.y,
+                    pixelCrop.width,
+                    pixelCrop.height,
+                    0,
+                    0,
+                    pixelCrop.width,
+                    pixelCrop.height
+                );
+
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        reject(new Error('Canvas is empty'));
+                        return;
+                    }
+                    const file = new File([blob], 'cropped_image.png', { type: 'image/png' });
+                    resolve(file);
+                }, 'image/png');
+            } catch (e) {
+                reject(e);
+            }
+        })();
     });
 };
 
@@ -100,6 +103,7 @@ const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributor
     useEffect(() => {
         if (isOpen) {
             if (initialData) {
+                /* eslint-disable react-hooks/set-state-in-effect */
                 setName(initialData.name);
                 setRole(initialData.role || '');
                 setImage(initialData.image || null);

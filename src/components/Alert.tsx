@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { X, CheckCircle, AlertTriangle, AlertCircle, Info } from 'lucide-react';
 import anime from 'animejs';
 
@@ -12,37 +12,43 @@ interface AlertProps {
 }
 
 export default function Alert({ type, message, onClose, duration = 3000 }: AlertProps) {
+    const alertRef = useRef<HTMLDivElement>(null);
+
+    const handleClose = useCallback(() => {
+        if (!alertRef.current) return;
+        // Exit animation
+        anime({
+            targets: alertRef.current,
+            translateY: [0, -20],
+            opacity: [1, 0],
+            scale: [1, 0.95],
+            duration: 250,
+            easing: 'easeInQuad',
+            complete: onClose
+        });
+    }, [onClose]);
+
     useEffect(() => {
+        if (!alertRef.current) return;
         // Entrance animation
         anime({
-            targets: '.custom-alert',
+            targets: alertRef.current,
             translateY: [-20, 0],
             opacity: [0, 1],
-            scale: [0.9, 1],
-            duration: 400,
-            easing: 'easeOutElastic(1, .8)'
+            scale: [0.95, 1],
+            duration: 500,
+            easing: 'easeOutQuart'
         });
+    }, []);
 
+    useEffect(() => {
         if (duration > 0) {
             const timer = setTimeout(() => {
                 handleClose();
             }, duration);
             return () => clearTimeout(timer);
         }
-    }, [duration]);
-
-    const handleClose = () => {
-        // Exit animation
-        anime({
-            targets: '.custom-alert',
-            translateY: [0, -20],
-            opacity: [1, 0],
-            scale: [1, 0.9],
-            duration: 300,
-            easing: 'easeInBack',
-            complete: onClose
-        });
-    };
+    }, [duration, handleClose]);
 
     const styles = {
         success: {
@@ -72,6 +78,7 @@ export default function Alert({ type, message, onClose, duration = 3000 }: Alert
 
     return (
         <div
+            ref={alertRef}
             className="custom-alert fixed top-6 right-6 z-[9999] flex items-center gap-3 p-4 rounded-md shadow-lg backdrop-blur-md min-w-[300px] max-w-[400px]"
             style={{ backgroundColor: 'var(--card-bg, #ffffff)', borderLeft: `4px solid ${currentStyle.border}` }}
         >

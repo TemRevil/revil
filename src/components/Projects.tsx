@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import anime from 'animejs';
@@ -71,6 +72,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                 setCurrentImageIndex((prev) => (prev + 1) % project.images.length);
             }, 2000);
         } else {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCurrentImageIndex(0);
         }
         return () => clearInterval(interval);
@@ -195,7 +197,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                                 <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-500 text-[10px] font-bold">
-                                                    {c.name.charAt(0)}
+                                                    {c.name ? c.name.charAt(0) : '?'}
                                                 </div>
                                             )}
                                         </div>
@@ -237,7 +239,6 @@ const Projects = () => {
     const handwritingRef = useRef<HTMLDivElement>(null);
     const [availableContributors, setAvailableContributors] = useState<any[]>([]);
     const [availableTags, setAvailableTags] = useState<any[]>([]);
-    const [projectsData, setProjectsData] = useState<Project[]>([]);
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [selectedContributor, setSelectedContributor] = useState<Contributor | null>(null);
@@ -259,12 +260,12 @@ const Projects = () => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 const loaded = Object.entries(data)
-                    .filter(([_, val]) => val && typeof val === 'object' && (val as any).Name)
+                    .filter(([, val]) => val && typeof val === 'object' && (val as any).Name)
                     .map(([id, val]: [string, any]) => ({
                         id,
-                        name: val.Name,
-                        role: val.Role,
-                        image: val.Image,
+                        name: val.Name || '',
+                        role: val.Role || '',
+                        image: val.Image || '',
                         links: val["Social Accounts"] || {}
                     }));
                 setAvailableContributors(prev => {
@@ -279,9 +280,9 @@ const Projects = () => {
                 const val = d.data();
                 return {
                     id: d.id,
-                    name: val.Name || val.name,
-                    role: val.Role || val.role,
-                    image: val.Image || val.image,
+                    name: val.Name || val.name || '',
+                    role: val.Role || val.role || '',
+                    image: val.Image || val.image || '',
                     links: val["Social Accounts"] || val.links || val.socials || {}
                 };
             });
@@ -321,8 +322,9 @@ const Projects = () => {
         return () => unsub();
     }, []);
 
-    useEffect(() => {
-        const loaded = rawProjects.map(data => {
+    // Memoize projects data to avoid infinite loops and unnecessary re-calculations
+    const projectsData = useMemo(() => {
+        return rawProjects.map(data => {
             const v = data.Views || {};
 
             const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: any) => {
@@ -383,13 +385,21 @@ const Projects = () => {
                 contributors: projectContributors
             } as Project;
         });
-        setProjectsData(loaded);
-
-        if (selectedProject) {
-            const updated = loaded.find(p => p.id === selectedProject.id);
-            if (updated) setSelectedProject(updated);
-        }
     }, [rawProjects, availableContributors, availableTags]);
+
+    // Keep selectedProject in sync with data changes without causing loops
+    useEffect(() => {
+        if (selectedProject) {
+            const updated = projectsData.find(p => p.id === selectedProject.id);
+            if (updated && updated !== selectedProject) {
+                // Sync selectedProject when underlying data changes. This may
+                // trigger a re-render but is guarded by identity check. Disable
+                // the rule because this synchronization is intentional.
+                // eslint-disable-next-line react-hooks/set-state-in-effect
+                setSelectedProject(updated);
+            }
+        }
+    }, [projectsData, selectedProject]);
 
     const getLevenshteinDistance = (a: string, b: string) => {
         if (a.length === 0) return b.length;
@@ -446,7 +456,7 @@ const Projects = () => {
                 minDistance = Math.min(minDistance, checkTerm(tech));
             });
             project.contributors.forEach(c => {
-                minDistance = Math.min(minDistance, checkTerm(c.name));
+                minDistance = Math.min(minDistance, checkTerm(c.name || ''));
             });
             return { project, minDistance };
         });

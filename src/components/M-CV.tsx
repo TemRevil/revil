@@ -1,28 +1,32 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { X, Mail, Phone, MapPin, Globe, Github, Linkedin, Instagram, Download, ExternalLink, FileText } from 'lucide-react';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { Project as FullProject } from './M-ProjectView';
 
-interface Project {
+interface CVProject {
     id: string;
     title: string;
     stack: string[];
-    fullData: any;
+    fullData?: unknown;
 }
+
+type StackItem = { id: string; name: string; icon?: string };
+type Contributor = { id: string; name?: string; role?: string; image?: string; links?: Record<string, string> };
 
 interface MCVProps {
     isOpen: boolean;
     onClose: () => void;
-    onProjectClick: (project: any) => void;
+    onProjectClick: (project: FullProject) => void;
 }
 
 const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
-    const [projects, setProjects] = useState<Project[]>([]);
+    const [projects, setProjects] = useState<CVProject[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
-    const [availableStack, setAvailableStack] = useState<any[]>([]);
-    const [availableContributors, setAvailableContributors] = useState<any[]>([]);
+    const [availableStack, setAvailableStack] = useState<StackItem[]>([]);
+    const [availableContributors, setAvailableContributors] = useState<Contributor[]>([]);
 
     // Fetch Contributors
     useEffect(() => {
@@ -30,14 +34,18 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 const loaded = Object.entries(data)
-                    .filter(([_, val]) => val && typeof val === 'object' && (val as any).Name)
-                    .map(([id, val]: [string, any]) => ({
-                        id,
-                        name: val.Name,
-                        role: val.Role,
-                        image: val.Image,
-                        links: val["Social Accounts"] || {}
-                    }));
+                    .filter(([, val]) => val && typeof val === 'object' && ((val as Record<string, unknown>).Name || (val as Record<string, unknown>).name))
+                    .map(([id, val]: [string, unknown]) => {
+                        const v = val as Record<string, unknown>;
+                        const links = v["Social Accounts"] && typeof v["Social Accounts"] === 'object' ? v["Social Accounts"] as Record<string, string> : {};
+                        return {
+                            id,
+                            name: typeof v.Name === 'string' ? v.Name : typeof v.name === 'string' ? v.name : undefined,
+                            role: typeof v.Role === 'string' ? v.Role : typeof v.role === 'string' ? v.role : undefined,
+                            image: typeof v.Image === 'string' ? v.Image : typeof v.image === 'string' ? v.image : undefined,
+                            links
+                        };
+                    });
                 setAvailableContributors(prev => {
                     const filtered = prev.filter(p => !loaded.some(l => l.id === p.id));
                     return [...filtered, ...loaded];
@@ -75,11 +83,14 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                 const data = docSnap.data();
                 const items = Object.entries(data)
                     .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([id, val]: [string, any]) => ({
-                        id,
-                        name: val.Name || val.name,
-                        icon: val.Icon || val.icon
-                    }));
+                    .map(([id, val]: [string, unknown]) => {
+                        const v = val as Record<string, unknown>;
+                        return {
+                            id,
+                            name: typeof v.Name === 'string' ? v.Name : typeof v.name === 'string' ? v.name : '',
+                            icon: typeof v.Icon === 'string' ? v.Icon : typeof v.icon === 'string' ? v.icon : undefined
+                        };
+                    });
                 setAvailableStack(items);
             }
         });
@@ -93,13 +104,18 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                 const data = doc.data();
                 const rawStack = data.Stack || [];
                 const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack))
-                    .map((t: any) => typeof t === 'string' ? t : (t.name || t.Name || ''))
+                    .map((t: unknown) => {
+                        if (typeof t === 'string') return t;
+                        const u = t as Record<string, unknown>;
+                        return typeof u.name === 'string' ? u.name : typeof u.Name === 'string' ? u.Name : '';
+                    })
                     .filter(t => t !== '' && t !== 'Unix');
 
                 // Map exactly like Projects.tsx expects
-                const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: any) => {
-                    const name = c["Contributor Name"] || '';
-                    const projectRole = c["Role at Project"];
+                const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: unknown) => {
+                    const v = c as Record<string, unknown>;
+                    const name = typeof v["Contributor Name"] === 'string' ? v["Contributor Name"] : '';
+                    const projectRole = typeof v["Role at Project"] === 'string' ? v["Role at Project"] : undefined;
 
                     const fullContrib = availableContributors.find(cont => {
                         const cName = (cont.name || '').trim().toLowerCase();
@@ -109,8 +125,8 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
 
                     return {
                         name,
-                        role: projectRole || (fullContrib ? (fullContrib.role || fullContrib.jobTitle || 'Contributor') : 'Contributor'),
-                        jobTitle: fullContrib ? (fullContrib.role || fullContrib.jobTitle || 'Contributor') : 'Contributor',
+                        role: projectRole || (fullContrib ? (fullContrib.role || (((fullContrib as unknown) as Record<string, unknown>).jobTitle as string) || 'Contributor') : 'Contributor'),
+                        jobTitle: fullContrib ? (fullContrib.role || (((fullContrib as unknown) as Record<string, unknown>).jobTitle as string) || 'Contributor') : 'Contributor',
                         image: fullContrib?.image || '',
                         links: fullContrib?.links || {}
                     };
@@ -281,7 +297,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                                 <motion.div
                                                     key={project.id}
                                                     whileHover={{ x: 10 }}
-                                                    onClick={() => onProjectClick(project.fullData)}
+                                                    onClick={() => onProjectClick(project.fullData as FullProject)}
                                                     className="group cursor-pointer space-y-3"
                                                 >
                                                     <div className="flex items-center justify-between">
@@ -327,7 +343,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     <section className="space-y-6">
                                         <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Toolbox</h2>
                                         <div className="flex flex-wrap gap-2">
-                                            {availableStack.length > 0 ? availableStack.map((skill: any) => (
+                                            {availableStack.length > 0 ? availableStack.map((skill) => (
                                                 <div key={skill.id} className="px-3 py-1.5 bg-black/[0.03] dark:bg-white/[0.05] border border-black/5 dark:border-white/5 rounded-lg">
                                                     <span className="text-[11px] font-bold text-sec">{skill.name}</span>
                                                 </div>

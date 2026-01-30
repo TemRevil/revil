@@ -13,7 +13,7 @@ import Loader from './components/reactbits/Loader';
 import { Algorithm } from './components/Algorithm';
 import MCV from './components/M-CV';
 import MProjectView from './components/M-ProjectView';
-import MContributorView from './components/M-ContributorView';
+import MContributorView, { Contributor } from './components/M-ContributorView';
 import { Project } from './components/M-ProjectView';
 
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
@@ -23,19 +23,20 @@ function App() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextSection, setNextSection] = useState<Section>('home');
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
-  const [appLoading, setAppLoading] = useState(true);
+  const [forceHideLoading, setForceHideLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [isWindowReady, setIsWindowReady] = useState(false);
   const [isCVModalOpen, setIsCVModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showProjectModal, setShowProjectModal] = useState(false);
-  const [selectedContributor, setSelectedContributor] = useState<any | null>(null);
+  const [selectedContributor, setSelectedContributor] = useState<Contributor | null>(null);
   const [showContributorModal, setShowContributorModal] = useState(false);
   const [hasAutoOpenedCV, setHasAutoOpenedCV] = useState(false);
 
   useEffect(() => {
     const handleLoad = () => setIsWindowReady(true);
     if (document.readyState === 'complete') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsWindowReady(true);
     } else {
       window.addEventListener('load', handleLoad);
@@ -43,17 +44,16 @@ function App() {
     }
   }, []);
 
+  // Safety timer to hide loader if data never arrives
   useEffect(() => {
-    if (isDataReady && isWindowReady) {
-      setAppLoading(false);
-    } else {
-      setAppLoading(true);
-    }
     const safety = setTimeout(() => {
-      setAppLoading(false);
+      setForceHideLoading(true);
     }, 8000);
     return () => clearTimeout(safety);
-  }, [isDataReady, isWindowReady]);
+  }, []);
+
+  // Derived loading state (avoid setting state synchronously inside effects)
+  const appLoading = forceHideLoading ? false : !(isDataReady && isWindowReady);
 
   useEffect(() => {
     const path = window.location.pathname;
@@ -61,6 +61,7 @@ function App() {
     const normPath = path.replace(/\/$/, '');
     const normBase = base.replace(/\/$/, '');
     if (normPath !== normBase && normPath !== '') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCurrentSection('view_link');
     }
   }, []);
@@ -114,12 +115,12 @@ function App() {
   const openCVModal = useCallback(() => setIsCVModalOpen(true), []);
   const closeCVModal = useCallback(() => setIsCVModalOpen(false), []);
 
-  const handleProjectClick = useCallback((project: any) => {
+  const handleProjectClick = useCallback((project: Project) => {
     setSelectedProject(project);
     setShowProjectModal(true);
   }, []);
 
-  const handleContributorClick = useCallback((contributor: any) => {
+  const handleContributorClick = useCallback((contributor: Contributor) => {
     setSelectedContributor(contributor);
     setShowContributorModal(true);
   }, []);

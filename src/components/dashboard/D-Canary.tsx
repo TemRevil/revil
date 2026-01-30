@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
@@ -7,7 +8,8 @@ import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../lib/firebase';
 
-import Alert, { AlertType } from '../Alert';
+import Alert from '../Alert';
+import useSafeAlert from '../../hooks/useSafeAlert';
 import MConfirmModal from './M-ConfirmModal';
 import MContact from '../M-Contact';
 import Loader from '../reactbits/Loader';
@@ -63,7 +65,7 @@ const DCanary = () => {
     const [modalViewDate, setModalViewDate] = useState(new Date());
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
     const [meetings, setMeetings] = useState<Meeting[]>([]);
-    const [alert, setAlert] = useState<{ type: AlertType; message: string } | null>(null);
+    const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
 
@@ -253,7 +255,7 @@ const DCanary = () => {
 
                 } catch (syncErr) {
                     console.error("Google Sync Delete Error:", syncErr);
-                    setAlert({ type: 'warning', message: 'Deleted from app, but calendar sync failed.' });
+                    showAlert({ type: 'warning', message: 'Deleted from app, but calendar sync failed.' });
                 }
             }
 
@@ -263,10 +265,10 @@ const DCanary = () => {
                 [`Meetings.${id}`]: deleteField()
             });
 
-            setAlert({ type: 'success', message: 'Session cancelled successfully' });
+            showAlert({ type: 'success', message: 'Session cancelled successfully' });
         } catch (error) {
             console.error(error);
-            setAlert({ type: 'error', message: 'Failed to cancel session' });
+            showAlert({ type: 'error', message: 'Failed to cancel session' });
         } finally {
             setIsLoading(false);
         }
@@ -295,7 +297,7 @@ const DCanary = () => {
             );
 
             if (isOccupied) {
-                setAlert({ type: 'warning', message: 'This time slot is already occupied.' });
+                showAlert({ type: 'warning', message: 'This time slot is already occupied.' });
                 return;
             }
         }
@@ -375,10 +377,10 @@ const DCanary = () => {
             await updateDoc(docRef, updatePayload);
 
             setEditingMeeting(null);
-            setAlert({ type: 'success', message: 'Session rescheduled successfully' });
+            showAlert({ type: 'success', message: 'Session rescheduled successfully' });
         } catch (error) {
             console.error(error);
-            setAlert({ type: 'error', message: 'Failed to update session' });
+            showAlert({ type: 'error', message: 'Failed to update session' });
         } finally {
             setIsLoading(false);
         }
@@ -394,11 +396,10 @@ const DCanary = () => {
             if (selectedEmail?.id === emailId) {
                 setSelectedEmail(null);
             }
-            setAlert({ type: 'success', message: 'Email deleted successfully' });
-            setTimeout(() => setAlert(null), 3000);
+            showAlert({ type: 'success', message: 'Email deleted successfully' });
         } catch (error) {
             console.error("Error deleting email:", error);
-            setAlert({ type: 'error', message: 'Failed to delete email' });
+            showAlert({ type: 'error', message: 'Failed to delete email' });
         }
     };
 
@@ -1081,7 +1082,7 @@ const DCanary = () => {
             }
 
             {/* Confirmation & Feedback */}
-            {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
+            {alert && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
             <MConfirmModal
                 isOpen={!!confirmDelete}
                 title={activeSection === 'mails' ? "Delete Message" : "Cancel Session"}

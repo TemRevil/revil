@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Save } from 'lucide-react';
 
+
 export interface HandlingProject {
     id: string;
     name: string;
@@ -23,6 +24,7 @@ const MHandlingProject = ({ isOpen, onClose, onSave, initialData }: MHandlingPro
 
     useEffect(() => {
         if (initialData) {
+            /* eslint-disable react-hooks/set-state-in-effect */
             setName(initialData.name);
             setDescription(initialData.description || '');
             setStatus(initialData.status);

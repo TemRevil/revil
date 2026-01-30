@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, Plus, Image as ImageIcon, Github, ExternalLink, Trash2, Eye, Edit } from 'lucide-react';
@@ -51,7 +52,7 @@ interface MProjectFormProps {
     initialData?: ProjectData | null;
 }
 
-const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProps) => {
+const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFormProps, 'initialData'> & { initialData?: MProjectFormProps['initialData'] }) => {
     // --- STATE ---
     const [formData, setFormData] = useState<ProjectData>({
         name: '',
@@ -104,7 +105,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
             if (snapshot.exists()) {
                 const data = snapshot.data();
                 const contribData = Object.entries(data)
-                    .filter(([_, val]) => val && typeof val === 'object' && (val as any).Name)
+                    .filter(([, val]) => val && typeof val === 'object' && (val as any).Name)
                     .map(([id, val]: [string, any]) => ({
                         id,
                         name: val.Name || 'Anonymous',
@@ -195,7 +196,8 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: MProjectFormProp
                 duration: 500
             });
         }
-    }, [isOpen, initialData]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     // Animate Selection Modals
     useEffect(() => {

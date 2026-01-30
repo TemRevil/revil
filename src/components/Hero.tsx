@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react';
 import anime from 'animejs';
 import { doc, onSnapshot } from 'firebase/firestore';

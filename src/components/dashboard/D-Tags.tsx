@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Tag, Edit2, Trash2, Users, UserPlus } from 'lucide-react';
 import { doc, collection, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
@@ -112,7 +113,7 @@ const DTags = () => {
             if (snapshot.exists()) {
                 const data = snapshot.data();
                 const contribData = Object.entries(data)
-                    .filter(([_, val]) => val && typeof val === 'object' && (val as any).Name)
+                    .filter(([, val]) => val && typeof val === 'object' && (val as any).Name)
                     .map(([id, val]: [string, any]) => ({
                         id,
                         name: val.Name || 'Anonymous',

@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { useEffect, useRef, useCallback } from 'react';
+import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import Alert, { AlertType } from './Alert';
+import Alert from './Alert';
+import useSafeAlert from '../hooks/useSafeAlert';
 
 interface AlgorithmProps {
     currentSection: string;
     isContactOpen: boolean;
-    onNavigate: (section: any) => void;
+    // parameter name intentionally unused in the type signature
+    onNavigate: (_section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
 }
 
 interface ProjectStats {
@@ -15,11 +17,7 @@ interface ProjectStats {
 }
 
 export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: AlgorithmProps) => {
-    const [alert, setAlert] = useState<{ show: boolean; type: AlertType; message: string }>({
-        show: false,
-        type: 'success',
-        message: ''
-    });
+    const { alert, showAlert, hideAlert } = useSafeAlert(4000);
 
     // Session Start
     const sessionStart = useRef(Date.now());
@@ -107,49 +105,46 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     }, []);
 
     // 2.5 Global Analytics Tracking
+    // 2.5 Global Analytics Tracking
+    const hasTrackedVisit = useRef(false);
     useEffect(() => {
         const trackGlobalVisit = async () => {
-            // Avoid tracking site visits when in dashboard or secret pages
-            if (currentSection === 'dashboard' || currentSection === 'secret') return;
+            if (hasTrackedVisit.current || currentSection === 'dashboard' || currentSection === 'secret') return;
+            hasTrackedVisit.current = true;
 
             try {
                 const docRef = doc(db, 'Settings', 'Views');
+                const today = new Date().toISOString().split('T')[0];
+
+                const hasVisitedGlobal = localStorage.getItem('revil_visitor_active');
+                const hasVisitedToday = localStorage.getItem(`revil_visitor_today_${today}`);
+
                 const docSnap = await getDoc(docRef);
-
-                const hasVisited = localStorage.getItem('revil_visitor_active');
-                const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-
-                let currentTotal = 0;
-                let currentUnique = 0;
-                let daily = {} as any;
-
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    const main = data.Main || {};
-                    currentTotal = parseInt(main["Total Reach"] || '0');
-                    currentUnique = parseInt(main["Reach (Per Device)"] || '0');
-                    daily = data.Daily || {};
-                }
-
-                const newTotal = currentTotal + 1;
+                const data = docSnap.exists() ? docSnap.data() : {};
+                const main = data.Main || {};
+                const daily = data.Daily || {};
                 const todayStats = daily[today] || { total: 0, unique: 0 };
-                const newTodayTotal = todayStats.total + 1;
-                let newUnique = currentUnique;
-                let newTodayUnique = todayStats.unique;
 
-                if (!hasVisited) {
-                    newUnique = currentUnique + 1;
-                    newTodayUnique = todayStats.unique + 1;
+                const updateData: Record<string, unknown> = {};
+
+                // Counters (ensure we convert from string to number if needed)
+                const currentTotal = typeof main["Total Reach"] === 'number' ? main["Total Reach"] : parseInt(main["Total Reach"] || '0');
+                const currentUnique = typeof main["Reach (Per Device)"] === 'number' ? main["Reach (Per Device)"] : parseInt(main["Reach (Per Device)"] || '0');
+                const newTodayTotal = (todayStats.total || 0) + 1;
+
+                updateData["Main.Total Reach"] = currentTotal + 1;
+                updateData["Main.Today's Viewers"] = newTodayTotal;
+                updateData[`Daily.${today}.total`] = newTodayTotal;
+
+                if (!hasVisitedGlobal) {
+                    updateData["Main.Reach (Per Device)"] = currentUnique + 1;
                     localStorage.setItem('revil_visitor_active', 'true');
                 }
 
-                const updateData: any = {
-                    "Main.Total Reach": String(newTotal),
-                    "Main.Reach (Per Device)": String(newUnique),
-                    "Main.Today's Viewers": String(newTodayTotal),
-                    [`Daily.${today}.total`]: newTodayTotal,
-                    [`Daily.${today}.unique`]: newTodayUnique
-                };
+                if (!hasVisitedToday) {
+                    updateData[`Daily.${today}.unique`] = (todayStats.unique || 0) + 1;
+                    localStorage.setItem(`revil_visitor_today_${today}`, 'true');
+                }
 
                 await updateDoc(docRef, updateData);
             } catch (error) {
@@ -158,7 +153,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         };
 
         trackGlobalVisit();
-    }, []);
+    }, [currentSection]);
 
     // 2.6 Initial Link Recording & Verification
     const hasRecordedRef = useRef(false);
@@ -179,17 +174,17 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 const docSnap = await getDoc(docRef);
 
                 if (docSnap.exists()) {
-                    const data = docSnap.data();
+                    const data = docSnap.data() as Record<string, unknown>;
                     let foundId: string | null = null;
-                    let currentViews = 0;
                     let existingRec = '';
 
                     for (const [key, value] of Object.entries(data)) {
-                        const item = value as any;
-                        if (item.Code === code || item.Rec_CLI === code) {
+                        const item = value as Record<string, unknown>;
+                        const itemCode = typeof item['Code'] === 'string' ? String(item['Code']) : '';
+                        const itemRec = typeof item['Rec_CLI'] === 'string' ? String(item['Rec_CLI']) : '';
+                        if (itemCode === code || itemRec === code) {
                             foundId = key;
-                            currentViews = item.Views || 0;
-                            existingRec = item.Rec_CLI || '';
+                            existingRec = itemRec || '';
                             break;
                         }
                     }
@@ -199,32 +194,37 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                         metrics.current.baseMetrics = existingRec;
 
                         // Check for Interviewer Mode
-                        const linkData = data[foundId] as any;
-                        if (linkData?.Interviewer) {
+                        const linkData = data[foundId] as Record<string, unknown> | undefined;
+                        const isInterviewer = !!linkData && (linkData['Interviewer'] === true);
+                        if (isInterviewer) {
                             sessionStorage.setItem('revil_interviewer_mode', 'true');
                         } else {
                             sessionStorage.removeItem('revil_interviewer_mode');
                         }
 
                         await updateDoc(docRef, {
-                            [`${foundId}.Views`]: currentViews + 1
+                            [`${foundId}.Views`]: increment(1)
                         });
                     }
                 }
 
                 // Always redirect home after processing code
-                setTimeout(() => onNavigate('home'), 500);
-            } catch (error) {
-                setAlert({ show: true, type: 'error', message: 'Failed to record link activity.' });
-                setTimeout(() => onNavigate('home'), 500);
+                if (onNavigate) {
+                    setTimeout(() => onNavigate('home'), 500);
+                }
+            } catch {
+                showAlert({ type: 'error', message: 'Failed to record link activity.' });
+                if (onNavigate) {
+                    setTimeout(() => onNavigate('home'), 500);
+                }
             }
         };
 
         recordLink();
-    }, [onNavigate]);
+    }, [onNavigate, showAlert]);
 
     // 3. Sync to Firestore (Final Push with Accumulation)
-    const syncData = async () => {
+    const syncData = useCallback(async () => {
         const linkId = sessionStorage.getItem('revil_link_id');
         if (!linkId || metrics.current.isSyncing) return;
 
@@ -333,12 +333,12 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             await updateDoc(docRef, {
                 [`${linkId}.Rec_CLI`]: recString
             });
-        } catch (err) {
-            setAlert({ show: true, type: 'error', message: 'Final sync failed. Some activity might not be saved.' });
+        } catch {
+            showAlert({ type: 'error', message: 'Final sync failed. Some activity might not be saved.' });
         } finally {
             metrics.current.isSyncing = false;
         }
-    };
+    }, [showAlert]);
 
     // Only Sync at the very end to avoid Firestore usage/quota issues
     useEffect(() => {
@@ -356,15 +356,16 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             window.removeEventListener('beforeunload', handleFinalSync);
             window.removeEventListener('pagehide', handleFinalSync);
         };
-    }, []);
+    }, [syncData]);
 
     return (
         <>
-            {alert.show && (
+            {alert?.show && (
                 <Alert
                     type={alert.type}
                     message={alert.message}
-                    onClose={() => setAlert(prev => ({ ...prev, show: false }))}
+                    onClose={() => hideAlert()}
+                    duration={alert.duration ?? 4000}
                 />
             )}
         </>

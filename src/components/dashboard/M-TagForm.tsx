@@ -29,6 +29,7 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
     useEffect(() => {
         if (isOpen) {
             if (initialData) {
+                /* eslint-disable react-hooks/set-state-in-effect */
                 setName(initialData.name);
                 setColor(initialData.color);
                 setIconSvg(initialData.iconSvg || '');

@@ -48,49 +48,67 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
     }, []);
 
     useEffect(() => {
-        if (isOpen) {
-            loadFiles(currentPath);
-        }
-    }, [isOpen, currentPath]);
+        if (!isOpen) return;
 
-    const loadFiles = async (path: string) => {
-        setIsLoading(true);
-        try {
-            const folderRef = ref(storage, path || '/');
-            const result = await listAll(folderRef);
+        let cancelled = false;
 
-            const items: FirebaseFile[] = [];
+        const load = async (path: string) => {
+            setIsLoading(true);
+            try {
+                // Use empty string for root path (no leading slash)
+                const folderRef = ref(storage, path || '');
+                const result = await listAll(folderRef);
 
-            // Add folders
-            for (const folder of result.prefixes) {
-                items.push({
+                // Prepare folder entries
+                const folders: FirebaseFile[] = result.prefixes.map(folder => ({
                     name: folder.name,
                     fullPath: folder.fullPath,
                     isFolder: true
+                }));
+
+                // Prepare fetch promises for files (parallel)
+                const filePromises = result.items.map(async (item) => {
+                    const extension = item.name.split('.').pop()?.toLowerCase() || '';
+                    if (fileTypes.length > 0 && !fileTypes.includes(extension)) return null;
+                    try {
+                        const url = await getDownloadURL(item);
+                        return {
+                            name: item.name,
+                            fullPath: item.fullPath,
+                            url,
+                            isFolder: false
+                        } as FirebaseFile;
+                    } catch {
+                        // If getting a URL fails for a single file, continue without it
+                        return null;
+                    }
                 });
-            }
 
-            // Add files (filter by type)
-            for (const item of result.items) {
-                const extension = item.name.split('.').pop()?.toLowerCase() || '';
-                if (fileTypes.includes(extension) || fileTypes.length === 0) {
-                    const url = await getDownloadURL(item);
-                    items.push({
-                        name: item.name,
-                        fullPath: item.fullPath,
-                        url,
-                        isFolder: false
-                    });
-                }
-            }
+                const resolved = await Promise.all(filePromises);
+                if (cancelled) return;
 
-            setFiles(items);
-        } catch (error) {
-            console.error('Error loading files:', error);
-            setFiles([]);
-        }
-        setIsLoading(false);
-    };
+                const filesList: FirebaseFile[] = [
+                    ...folders,
+                    ...resolved.filter((f): f is FirebaseFile => f !== null)
+                ];
+
+                if (!cancelled) setFiles(filesList);
+            } catch (err) {
+                console.error('Error loading files:', err);
+                if (!cancelled) setFiles([]);
+            } finally {
+                if (!cancelled) setIsLoading(false);
+            }
+        };
+
+        load(currentPath);
+
+        return () => {
+            cancelled = true;
+        };
+        // Intentionally omit `fileTypes` from deps to avoid re-running on every render
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, currentPath]);
 
     const handleFolderClick = (path: string) => {
         setCurrentPath(path);

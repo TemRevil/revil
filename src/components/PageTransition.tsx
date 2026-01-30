@@ -55,6 +55,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
             else if (direction > 0) selectedDir = 'bottom';
             else selectedDir = 'top';
 
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setCurrentDirection(selectedDir);
 
             curtainRef.current.style.display = 'block';

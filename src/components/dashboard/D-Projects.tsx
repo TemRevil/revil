@@ -1,10 +1,12 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, Github } from 'lucide-react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, listAll, deleteObject, getBlob } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
-import Alert, { AlertType } from '../Alert';
+import Alert from '../Alert';
+import useSafeAlert from '../../hooks/useSafeAlert';
 import MProjectForm, { ProjectData } from './M-ProjectForm';
 import MProjectView, { getTechColor, getStackIcon } from '../M-ProjectView';
 import MContributorView from '../M-ContributorView';
@@ -40,11 +42,7 @@ const DProjects = () => {
     });
 
     // Alert Toast State
-    const [alert, setAlert] = useState<{ show: boolean; type: AlertType; message: string }>({
-        show: false,
-        type: 'success',
-        message: ''
-    });
+    const { alert, showAlert, hideAlert } = useSafeAlert(4000);
 
     // Levenshtein distance for fuzzy search
     const getLevenshteinDistance = (a: string, b: string) => {
@@ -154,7 +152,7 @@ const DProjects = () => {
             },
             () => {
                 const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
-                setAlert({ show: true, type: 'warning', message: `Tags sync failed: ${status}` });
+                showAlert({ type: 'warning', message: `Tags sync failed: ${status}` });
             }
         );
 
@@ -175,7 +173,7 @@ const DProjects = () => {
             },
             () => {
                 const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
-                setAlert({ show: true, type: 'warning', message: `Contributors sync failed: ${status}` });
+                showAlert({ type: 'warning', message: `Contributors sync failed: ${status}` });
             }
         );
 
@@ -183,7 +181,7 @@ const DProjects = () => {
             unsubTags();
             unsubContrib();
         };
-    }, []);
+    }, [showAlert]);
 
     // Fetch Projects from Firestore
     useEffect(() => {
@@ -267,8 +265,8 @@ const DProjects = () => {
                 try {
                     setIsLoading(true);
                     await deleteDoc(doc(db, 'Projects', projectId));
-                } catch (error) {
-                    setAlert({ show: true, type: 'error', message: 'Failed to delete project.' });
+                } catch {
+                    showAlert({ type: 'error', message: 'Failed to delete project.' });
                 } finally {
                     setIsLoading(false);
                 }
@@ -402,8 +400,8 @@ const DProjects = () => {
             await setDoc(doc(db, 'Projects', projectName), projectDoc);
 
             setIsModalOpen(false);
-        } catch (error) {
-            setAlert({ show: true, type: 'error', message: 'Failed to save project. Please check your data and try again.' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to save project. Please check your data and try again.' });
         } finally {
             setIsLoading(false);
         }
@@ -656,11 +654,12 @@ const DProjects = () => {
             />
 
             {/* Custom Alert Toast */}
-            {alert.show && (
+            {alert?.show && (
                 <Alert
                     type={alert.type}
                     message={alert.message}
-                    onClose={() => setAlert(prev => ({ ...prev, show: false }))}
+                    onClose={() => hideAlert()}
+                    duration={alert.duration ?? 4000}
                 />
             )}
 

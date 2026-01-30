@@ -67,53 +67,54 @@ const createImage = (url: string, useCrossOrigin: boolean = true): Promise<HTMLI
         image.src = finalUrl;
     });
 
-const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<File> => {
-    return new Promise(async (resolve, reject) => {
-        try {
+const getCroppedImg = (imageSrc: string, pixelCrop: unknown): Promise<File> => {
+    return new Promise((resolve, reject) => {
+        (async () => {
+            try {
+                const image = await createImage(imageSrc);
 
-            const image = await createImage(imageSrc);
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
 
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-
-            if (!ctx) {
-                reject(new Error('No 2d context'));
-                return;
-            }
-
-            if (!pixelCrop || pixelCrop.width <= 0 || pixelCrop.height <= 0) {
-                reject(new Error(`Invalid crop dimensions: ${JSON.stringify(pixelCrop)}`));
-                return;
-            }
-
-            canvas.width = pixelCrop.width;
-            canvas.height = pixelCrop.height;
-
-            ctx.drawImage(
-                image,
-                pixelCrop.x,
-                pixelCrop.y,
-                pixelCrop.width,
-                pixelCrop.height,
-                0,
-                0,
-                pixelCrop.width,
-                pixelCrop.height
-            );
-
-            canvas.toBlob((blob) => {
-                if (!blob) {
-                    console.error('[getCroppedImg] canvas.toBlob returned null');
-                    reject(new Error('Canvas is empty'));
+                if (!ctx) {
+                    reject(new Error('No 2d context'));
                     return;
                 }
 
-                const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
-                resolve(file);
-            }, 'image/jpeg');
-        } catch (e) {
-            reject(e);
-        }
+                const pc = pixelCrop as { width?: number; height?: number; x?: number; y?: number } | null;
+                if (!pc || pc.width === undefined || pc.height === undefined || pc.width <= 0 || pc.height <= 0) {
+                    reject(new Error(`Invalid crop dimensions: ${JSON.stringify(pixelCrop)}`));
+                    return;
+                }
+                canvas.width = pc.width as number;
+                canvas.height = pc.height as number;
+
+                ctx.drawImage(
+                    image,
+                    pc.x as number,
+                    pc.y as number,
+                    pc.width as number,
+                    pc.height as number,
+                    0,
+                    0,
+                    pc.width as number,
+                    pc.height as number
+                );
+
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        console.error('[getCroppedImg] canvas.toBlob returned null');
+                        reject(new Error('Canvas is empty'));
+                        return;
+                    }
+
+                    const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
+                    resolve(file);
+                }, 'image/jpeg');
+            } catch (e) {
+                reject(e);
+            }
+        })();
     });
 };
 
@@ -316,7 +317,7 @@ export default function DSettings() {
             try {
                 const img = await createImage(heroImagePreview, false);
                 setHeroImageResolution(`${img.naturalWidth}×${img.naturalHeight}`);
-            } catch (err) {
+            } catch {
                 setHeroImageResolution('');
             }
         };
@@ -337,7 +338,7 @@ export default function DSettings() {
                         const fileRef = ref(storage, heroImagePreview);
                         const metadata = await getMetadata(fileRef);
                         setHeroImageSize(formatBytes(metadata.size));
-                    } catch (metaErr) {
+                    } catch {
                         // Only try fetch if getMetadata failed and it's not a local file
                         try {
                             const res = await fetch(heroImagePreview, { method: 'GET' });
@@ -345,14 +346,14 @@ export default function DSettings() {
                                 const blob = await res.blob();
                                 setHeroImageSize(formatBytes(blob.size));
                             }
-                        } catch (fetchErr) {
+                        } catch {
                             setHeroImageSize('');
                         }
                     }
                 } else {
                     setHeroImageSize('');
                 }
-            } catch (err) {
+            } catch {
                 // ignore errors, just don't show size
                 setHeroImageSize('');
             } finally {
@@ -377,7 +378,7 @@ export default function DSettings() {
             try {
                 const img = await createImage(profileImagePreview, false);
                 setProfileImageResolution(`${img.naturalWidth}×${img.naturalHeight}`);
-            } catch (err) {
+            } catch {
                 setProfileImageResolution('');
             }
         };
@@ -397,21 +398,21 @@ export default function DSettings() {
                         const fileRef = ref(storage, profileImagePreview);
                         const metadata = await getMetadata(fileRef);
                         setProfileImageSize(formatBytes(metadata.size));
-                    } catch (metaErr) {
+                    } catch {
                         try {
                             const res = await fetch(profileImagePreview, { method: 'GET' });
                             if (res.ok) {
                                 const blob = await res.blob();
                                 setProfileImageSize(formatBytes(blob.size));
                             }
-                        } catch (fetchErr) {
+                        } catch {
                             setProfileImageSize('');
                         }
                     }
                 } else {
                     setProfileImageSize('');
                 }
-            } catch (err) {
+            } catch {
                 setProfileImageSize('');
             } finally {
                 setProfileImageSizeLoading(false);
@@ -460,7 +461,7 @@ export default function DSettings() {
     // Cropper State
     const [crop, setCrop] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
-    const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+    const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ width: number; height: number; x: number; y: number } | null>(null);
     const [isCropping, setIsCropping] = useState(false);
     const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
 
@@ -480,6 +481,33 @@ export default function DSettings() {
         type: 'success',
         message: ''
     });
+
+    // Guard to prevent duplicate alerts from rapidly repeating
+    const lastAlertRef = useRef<{ message: string; type: AlertType; t: number } | null>(null);
+    const safeSetAlert = (next: { show: boolean; type: AlertType; message: string; duration?: number }) => {
+        const duration = typeof next.duration === 'number' ? next.duration : 4000; // default 4s
+        if (next.show) {
+            // If an alert is already visible, suppress new alerts to ensure only one is shown
+            if (alert.show) return;
+
+            const last = lastAlertRef.current;
+            if (last && last.message === next.message && last.type === next.type && (Date.now() - last.t) < duration) {
+                return; // duplicate within cooldown, ignore
+            }
+            lastAlertRef.current = { message: next.message, type: next.type, t: Date.now() };
+            setAlert({ show: true, type: next.type, message: next.message });
+            if (duration > 0) {
+                setTimeout(() => {
+                    setAlert(prev => ({ ...prev, show: false }));
+                    lastAlertRef.current = null;
+                }, duration);
+            }
+        } else {
+            // explicit hide — clear ref and state
+            lastAlertRef.current = null;
+            setAlert({ show: false, type: next.type, message: next.message });
+        }
+    };
 
     // Track unsaved changes
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -514,11 +542,11 @@ export default function DSettings() {
             await setDoc(doc(db, 'Settings', 'Availability'), payload);
         } catch (error) {
             console.error("Error saving availability:", error);
-            setAlert({ show: true, type: 'error', message: 'Failed to save availability settings' });
+            safeSetAlert({ show: true, type: 'error', message: 'Failed to save availability settings' });
         }
     };
 
-    const handleSaveHeroImage = async () => {
+    const handleSaveHeroImage = async (silent = false) => {
         if (!heroImageFile && !heroImagePreview) return;
 
         try {
@@ -540,11 +568,10 @@ export default function DSettings() {
                 return;
             }
 
-            setAlert({ show: true, type: 'success', message: 'Hero image updated!' });
-            setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+            if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Hero image updated!', duration: 3000 });
         } catch (error) {
             console.error("Error updating hero image:", error);
-            setAlert({ show: true, type: 'error', message: 'Failed to update hero image.' });
+            safeSetAlert({ show: true, type: 'error', message: 'Failed to update hero image.' });
         } finally {
             setIsLoading(false);
         }
@@ -560,18 +587,17 @@ export default function DSettings() {
 
             await Promise.all([
                 handleSaveAvailability(),
-                handleSaveHeroImage(),
-                handleSaveProfileImage(),
-                handleSaveProfileInfo()
+                handleSaveHeroImage(true),
+                handleSaveProfileImage(true),
+                handleSaveProfileInfo(true)
             ]);
 
             setProfileInfoDirty(false);
             setHasUnsavedChanges(false);
-            setAlert({ show: true, type: 'success', message: 'All settings applied successfully!' });
-            setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+            safeSetAlert({ show: true, type: 'success', message: 'All settings applied successfully!', duration: 3000 });
         } catch (error) {
             console.error("Error applying all settings:", error);
-            setAlert({ show: true, type: 'error', message: 'Failed to apply some settings.' });
+            safeSetAlert({ show: true, type: 'error', message: 'Failed to apply some settings.' });
         } finally {
             setIsLoading(false);
         }
@@ -631,10 +657,10 @@ export default function DSettings() {
             }
 
             setHasUnsavedChanges(false);
-            setAlert({ show: true, type: 'info', message: 'All staged changes canceled.' });
+            safeSetAlert({ show: true, type: 'info', message: 'All staged changes canceled.' });
         } catch (err) {
             console.error('Error cancelling changes', err);
-            setAlert({ show: true, type: 'error', message: 'Failed to cancel changes.' });
+            safeSetAlert({ show: true, type: 'error', message: 'Failed to cancel changes.' });
         } finally {
             setIsLoading(false);
         }
@@ -724,11 +750,12 @@ export default function DSettings() {
             if (docSnapshot.exists()) {
                 const data = docSnapshot.data();
                 const items: StackItem[] = [];
-                Object.entries(data).forEach(([key, value]: [string, any]) => {
+                Object.entries(data).forEach(([key, value]: [string, unknown]) => {
+                    const v = value as Record<string, unknown>;
                     items.push({
                         id: key,
-                        name: value.Name,
-                        icon: value.Icon
+                        name: typeof v.Name === 'string' ? v.Name : (v.name as string) || 'Untitled',
+                        icon: typeof v.Icon === 'string' ? v.Icon : (v.icon as string) || ''
                     });
                 });
                 // Sort by ID (assuming numeric IDs)
@@ -809,11 +836,10 @@ export default function DSettings() {
 
             setStackModalOpen(false);
             setEditingStack(null);
-            setAlert({ show: true, type: 'success', message: 'Stack item saved!' });
-            setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+            safeSetAlert({ show: true, type: 'success', message: 'Stack item saved!', duration: 3000 });
         } catch (error) {
             console.error("Error saving stack:", error);
-            setAlert({ show: true, type: 'error', message: 'Failed to save stack item' });
+            safeSetAlert({ show: true, type: 'error', message: 'Failed to save stack item' });
         } finally {
             setIsLoading(false);
         }
@@ -830,8 +856,7 @@ export default function DSettings() {
                 setIsLoading(true);
                 try {
                     await updateDoc(doc(db, 'Settings', 'Tech Stack'), { [id]: deleteField() });
-                    setAlert({ show: true, type: 'success', message: 'Stack item deleted' });
-                    setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+                    safeSetAlert({ show: true, type: 'success', message: 'Stack item deleted', duration: 3000 });
                 } catch (error) {
                     console.error("Error deleting stack:", error);
                 } finally {
@@ -884,8 +909,8 @@ export default function DSettings() {
         });
     };
 
-    const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
-        setCroppedAreaPixels(croppedAreaPixels);
+    const onCropComplete = useCallback((_croppedArea: unknown, croppedAreaPixels: unknown) => {
+        setCroppedAreaPixels(croppedAreaPixels as { width: number; height: number; x: number; y: number });
     }, []);
 
     const handleCropSave = async () => {
@@ -898,17 +923,17 @@ export default function DSettings() {
                     setHasUnsavedChanges(true);
                     setProfileImageDirty(true);
                 }
-            } catch (e: any) {
+            } catch (e) {
                 console.error("Crop failed", e);
                 // If it's a security/CORS error on a remote URL, give a specific hint
                 if (originalImageSrc.startsWith('http')) {
-                    setAlert({
+                    safeSetAlert({
                         show: true,
                         type: 'error',
                         message: 'CORS Blocked: Please run the "gsutil" command in your Firebase console to allow image cropping.'
                     });
                 } else {
-                    setAlert({ show: true, type: 'error', message: 'Failed to crop image.' });
+                    safeSetAlert({ show: true, type: 'error', message: 'Failed to crop image.' });
                 }
             }
             setIsCropping(false);
@@ -944,7 +969,7 @@ export default function DSettings() {
     };
 
     // Persist profile name/title/links to Firestore (used by Apply All)
-    const handleSaveProfileInfo = async () => {
+    const handleSaveProfileInfo = async (silent = false) => {
         try {
             const linksMap = socialLinks.reduce((acc, link) => {
                 acc[link.name] = link.url;
@@ -956,13 +981,15 @@ export default function DSettings() {
                 title: profileTitle,
                 'Social Links': linksMap
             }, { merge: true });
+
+            if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Profile updated!', duration: 3000 });
         } catch (err) {
             console.error('Error saving profile info', err);
-            setAlert({ show: true, type: 'error', message: 'Failed to update profile.' });
+            safeSetAlert({ show: true, type: 'error', message: 'Failed to update profile.' });
         }
     };
 
-    const handleSaveProfileImage = async () => {
+    const handleSaveProfileImage = async (silent = false) => {
         if (!profileImageFile && !profileImagePreview) return;
 
         try {
@@ -983,8 +1010,7 @@ export default function DSettings() {
                 return;
             }
 
-            setAlert({ show: true, type: 'success', message: 'Profile image updated!' });
-            setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+            if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Profile image updated!', duration: 3000 });
 
             // clear temporary states
             setProfileImageDirty(false);
@@ -994,7 +1020,7 @@ export default function DSettings() {
             setHasUnsavedChanges(false);
         } catch (error) {
             console.error("Error updating profile image:", error);
-            setAlert({ show: true, type: 'error', message: 'Failed to update profile image.' });
+            safeSetAlert({ show: true, type: 'error', message: 'Failed to update profile image.' });
         } finally {
             setProfileImageUploading(false);
             setIsLoading(false);
@@ -1146,7 +1172,7 @@ export default function DSettings() {
                 <Alert
                     type={alert.type}
                     message={alert.message}
-                    onClose={() => setAlert(prev => ({ ...prev, show: false }))}
+                    onClose={() => safeSetAlert({ show: false, type: alert.type, message: alert.message })}
                 />
             )}
 
@@ -1476,8 +1502,7 @@ export default function DSettings() {
                                                             setProfileInfoDirty(true);
                                                             setIsEditingProfile(false);
                                                             setProfileBackup(null);
-                                                            setAlert({ show: true, type: 'success', message: 'Profile changes staged. Click Apply Changes at the bottom of the page to save permanently.' });
-                                                            setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+                                                            safeSetAlert({ show: true, type: 'success', message: 'Profile changes staged. Click Apply Changes at the bottom of the page to save permanently.', duration: 3000 });
                                                         }} className="btn btn-primary px-3 py-2"><Save size={16} /><span className="hidden sm:inline ml-2">Save</span>
                                                         </button>
                                                         <button onClick={() => {
@@ -1500,8 +1525,7 @@ export default function DSettings() {
                                                         <button onClick={() => {
                                                             // Stage upload - actual upload will happen when Apply Changes is clicked
                                                             setHasUnsavedChanges(true);
-                                                            setAlert({ show: true, type: 'success', message: 'Profile image staged. Click Apply Changes to save to Firebase.' });
-                                                            setTimeout(() => setAlert(prev => ({ ...prev, show: false })), 3000);
+                                                            safeSetAlert({ show: true, type: 'success', message: 'Profile image staged. Click Apply Changes to save to Firebase.', duration: 3000 });
                                                         }} className="btn btn-primary px-3 py-2" disabled={profileImageUploading}>{profileImageUploading ? 'Saving...' : (<><Save size={16} /><span className="hidden sm:inline ml-2">Save Image</span></>)}</button>
                                                         <button onClick={handleCancelProfileImageChange} className="btn btn-secondary px-3 py-2"><X size={16} /><span className="hidden sm:inline ml-2">Cancel</span></button>
                                                     </>
@@ -1680,7 +1704,7 @@ export default function DSettings() {
                 isOpen={confirmConfig.isOpen}
                 title={confirmConfig.title}
                 message={confirmConfig.message}
-                type={confirmConfig.type as any}
+                type={confirmConfig.type}
                 onConfirm={confirmConfig.onConfirm}
                 onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
                 confirmText="Confirm"

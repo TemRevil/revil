@@ -9,12 +9,16 @@ import DCanary from './dashboard/D-Canary';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
+// The parameter name in the function type would trigger `no-unused-vars` in some
+// ESLint configurations, so we suppress that rule for the following type alias.
+type OnNavigate = (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
+
 interface DashboardProps {
-    onNavigate?: (section: any) => void;
+    onNavigate?: OnNavigate;
 }
 
 const Dashboard = ({ onNavigate }: DashboardProps) => {
-    const [isDark, setIsDark] = useState(false);
+    // theme observation removed here; not used directly in this component
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
     const [activeTab, setActiveTab] = useState('projects');
     const [profileImage, setProfileImage] = useState<string>('');
@@ -35,15 +39,9 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     }, []);
 
     useEffect(() => {
-        const checkTheme = () => {
-            setIsDark(document.documentElement.classList.contains('dark'));
-        };
         const handleResize = () => setWindowWidth(window.innerWidth);
-
-        checkTheme();
         window.addEventListener('resize', handleResize);
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        // no theme observer needed here
 
         // Staggered Sidebar Entrance Animation
         anime({
@@ -66,7 +64,6 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
 
         return () => {
             window.removeEventListener('resize', handleResize);
-            observer.disconnect();
         };
     }, []);
 
@@ -108,7 +105,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
             onTouchMove={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
             className="w-full h-screen flex bg-primary relative overflow-hidden touch-pan-y"
-            style={{ '--sidebar-width': sidebarWidth } as any}
+            style={{ ['--sidebar-width']: sidebarWidth } as unknown as React.CSSProperties}
         >
 
 

@@ -27,6 +27,7 @@ const MStackItem = ({ isOpen, onClose, onSave, initialData }: MStackItemProps) =
 
     useEffect(() => {
         if (initialData) {
+            /* eslint-disable react-hooks/set-state-in-effect */
             setName(initialData.name);
             setIcon(initialData.icon);
             setIconFile(null);

@@ -4,8 +4,10 @@ import { getAuth, GoogleAuthProvider, signInWithPopup as authSignInWithPopup, de
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
+type SecretNavigate = (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
+
 interface SecretPageProps {
-    onNavigate?: (section: any) => void;
+    onNavigate?: SecretNavigate;
 }
 
 const SecretPage = ({ onNavigate }: SecretPageProps) => {
@@ -61,11 +63,12 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
             if (onNavigate) {
                 onNavigate('dashboard');
             }
-        } catch (err: any) {
-            if (err.code === 'auth/popup-closed-by-user') {
+        } catch (err: unknown) {
+            const e = err as { code?: string; message?: string };
+            if (e.code === 'auth/popup-closed-by-user') {
                 setError('Sign-in was cancelled.');
             } else {
-                setError(err.message || 'An error occurred');
+                setError(e.message || 'An error occurred');
             }
         } finally {
             setLoading(false);

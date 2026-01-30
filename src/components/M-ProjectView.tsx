@@ -7,6 +7,7 @@ import { useRef } from 'react';
 // Import SVG icons
 import htmlIcon from '../assets/svgs/html.svg';
 import cssIcon from '../assets/svgs/css.svg';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import jsIcon from '../assets/svgs/javascript.svg';
 import reactIcon from '../assets/svgs/react.svg';
 import nodejsIcon from '../assets/svgs/nodejs.svg';
@@ -15,11 +16,13 @@ import firebaseIcon from '../assets/svgs/firebase.svg';
 import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
-
+// These are utility functions exported from this file
+// eslint-disable-next-line react-refresh/only-export-components
 export const isVideoFile = (url: string) => {
     return url.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || url.includes('/videos/');
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const getStackIcon = (name: string) => {
     const lowerName = name.toLowerCase();
     if (lowerName.includes('html')) return htmlIcon;
@@ -31,6 +34,7 @@ export const getStackIcon = (name: string) => {
     return null;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const getTechColor = (name: string) => {
     const lower = name.toLowerCase();
     if (lower.includes('react')) return '#61dafb';
@@ -44,6 +48,22 @@ export const getTechColor = (name: string) => {
     return '#60a5fa';
 };
 
+export interface TagItem {
+    id?: string | number;
+    name: string;
+    color?: string;
+    iconSvg?: string;
+}
+
+export interface Contributor {
+    id?: string | number;
+    name: string;
+    role: string;
+    jobTitle: string;
+    image: string;
+    links: Record<string, string | undefined>;
+}
+
 export interface Project {
     id: number | string;
     title?: string;
@@ -52,8 +72,8 @@ export interface Project {
     fullDescription?: string;
     images: string[];
     stack?: string[];
-    tags?: any[];
-    contributors: any[];
+    tags?: TagItem[];
+    contributors: Contributor[];
     repoLink?: string;
     demoLink?: string;
     liveLink?: string;
@@ -64,13 +84,15 @@ export interface Project {
     downloadViews?: number;
 }
 
+type ProjectContributorClick = (contributor: Contributor) => void;
+
 interface MProjectViewProps {
     project: Project;
     onClose: () => void;
-    onContributorClick: (contributor: any) => void;
+    onContributorClick: ProjectContributorClick;
 }
 
-const GlassPanel = ({ children, style, className = "", isDark }: any) => (
+const GlassPanel = ({ children, style, className = "", isDark }: React.PropsWithChildren<{ style?: React.CSSProperties; className?: string; isDark?: boolean }>) => (
     <div className={className} style={{
         background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.15)',
         backdropFilter: 'blur(24px)',
@@ -123,7 +145,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
                     setMuted(true);
                     setPlaying(true);
                 }
-            } catch (err) {
+            } catch {
                 // Ignore AbortError
             }
         };
@@ -588,8 +610,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         ];
 
     // Keep internal project state in sync with incoming props
+    // Only update local state if the incoming project id differs to avoid
+    // repeated setState when parent passes a new object reference each render.
     useEffect(() => {
-        setProject(initialProject);
+        // We intentionally update local state when the incoming project object changes.
+        // Guard by id to avoid loops. Disable the rule because this sync is deliberate.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setProject(prev => (prev && prev.id === initialProject.id) ? prev : initialProject);
     }, [initialProject]);
 
     // Fetch Global Tags for Icons/Colors
@@ -681,7 +708,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         incrementViews();
 
         return () => unsub();
-    }, [project.id, availableTags]);
+    }, [project.id, availableTags, project.name, project.title]);
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));

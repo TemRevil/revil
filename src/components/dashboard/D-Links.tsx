@@ -6,7 +6,8 @@ import { motion } from 'motion/react';
 import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Loader from '../reactbits/Loader';
-import Alert, { AlertType } from '../Alert';
+import Alert from '../Alert';
+import useSafeAlert from '../../hooks/useSafeAlert';
 
 interface AnalyticsData {
     Main?: {
@@ -160,11 +161,7 @@ const DLinks = () => {
     const [editName, setEditName] = useState('');
     const [editFor, setEditFor] = useState('');
     const [activityLink, setActivityLink] = useState<GeneratedLink | null>(null);
-    const [alert, setAlert] = useState<{ show: boolean; type: AlertType; message: string }>({
-        show: false,
-        type: 'success',
-        message: ''
-    });
+    const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const [activeSection, setActiveSection] = useState<'analysis' | 'campaigns'>('analysis');
     const [isTransitioning, setIsTransitioning] = useState(false);
     const directionRef = useRef<number>(1);
@@ -289,9 +286,9 @@ const DLinks = () => {
             const nextState = !currentState;
             const docRef = doc(db, 'Settings', 'Views');
             await updateDoc(docRef, { [`${linkId}.Interviewer`]: nextState });
-            setAlert({ show: true, type: 'success', message: `Interviewer Mode ${nextState ? 'Activated' : 'Deactivated'} for link.` });
-        } catch (error) {
-            setAlert({ show: true, type: 'error', message: 'Failed to toggle Interviewer Mode' });
+            showAlert({ type: 'success', message: `Interviewer Mode ${nextState ? 'Activated' : 'Deactivated'} for link.` });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to toggle Interviewer Mode' });
         }
     };
 
@@ -338,9 +335,9 @@ const DLinks = () => {
             await updateDoc(docRef, { [nextId]: payload });
             setName('');
             setForField('');
-            setAlert({ show: true, type: 'success', message: 'Campaign link generated successfully!' });
-        } catch (error) {
-            setAlert({ show: true, type: 'error', message: 'Failed to generate link. Check your connection.' });
+            showAlert({ type: 'success', message: 'Campaign link generated successfully!' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to generate link. Check your connection.' });
         } finally {
             setIsLoading(false);
         }
@@ -351,8 +348,8 @@ const DLinks = () => {
             await navigator.clipboard.writeText(link);
             setCopied(id);
             setTimeout(() => setCopied(null), 2000);
-        } catch (err) {
-            setAlert({ show: true, type: 'error', message: 'Failed to copy to clipboard.' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to copy to clipboard.' });
         }
     };
 
@@ -362,8 +359,8 @@ const DLinks = () => {
         try {
             const docRef = doc(db, 'Settings', 'Views');
             await updateDoc(docRef, { [id]: deleteField() });
-        } catch (error) {
-            setAlert({ show: true, type: 'error', message: 'Failed to delete link.' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to delete link.' });
         }
     };
 
@@ -385,8 +382,8 @@ const DLinks = () => {
             setEditingLink(null);
             setEditName('');
             setEditFor('');
-        } catch (error) {
-            setAlert({ show: true, type: 'error', message: 'Failed to update link details.' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to update link details.' });
         }
     };
 
@@ -766,11 +763,12 @@ const DLinks = () => {
                 linkName={activityLink?.name || 'Analytics'}
             />
 
-            {alert.show && (
+            {alert?.show && (
                 <Alert
                     type={alert.type}
                     message={alert.message}
-                    onClose={() => setAlert(prev => ({ ...prev, show: false }))}
+                    onClose={() => hideAlert()}
+                    duration={alert.duration ?? 4000}
                 />
             )}
         </div>

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe } from 'lucide-react';
@@ -6,7 +7,8 @@ import { doc, updateDoc, onSnapshot, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import { db, storage, functions } from '../lib/firebase';
-import Alert, { AlertType } from './Alert'; // Import Custom Alert
+import Alert from './Alert'; // Import Custom Alert
+import useSafeAlert from '../hooks/useSafeAlert';
 
 const timezones = [
   { label: 'UTC-12:00', value: -12 },
@@ -71,7 +73,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const [bookingSuccess, setBookingSuccess] = useState<{ date: string, time: string, link: string } | null>(null);
   const [showNameTooltip, setShowNameTooltip] = useState(false);
   const [showEmailTooltip, setShowEmailTooltip] = useState(false);
-  const [alert, setAlert] = useState<{ type: AlertType, message: string } | null>(null); // Alert state
+  const { alert, showAlert, hideAlert } = useSafeAlert(4000);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // Timezone States
@@ -103,9 +105,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
   // Auto-clear success message when date changes
   useEffect(() => {
-    if (bookingSuccess) {
-      setBookingSuccess(null);
-    }
+    // Clear any previous booking success when date changes
+    setBookingSuccess(null);
   }, [selectedDate]);
 
   // Calendar Helpers
@@ -117,10 +118,10 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     return { days, firstDay };
   };
 
-  const timeSlots = [
-    "09:00 AM", "10:00 AM", "11:00 AM", "12:00 PM",
-    "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM"
-  ];
+  const timeSlots = useMemo(() => [
+    '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
+    '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM'
+  ], []);
 
   // Sync Host Availability & Timezone
   useEffect(() => {
@@ -151,17 +152,17 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     };
   }, []);
 
-  const formatDateDDMMYYYY = (date: Date) => {
+  const formatDateDDMMYYYY = useCallback((date: Date) => {
     const day = date.getDate().toString().padStart(2, '0');
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
     return `${day}/${month}/${year}`;
-  };
+  }, []);
 
-  const getMeetingsForDate = (date: Date) => {
+  const getMeetingsForDate = useCallback((date: Date) => {
     const dateStr = formatDateDDMMYYYY(date);
     return existingMeetings.filter(m => m.Date === dateStr);
-  };
+  }, [existingMeetings, formatDateDDMMYYYY]);
 
   // Time Helpers
   const getOffsetFromUTCString = (tzStr: string) => {
@@ -178,11 +179,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   // Convert "09:00 AM" strings to User's Perspective
   const convertTimeToUser = (hostTimeStr: string) => {
     const [time, period] = hostTimeStr.split(' ');
-    let [h, m] = time.split(':').map(Number);
-    if (period === 'PM' && h !== 12) h += 12;
-    if (period === 'AM' && h === 12) h = 0;
+    const [h, mins] = time.split(':').map(Number);
+    let hour = Number.isNaN(h) ? 0 : h;
+    const minute = Number.isNaN(mins) ? 0 : mins;
+    if (period === 'PM' && hour !== 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
 
-    let totalMinutes = h * 60 + m + offsetDiff * 60;
+    let totalMinutes = hour * 60 + minute + offsetDiff * 60;
     // Normalize to 24h
     totalMinutes = (totalMinutes + 1440) % 1440;
 
@@ -196,11 +199,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   // Convert User's Selected Slot back to Host's Perspective for Saving/Checking
   const convertTimeToHost = (userTimeStr: string) => {
     const [time, period] = userTimeStr.split(' ');
-    let [h, m] = time.split(':').map(Number);
-    if (period === 'PM' && h !== 12) h += 12;
-    if (period === 'AM' && h === 12) h = 0;
+    const [h, mins] = time.split(':').map(Number);
+    let hour = Number.isNaN(h) ? 0 : h;
+    const minute = Number.isNaN(mins) ? 0 : mins;
+    if (period === 'PM' && hour !== 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
 
-    let totalMinutes = h * 60 + m - offsetDiff * 60;
+    let totalMinutes = hour * 60 + minute - offsetDiff * 60;
     totalMinutes = (totalMinutes + 1440) % 1440;
 
     const newH = Math.floor(totalMinutes / 60);
@@ -210,11 +215,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     return `${displayH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')} ${newPeriod}`;
   };
 
+  const convertTimeToUserCb = useCallback(convertTimeToUser, [offsetDiff]);
+
   // Converted slots for the UI
-  const convertedSlots = timeSlots.map(convertTimeToUser);
+  const convertedSlots = useMemo(() => timeSlots.map(convertTimeToUserCb), [timeSlots, convertTimeToUserCb]);
 
   // Check if a time slot has already passed
-  const isTimePassed = (date: Date, hostTimeStr: string) => {
+  const isTimePassed = useCallback((date: Date, hostTimeStr: string) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -226,7 +233,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
     // It's today, check the hour
     const [time, period] = hostTimeStr.split(' ');
-    let [h, m] = time.split(':').map(Number);
+    let [h] = time.split(':').map(Number);
     if (period === 'PM' && h !== 12) h += 12;
     if (period === 'AM' && h === 12) h = 0;
 
@@ -235,12 +242,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
     const hostNow = new Date(utc + (3600000 * hostOffset));
 
-    const slotTime = h * 60 + m;
+    const slotTime = h * 60 + (typeof (time.split(':').map(Number)[1]) === 'number' ? time.split(':').map(Number)[1] : 0);
     const currentTime = hostNow.getHours() * 60 + hostNow.getMinutes();
 
     // Add 30 mins buffer so they don't book a meeting starting "right now"
     return currentTime + 30 > slotTime;
-  };
+  }, [hostOffset]);
 
   // Recommend the next day if today is empty
   useEffect(() => {
@@ -258,7 +265,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         setCalendarDate(tomorrow);
       }
     }
-  }, [existingMeetings, hostTimezoneString]);
+  }, [existingMeetings, hostTimezoneString, selectedDate, timeSlots, getMeetingsForDate, isTimePassed]);
 
   // --- THIS IS THE FIXED FUNCTION ---
   const handleMeetingSubmit = async (e: React.FormEvent) => {
@@ -267,7 +274,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     // Basic Validation
     if (!selectedDate || !selectedTime) return;
     if (!meetingData.email || !meetingData.email.includes('@')) {
-      setAlert({ type: 'error', message: "Please enter a valid email address." }); // Custom Alert
+      showAlert({ type: 'error', message: "Please enter a valid email address." }); // Custom Alert
       return;
     }
 
@@ -355,7 +362,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       const msg = error.message?.includes("Invalid attendee email")
         ? "Invalid Email Address provided."
         : (error.message || "Could not book meeting");
-      setAlert({ type: 'error', message: msg });
+      showAlert({ type: 'error', message: msg });
     } finally {
       setIsSubmitting(false);
     }
@@ -399,11 +406,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
     // Validate
     if (!formData.name || !formData.email || !formData.message) {
-      setAlert({ type: 'warning', message: "Please fill in all required fields (Name, Email, Message)." });
+      showAlert({ type: 'warning', message: "Please fill in all required fields (Name, Email, Message)." });
       return;
     }
     if (!formData.email.includes('@')) {
-      setAlert({ type: 'warning', message: "Please enter a valid email address." });
+      showAlert({ type: 'warning', message: "Please enter a valid email address." });
       return;
     }
 
@@ -444,7 +451,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
       await updateDoc(docRef, { [`Emails.${nextId}`]: payload });
 
-      setAlert({ type: 'success', message: "Message sent! I'll get back to you soon." });
+      showAlert({ type: 'success', message: "Message sent! I'll get back to you soon." });
       setFormData({
         name: '',
         email: '',
@@ -457,7 +464,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
     } catch (error) {
       console.error("Error sending message:", error);
-      setAlert({ type: 'error', message: "Failed to send message. Please try again." });
+      showAlert({ type: 'error', message: "Failed to send message. Please try again." });
     } finally {
       setIsSubmitting(false);
     }
@@ -481,7 +488,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
   return createPortal(
     <>
-      {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
+      {alert?.show && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

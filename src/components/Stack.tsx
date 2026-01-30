@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/static-components */
 import { useEffect, useRef, useState, useMemo } from 'react';
 import anime from 'animejs';
 import { db } from '../lib/firebase';
@@ -55,24 +56,24 @@ const StackItem = ({ icon, name, iconSize }: StackItemProps) => {
     );
 };
 
+// Icon mapping helper kept at module scope to avoid creating components during render
+const getIcon = (name: string) => {
+    const lower = name.toLowerCase();
+    if (lower.includes('github')) return Github;
+    if (lower.includes('linkedin')) return Linkedin;
+    if (lower.includes('instagram')) return Instagram;
+    if (lower.includes('twitter') || lower.includes('x.com')) return Twitter;
+    if (lower.includes('facebook')) return Facebook;
+    if (lower.includes('youtube')) return Youtube;
+    if (lower.includes('twitch')) return Twitch;
+    if (lower.includes('mail') || lower.includes('@')) return Mail;
+    return LinkIcon;
+};
+
 const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: number }) => {
     const iconRef = useRef<HTMLAnchorElement>(null);
-
-    // Icon mapping
-    const getIcon = (name: string) => {
-        const lower = name.toLowerCase();
-        if (lower.includes('github')) return Github;
-        if (lower.includes('linkedin')) return Linkedin;
-        if (lower.includes('instagram')) return Instagram;
-        if (lower.includes('twitter') || lower.includes('x.com')) return Twitter;
-        if (lower.includes('facebook')) return Facebook;
-        if (lower.includes('youtube')) return Youtube;
-        if (lower.includes('twitch')) return Twitch;
-        if (lower.includes('mail') || lower.includes('@')) return Mail;
-        return LinkIcon;
-    };
-
-    const Icon = getIcon(name);
+    // Icon is a reference to a stateless icon component from lucide-react.
+    const Icon = useMemo(() => getIcon(name), [name]);
 
     useEffect(() => {
         anime({
@@ -113,7 +114,8 @@ const Stack = () => {
     const handwritingRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const [stackItems, setStackItems] = useState<any[]>([]);
+    type StackData = { icon?: string; name?: string };
+    const [stackItems, setStackItems] = useState<StackData[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string, url: string }[]>([]);
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
@@ -182,10 +184,11 @@ const Stack = () => {
 
                 const items = Object.entries(data)
                     .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([, item]: [string, any]) => {
+                    .map(([, item]: [string, unknown]) => {
+                        const it = item as Record<string, unknown>;
                         return {
-                            icon: item.Icon || item.icon,
-                            name: item.Name || item.name
+                            icon: (it.Icon ?? it.icon) as string | undefined,
+                            name: (it.Name ?? it.name) as string | undefined
                         };
                     });
                 setStackItems(items);
@@ -361,8 +364,8 @@ const Stack = () => {
                                         }}
                                     >
                                         <StackItem
-                                            icon={item.icon}
-                                            name={item.name}
+                                            icon={item.icon || ''}
+                                            name={item.name || ''}
                                             delay={500 + (index * 50)}
                                             iconSize={gridConfig.iconSize}
                                         />
