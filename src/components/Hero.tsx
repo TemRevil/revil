@@ -526,12 +526,14 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                                         src={heroImageUrl}
                                         alt="User"
                                         className="w-full h-full object-cover"
+                                        fetchPriority="high"
                                     />
                                 ) : (
                                     <img
                                         src={DEFAULT_HERO_URL}
                                         alt="User"
                                         className="w-full h-full object-cover"
+                                        fetchPriority="high"
                                     />
                                 )}
                             </div>

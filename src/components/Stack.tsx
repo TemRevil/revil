@@ -20,8 +20,8 @@ const StackItem = ({ icon, name, iconSize }: StackItemProps) => {
     const showFallback = !icon || imgError;
 
     // Calculate min-height based on icon size
-    const minHeight = Math.max(iconSize + 40, 100);
-    const fallbackSize = Math.max(iconSize * 0.8, 60);
+    const minHeight = Math.max(iconSize + 20, 60);
+    const fallbackSize = Math.max(iconSize * 0.8, 40);
 
     return (
         <div
@@ -79,7 +79,7 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
         anime({
             targets: iconRef.current,
             opacity: [0, 1],
-            translateX: [20, 0],
+            translateY: [20, 0],
             duration: 800,
             delay: delay,
             easing: 'easeOutQuad'
@@ -137,30 +137,27 @@ const Stack = () => {
         let paddingTotal: number; // Total horizontal padding per cell (left + right)
 
         if (isMobile) {
-            columns = 2;
-            // Responsive icon size for mobile: scales with screen width
-            // Subtracting gutters and padding to find the optimal square size
-            const availableWidth = windowWidth - (windowWidth < 400 ? 50 : 80);
-            iconSize = Math.floor(availableWidth / 2) - 30;
-            // Cap the size for very large phones to maintain design integrity
-            iconSize = Math.min(iconSize, 140);
-            paddingTotal = 24; // 12px padding * 2
+            columns = windowWidth < 360 ? 3 : 3;
+            if (windowWidth < 400) {
+                iconSize = 45;
+                paddingTotal = 12;
+            } else {
+                iconSize = 65;
+                paddingTotal = 16;
+            }
         } else if (isTablet) {
-            columns = 3;
-            iconSize = windowWidth < 800 ? 110 : 140;
-            paddingTotal = 24;
+            columns = 4;
+            iconSize = windowWidth < 800 ? 80 : 100;
+            paddingTotal = 20;
         } else {
             // Desktop: ALWAYS 5 columns
             columns = 5;
 
-            // Scale icon sizes based on window width
-            if (windowWidth < 1100) iconSize = 100;
-            else if (windowWidth < 1280) iconSize = 110;
-            else if (windowWidth < 1440) iconSize = 120;
-            else iconSize = 130;
+            if (windowWidth < 1100) iconSize = 90;
+            else if (windowWidth < 1280) iconSize = 100;
+            else if (windowWidth < 1440) iconSize = 110;
+            else iconSize = 120;
 
-            // Matches the padding logic in styles: iconSize > 120 ? '20px' : '12px'
-            // 20px * 2 = 40px, 12px * 2 = 24px
             paddingTotal = iconSize > 120 ? 40 : 24;
         }
 
@@ -221,7 +218,7 @@ const Stack = () => {
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
-            translateX: [-20, 0],
+            translateY: [20, 0],
             duration: 600,
             easing: 'easeOutExpo'
         });
@@ -229,19 +226,13 @@ const Stack = () => {
         anime({
             targets: titleRef.current,
             opacity: [0, 1],
-            translateX: [-30, 0],
+            translateY: [30, 0],
             duration: 800,
             delay: 100,
             easing: 'easeOutExpo'
         });
 
-        anime({
-            targets: containerRef.current,
-            opacity: [0, 1],
-            duration: 800,
-            delay: 200,
-            easing: 'easeOutQuad'
-        });
+
     }, []);
 
     // Calculate which items are in the last row for border styling
@@ -258,8 +249,8 @@ const Stack = () => {
     };
 
     return (
-        <div className="min-h-screen w-full overflow-x-hidden flex flex-col justify-center bg-primary transition-slow pt-20 pb-40 page-padding">
-            <div className="max-w-7xl w-full relative z-10">
+        <div className="min-h-screen w-full overflow-x-hidden flex flex-col items-center justify-center bg-primary transition-slow pt-20 pb-40 page-padding">
+            <div className="max-w-7xl w-full mx-auto relative z-10">
                 {/* Header Section */}
                 <div className="mb-14">
                     <div
@@ -283,7 +274,7 @@ const Stack = () => {
 
                 <div
                     ref={containerRef}
-                    className="flex flex-col lg:flex-row justify-start items-start gap-12 lg:gap-20 opacity-0 bg-transparent w-full"
+                    className="flex flex-col md:flex-row items-center md:items-start justify-between w-full bg-transparent px-6 sm:px-12 lg:px-20 py-4"
                 >
 
                     {/* Tech Stack Grid Wrapper */}
@@ -293,10 +284,10 @@ const Stack = () => {
                         so the corner and edge markers (absolute positioned) align perfectly with the grid lines.
                     */}
                     <div
-                        className="relative shrink-0 mx-auto lg:mx-0"
+                        className="relative shrink-0"
                         style={{
                             width: (gridConfig.isMobile || gridConfig.isTablet)
-                                ? '100%'
+                                ? 'fit-content'
                                 : `${gridConfig.columns * gridConfig.cellWidth}px`
                         }}
                     >
@@ -375,10 +366,10 @@ const Stack = () => {
                         </div>
                     </div>
 
-                    {/* Social Links Sidebar */}
+                    {/* Social Links - Below grid on mobile, sidebar on desktop */}
                     {socialLinks.length > 0 && (
-                        <div className="flex flex-row flex-wrap lg:flex-nowrap lg:flex-col items-center lg:items-start justify-center lg:justify-start gap-2 md:gap-4 lg:pt-0 w-full lg:min-w-[50px] lg:w-fit shrink-0 relative z-30">
-                            <div className="hidden lg:block w-px h-12 bg-gradient-to-b from-gray-400/50 to-transparent mb-4"></div>
+                        <div className="flex flex-row md:flex-col items-center justify-center md:justify-start gap-3 md:gap-4 mt-8 md:mt-0 w-auto md:w-12 shrink-0 relative z-30">
+                            <div className="hidden md:block w-px h-12 bg-gradient-to-b from-gray-400/50 to-transparent mb-2"></div>
 
                             {socialLinks.map((link, index) => (
                                 <SocialIcon
@@ -388,6 +379,8 @@ const Stack = () => {
                                     delay={800 + (index * 100)}
                                 />
                             ))}
+
+                            <div className="hidden md:block w-px h-12 bg-gradient-to-t from-gray-400/50 to-transparent mt-2"></div>
                         </div>
                     )}
                 </div>

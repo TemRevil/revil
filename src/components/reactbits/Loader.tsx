@@ -246,8 +246,8 @@ const Loader: React.FC<LoaderProps> = ({ isOpen = true, isFullScreen = false }) 
                     className={isFullScreen ? "fixed inset-0 flex items-center justify-center z-[999999]" : "flex flex-col items-center justify-center gap-6 p-4"}
                     style={isFullScreen ? {
                         backgroundColor: "rgba(0, 0, 0, 0.4)",
-                        backdropFilter: "blur(200px)",
-                        WebkitBackdropFilter: "blur(200px)"
+                        backdropFilter: "blur(60px)",
+                        WebkitBackdropFilter: "blur(60px)"
                     } : {}}
                 >
                     <div className="flex flex-col items-center justify-center gap-10">

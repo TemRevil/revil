@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase, TrendingUp, Users, Eye, Calendar, Plus } from 'lucide-react';
+import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase, Users, Eye, Calendar, Plus } from 'lucide-react';
 import anime from 'animejs';
 import { motion } from 'motion/react';
 import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
@@ -472,51 +472,47 @@ const DLinks = () => {
                             </div>
 
                             {/* Counter Cards */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                                <div className="glass-panel p-6 sm:p-8 relative overflow-hidden group">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                                <div className="glass-panel p-5 sm:p-8 relative overflow-hidden group">
                                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                        <Eye className="w-10 h-10 sm:w-12 sm:h-12" />
+                                        <Eye className="w-8 h-8 sm:w-12 sm:h-12" />
                                     </div>
                                     <div className="flex flex-col gap-1 sm:gap-2">
                                         <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-blue-500">Total Reach</span>
                                         <div className="flex items-baseline gap-2">
                                             <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Total Reach"] || '0'}</span>
-                                            {/* Simulated Trend */}
-                                            <span className="text-[10px] font-bold text-emerald-500 flex items-center bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                                                <TrendingUp size={10} className="mr-1" /> +12%
-                                            </span>
                                         </div>
-                                        <div className="flex items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
-                                            <span className="bg-blue-500/10 text-blue-500 px-2 py-1 rounded">GLOBAL VIEWS</span>
-                                            <span className="hidden sm:inline">Impressions on site</span>
+                                        <div className="flex flex-wrap items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
+                                            <span className="bg-blue-500/10 text-blue-500 px-2 py-1 rounded whitespace-nowrap">GLOBAL VIEWS</span>
+                                            <span className="opacity-60">Impressions</span>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="glass-panel p-6 sm:p-8 relative overflow-hidden group">
+                                <div className="glass-panel p-5 sm:p-8 relative overflow-hidden group">
                                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                        <Users className="w-10 h-10 sm:w-12 sm:h-12" />
+                                        <Users className="w-8 h-8 sm:w-12 sm:h-12" />
                                     </div>
                                     <div className="flex flex-col gap-1 sm:gap-2">
                                         <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-purple-500">Reach (Per Device)</span>
                                         <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Reach (Per Device)"] || '0'}</span>
-                                        <div className="flex items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
-                                            <span className="bg-purple-500/10 text-purple-500 px-2 py-1 rounded">IDENTITY TRACKED</span>
-                                            <span className="hidden sm:inline">Unique device count</span>
+                                        <div className="flex flex-wrap items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
+                                            <span className="bg-purple-500/10 text-purple-500 px-2 py-1 rounded whitespace-nowrap">IDENTITY TRACKED</span>
+                                            <span className="opacity-60">Unique</span>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="glass-panel p-6 sm:p-8 relative overflow-hidden group sm:col-span-2 lg:col-span-1">
+                                <div className="glass-panel p-5 sm:p-8 relative overflow-hidden group">
                                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                        <Calendar size={48} className="w-10 h-10 sm:w-12 sm:h-12" />
+                                        <Calendar size={48} className="w-8 h-8 sm:w-12 sm:h-12" />
                                     </div>
                                     <div className="flex flex-col gap-1 sm:gap-2">
                                         <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-emerald-500">Today's Viewers</span>
                                         <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Today's Viewers"] || '0'}</span>
-                                        <div className="flex items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
-                                            <span className="bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded">LIVE TRAFFIC</span>
-                                            <span className="hidden sm:inline">Views in 24h</span>
+                                        <div className="flex flex-wrap items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
+                                            <span className="bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded whitespace-nowrap">LIVE TRAFFIC</span>
+                                            <span className="opacity-60">24h History</span>
                                         </div>
                                     </div>
                                 </div>
@@ -596,78 +592,92 @@ const DLinks = () => {
                                                 <motion.div
                                                     key={link.id}
                                                     layout
-                                                    initial={{ opacity: 0, y: 10 }}
-                                                    animate={{ opacity: 1, y: 0 }}
+                                                    initial={{ opacity: 0, scale: 0.95 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    className="glass-panel p-4 xs:p-6 flex flex-col gap-5 xs:gap-6 group hover:border-[var(--info)]/40 transition-all duration-300 relative overflow-hidden"
                                                     onClick={() => setActivityLink(link)}
-                                                    className="glass-panel p-5 flex flex-col gap-5 group cursor-pointer hover:border-blue-500/30 transition-all border border-transparent relative overflow-hidden h-fit"
+                                                    style={{ cursor: 'pointer' }}
                                                 >
-                                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[60px] opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                    {/* Decorative Background Accent */}
+                                                    <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-[var(--info)]/20 to-transparent blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
-                                                    <div className="flex items-start justify-between relative z-10">
-                                                        <div className="flex items-center gap-4 flex-1 min-w-0">
-                                                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/10 to-blue-600/5 border border-blue-500/10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-500">
-                                                                <Activity size={22} className="text-blue-500" />
+                                                    {/* Header Area */}
+                                                    <div className="flex items-start justify-between relative z-10 gap-3">
+                                                        <div className="flex items-center gap-3 xs:gap-4 min-w-0">
+                                                            <div className="w-12 h-12 xs:w-14 xs:h-14 rounded-2xl bg-gradient-to-br from-[var(--info)]/10 to-transparent border border-[var(--info)]/10 flex items-center justify-center shrink-0 shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
+                                                                <Activity size={22} className="text-[var(--info)] xs:hidden" />
+                                                                <Activity size={26} className="text-[var(--info)] hidden xs:block" />
                                                             </div>
                                                             <div className="flex flex-col min-w-0">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="font-black text-sm tracking-tight text-primary truncate">{link.name}</span>
-                                                                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/10 uppercase tracking-widest shrink-0">Active</span>
+                                                                <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                                                                    <span className="font-black text-sm xs:text-base tracking-tight text-primary truncate">
+                                                                        {link.name}
+                                                                    </span>
+                                                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-[var(--info)]/10 text-[var(--info)] border border-[var(--info)]/10 uppercase tracking-widest shrink-0">
+                                                                        Active
+                                                                    </span>
                                                                 </div>
-                                                                <span className="text-[11px] text-muted opacity-50 font-medium truncate mt-0.5">{link.forField}</span>
+                                                                <span className="text-[10px] xs:text-xs text-muted opacity-60 font-medium truncate">
+                                                                    {link.forField}
+                                                                </span>
                                                             </div>
                                                         </div>
 
-                                                        <div className="flex items-center gap-4 shrink-0">
-                                                            <div className="flex flex-col items-end">
-                                                                <div className="flex items-baseline gap-1">
-                                                                    <span className="text-2xl font-black text-primary leading-none group-hover:text-blue-500 transition-colors">{link.counts}</span>
-                                                                    <span className="text-[9px] font-bold text-muted uppercase tracking-tighter">Hits</span>
-                                                                </div>
-                                                                <div className="w-12 h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
-                                                                    <motion.div
-                                                                        className="h-full bg-blue-500"
-                                                                        initial={{ width: 0 }}
-                                                                        animate={{ width: `${Math.min(link.counts * 2, 100)}%` }}
-                                                                        transition={{ duration: 1, delay: 0.2 }}
-                                                                    />
-                                                                </div>
+                                                        {/* Hits Badge */}
+                                                        <div className="flex flex-col items-end shrink-0">
+                                                            <div className="text-xl xs:text-2xl font-black text-primary leading-none group-hover:text-[var(--info)] transition-colors duration-300">
+                                                                {link.counts}
                                                             </div>
-                                                            <button onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
-                                                                className="p-2 hover:bg-white/10 rounded-xl transition-all text-muted opacity-0 group-hover:opacity-100">
-                                                                <MoreVertical size={18} />
-                                                            </button>
+                                                            <span className="text-[8px] font-black text-muted uppercase tracking-[0.1em] mt-1 opacity-40">Hits</span>
                                                         </div>
                                                     </div>
 
-                                                    <div className="flex items-center gap-3 relative z-10">
-                                                        <div className="flex-1 relative group/link">
-                                                            <div className="relative flex items-center gap-3 px-4 py-3 bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-2xl group-hover:border-blue-500/30 transition-all overflow-hidden shadow-sm">
-                                                                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
-                                                                <code className="flex-1 text-[11px] font-mono text-[var(--text-primary)] truncate tracking-tight font-semibold">
+                                                    {/* URL & Actions Area */}
+                                                    <div className="flex flex-col gap-4 relative z-10">
+                                                        {/* Link Display */}
+                                                        <div className="relative group/link overflow-hidden">
+                                                            <div className="flex items-center gap-3 px-4 py-3 bg-black/20 dark:bg-black/40 border border-white/5 rounded-2xl group-hover/link:border-[var(--info)]/30 transition-all">
+                                                                <div className="w-2 h-2 rounded-full bg-[var(--info)] animate-pulse shadow-[0_0_8px_var(--info)]" />
+                                                                <code className="flex-1 text-[11px] font-mono text-muted truncate select-all">
                                                                     {link.fullLink}
                                                                 </code>
                                                             </div>
                                                         </div>
-                                                        <div className="flex items-center gap-2 shrink-0">
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); toggleInterviewerMode(link.id, link.interviewer); }}
-                                                                className={`w-11 h-11 flex items-center justify-center rounded-2xl border transition-all shadow-lg shrink-0 ${link.interviewer
-                                                                    ? 'bg-blue-500/20 text-blue-500 border-blue-500/30'
-                                                                    : 'bg-white/5 text-muted border-white/10 hover:bg-white/10'
-                                                                    }`}
-                                                                title="Interviewer Mode"
-                                                            >
-                                                                <Users size={18} className={link.interviewer ? 'animate-pulse' : ''} />
-                                                            </button>
+
+                                                        {/* Footer Actions */}
+                                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); toggleInterviewerMode(link.id, link.interviewer); }}
+                                                                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 xs:px-4 py-2.5 rounded-xl border font-bold text-[10px] uppercase tracking-wider transition-all shadow-md group ${link.interviewer
+                                                                        ? 'bg-[var(--info)]/20 text-[var(--info)] border-[var(--info)]/30'
+                                                                        : 'bg-white/5 text-muted border-white/10 hover:bg-white/10'
+                                                                        }`}
+                                                                >
+                                                                    <Users size={14} className={link.interviewer ? 'animate-pulse' : ''} />
+                                                                    <span className="xs:inline">{link.interviewer ? 'On' : 'Interviewer'}</span>
+                                                                </button>
+
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
+                                                                    className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-muted border border-white/5"
+                                                                >
+                                                                    <MoreVertical size={18} />
+                                                                </button>
+                                                            </div>
+
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
-                                                                className="w-11 h-11 flex items-center justify-center bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-2xl border border-blue-500/20 transition-all shadow-lg shadow-blue-500/5 shrink-0"
-                                                                title="Copy Link"
+                                                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[var(--info)] to-[var(--info)]/80 hover:scale-[1.03] active:scale-95 text-white rounded-xl shadow-lg shadow-[var(--info)]/20 transition-all font-bold text-[11px] uppercase tracking-wider"
                                                             >
-                                                                {copied === link.id ? <Check size={18} /> : <Copy size={18} />}
+                                                                {copied === link.id ? <Check size={14} /> : <Copy size={14} />}
+                                                                <span>{copied === link.id ? 'Copied' : 'Copy Link'}</span>
                                                             </button>
                                                         </div>
                                                     </div>
+
+                                                    {/* Progress Indicator (Subtle) */}
+                                                    <div className="absolute bottom-0 left-0 h-[3px] bg-gradient-to-r from-transparent via-[var(--info)]/40 to-transparent w-full opacity-0 group-hover:opacity-100 transition-opacity" />
                                                 </motion.div>
                                             ))
                                         )}

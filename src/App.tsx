@@ -35,12 +35,11 @@ function App() {
 
   useEffect(() => {
     const handleLoad = () => setIsWindowReady(true);
-    if (document.readyState === 'complete') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
       setIsWindowReady(true);
     } else {
-      window.addEventListener('load', handleLoad);
-      return () => window.removeEventListener('load', handleLoad);
+      window.addEventListener('DOMContentLoaded', handleLoad);
+      return () => window.removeEventListener('DOMContentLoaded', handleLoad);
     }
   }, []);
 
@@ -48,7 +47,7 @@ function App() {
   useEffect(() => {
     const safety = setTimeout(() => {
       setForceHideLoading(true);
-    }, 8000);
+    }, 4000);
     return () => clearTimeout(safety);
   }, []);
 
@@ -168,7 +167,7 @@ function App() {
       return;
     }
 
-    const SWIPE_THRESHOLD = 80; // slightly more sensitive
+    const SWIPE_THRESHOLD = 120; // Less sensitive as requested
     const deltaX = touchStartX.current - touchEndX.current;
     const deltaY = touchStartY.current - touchEndY.current;
 
@@ -291,8 +290,9 @@ function App() {
     const preventPullToRefresh = (e: TouchEvent) => {
       const container = getScrollContainer(currentSection);
       if (!container) return;
-      const isPullingDown = e.touches[0].clientY > touchStartY.current;
-      const scrolledToTop = container.scrollTop <= 5;
+      const pullDelta = e.touches[0].clientY - touchStartY.current;
+      const isPullingDown = pullDelta > 10; // 10px threshold
+      const scrolledToTop = container.scrollTop <= 2;
 
       if (scrolledToTop && isPullingDown && !isContactModalOpen && currentSection !== 'dashboard') {
         if (e.cancelable) e.preventDefault();
@@ -323,6 +323,7 @@ function App() {
     <main
       ref={mainRef}
       className="relative w-full h-screen overflow-hidden"
+      style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}

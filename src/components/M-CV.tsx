@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { X, Mail, Phone, MapPin, Globe, Github, Linkedin, Instagram, Download, ExternalLink, FileText } from 'lucide-react';
+import { X, Mail, Phone, MapPin, Globe, Github, Linkedin, Instagram, ExternalLink, FileText } from 'lucide-react';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Project as FullProject } from './M-ProjectView';
@@ -232,12 +232,6 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                             <span className="text-[10px] font-black text-sec uppercase tracking-[0.3em] font-sans">Fast Report</span>
                         </div>
                         <div className="flex items-center gap-3">
-                            <button
-                                onClick={() => window.print()}
-                                className="p-2.5 hover:bg-black/5 dark:hover:bg-white/10 rounded-xl transition-all text-sec hover:text-primary"
-                            >
-                                <Download size={18} />
-                            </button>
                             <button
                                 onClick={onClose}
                                 className="p-2.5 hover:bg-red-500/10 dark:hover:bg-red-500/20 hover:text-red-500 rounded-xl transition-all text-sec"

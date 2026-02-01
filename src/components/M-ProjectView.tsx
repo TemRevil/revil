@@ -5,12 +5,6 @@ import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play,
 import { useRef } from 'react';
 
 // Import SVG icons
-import htmlIcon from '../assets/svgs/html.svg';
-import cssIcon from '../assets/svgs/css.svg';
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import jsIcon from '../assets/svgs/javascript.svg';
-import reactIcon from '../assets/svgs/react.svg';
-import nodejsIcon from '../assets/svgs/nodejs.svg';
 import firebaseIcon from '../assets/svgs/firebase.svg';
 
 import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
@@ -25,11 +19,6 @@ export const isVideoFile = (url: string) => {
 // eslint-disable-next-line react-refresh/only-export-components
 export const getStackIcon = (name: string) => {
     const lowerName = name.toLowerCase();
-    if (lowerName.includes('html')) return htmlIcon;
-    if (lowerName.includes('css')) return cssIcon;
-    if (lowerName.includes('javascript') || lowerName.includes('js')) return jsIcon;
-    if (lowerName.includes('react')) return reactIcon;
-    if (lowerName.includes('node')) return nodejsIcon;
     if (lowerName.includes('firebase')) return firebaseIcon;
     return null;
 };
