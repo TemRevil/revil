@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Clock, MousePointer2, Briefcase, Users, Eye, Calendar, Plus } from 'lucide-react';
+import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Users, Plus, Clock, Briefcase, MousePointer2, Eye, Calendar } from 'lucide-react';
 import anime from 'animejs';
 import { motion } from 'motion/react';
 import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
@@ -56,10 +56,10 @@ const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; o
                     return {
                         id: id.trim(),
                         time: time.trim(),
-                        views: (verboseViews || conciseViews || '0') + ' views'
+                        views: (verboseViews || conciseViews || '0')
                     };
                 }
-                return { id: '?', time: '0m 0s', views: '0 views' };
+                return { id: '?', time: '0m 0s', views: '0' };
             }).filter(p => p.id !== '?') : [];
 
             return { total, stack, contact, projects };
@@ -72,74 +72,62 @@ const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; o
     const stats = parseData(data);
 
     return createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)' }}
-            onClick={onClose}>
-            <div className="glass-panel-deep w-full max-w-[500px] p-8 flex flex-col gap-8 animate-scale-in relative overflow-hidden max-h-[90vh]"
-                onClick={e => e.stopPropagation()}>
-
-                <div className="flex justify-between items-start">
-                    <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-                        <h2 className="heading-lg m-0 truncate" style={{ letterSpacing: '-0.03em' }}>{linkName}</h2>
-                        <p className="text-muted opacity-80 text-sm m-0">Live visitor session analytics</p>
-                    </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <div className="glass-panel w-full max-w-[500px] flex flex-col animate-scale-in relative overflow-hidden max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                    <h2 className="heading-sm m-0">{linkName} Analytics</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                        <Plus size={20} className="rotate-45" />
+                    </button>
                 </div>
 
-                {!stats ? (
-                    <div className="text-center py-12 text-muted opacity-60">
-                        No session data detected yet.
-                    </div>
-                ) : (
-                    <div className="overflow-y-auto flex flex-col gap-10 pr-1 custom-scrollbar">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="glass-surface p-5 text-center flex flex-col items-center gap-2.5">
-                                <Clock size={20} style={{ color: 'var(--info)' }} />
-                                <div className="heading-md m-0">{stats.total}</div>
-                                <div className="text-muted text-xs uppercase font-bold tracking-widest" style={{ fontSize: '0.65rem' }}>Total Time</div>
+                <div className="p-6 overflow-y-auto flex flex-col gap-6">
+                    {!stats ? (
+                        <div className="text-center py-12 text-muted italic">No session data available...</div>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="p-4 bg-white/5 rounded-xl border border-white/5 flex flex-col items-center text-center gap-1.5">
+                                    <Clock size={16} className="text-info opacity-70" />
+                                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Session</div>
+                                    <div className="text-lg font-bold">{stats.total}</div>
+                                </div>
+                                <div className="p-4 bg-white/5 rounded-xl border border-white/5 flex flex-col items-center text-center gap-1.5">
+                                    <Briefcase size={16} className="text-secondary opacity-70" />
+                                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Stack</div>
+                                    <div className="text-lg font-bold">{stats.stack}</div>
+                                </div>
+                                <div className="p-4 bg-white/5 rounded-xl border border-white/5 flex flex-col items-center text-center gap-1.5">
+                                    <MousePointer2 size={16} className="text-success opacity-70" />
+                                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Contact</div>
+                                    <div className="text-lg font-bold">{stats.contact}</div>
+                                </div>
                             </div>
-                            <div className="glass-surface p-5 text-center flex flex-col items-center gap-2.5">
-                                <Briefcase size={20} style={{ color: '#8b5cf6' }} />
-                                <div className="heading-md m-0">{stats.stack}</div>
-                                <div className="text-muted text-xs uppercase font-bold tracking-widest" style={{ fontSize: '0.65rem' }}>Stack Time</div>
-                            </div>
-                            <div className="glass-surface p-5 text-center flex flex-col items-center gap-2.5">
-                                <MousePointer2 size={20} style={{ color: 'var(--success)' }} />
-                                <div className="heading-md m-0">{stats.contact}</div>
-                                <div className="text-muted text-xs uppercase font-bold tracking-widest" style={{ fontSize: '0.65rem' }}>Contacts</div>
-                            </div>
-                        </div>
 
-                        <div className="flex flex-col gap-5">
-                            <h3 className="heading-sm flex items-center gap-3 m-0">
-                                <Activity size={18} style={{ color: 'var(--warning)' }} /> Project Engagement
-                            </h3>
-                            <div className="flex flex-col gap-2.5 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
+                            <div className="flex flex-col gap-3">
+                                <div className="text-xs font-bold text-muted uppercase tracking-widest pl-1">Project Engagement</div>
                                 {stats.projects.length === 0 ? (
-                                    <div className="glass-surface p-6 text-center border-dashed opacity-60 italic text-sm">
-                                        No project interactions recorded.
-                                    </div>
+                                    <div className="text-center py-6 text-muted text-xs italic">No interactions recorded.</div>
                                 ) : (
                                     stats.projects.map((p, i) => (
-                                        <div key={i} className="glass-surface flex justify-between items-center p-4 px-6 transition-all hover:translate-x-1">
-                                            <div className="flex flex-col gap-1">
-                                                <span className="font-bold text-sm text-primary">{p.id}</span>
-                                                <span className="text-muted text-xs opacity-80">{p.views}</span>
+                                        <div key={i} className="flex justify-between items-center p-3 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-info/10 rounded-lg text-info">
+                                                    <Eye size={14} />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-sm tracking-tight">{p.id}</span>
+                                                    <span className="text-[10px] text-muted">{p.views} views</span>
+                                                </div>
                                             </div>
-                                            <span className="font-bold text-xs p-2.5 px-4 rounded-xl"
-                                                style={{ color: 'var(--info)', backgroundColor: 'rgba(59, 130, 246, 0.1)' }}>
-                                                {p.time}
-                                            </span>
+                                            <span className="text-xs font-bold text-info bg-info/5 px-2.5 py-1 rounded-md">{p.time}</span>
                                         </div>
                                     ))
                                 )}
                             </div>
-                        </div>
-                    </div>
-                )}
-
-                <button onClick={onClose} className="btn btn-primary w-full mt-2 py-4 rounded-2xl shadow-lg">
-                    Close Analytics
-                </button>
+                        </>
+                    )}
+                </div>
             </div>
         </div>,
         document.body
@@ -454,7 +442,7 @@ const DLinks = () => {
                     }}
                 >
                     <Plus size={iconSize} />
-                    {isExtraSmall ? generatedLinks.length : `Portals (${generatedLinks.length})`}
+                    {isExtraSmall ? generatedLinks.length : `Portals(${generatedLinks.length})`}
                 </button>
             </div>
 
@@ -472,49 +460,32 @@ const DLinks = () => {
                             </div>
 
                             {/* Counter Cards */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-                                <div className="glass-panel p-5 sm:p-8 relative overflow-hidden group">
-                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                        <Eye className="w-8 h-8 sm:w-12 sm:h-12" />
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="p-8 rounded-[32px] bg-white/[0.03] border border-white/10 backdrop-blur-xl relative overflow-hidden group transition-all hover:bg-white/[0.06]">
+                                    <div className="absolute top-0 right-0 p-4 opacity-15 group-hover:opacity-25 transition-opacity text-info">
+                                        <Eye size={48} />
                                     </div>
-                                    <div className="flex flex-col gap-1 sm:gap-2">
-                                        <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-blue-500">Total Reach</span>
-                                        <div className="flex items-baseline gap-2">
-                                            <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Total Reach"] || '0'}</span>
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
-                                            <span className="bg-blue-500/10 text-blue-500 px-2 py-1 rounded whitespace-nowrap">GLOBAL VIEWS</span>
-                                            <span className="opacity-60">Impressions</span>
-                                        </div>
-                                    </div>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-info/80">Reach</span>
+                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.Main?.["Total Reach"] || '0'}</div>
+                                    <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Global Interactions</p>
                                 </div>
 
-                                <div className="glass-panel p-5 sm:p-8 relative overflow-hidden group">
-                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                        <Users className="w-8 h-8 sm:w-12 sm:h-12" />
+                                <div className="p-8 rounded-[32px] bg-white/[0.03] border border-white/10 backdrop-blur-xl relative overflow-hidden group transition-all hover:bg-white/[0.06]">
+                                    <div className="absolute top-0 right-0 p-4 opacity-15 group-hover:opacity-25 transition-opacity text-secondary">
+                                        <Users size={48} />
                                     </div>
-                                    <div className="flex flex-col gap-1 sm:gap-2">
-                                        <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-purple-500">Reach (Per Device)</span>
-                                        <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Reach (Per Device)"] || '0'}</span>
-                                        <div className="flex flex-wrap items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
-                                            <span className="bg-purple-500/10 text-purple-500 px-2 py-1 rounded whitespace-nowrap">IDENTITY TRACKED</span>
-                                            <span className="opacity-60">Unique</span>
-                                        </div>
-                                    </div>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-secondary/80">Unique</span>
+                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.Main?.["Reach (Per Device)"] || '0'}</div>
+                                    <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Device Nodes</p>
                                 </div>
 
-                                <div className="glass-panel p-5 sm:p-8 relative overflow-hidden group">
-                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                        <Calendar size={48} className="w-8 h-8 sm:w-12 sm:h-12" />
+                                <div className="p-8 rounded-[32px] bg-white/[0.03] border border-white/10 backdrop-blur-xl relative overflow-hidden group transition-all hover:bg-white/[0.06]">
+                                    <div className="absolute top-0 right-0 p-4 opacity-15 group-hover:opacity-25 transition-opacity text-success">
+                                        <Calendar size={48} />
                                     </div>
-                                    <div className="flex flex-col gap-1 sm:gap-2">
-                                        <span className="text-[10px] sm:text-xs uppercase font-black tracking-widest text-emerald-500">Today's Viewers</span>
-                                        <span className="text-2xl sm:text-4xl font-black text-primary">{analytics?.Main?.["Today's Viewers"] || '0'}</span>
-                                        <div className="flex flex-wrap items-center gap-2 mt-4 text-[10px] sm:text-xs font-bold text-muted">
-                                            <span className="bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded whitespace-nowrap">LIVE TRAFFIC</span>
-                                            <span className="opacity-60">24h History</span>
-                                        </div>
-                                    </div>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-success/80">Today</span>
+                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.Main?.["Today's Viewers"] || '0'}</div>
+                                    <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Live Traffic</p>
                                 </div>
                             </div>
 
@@ -530,50 +501,38 @@ const DLinks = () => {
                             </div>
 
                             <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-                                {/* Generator Sidebar */}
-                                <div className="xl:col-span-4 flex flex-col gap-6">
-                                    <div className="glass-panel p-8 border-dashed border-2 relative overflow-hidden group">
-                                        <div className="absolute -top-10 -right-10 w-40 h-40 bg-blue-500/5 blur-3xl rounded-full" />
-
-                                        <div className="flex flex-col gap-1 mb-6 relative z-10">
-                                            <h3 className="heading-sm m-0 flex items-center gap-2">
-                                                <Plus size={18} className="text-blue-500" />
-                                                Campaign Architect
-                                            </h3>
-                                            <p className="text-[11px] text-muted font-medium">Generate a new secure tracking link</p>
-                                        </div>
-
-                                        <div className="flex flex-col gap-5 mb-6 relative z-10">
+                                <div className="xl:col-span-4">
+                                    <div className="glass-panel p-8">
+                                        <h3 className="heading-sm mb-6">Create Portal</h3>
+                                        <div className="flex flex-col gap-5">
                                             <div className="flex flex-col gap-2">
-                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted opacity-60">Target Identifier</label>
+                                                <label className="text-[10px] font-bold uppercase text-muted">Recipient Name</label>
                                                 <input
                                                     type="text"
-                                                    className="input-field !py-3 !text-sm"
+                                                    className="input-field"
                                                     value={name}
                                                     onChange={(e) => setName(e.target.value)}
-                                                    placeholder="e.g. Google HR"
+                                                    placeholder="e.g. Google"
                                                 />
                                             </div>
                                             <div className="flex flex-col gap-2">
-                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted opacity-60">Portal Context</label>
+                                                <label className="text-[10px] font-bold uppercase text-muted">Portal Context</label>
                                                 <input
                                                     type="text"
-                                                    className="input-field !py-3 !text-sm"
+                                                    className="input-field"
                                                     value={forField}
                                                     onChange={(e) => setForField(e.target.value)}
-                                                    placeholder="e.g. Senior Role Application"
+                                                    placeholder="e.g. Design Role"
                                                 />
                                             </div>
+                                            <button
+                                                onClick={generateCode}
+                                                disabled={!name.trim() || !forField.trim()}
+                                                className="btn btn-primary w-full py-4 mt-2"
+                                            >
+                                                Generate Portal
+                                            </button>
                                         </div>
-
-                                        <button
-                                            onClick={generateCode}
-                                            disabled={!name.trim() || !forField.trim()}
-                                            className="btn btn-primary w-full py-4 rounded-xl shadow-lg shadow-blue-500/10 group transition-all relative z-10 overflow-hidden"
-                                        >
-                                            <RefreshCw size={18} className="group-active:rotate-180 transition-transform duration-500" />
-                                            Deploy Portal
-                                        </button>
                                     </div>
                                 </div>
 
@@ -592,92 +551,56 @@ const DLinks = () => {
                                                 <motion.div
                                                     key={link.id}
                                                     layout
-                                                    initial={{ opacity: 0, scale: 0.95 }}
-                                                    animate={{ opacity: 1, scale: 1 }}
-                                                    className="glass-panel p-4 xs:p-6 flex flex-col gap-5 xs:gap-6 group hover:border-[var(--info)]/40 transition-all duration-300 relative overflow-hidden"
+                                                    className="glass-panel p-6 flex flex-col gap-4 relative"
                                                     onClick={() => setActivityLink(link)}
                                                     style={{ cursor: 'pointer' }}
                                                 >
-                                                    {/* Decorative Background Accent */}
-                                                    <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-[var(--info)]/20 to-transparent blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
-                                                    {/* Header Area */}
-                                                    <div className="flex items-start justify-between relative z-10 gap-3">
-                                                        <div className="flex items-center gap-3 xs:gap-4 min-w-0">
-                                                            <div className="w-12 h-12 xs:w-14 xs:h-14 rounded-2xl bg-gradient-to-br from-[var(--info)]/10 to-transparent border border-[var(--info)]/10 flex items-center justify-center shrink-0 shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
-                                                                <Activity size={22} className="text-[var(--info)] xs:hidden" />
-                                                                <Activity size={26} className="text-[var(--info)] hidden xs:block" />
-                                                            </div>
-                                                            <div className="flex flex-col min-w-0">
-                                                                <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                                                                    <span className="font-black text-sm xs:text-base tracking-tight text-primary truncate">
-                                                                        {link.name}
-                                                                    </span>
-                                                                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-[var(--info)]/10 text-[var(--info)] border border-[var(--info)]/10 uppercase tracking-widest shrink-0">
-                                                                        Active
-                                                                    </span>
-                                                                </div>
-                                                                <span className="text-[10px] xs:text-xs text-muted opacity-60 font-medium truncate">
-                                                                    {link.forField}
-                                                                </span>
-                                                            </div>
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="flex flex-col">
+                                                            <h3 className="font-bold text-lg leading-tight">{link.name}</h3>
+                                                            <p className="text-xs text-muted mt-0.5">{link.forField}</p>
                                                         </div>
-
-                                                        {/* Hits Badge */}
-                                                        <div className="flex flex-col items-end shrink-0">
-                                                            <div className="text-xl xs:text-2xl font-black text-primary leading-none group-hover:text-[var(--info)] transition-colors duration-300">
-                                                                {link.counts}
-                                                            </div>
-                                                            <span className="text-[8px] font-black text-muted uppercase tracking-[0.1em] mt-1 opacity-40">Hits</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* URL & Actions Area */}
-                                                    <div className="flex flex-col gap-4 relative z-10">
-                                                        {/* Link Display */}
-                                                        <div className="relative group/link overflow-hidden">
-                                                            <div className="flex items-center gap-3 px-4 py-3 bg-black/20 dark:bg-black/40 border border-white/5 rounded-2xl group-hover/link:border-[var(--info)]/30 transition-all">
-                                                                <div className="w-2 h-2 rounded-full bg-[var(--info)] animate-pulse shadow-[0_0_8px_var(--info)]" />
-                                                                <code className="flex-1 text-[11px] font-mono text-muted truncate select-all">
-                                                                    {link.fullLink}
-                                                                </code>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Footer Actions */}
-                                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); toggleInterviewerMode(link.id, link.interviewer); }}
-                                                                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 xs:px-4 py-2.5 rounded-xl border font-bold text-[10px] uppercase tracking-wider transition-all shadow-md group ${link.interviewer
-                                                                        ? 'bg-[var(--info)]/20 text-[var(--info)] border-[var(--info)]/30'
-                                                                        : 'bg-white/5 text-muted border-white/10 hover:bg-white/10'
-                                                                        }`}
-                                                                >
-                                                                    <Users size={14} className={link.interviewer ? 'animate-pulse' : ''} />
-                                                                    <span className="xs:inline">{link.interviewer ? 'On' : 'Interviewer'}</span>
-                                                                </button>
-
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
-                                                                    className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-muted border border-white/5"
-                                                                >
-                                                                    <MoreVertical size={18} />
-                                                                </button>
-                                                            </div>
-
+                                                        <div className="flex items-center gap-2">
                                                             <button
-                                                                onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
-                                                                className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[var(--info)] to-[var(--info)]/80 hover:scale-[1.03] active:scale-95 text-white rounded-xl shadow-lg shadow-[var(--info)]/20 transition-all font-bold text-[11px] uppercase tracking-wider"
+                                                                onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
+                                                                className="p-1 text-muted hover:text-primary transition-colors"
                                                             >
-                                                                {copied === link.id ? <Check size={14} /> : <Copy size={14} />}
-                                                                <span>{copied === link.id ? 'Copied' : 'Copy Link'}</span>
+                                                                <MoreVertical size={20} />
                                                             </button>
                                                         </div>
                                                     </div>
 
-                                                    {/* Progress Indicator (Subtle) */}
-                                                    <div className="absolute bottom-0 left-0 h-[3px] bg-gradient-to-r from-transparent via-[var(--info)]/40 to-transparent w-full opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                    <div className="flex items-center gap-3 p-3 bg-black/10 rounded-xl border border-white/5">
+                                                        <code className="text-[10px] font-mono text-muted flex-1 truncate">{link.fullLink}</code>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); copyToClipboard(link.fullLink, link.id); }}
+                                                            className="text-muted hover:text-primary transition-colors"
+                                                        >
+                                                            {copied === link.id ? <Check size={16} className="text-success" /> : <Copy size={16} />}
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="flex items-center justify-between mt-2">
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); toggleInterviewerMode(link.id, link.interviewer); }}
+                                                            className={`btn !py-2 !px-2 sm:!px-4 !text-[10px] flex items-center gap-2 transition-all ${link.interviewer
+                                                                ? 'bg-secondary/10 text-secondary border border-secondary/20 hover:bg-secondary/20'
+                                                                : 'bg-danger/5 text-danger/60 border border-danger/10 hover:bg-danger/10'
+                                                                }`}
+                                                            title={link.interviewer ? 'Agent On' : 'Agent Off'}
+                                                        >
+                                                            <Users size={14} />
+                                                            <span className="hidden sm:inline">{link.interviewer ? 'Agent On' : 'Agent Off'}</span>
+                                                        </button>
+
+                                                        <button
+                                                            className="btn btn-primary !py-2 !px-3 sm:!px-6 !text-[10px] flex items-center gap-2"
+                                                            title="Analyze"
+                                                        >
+                                                            <Activity size={14} />
+                                                            <span className="hidden sm:inline">Analyze</span>
+                                                        </button>
+                                                    </div>
                                                 </motion.div>
                                             ))
                                         )}
