@@ -389,7 +389,7 @@ const DTags = () => {
     const iconSize = isExtraSmall ? 16 : 18;
 
     return (
-        <div className="h-[90%] flex flex-col" style={{ gap: gap, touchAction: 'pan-y' }}>
+        <div className="h-[85vh] flex flex-col" style={{ gap: gap, touchAction: 'pan-y' }}>
             <Loader isOpen={isLoading} isFullScreen={true} />
             {/* Header Actions */}
             <div className="flex justify-between items-center" style={{
@@ -471,17 +471,18 @@ const DTags = () => {
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 overflow-visible" style={{
+            <div className="flex-1 overflow-hidden" style={{
                 backgroundColor: isDark ? '#00000040' : '#ffffff59',
                 backdropFilter: 'blur(12px)',
                 borderRadius: containerRadius,
                 border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`,
                 padding: containerPadding,
-                minHeight: 0
+                minHeight: 0,
+                maxHeight: '80vh'
             }}>
                 <div className="flex-1 min-h-0 relative h-full">
                     <div
-                        className="tags-section py-2 flex flex-col h-full overflow-y-auto"
+                        className="tags-section py-2 flex flex-col h-full overflow-y-auto custom-scrollbar"
                         style={{ opacity: revealedSections[activeSection] ? 1 : 0 }}
                     >
                         {activeSection === 'tags' ? (

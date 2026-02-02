@@ -561,6 +561,10 @@ const DLinks = () => {
                                                             <p className="text-xs text-muted mt-0.5">{link.forField}</p>
                                                         </div>
                                                         <div className="flex items-center gap-2">
+                                                            <div className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-lg border border-white/5" title="Total Clicks">
+                                                                <MousePointer2 size={12} className="text-muted" />
+                                                                <span className="text-[10px] font-bold text-muted">{link.counts}</span>
+                                                            </div>
                                                             <button
                                                                 onClick={(e) => { e.stopPropagation(); handleMenuClick(e, link.id); }}
                                                                 className="p-1 text-muted hover:text-primary transition-colors"
@@ -585,12 +589,12 @@ const DLinks = () => {
                                                             onClick={(e) => { e.stopPropagation(); toggleInterviewerMode(link.id, link.interviewer); }}
                                                             className={`btn !py-2 !px-2 sm:!px-4 !text-[10px] flex items-center gap-2 transition-all ${link.interviewer
                                                                 ? 'bg-secondary/10 text-secondary border border-secondary/20 hover:bg-secondary/20'
-                                                                : 'bg-danger/5 text-danger/60 border border-danger/10 hover:bg-danger/10'
+                                                                : 'bg-white/5 text-muted border border-white/10 hover:bg-white/10'
                                                                 }`}
-                                                            title={link.interviewer ? 'Agent On' : 'Agent Off'}
+                                                            title={link.interviewer ? 'Interviewer On' : 'Interviewer Off'}
                                                         >
                                                             <Users size={14} />
-                                                            <span className="hidden sm:inline">{link.interviewer ? 'Agent On' : 'Agent Off'}</span>
+                                                            <span className="hidden sm:inline">{link.interviewer ? 'Interviewer On' : 'Interviewer Off'}</span>
                                                         </button>
 
                                                         <button

@@ -1165,7 +1165,7 @@ export default function DSettings() {
     }
 
     return (
-        <div className="flex flex-col gap-6 min-h-full relative">
+        <div className="h-[85vh] flex flex-col gap-6 relative">
             <Loader isOpen={isLoading} isFullScreen={true} />
             {/* Custom Alert */}
             {alert.show && (
@@ -1198,7 +1198,7 @@ export default function DSettings() {
             </div>
 
             {/* Content Container with overflow-x-hidden for clean transitions */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 p-4">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 p-4 custom-scrollbar">
                 {activeTab === 'availability' && (
                     <div className="settings-section flex flex-col gap-6" style={{ opacity: revealedTabs.availability ? 1 : 0 }}>
                         {/* Availability Settings */}
