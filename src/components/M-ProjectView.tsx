@@ -201,6 +201,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
         }
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleScrub = (e: any) => {
         if (!containerRef.current || !videoRef.current) return;
 
@@ -253,7 +254,8 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
             if (!document.fullscreenElement) {
                 if (containerRef.current.requestFullscreen) {
                     containerRef.current.requestFullscreen();
-                } else if ((containerRef.current as any).webkitRequestFullscreen) {
+                } else if ((containerRef.current as any).webkitRequestFullscreen) { // eslint-disable-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     (containerRef.current as any).webkitRequestFullscreen();
                 }
             } else {
@@ -472,6 +474,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const [isHovered, setIsHovered] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [availableTags, setAvailableTags] = useState<any[]>([]);
 
     const sortedMedia = React.useMemo(() => {
@@ -613,6 +616,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         const unsub = onSnapshot(doc(db, 'Tags', 'Tags'), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const loaded = Object.entries(data).map(([id, val]: [string, any]) => ({
                     id,
                     name: val.Name || 'Untitled',
@@ -631,6 +635,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
 
         const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const resolveTag = (t: any) => {
             const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
             // Try to find in global tags

@@ -488,9 +488,6 @@ const DLinks = () => {
                                     <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Live Traffic</p>
                                 </div>
                             </div>
-
-
-
                         </div>
 
                     ) : (

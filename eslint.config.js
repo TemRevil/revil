@@ -38,7 +38,7 @@ export default defineConfig([
     languageOptions: {
       parser: tsEslint.parser,
       parserOptions: {
-        project: './tsconfig.json',
+        project: ['./tsconfig.json', './tsconfig.node.json'],
         ecmaVersion: 'latest',
         sourceType: 'module',
         ecmaFeatures: { jsx: true },

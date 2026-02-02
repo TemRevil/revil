@@ -36,7 +36,7 @@ function App() {
   useEffect(() => {
     const handleLoad = () => setIsWindowReady(true);
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
-      setIsWindowReady(true);
+      setTimeout(() => setIsWindowReady(true), 0);
     } else {
       window.addEventListener('DOMContentLoaded', handleLoad);
       return () => window.removeEventListener('DOMContentLoaded', handleLoad);
