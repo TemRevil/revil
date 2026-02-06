@@ -129,22 +129,22 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
                 // Counters (ensure we convert from string to number if needed)
                 const currentTotal = typeof main["Total Reach"] === 'number' ? main["Total Reach"] : parseInt(main["Total Reach"] || '0');
-                const currentUnique = typeof main["Reach (Per Device)"] === 'number' ? main["Reach (Per Device)"] : parseInt(main["Reach (Per Device)"] || '0');
                 const newTodayTotal = (todayStats.total || 0) + 1;
 
                 updateData["Main.Total Reach"] = currentTotal + 1;
                 updateData["Main.Today's Viewers"] = newTodayTotal;
                 updateData[`Daily.${today}.total`] = newTodayTotal;
 
-                if (!hasVisitedGlobal) {
-                    updateData["Main.Reach (Per Device)"] = currentUnique + 1;
-                    localStorage.setItem('revil_visitor_active', 'true');
-                }
-
+                // Calculate Daily Unique
+                let newUniqueToday = todayStats.unique || 0;
                 if (!hasVisitedToday) {
-                    updateData[`Daily.${today}.unique`] = (todayStats.unique || 0) + 1;
+                    newUniqueToday += 1;
+                    updateData[`Daily.${today}.unique`] = newUniqueToday;
                     localStorage.setItem(`revil_visitor_today_${today}`, 'true');
                 }
+
+                // Sync Main metric to Daily Unique (replacing global unique tracking)
+                updateData["Main.Reach (Per Device)"] = newUniqueToday;
 
                 await updateDoc(docRef, updateData);
             } catch (error) {

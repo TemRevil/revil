@@ -474,7 +474,7 @@ const DLinks = () => {
                                     <div className="absolute top-0 right-0 p-4 opacity-15 group-hover:opacity-25 transition-opacity text-secondary">
                                         <Users size={48} />
                                     </div>
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-secondary/80">Unique</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-secondary/80">Unique (Daily)</span>
                                     <div className="text-3xl font-black mt-1 text-primary">{analytics?.Main?.["Reach (Per Device)"] || '0'}</div>
                                     <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Device Nodes</p>
                                 </div>
