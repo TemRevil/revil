@@ -5,6 +5,7 @@ import { X, Mail, Phone, MapPin, Globe, Github, Linkedin, Instagram, ExternalLin
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Project as FullProject } from './M-ProjectView';
+import { useSocialTracker } from '../hooks/useSocialTracker';
 
 interface CVProject {
     id: string;
@@ -23,6 +24,7 @@ interface MCVProps {
 }
 
 const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
+    const { trackClick } = useSocialTracker();
     const [projects, setProjects] = useState<CVProject[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
     const [availableStack, setAvailableStack] = useState<StackItem[]>([]);
@@ -371,6 +373,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                                     href={link.url}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
+                                                    onClick={() => trackClick(link.name)}
                                                     className="flex items-center gap-3 text-xs font-bold text-sec hover:text-blue-500 transition-all group"
                                                 >
                                                     <span className="p-2 bg-black/5 dark:bg-white/5 rounded-lg group-hover:bg-blue-500/10 dark:group-hover:bg-blue-500/20 transition-colors">

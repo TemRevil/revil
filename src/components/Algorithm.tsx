@@ -22,13 +22,14 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     // Session Start
     const sessionStart = useRef(Date.now());
 
-    // Metrics Refs (Using refs to avoid interval re-renders)
+    // Metrics Refs
     const metrics = useRef({
         stackTime: 0, // seconds
         contactOpens: 0,
         projectStats: {} as Record<string, ProjectStats>,
         activeProjectId: null as string | null,
         projectOpenTime: 0,
+        socialStats: {} as Record<string, { views: number; duration: number }>,
         isSyncing: false,
         baseMetrics: null as string | null,
     });
@@ -78,7 +79,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         prevContactOpen.current = isContactOpen;
     }, [isContactOpen]);
 
-    // 2. Listen for Project Events
+    // 2. Listen for Project Events & Social Events
     useEffect(() => {
         const handleProjectOpen = (e: CustomEvent) => {
             const { id } = e.detail;
@@ -95,16 +96,37 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             metrics.current.activeProjectId = null;
         };
 
+        const handleSocialClick = (e: CustomEvent) => {
+            const { name } = e.detail;
+            if (!metrics.current.socialStats[name]) {
+                metrics.current.socialStats[name] = { views: 0, duration: 0 };
+            }
+            metrics.current.socialStats[name].views += 1;
+        };
+
+        const handleSocialReturn = (e: CustomEvent) => {
+            const { name, duration } = e.detail;
+            // duration comes in ms from hook, convert to seconds
+            const durationSec = duration / 1000;
+            if (!metrics.current.socialStats[name]) {
+                metrics.current.socialStats[name] = { views: 0, duration: 0 };
+            }
+            metrics.current.socialStats[name].duration += durationSec;
+        };
+
         window.addEventListener('revil:project_open', handleProjectOpen as EventListener);
         window.addEventListener('revil:project_close', handleProjectClose as EventListener);
+        window.addEventListener('revil:social_click', handleSocialClick as EventListener);
+        window.addEventListener('revil:social_return', handleSocialReturn as EventListener);
 
         return () => {
             window.removeEventListener('revil:project_open', handleProjectOpen as EventListener);
             window.removeEventListener('revil:project_close', handleProjectClose as EventListener);
+            window.removeEventListener('revil:social_click', handleSocialClick as EventListener);
+            window.removeEventListener('revil:social_return', handleSocialReturn as EventListener);
         };
     }, []);
 
-    // 2.5 Global Analytics Tracking
     // 2.5 Global Analytics Tracking
     const hasTrackedVisit = useRef(false);
     useEffect(() => {
@@ -116,7 +138,6 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 const docRef = doc(db, 'Settings', 'Views');
                 const today = new Date().toISOString().split('T')[0];
 
-                const hasVisitedGlobal = localStorage.getItem('revil_visitor_active');
                 const hasVisitedToday = localStorage.getItem(`revil_visitor_today_${today}`);
 
                 const docSnap = await getDoc(docRef);
@@ -127,7 +148,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
                 const updateData: Record<string, unknown> = {};
 
-                // Counters (ensure we convert from string to number if needed)
+                // Counters
                 const currentTotal = typeof main["Total Reach"] === 'number' ? main["Total Reach"] : parseInt(main["Total Reach"] || '0');
                 const newTodayTotal = (todayStats.total || 0) + 1;
 
@@ -143,7 +164,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                     localStorage.setItem(`revil_visitor_today_${today}`, 'true');
                 }
 
-                // Sync Main metric to Daily Unique (replacing global unique tracking)
+                // Sync Main metric to Daily Unique
                 updateData["Main.Reach (Per Device)"] = newUniqueToday;
 
                 await updateDoc(docRef, updateData);
@@ -231,8 +252,8 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         const totalSessionSeconds = Math.floor((Date.now() - sessionStart.current) / 1000);
         const m = metrics.current;
 
-        // Prevent syncing if session is too short and has no activity (e.g. accidental bot hit or quick refresh)
-        if (totalSessionSeconds < 5 && m.contactOpens === 0 && Object.keys(m.projectStats).length === 0) {
+        // Prevent syncing if session is too short and has no activity
+        if (totalSessionSeconds < 5 && m.contactOpens === 0 && Object.keys(m.projectStats).length === 0 && Object.keys(m.socialStats).length === 0) {
             return;
         }
 
@@ -247,11 +268,9 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 if (!match) return 0;
                 const timeStr = match[1];
 
-                // Match 'Xm Ys'
                 const msMatch = timeStr.match(/(\d+)m\s*(\d+)s/);
                 if (msMatch) return (parseInt(msMatch[1]) * 60) + parseInt(msMatch[2]);
 
-                // Match 'X.Ym'
                 const mMatch = timeStr.match(/([\d.]+)m/);
                 if (mMatch) return Math.floor(parseFloat(mMatch[1]) * 60);
             } catch (e) {
@@ -290,16 +309,46 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             return pMap;
         };
 
+        const parseSocials = (raw: string | null) => {
+            const sMap: Record<string, { seconds: number; views: number }> = {};
+            if (!raw) return sMap;
+            try {
+                const sStr = raw.match(/Socials:\[(.*?)\]/)?.[1] || '';
+                if (sStr) {
+                    sStr.split('|').forEach(item => {
+                        const parts = item.split(':');
+                        if (parts.length >= 2) {
+                            const id = parts[0];
+                            const timePart = parts[1];
+                            const viewsMatch = item.match(/\((\d+)x\)$/);
+                            const views = viewsMatch ? parseInt(viewsMatch[1]) : 0;
+
+                            let seconds = 0;
+                            const msMatch = timePart.match(/(\d+)m\s*(\d+)s/);
+                            if (msMatch) seconds = (parseInt(msMatch[1]) * 60) + parseInt(msMatch[2]);
+
+                            sMap[id] = { seconds, views };
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error("Error parsing socials:", e);
+            }
+            return sMap;
+        };
+
         let baseTotalSecs = 0;
         let baseStackSecs = 0;
         let baseContact = 0;
         let baseProjects = {} as Record<string, { seconds: number; views: number }>;
+        let baseSocials = {} as Record<string, { seconds: number; views: number }>;
 
         try {
             baseTotalSecs = parseToSecs(metrics.current.baseMetrics, 'Session') || parseToSecs(metrics.current.baseMetrics, 'T');
             baseStackSecs = parseToSecs(metrics.current.baseMetrics, 'Stack') || parseToSecs(metrics.current.baseMetrics, 'S');
             baseContact = parseInt(metrics.current.baseMetrics?.match(/Contact:(\d+)/)?.[1] || metrics.current.baseMetrics?.match(/C:(\d+)/)?.[1] || '0');
             baseProjects = parseProjects(metrics.current.baseMetrics);
+            baseSocials = parseSocials(metrics.current.baseMetrics);
         } catch (e) {
             console.error("Critical parsing error in syncData, using fallbacks:", e);
         }
@@ -326,7 +375,19 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             return `${id}:${formatTime(stats.seconds)}(${stats.views}x)`;
         }).join('|');
 
-        const recString = `Session:${formatTime(finalTotalSecs)}, Stack:${formatTime(finalStackSecs)}, Contact:${finalContact}, Projects:[${projStr}]`;
+        // Merge social stats
+        const mergedSocials = { ...baseSocials };
+        Object.entries(m.socialStats).forEach(([id, stats]) => {
+            if (!mergedSocials[id]) mergedSocials[id] = { seconds: 0, views: 0 };
+            mergedSocials[id].seconds += stats.duration;
+            mergedSocials[id].views += stats.views;
+        });
+
+        const socialStr = Object.entries(mergedSocials).map(([id, stats]) => {
+            return `${id}:${formatTime(stats.seconds)}(${stats.views}x)`;
+        }).join('|');
+
+        const recString = `Session:${formatTime(finalTotalSecs)}, Stack:${formatTime(finalStackSecs)}, Contact:${finalContact}, Projects:[${projStr}], Socials:[${socialStr}]`;
 
         try {
             const docRef = doc(db, 'Settings', 'Views');
@@ -340,16 +401,13 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         }
     }, [showAlert]);
 
-    // Only Sync at the very end to avoid Firestore usage/quota issues
+    // Only Sync at the very end
     useEffect(() => {
         const handleFinalSync = () => {
-            // This is the "at once" push when user leaves the page
             syncData();
         };
 
-        // Standard event for desktop exit
         window.addEventListener('beforeunload', handleFinalSync);
-        // Reliable event for mobile exit and tab closing
         window.addEventListener('pagehide', handleFinalSync);
 
         return () => {

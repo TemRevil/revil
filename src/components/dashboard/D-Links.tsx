@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Users, Plus, Clock, Briefcase, MousePointer2, Eye, Calendar } from 'lucide-react';
+import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Users, Plus, Clock, Briefcase, MousePointer2, Eye, Calendar, Globe } from 'lucide-react';
 import anime from 'animejs';
 import { motion } from 'motion/react';
 import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
@@ -62,7 +62,22 @@ const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; o
                 return { id: '?', time: '0m 0s', views: '0' };
             }).filter(p => p.id !== '?') : [];
 
-            return { total, stack, contact, projects };
+            // Socials Parsing
+            const socialsPart = raw.match(/Socials:\[(.*?)\]/)?.[1] || '';
+            const socials = socialsPart ? socialsPart.split('|').map(s => {
+                const parts = s.match(/^(.*?):([^()x:]+)(?:\((\d+)x\)|:(\d+)v)?$/);
+                if (parts) {
+                    const [, id, time, verboseViews, conciseViews] = parts;
+                    return {
+                        id: id.trim(),
+                        time: time.trim(),
+                        views: (verboseViews || conciseViews || '0')
+                    };
+                }
+                return { id: '?', time: '0m 0s', views: '0' };
+            }).filter(s => s.id !== '?') : [];
+
+            return { total, stack, contact, projects, socials };
         } catch (e) {
             console.error("Parse error", e);
             return null;
@@ -121,6 +136,28 @@ const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; o
                                                 </div>
                                             </div>
                                             <span className="text-xs font-bold text-info bg-info/5 px-2.5 py-1 rounded-md">{p.time}</span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <div className="text-xs font-bold text-muted uppercase tracking-widest pl-1">Social Engagement</div>
+                                {stats.socials.length === 0 ? (
+                                    <div className="text-center py-6 text-muted text-xs italic">No interactions recorded.</div>
+                                ) : (
+                                    stats.socials.map((s, i) => (
+                                        <div key={i} className="flex justify-between items-center p-3 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-secondary/10 rounded-lg text-secondary">
+                                                    <Globe size={14} />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-sm tracking-tight">{s.id}</span>
+                                                    <span className="text-[10px] text-muted">{s.views} clicks</span>
+                                                </div>
+                                            </div>
+                                            <span className="text-xs font-bold text-secondary bg-secondary/5 px-2.5 py-1 rounded-md">{s.time}</span>
                                         </div>
                                     ))
                                 )}

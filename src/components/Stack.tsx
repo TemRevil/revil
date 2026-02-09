@@ -4,6 +4,7 @@ import anime from 'animejs';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Github, Instagram, Linkedin, Twitter, Facebook, Mail, Link as LinkIcon, Twitch, Youtube, Code } from 'lucide-react';
+import { useSocialTracker } from '../hooks/useSocialTracker';
 
 interface StackItemProps {
     icon: string;
@@ -74,6 +75,7 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
     const iconRef = useRef<HTMLAnchorElement>(null);
     // Icon is a reference to a stateless icon component from lucide-react.
     const Icon = useMemo(() => getIcon(name), [name]);
+    const { trackClick } = useSocialTracker();
 
     useEffect(() => {
         anime({
@@ -92,6 +94,7 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
             href={url}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => trackClick(name)}
             className="group relative flex items-center justify-center p-3 rounded-xl transition-all duration-300 hover:bg-zinc-100 hover:scale-110"
         >
             <Icon
