@@ -1,33 +1,58 @@
-
 import { useState, useEffect, useCallback } from 'react';
-import { doc, setDoc, increment, collection, addDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
+// Convert milliseconds to seconds
+const msToSeconds = (ms: number) => Math.round(ms / 1000 * 10) / 10; // Round to 1 decimal
+
+// Format timestamp to DD/MM/YYYY-H:MMPM format
+const formatTimestamp = (ms: number) => {
+    const date = new Date(ms);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    let hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const period = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12; // Convert to 12-hour format
+    return `${day}/${month}/${year}-${hours}:${minutes}${period}`;
+};
+
 export const useSocialTracker = () => {
-    const [pendingVisit, setPendingVisit] = useState<{ linkName: string; visitId: string; clickTime: number } | null>(null);
+    const [pendingVisit, setPendingVisit] = useState<{ linkName: string; clickId: string; clickTime: number } | null>(null);
 
     const trackClick = useCallback(async (linkName: string) => {
         const clickTime = Date.now();
         try {
-            // 1. Create a visit record
-            const visitRef = await addDoc(collection(db, 'Analytics', 'Socials', 'Links', linkName, 'Visits'), {
-                clickTime,
-                duration: null, // pending return
-                status: 'clicked'
-            });
+            // Get existing social data to find next click number
+            const socialRef = doc(db, 'Settings', 'Views', 'Socials', linkName);
+            const socialSnap = await getDoc(socialRef);
+            
+            let nextClickNum = 1;
+            if (socialSnap.exists()) {
+                const data = socialSnap.data();
+                // Find highest numeric key
+                const existingKeys = Object.keys(data)
+                    .map(key => parseInt(key))
+                    .filter(num => !isNaN(num));
+                if (existingKeys.length > 0) {
+                    nextClickNum = Math.max(...existingKeys) + 1;
+                }
+            }
 
-            // 2. Update stats
-            const statsRef = doc(db, 'Analytics', 'Socials', 'Links', linkName);
-            await setDoc(statsRef, {
-                clicks: increment(1),
-                lastClick: clickTime,
-                name: linkName
+            // Record click as a map entry in social document
+            const clickKey = nextClickNum.toString();
+            await setDoc(socialRef, {
+                [clickKey]: {
+                    timestamp: formatTimestamp(clickTime),
+                    duration: null // Will be updated on return
+                }
             }, { merge: true });
 
-            // 3. Set pending state for return tracking
-            setPendingVisit({ linkName, visitId: visitRef.id, clickTime });
+            // Set pending state for duration tracking
+            setPendingVisit({ linkName, clickId: clickKey, clickTime });
 
-            // 4. Dispatch Global Event for Algorithm.tsx (Session Recording)
+            // Dispatch Global Event for Algorithm.tsx (Session Recording)
             window.dispatchEvent(new CustomEvent('revil:social_click', {
                 detail: { name: linkName }
             }));
@@ -41,31 +66,19 @@ export const useSocialTracker = () => {
         const handleVisibilityChange = async () => {
             if (document.visibilityState === 'visible' && pendingVisit) {
                 const endTime = Date.now();
-                const duration = endTime - pendingVisit.clickTime;
-
-                // Only record meaningful durations (e.g. > 1 second)
-                // Filter out accidental switches that are too fast?
-                // User asked for "how many minutes outside", so duration is key.
+                const durationMs = endTime - pendingVisit.clickTime;
+                const durationSec = msToSeconds(durationMs);
 
                 try {
-                    // 1. Update the specific visit record
-                    const visitRef = doc(db, 'Analytics', 'Socials', 'Links', pendingVisit.linkName, 'Visits', pendingVisit.visitId);
-                    await updateDoc(visitRef, {
-                        duration,
-                        returnTime: endTime,
-                        status: 'returned'
+                    // Update duration for this click as a string
+                    const socialRef = doc(db, 'Settings', 'Views', 'Socials', pendingVisit.linkName);
+                    await updateDoc(socialRef, {
+                        [`${pendingVisit.clickId}.duration`]: durationSec.toString()
                     });
 
-                    // 2. Update aggregate stats
-                    const statsRef = doc(db, 'Analytics', 'Socials', 'Links', pendingVisit.linkName);
-                    await updateDoc(statsRef, {
-                        totalDuration: increment(duration),
-                        returns: increment(1)
-                    });
-
-                    // 3. Dispatch Global Event for Algorithm.tsx (Session Recording)
+                    // Dispatch Global Event for Algorithm.tsx (Session Recording)
                     window.dispatchEvent(new CustomEvent('revil:social_return', {
-                        detail: { name: pendingVisit.linkName, duration }
+                        detail: { name: pendingVisit.linkName, duration: durationMs }
                     }));
 
                 } catch (error) {

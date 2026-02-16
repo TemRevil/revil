@@ -3,19 +3,17 @@ import { createPortal } from 'react-dom';
 import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Users, Plus, Clock, Briefcase, MousePointer2, Eye, Calendar, Globe } from 'lucide-react';
 import anime from 'animejs';
 import { motion } from 'motion/react';
-import { doc, onSnapshot, getDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc, updateDoc, deleteField, collection, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Loader from '../reactbits/Loader';
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 
 interface AnalyticsData {
-    Main?: {
-        "Total Reach": string;
-        "Reach (Per Device)": string;
-        "Today's Viewers": string;
-    };
-    Daily: Record<string, { total: number; unique: number }>;
+    "Total Reach"?: string | number;
+    "Reach (Per Device)"?: string | number;
+    "Today's Viewers"?: string | number;
+    [key: string]: any;
 }
 
 interface GeneratedLink {
@@ -272,45 +270,46 @@ const DLinks = () => {
     }, [activeSection]);
 
     useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'Settings', 'Views'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-
-                // Process Links
-                const linksArray: GeneratedLink[] = [];
-                Object.keys(data).forEach(key => {
-                    if (!isNaN(parseInt(key))) {
-                        const item = data[key];
-                        linksArray.push({
-                            id: key,
-                            name: item.Name,
-                            forField: item.For,
-                            code: item.Code || item.Rec_CLI,
-                            fullLink: `${window.location.origin}${import.meta.env.BASE_URL}${item.Code || item.Rec_CLI || ''}`,
-                            viewed: item.Views > 0,
-                            counts: item.Views || 0,
-                            createdAt: new Date(),
-                            recCLI: item.Rec_CLI || '',
-                            interviewer: !!item.Interviewer
-                        });
-                    }
+        // Subscribe to Links sub-collection
+        const linksUnsub = onSnapshot(collection(db, 'Settings', 'Views', 'Links'), (snapshot) => {
+            const linksArray: GeneratedLink[] = [];
+            snapshot.forEach(doc => {
+                const item = doc.data();
+                linksArray.push({
+                    id: doc.id,
+                    name: item.Name,
+                    forField: item.For,
+                    code: item.Code || item.Rec_CLI,
+                    fullLink: `${window.location.origin}${import.meta.env.BASE_URL}${item.Code || item.Rec_CLI || ''}`,
+                    viewed: item.Views > 0,
+                    counts: item.Views || 0,
+                    createdAt: new Date(),
+                    recCLI: item.Rec_CLI || '',
+                    interviewer: !!item.Interviewer
                 });
-                linksArray.sort((a, b) => parseInt(b.id) - parseInt(a.id));
-                setGeneratedLinks(linksArray);
+            });
+            linksArray.sort((a, b) => parseInt(b.id) - parseInt(a.id));
+            setGeneratedLinks(linksArray);
+        });
 
-                // Process Analytics
-                setAnalytics(data as AnalyticsData);
+        // Subscribe to Analysis/Main document
+        const analysisUnsub = onSnapshot(doc(db, 'Settings', 'Views', 'Analysis', 'Main'), (docSnap) => {
+            if (docSnap.exists()) {
+                setAnalytics(docSnap.data() as AnalyticsData);
             }
         });
 
-        return () => unsub();
+        return () => {
+            linksUnsub();
+            analysisUnsub();
+        };
     }, []);
 
     const toggleInterviewerMode = async (linkId: string, currentState: boolean) => {
         try {
             const nextState = !currentState;
-            const docRef = doc(db, 'Settings', 'Views');
-            await updateDoc(docRef, { [`${linkId}.Interviewer`]: nextState });
+            const docRef = doc(db, 'Settings', 'Views', 'Links', linkId);
+            await updateDoc(docRef, { Interviewer: nextState });
             showAlert({ type: 'success', message: `Interviewer Mode ${nextState ? 'Activated' : 'Deactivated'} for link.` });
         } catch {
             showAlert({ type: 'error', message: 'Failed to toggle Interviewer Mode' });
@@ -348,16 +347,15 @@ const DLinks = () => {
         for (let i = 0; i < 8; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
 
         try {
-            const docRef = doc(db, 'Settings', 'Views');
-            const docSnap = await getDoc(docRef);
+            // Get all link IDs to find next ID
+            const linksSnap = await getDocs(collection(db, 'Settings', 'Views', 'Links'));
             let nextId = "1";
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                const keys = Object.keys(data).map(k => parseInt(k)).filter(k => !isNaN(k));
-                if (keys.length > 0) nextId = (Math.max(...keys) + 1).toString();
+            if (linksSnap.size > 0) {
+                const ids = linksSnap.docs.map(d => parseInt(d.id)).filter(id => !isNaN(id));
+                if (ids.length > 0) nextId = (Math.max(...ids) + 1).toString();
             }
             const payload = { Code: code, For: forField.trim(), Name: name.trim(), "Rec_CLI": "", Views: 0 };
-            await updateDoc(docRef, { [nextId]: payload });
+            await setDoc(doc(db, 'Settings', 'Views', 'Links', nextId), payload);
             setName('');
             setForField('');
             showAlert({ type: 'success', message: 'Campaign link generated successfully!' });
@@ -382,8 +380,8 @@ const DLinks = () => {
         if (!id) return;
         setActiveMenu(null);
         try {
-            const docRef = doc(db, 'Settings', 'Views');
-            await updateDoc(docRef, { [id]: deleteField() });
+            const docRef = doc(db, 'Settings', 'Views', 'Links', id);
+            await updateDoc(docRef, { Views: deleteField() } as any);
         } catch {
             showAlert({ type: 'error', message: 'Failed to delete link.' });
         }
@@ -399,10 +397,10 @@ const DLinks = () => {
     const handleSaveEdit = async () => {
         if (!editingLink || !editName.trim() || !editFor.trim()) return;
         try {
-            const docRef = doc(db, 'Settings', 'Views');
+            const docRef = doc(db, 'Settings', 'Views', 'Links', editingLink.id);
             await updateDoc(docRef, {
-                [`${editingLink.id}.Name`]: editName.trim(),
-                [`${editingLink.id}.For`]: editFor.trim()
+                Name: editName.trim(),
+                For: editFor.trim()
             });
             setEditingLink(null);
             setEditName('');
@@ -503,7 +501,7 @@ const DLinks = () => {
                                         <Eye size={48} />
                                     </div>
                                     <span className="text-[10px] font-bold uppercase tracking-widest text-info/80">Reach</span>
-                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.Main?.["Total Reach"] || '0'}</div>
+                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.["Total Reach"] || '0'}</div>
                                     <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Global Interactions</p>
                                 </div>
 
@@ -512,7 +510,7 @@ const DLinks = () => {
                                         <Users size={48} />
                                     </div>
                                     <span className="text-[10px] font-bold uppercase tracking-widest text-secondary/80">Unique (Daily)</span>
-                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.Main?.["Reach (Per Device)"] || '0'}</div>
+                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.["Reach (Per Device)"] || '0'}</div>
                                     <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Device Nodes</p>
                                 </div>
 
@@ -521,7 +519,7 @@ const DLinks = () => {
                                         <Calendar size={48} />
                                     </div>
                                     <span className="text-[10px] font-bold uppercase tracking-widest text-success/80">Today</span>
-                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.Main?.["Today's Viewers"] || '0'}</div>
+                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.["Today's Viewers"] || '0'}</div>
                                     <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Live Traffic</p>
                                 </div>
                             </div>

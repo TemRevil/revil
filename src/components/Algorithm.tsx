@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, increment, collection, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Alert from './Alert';
 import useSafeAlert from '../hooks/useSafeAlert';
@@ -135,39 +135,47 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             hasTrackedVisit.current = true;
 
             try {
-                const docRef = doc(db, 'Settings', 'Views');
+                const mainRef = doc(db, 'Settings', 'Views', 'Analysis', 'Main');
+                const dailyRef = doc(db, 'Settings', 'Views', 'Analysis', 'Daily');
                 const today = new Date().toISOString().split('T')[0];
 
                 const hasVisitedToday = localStorage.getItem(`revil_visitor_today_${today}`);
 
-                const docSnap = await getDoc(docRef);
-                const data = docSnap.exists() ? docSnap.data() : {};
-                const main = data.Main || {};
-                const daily = data.Daily || {};
-                const todayStats = daily[today] || { total: 0, unique: 0 };
+                // Get Main analytics
+                const mainSnap = await getDoc(mainRef);
+                const mainData = mainSnap.exists() ? mainSnap.data() : {};
+                
+                // Get Daily analytics
+                const dailySnap = await getDoc(dailyRef);
+                const dailyData = dailySnap.exists() ? dailySnap.data() : {};
+                
+                const todayData = dailyData[today] || { total: 0, unique: 0 };
 
-                const updateData: Record<string, unknown> = {};
-
-                // Counters
-                const currentTotal = typeof main["Total Reach"] === 'number' ? main["Total Reach"] : parseInt(main["Total Reach"] || '0');
-                const newTodayTotal = (todayStats.total || 0) + 1;
-
-                updateData["Main.Total Reach"] = currentTotal + 1;
-                updateData["Main.Today's Viewers"] = newTodayTotal;
-                updateData[`Daily.${today}.total`] = newTodayTotal;
+                // Update counters for Main
+                const currentTotal = typeof mainData["Total Reach"] === 'number' ? mainData["Total Reach"] : parseInt(mainData["Total Reach"] || '0');
+                const newTodayTotal = (todayData.total || 0) + 1;
 
                 // Calculate Daily Unique
-                let newUniqueToday = todayStats.unique || 0;
+                let newUniqueToday = todayData.unique || 0;
                 if (!hasVisitedToday) {
                     newUniqueToday += 1;
-                    updateData[`Daily.${today}.unique`] = newUniqueToday;
                     localStorage.setItem(`revil_visitor_today_${today}`, 'true');
                 }
 
-                // Sync Main metric to Daily Unique
-                updateData["Main.Reach (Per Device)"] = newUniqueToday;
+                // Update Main document
+                await setDoc(mainRef, {
+                    "Total Reach": currentTotal + 1,
+                    "Today's Viewers": newTodayTotal,
+                    "Reach (Per Device)": newUniqueToday
+                }, { merge: true });
 
-                await updateDoc(docRef, updateData);
+                // Update Daily map in Daily document
+                await setDoc(dailyRef, {
+                    [today]: {
+                        total: newTodayTotal,
+                        unique: newUniqueToday
+                    }
+                }, { merge: true });
             } catch (error) {
                 console.error("Global Analytics Error:", error);
             }
@@ -191,42 +199,44 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             hasRecordedRef.current = true;
 
             try {
-                const docRef = doc(db, 'Settings', 'Views');
-                const docSnap = await getDoc(docRef);
+                // Get all links from Settings/Views/Links collection
+                const linksSnap = await getDocs(collection(db, 'Settings', 'Views', 'Links'));
+                let foundId: string | null = null;
+                let existingRec = '';
+                for (const linkDoc of linksSnap.docs) {
+                    const item = linkDoc.data() as Record<string, unknown>;
+                    const itemCode = typeof item['Code'] === 'string' ? String(item['Code']) : '';
+                    const itemRec = typeof item['Rec_CLI'] === 'string' ? String(item['Rec_CLI']) : '';
+                    if (itemCode === code || itemRec === code) {
+                        foundId = linkDoc.id;
+                        existingRec = itemRec || '';
+                        break;
+                    }
+                }
 
-                if (docSnap.exists()) {
-                    const data = docSnap.data() as Record<string, unknown>;
-                    let foundId: string | null = null;
-                    let existingRec = '';
+                if (!foundId) {
+                    return;
+                }
 
-                    for (const [key, value] of Object.entries(data)) {
-                        const item = value as Record<string, unknown>;
-                        const itemCode = typeof item['Code'] === 'string' ? String(item['Code']) : '';
-                        const itemRec = typeof item['Rec_CLI'] === 'string' ? String(item['Rec_CLI']) : '';
-                        if (itemCode === code || itemRec === code) {
-                            foundId = key;
-                            existingRec = itemRec || '';
-                            break;
-                        }
+                sessionStorage.setItem('revil_link_id', foundId);
+                metrics.current.baseMetrics = existingRec;
+
+                // Check for Interviewer Mode
+                const linkDoc = linksSnap.docs.find(d => d.id === foundId);
+                if (linkDoc) {
+                    const linkData = linkDoc.data() as Record<string, unknown>;
+                    const isInterviewer = !!linkData && (linkData['Interviewer'] === true);
+                    if (isInterviewer) {
+                        sessionStorage.setItem('revil_interviewer_mode', 'true');
+                    } else {
+                        sessionStorage.removeItem('revil_interviewer_mode');
                     }
 
-                    if (foundId) {
-                        sessionStorage.setItem('revil_link_id', foundId);
-                        metrics.current.baseMetrics = existingRec;
-
-                        // Check for Interviewer Mode
-                        const linkData = data[foundId] as Record<string, unknown> | undefined;
-                        const isInterviewer = !!linkData && (linkData['Interviewer'] === true);
-                        if (isInterviewer) {
-                            sessionStorage.setItem('revil_interviewer_mode', 'true');
-                        } else {
-                            sessionStorage.removeItem('revil_interviewer_mode');
-                        }
-
-                        await updateDoc(docRef, {
-                            [`${foundId}.Views`]: increment(1)
-                        });
-                    }
+                    // Increment view count in Settings/Views/Links/{foundId}
+                    const docRef = doc(db, 'Settings', 'Views', 'Links', foundId);
+                    await updateDoc(docRef, {
+                        Views: increment(1)
+                    });
                 }
 
                 // Always redirect home after processing code
@@ -390,9 +400,9 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         const recString = `Session:${formatTime(finalTotalSecs)}, Stack:${formatTime(finalStackSecs)}, Contact:${finalContact}, Projects:[${projStr}], Socials:[${socialStr}]`;
 
         try {
-            const docRef = doc(db, 'Settings', 'Views');
+            const docRef = doc(db, 'Settings', 'Views', 'Links', linkId);
             await updateDoc(docRef, {
-                [`${linkId}.Rec_CLI`]: recString
+                Rec_CLI: recString
             });
         } catch {
             showAlert({ type: 'error', message: 'Final sync failed. Some activity might not be saved.' });
