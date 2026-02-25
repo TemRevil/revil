@@ -214,42 +214,40 @@ function App() {
 
 
   // --- Wheel/Scroll Logic (Desktop) ---
-  const lastScrollEventTime = useRef(0);
   const scrollAccumulator = useRef(0);
-  const isScrollLocked = useRef(false);
-  const lastNavigationTime = useRef(0);
-  const lastDeltaY = useRef(0);
+  const scrollLockTimeout = useRef<NodeJS.Timeout | null>(null);
+  const accumulatorResetTimeout = useRef<NodeJS.Timeout | null>(null);
+  const canNavigate = useRef(true);
 
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      const now = Date.now();
-      const timeSinceLastEvent = now - lastScrollEventTime.current;
-      lastScrollEventTime.current = now;
-
-      const currentDelta = Math.abs(e.deltaY);
-      const isAccelerating = currentDelta > lastDeltaY.current + 8;
-      lastDeltaY.current = currentDelta;
-
-      // If user paused (50ms) OR made a new physical swipe (accelerated)
-      if (timeSinceLastEvent > 50 || isAccelerating) {
-        scrollAccumulator.current = 0;
-        isScrollLocked.current = false;
+      // If we're locked out from navigation (because we just navigated),
+      // ANY incoming wheel event from lingering momentum pushes the unlock timer back.
+      if (!canNavigate.current) {
+        if (scrollLockTimeout.current) clearTimeout(scrollLockTimeout.current);
+        scrollLockTimeout.current = setTimeout(() => {
+          canNavigate.current = true;
+          scrollAccumulator.current = 0;
+        }, 150); // Require absolute stillness for 150ms to unlock
+        return;
       }
 
       if (isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') return;
-      if (isTransitioning) return;
+      if (isTransitioning) {
+        // Even if transitioning, reset the lock timer so we don't unlock mid-momentum
+        if (scrollLockTimeout.current) clearTimeout(scrollLockTimeout.current);
+        scrollLockTimeout.current = setTimeout(() => { canNavigate.current = true; scrollAccumulator.current = 0; }, 150);
+        return;
+      }
 
       const container = getScrollContainer(currentSection);
       if (!container) return;
 
-      // If locked from a previous transition, ignore momentum
-      if (isScrollLocked.current) return;
-
-      // Block rapid consecutive interactions to let animation play
-      if (now - lastNavigationTime.current < 700) {
+      // Reset the accumulator if the user pauses scrolling mid-swipe bounds
+      if (accumulatorResetTimeout.current) clearTimeout(accumulatorResetTimeout.current);
+      accumulatorResetTimeout.current = setTimeout(() => {
         scrollAccumulator.current = 0;
-        return;
-      }
+      }, 100);
 
       const isScrollDown = e.deltaY > 0;
       const isScrollUp = e.deltaY < 0;
@@ -266,23 +264,23 @@ function App() {
         scrollAccumulator.current += e.deltaY;
 
         if (scrollAccumulator.current > THRESHOLD) {
+          canNavigate.current = false;
+          if (scrollLockTimeout.current) clearTimeout(scrollLockTimeout.current);
+          scrollLockTimeout.current = setTimeout(() => { canNavigate.current = true; scrollAccumulator.current = 0; }, 150);
+
           if (currentSection === 'home' || currentSection === 'view_link') navigateTo('stack');
           else if (currentSection === 'stack') navigateTo('projects');
-
-          scrollAccumulator.current = 0;
-          isScrollLocked.current = true; // Lock further navigation until scroll stops
-          lastNavigationTime.current = now;
         }
       } else if (isScrollUp && scrolledToTop) {
         scrollAccumulator.current += e.deltaY;
 
         if (scrollAccumulator.current < -THRESHOLD) {
+          canNavigate.current = false;
+          if (scrollLockTimeout.current) clearTimeout(scrollLockTimeout.current);
+          scrollLockTimeout.current = setTimeout(() => { canNavigate.current = true; scrollAccumulator.current = 0; }, 150);
+
           if (currentSection === 'projects') navigateTo('stack');
           else if (currentSection === 'stack') navigateTo('home');
-
-          scrollAccumulator.current = 0;
-          isScrollLocked.current = true; // Lock further navigation until scroll stops
-          lastNavigationTime.current = now;
         }
       } else {
         // We are in the middle of the content, reset navigation pressure
