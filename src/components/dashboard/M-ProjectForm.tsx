@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, Plus, Image as ImageIcon, Github, ExternalLink, Trash2, Eye, Edit } from 'lucide-react';
@@ -6,55 +5,42 @@ import { doc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import anime from 'animejs';
 
-export interface ProjectData {
-    id?: string;
-    name: string;
-    description: string;
-    tags: TagData[];
-    contributors: ContributorData[];
-    repoLink: string;
-    liveLink: string;
-    demoLink?: string;
-    downloadLink?: string;
+import { ProjectData, TagData, ContributorData } from '../../types';
+
+interface ProjectFormData extends Omit<ProjectData, 'images' | 'icon'> {
     images: (File | string)[];
     icon?: File | string;
-    views?: number;
-    githubViews?: number;
-    liveViews?: number;
-    downloadViews?: number;
-}
-
-interface TagData {
-    id?: string;
-    name: string;
-    color?: string;
-    iconSvg?: string;
-}
-
-interface ContributorData {
-    id?: string;
-    name: string;
-    role: string;
-    image?: File | string;
-    socials: {
-        github?: string;
-        linkedin?: string;
-        facebook?: string;
-        instagram?: string;
-        portfolio?: string;
-    };
 }
 
 interface MProjectFormProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: ProjectData) => void;
-    initialData?: ProjectData | null;
+    onSave: (data: ProjectFormData) => void;
+    initialData?: ProjectFormData | null;
+}
+
+interface RawFirestoreTag {
+    Name?: string;
+    Color?: string;
+    Icon?: string;
+}
+
+interface RawFirestoreContributor {
+    Name?: string;
+    Role?: string;
+    Image?: string;
+    'Social Accounts'?: {
+        Github?: string;
+        Linkedin?: string;
+        Facebook?: string;
+        Instagram?: string;
+        Portfolio?: string;
+    };
 }
 
 const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFormProps, 'initialData'> & { initialData?: MProjectFormProps['initialData'] }) => {
     // --- STATE ---
-    const [formData, setFormData] = useState<ProjectData>({
+    const [formData, setFormData] = useState<ProjectFormData>(initialData || {
         name: '',
         description: '',
         tags: [],
@@ -90,7 +76,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
         const unsubTags = onSnapshot(doc(db, 'Tags', 'Tags'), (snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.data();
-                const tagsData = Object.entries(data).map(([id, val]: [string, any]) => ({
+                const tagsData = Object.entries(data).map(([id, val]: [string, RawFirestoreTag]) => ({
                     id,
                     name: val.Name || 'Untitled',
                     color: val.Color || '#3b82f6',
@@ -105,8 +91,8 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
             if (snapshot.exists()) {
                 const data = snapshot.data();
                 const contribData = Object.entries(data)
-                    .filter(([, val]) => val && typeof val === 'object' && (val as any).Name)
-                    .map(([id, val]: [string, any]) => ({
+                    .filter(([, val]) => val && typeof val === 'object' && (val as RawFirestoreContributor).Name)
+                    .map(([id, val]: [string, RawFirestoreContributor]) => ({
                         id,
                         name: val.Name || 'Anonymous',
                         role: val.Role || '',
@@ -118,7 +104,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                             instagram: val['Social Accounts']?.Instagram || '',
                             portfolio: val['Social Accounts']?.Portfolio || ''
                         }
-                    }));
+                    } as ContributorData));
                 setAvailableContributors(prev => {
                     const filtered = prev.filter(c => !contribData.some(d => d.id === c.id));
                     const combined = [...filtered, ...contribData];
@@ -158,24 +144,9 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
         };
     }, []);
 
+
     useEffect(() => {
         if (isOpen) {
-            if (initialData) {
-                setFormData(initialData);
-            } else {
-                setFormData({
-                    name: '',
-                    description: '',
-                    tags: [],
-                    contributors: [],
-                    repoLink: '',
-                    liveLink: '',
-                    downloadLink: '',
-                    images: [],
-                    icon: undefined
-                });
-            }
-
             // Animate Modal Entrance
             anime({
                 targets: '.project-modal-container',
@@ -196,7 +167,6 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                 duration: 500
             });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
     // Animate Selection Modals
@@ -787,7 +757,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
 };
 
 // Live Preview Component
-const LiveProjectCard = ({ project, isDark }: { project: ProjectData; isDark: boolean }) => {
+const LiveProjectCard = ({ project, isDark }: { project: ProjectFormData; isDark: boolean }) => {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [showContributors, setShowContributors] = useState(false);
 

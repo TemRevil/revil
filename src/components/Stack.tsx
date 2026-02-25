@@ -1,5 +1,4 @@
-/* eslint-disable react-hooks/static-components */
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { createElement, useEffect, useRef, useState, useMemo } from 'react';
 import anime from 'animejs';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -73,8 +72,6 @@ const getIcon = (name: string) => {
 
 const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: number }) => {
     const iconRef = useRef<HTMLAnchorElement>(null);
-    // Icon is a reference to a stateless icon component from lucide-react.
-    const Icon = useMemo(() => getIcon(name), [name]);
     const { trackClick } = useSocialTracker();
 
     useEffect(() => {
@@ -88,6 +85,12 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
         });
     }, [delay]);
 
+    const iconElement = createElement(getIcon(name), {
+        size: 32,
+        className: "text-gray-500 group-hover:text-black transition-colors duration-300",
+        strokeWidth: 1.5
+    });
+
     return (
         <a
             ref={iconRef}
@@ -97,11 +100,7 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
             onClick={() => trackClick(name)}
             className="group relative flex items-center justify-center p-3 rounded-xl transition-all duration-300 hover:bg-zinc-100 hover:scale-110"
         >
-            <Icon
-                size={32}
-                className="text-gray-500 group-hover:text-black transition-colors duration-300"
-                strokeWidth={1.5}
-            />
+            {iconElement}
 
             {/* Tooltip */}
             <span className="absolute lg:right-full lg:mr-3 lg:top-1/2 lg:-translate-y-1/2 lg:bottom-auto lg:left-auto lg:translate-x-0 bottom-full mb-3 lg:mb-0 left-1/2 -translate-x-1/2 lg:left-auto px-3 py-1.5 bg-black text-white rounded-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 shadow-xl">

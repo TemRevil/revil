@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react';
 import anime from 'animejs';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -123,11 +122,23 @@ const HandwritingText = ({
     );
 };
 
+interface HeroProject {
+    name?: string;
+    status?: string;
+    description?: string;
+}
+
+interface AvailabilityData {
+    'Current Availability'?: string;
+    'Current Time'?: string;
+    'Projects Being Handled'?: Record<string, HeroProject>;
+}
+
 // Available Status Badge Component
 const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark: boolean; entryDelay?: number; isReady?: boolean }) => {
     const badgeRef = useRef<HTMLDivElement>(null);
     const pulseRef = useRef<HTMLDivElement>(null);
-    const [availData, setAvailData] = useState<any>(null);
+    const [availData, setAvailData] = useState<AvailabilityData | null>(null);
     const [showTooltip, setShowTooltip] = useState(false);
     const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -256,7 +267,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
                             <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-muted">Availability Status.</span>
                         </div>
                         <div className="flex flex-col gap-5">
-                            {displayedProjects.map((p: any, i: number) => (
+                            {displayedProjects.map((p: HeroProject, i: number) => (
                                 <div key={i} className="flex flex-col gap-1.5">
                                     <div className="flex items-center justify-between gap-4">
                                         <span className="text-[15px] font-bold text-primary tracking-tight">{p.name || 'Project'}</span>

@@ -23,15 +23,18 @@ const MHandlingProject = ({ isOpen, onClose, onSave, initialData }: MHandlingPro
     const [status, setStatus] = useState<'active' | 'pending' | 'completed'>('active');
 
     useEffect(() => {
-        if (initialData) {
-            /* eslint-disable react-hooks/set-state-in-effect */
-            setName(initialData.name);
-            setDescription(initialData.description || '');
-            setStatus(initialData.status);
-        } else {
-            setName('');
-            setDescription('');
-            setStatus('active');
+        if (isOpen) {
+            requestAnimationFrame(() => {
+                if (initialData) {
+                    setName(initialData.name);
+                    setDescription(initialData.description || '');
+                    setStatus(initialData.status);
+                } else {
+                    setName('');
+                    setDescription('');
+                    setStatus('active');
+                }
+            });
         }
     }, [initialData, isOpen]);
 

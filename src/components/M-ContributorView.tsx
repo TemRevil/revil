@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Github, Linkedin, Globe, Instagram, Facebook, User } from 'lucide-react';
+import { ContributorData } from '../types';
 
-export interface Contributor {
+export interface Contributor extends Omit<ContributorData, 'image'> {
     name: string;
-    role: string;     // Role in the specific project
-    jobTitle: string; // Global job title (e.g. Front-End Developer)
-    image: string;
-    links: {
-        [key: string]: string | undefined;
-    };
+    role: string;
+    jobTitle?: string;
+    image?: string;
 }
 
 interface MContributorViewProps {
@@ -88,11 +86,11 @@ const MContributorView = ({ contributor, onClose }: MContributorViewProps) => {
                         </div>
                     </div>
 
-                    {Object.values(contributor.links).some(url => url && typeof url === 'string' && url.trim() !== '') && (
+                    {contributor.links && Object.values(contributor.links).some(url => url && typeof url === 'string' && url.trim() !== '') && (
                         <div style={{ width: '100%', textAlign: 'center' }}>
                             <h4 style={{ margin: '0 0 12px 0', color: 'var(--text-primary)', fontSize: '1.1rem' }}>Connect</h4>
                             <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                                {Object.entries(contributor.links).map(([platform, url]) => {
+                                {contributor.links && Object.entries(contributor.links).map(([platform, url]) => {
                                     if (!url || typeof url !== 'string') return null;
 
                                     const getIcon = (p: string) => {

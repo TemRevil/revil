@@ -1,84 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
-import { useRef } from 'react';
-
-// Import SVG icons
-import firebaseIcon from '../assets/svgs/firebase.svg';
-
 import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { isVideoFile, getStackIcon, getTechColor } from '../utils/projectUtils';
+import { ProjectData as Project, ContributorData as Contributor, TagData as TagItem } from '../types';
 
 // These are utility functions exported from this file
-// eslint-disable-next-line react-refresh/only-export-components
-export const isVideoFile = (url: string) => {
-    return url.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || url.includes('/videos/');
-};
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const getStackIcon = (name: string) => {
-    const lowerName = name.toLowerCase();
-    if (lowerName.includes('firebase')) return firebaseIcon;
-    return null;
-};
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const getTechColor = (name: string) => {
-    const lower = name.toLowerCase();
-    if (lower.includes('react')) return '#61dafb';
-    if (lower.includes('html')) return '#e34f26';
-    if (lower.includes('css')) return '#1572b6';
-    if (lower.includes('js') || lower.includes('javascript')) return '#f7df1e';
-    if (lower.includes('node')) return '#339933';
-    if (lower.includes('firebase')) return '#ffca28';
-    if (lower.includes('typescript') || lower.includes('ts')) return '#3178c6';
-    if (lower.includes('tailwind')) return '#06b6d4';
-    return '#60a5fa';
-};
-
-export interface TagItem {
-    id?: string | number;
-    name: string;
-    color?: string;
-    iconSvg?: string;
-}
-
-export interface Contributor {
-    id?: string | number;
-    name: string;
-    role: string;
-    jobTitle: string;
-    image: string;
-    links: Record<string, string | undefined>;
-}
-
-export interface Project {
-    id: number | string;
-    title?: string;
-    name?: string;
-    description: string;
-    fullDescription?: string;
-    images: string[];
-    stack?: string[];
-    tags?: TagItem[];
-    contributors: Contributor[];
-    repoLink?: string;
-    demoLink?: string;
-    liveLink?: string;
-    views?: number;
-    githubViews?: number;
-    liveViews?: number;
-    downloadLink?: string;
-    downloadViews?: number;
-}
-
-type ProjectContributorClick = (contributor: Contributor) => void;
-
 interface MProjectViewProps {
     project: Project;
     onClose: () => void;
-    onContributorClick: ProjectContributorClick;
+    onContributorClick: (contributor: Contributor) => void;
 }
 
 const GlassPanel = ({ children, style, className = "", isDark }: React.PropsWithChildren<{ style?: React.CSSProperties; className?: string; isDark?: boolean }>) => (
@@ -201,8 +134,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
         }
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleScrub = (e: any) => {
+    const handleScrub = (e: React.MouseEvent | React.TouchEvent) => {
         if (!containerRef.current || !videoRef.current) return;
 
         // Find the progress section element
@@ -210,7 +142,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
         if (!progressContainer) return;
 
         const rect = progressContainer.getBoundingClientRect();
-        const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+        const clientX = ('touches' in e) ? (e as unknown as React.TouchEvent).touches[0].clientX : (e as React.MouseEvent).clientX;
         const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
         const ratio = x / rect.width;
 
@@ -254,9 +186,8 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
             if (!document.fullscreenElement) {
                 if (containerRef.current.requestFullscreen) {
                     containerRef.current.requestFullscreen();
-                } else if ((containerRef.current as any).webkitRequestFullscreen) { // eslint-disable-line @typescript-eslint/no-explicit-any
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    (containerRef.current as any).webkitRequestFullscreen();
+                } else if ('webkitRequestFullscreen' in containerRef.current) {
+                    (containerRef.current as { webkitRequestFullscreen: () => void }).webkitRequestFullscreen();
                 }
             } else {
                 if (document.exitFullscreen) {
@@ -474,8 +405,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const [isHovered, setIsHovered] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [availableTags, setAvailableTags] = useState<any[]>([]);
+    const [availableTags, setAvailableTags] = useState<TagItem[]>([]);
 
     const sortedMedia = React.useMemo(() => {
         return [...(project.images || [])].sort((a, b) => {
@@ -516,13 +446,14 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     };
 
     const handleGithubClick = async () => {
-        if (!project.repoLink) return;
+        if (!project.repoLink || !project.id) return;
         try {
-            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const projectRef = doc(db, 'Projects', project.id.toString());
             const snap = await getDoc(projectRef);
             if (snap.exists()) {
                 const currentViews = snap.data().Views || {};
-                const newVal = (parseInt(currentViews.Github || "0") + 1).toString();
+                const currentVal = typeof currentViews.Github === 'number' ? currentViews.Github : parseInt(String(currentViews.Github || "0"));
+                const newVal = (currentVal + 1).toString();
                 await updateDoc(projectRef, {
                     "Views.Github": newVal
                 });
@@ -533,13 +464,14 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     };
 
     const handleLiveClick = async () => {
-        if (!project.liveLink && !project.demoLink) return;
+        if ((!project.liveLink && !project.demoLink) || !project.id) return;
         try {
-            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const projectRef = doc(db, 'Projects', project.id.toString());
             const snap = await getDoc(projectRef);
             if (snap.exists()) {
                 const currentViews = snap.data().Views || {};
-                const newVal = (parseInt(currentViews.Live || "0") + 1).toString();
+                const currentVal = typeof currentViews.Live === 'number' ? currentViews.Live : parseInt(String(currentViews.Live || "0"));
+                const newVal = (currentVal + 1).toString();
                 await updateDoc(projectRef, {
                     "Views.Live": newVal
                 });
@@ -550,13 +482,14 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     };
 
     const handleDownloadClick = async () => {
-        if (!project.downloadLink) return;
+        if (!project.downloadLink || !project.id) return;
         try {
-            const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+            const projectRef = doc(db, 'Projects', project.id.toString());
             const snap = await getDoc(projectRef);
             if (snap.exists()) {
                 const currentViews = snap.data().Views || {};
-                const newVal = (parseInt(currentViews.Download || "0") + 1).toString();
+                const currentVal = typeof currentViews.Download === 'number' ? currentViews.Download : parseInt(String(currentViews.Download || "0"));
+                const newVal = (currentVal + 1).toString();
                 await updateDoc(projectRef, {
                     "Views.Download": newVal
                 });
@@ -570,14 +503,14 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const displayTitle = (project.title || project.name || 'Untitled Project').toUpperCase();
     const displayFullDescription = project.fullDescription || project.description || 'No description available.';
 
-    const displayTags = (project.tags && project.tags.length > 0 && typeof project.tags[0] === 'object')
+    const displayTags = (project.tags && project.tags.length > 0)
         ? project.tags.map(t => {
-            // Try to find in global tags again for latest icon/color
-            const globalTag = availableTags.find(gt => gt.name.toLowerCase() === t.name.toLowerCase());
+            const tagName = typeof t === 'string' ? t : t.name;
+            const globalTag = availableTags.find(gt => gt.name.toLowerCase() === tagName.toLowerCase());
             return {
-                name: t.name,
-                color: t.color || globalTag?.color || getTechColor(t.name),
-                icon: t.iconSvg || globalTag?.iconSvg || getStackIcon(t.name)
+                name: tagName,
+                color: (typeof t === 'object' ? t.color : null) || globalTag?.color || getTechColor(tagName),
+                icon: (typeof t === 'object' ? t.iconSvg : null) || globalTag?.iconSvg || getStackIcon(tagName)
             };
         })
         : [
@@ -588,36 +521,20 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                     color: globalTag?.color || getTechColor(tech),
                     icon: globalTag?.iconSvg || getStackIcon(tech)
                 };
-            }),
-            ...(project.tags || []).map(t => {
-                const isString = typeof t === 'string';
-                const name = isString ? t : t.name;
-                const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
-                return {
-                    name: name,
-                    color: isString ? (globalTag?.color || getTechColor(name)) : (t.color || globalTag?.color || getTechColor(name)),
-                    icon: isString ? (globalTag?.iconSvg || getStackIcon(t)) : (t.iconSvg || globalTag?.iconSvg || getStackIcon(t.name))
-                };
             })
         ];
 
     // Keep internal project state in sync with incoming props
-    // Only update local state if the incoming project id differs to avoid
-    // repeated setState when parent passes a new object reference each render.
     useEffect(() => {
-        // We intentionally update local state when the incoming project object changes.
-        // Guard by id to avoid loops. Disable the rule because this sync is deliberate.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setProject(prev => (prev && prev.id === initialProject.id) ? prev : initialProject);
+        setProject(initialProject);
     }, [initialProject]);
 
     // Fetch Global Tags for Icons/Colors
     useEffect(() => {
         const unsub = onSnapshot(doc(db, 'Tags', 'Tags'), (docSnap) => {
             if (docSnap.exists()) {
-                const data = docSnap.data();
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const loaded = Object.entries(data).map(([id, val]: [string, any]) => ({
+                const data = docSnap.data() as Record<string, { Name?: string; Color?: string; Icon?: string }>;
+                const loaded = Object.entries(data).map(([id, val]): TagItem => ({
                     id,
                     name: val.Name || 'Untitled',
                     color: val.Color || '#60a5fa',
@@ -633,37 +550,43 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     useEffect(() => {
         if (!project.id) return;
 
-        const projectRef = doc(db, 'Projects', project.name || project.title || String(project.id));
+        const projectRef = doc(db, 'Projects', String(project.id));
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const resolveTag = (t: any) => {
+        const resolveTag = (t: string | { name?: string; Name?: string; color?: string; Color?: string; iconSvg?: string; Icon?: string } | null | undefined) => {
+            if (!t) return { name: 'Unknown', color: '#60a5fa', iconSvg: '' };
             const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
             // Try to find in global tags
             const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
 
             return {
                 name,
-                color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : (globalTag?.color || getTechColor(name)),
-                iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (globalTag?.iconSvg || getStackIcon(name) || '')
+                color: (t && typeof t === 'object' && ('color' in t || 'Color' in t)) ? (t as { color?: string; Color?: string }).color || (t as { color?: string; Color?: string }).Color || (globalTag?.color || getTechColor(name)) : (globalTag?.color || getTechColor(name)),
+                iconSvg: (t && typeof t === 'object' && ('iconSvg' in t || 'Icon' in t)) ? (t as { iconSvg?: string; Icon?: string }).iconSvg || (t as { iconSvg?: string; Icon?: string }).Icon || (globalTag?.iconSvg || getStackIcon(name) || '') : (globalTag?.iconSvg || getStackIcon(name) || '')
             };
         };
 
         // Subscribe to real-time updates for views AND project details
         const unsub = onSnapshot(projectRef, (docSnap) => {
             if (docSnap.exists()) {
-                const data = docSnap.data();
+                const data = docSnap.data() as {
+                    Views?: Record<string, string | number>;
+                    Stack?: string[] | Record<string, unknown>;
+                    Tags?: Record<string, string | { Name?: string; Color?: string; Icon?: string }>;
+                    Description?: string;
+                    'Download Link'?: string;
+                };
 
                 // Also update contributors if they've changed in the background
                 setProject(prev => {
                     const statusV = data.Views || {};
                     const rawStack = data.Stack || [];
                     const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack))
-                        .map(resolveTag)
+                        .map(t => resolveTag(t as string | { name?: string; Name?: string; color?: string; Color?: string; iconSvg?: string; Icon?: string }))
                         .filter(t => t.name !== 'Unix');
 
                     const rawTags = data.Tags ? Object.values(data.Tags) : [];
                     const normalizedTags = rawTags
-                        .map(resolveTag)
+                        .map(t => resolveTag(t as string | { name?: string; Name?: string; color?: string; Color?: string; iconSvg?: string; Icon?: string }))
                         .filter(t => t.name !== 'Unix');
 
                     const updated = {
@@ -674,7 +597,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                         downloadViews: Number(statusV.Download || 0) || 0,
                         stack: normalizedStack.map(t => t.name),
                         tags: normalizedStack.length > 0 ? normalizedStack : normalizedTags,
-                        downloadLink: data["Download Link"] || ''
+                        downloadLink: data['Download Link'] || ''
                     };
 
                     // If we have contributor data in the snapshot, keep the core details synced
@@ -690,7 +613,8 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                 const snap = await getDoc(projectRef);
                 if (snap.exists()) {
                     const currentViews = snap.data().Views || {};
-                    const newVal = (parseInt(currentViews.Project || "0") + 1).toString();
+                    const currentVal = typeof currentViews.Project === 'number' ? currentViews.Project : parseInt(String(currentViews.Project || "0"));
+                    const newVal = (currentVal + 1).toString();
                     await updateDoc(projectRef, {
                         "Views.Project": newVal
                     });
@@ -926,7 +850,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
                                     <div style={{ padding: '6px 14px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', borderRadius: '50px', fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em' }}>More Details</div>
                                     <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }} />
-                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Project ID: #{project.id.toString().slice(-6).toUpperCase()}</div>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Project ID: #{project.id?.toString().slice(-6).toUpperCase() || 'UNKNOWN'}</div>
                                 </div>
                                 <h1 style={{
                                     margin: 0, fontSize: isMobile ? (windowWidth < 480 ? '2.2rem' : '3.2rem') : '5rem', fontWeight: 950,
@@ -1088,7 +1012,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                                 }}>
                                                     {c.image ? (
                                                         <img
-                                                            src={c.image}
+                                                            src={typeof c.image === 'string' ? c.image : undefined}
                                                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                                             alt={c.name}
                                                         />

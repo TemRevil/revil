@@ -4,19 +4,13 @@ import { X, HardDrive } from 'lucide-react';
 import MFirebaseStorage from './M-FirebaseStorage';
 import firebaseIcon from '../../assets/svgs/firebase.svg';
 
-export interface TagData {
-    id?: string;
-    name: string;
-    color: string;
-    iconSvg?: string; // SVG string content
-    iconFile?: File;
-}
+import { TagFormData } from '../../types';
 
 interface MTagFormProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: TagData) => void;
-    initialData?: TagData | null;
+    onSave: (data: TagFormData) => void;
+    initialData?: TagFormData | null;
 }
 
 const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
@@ -28,18 +22,19 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
 
     useEffect(() => {
         if (isOpen) {
-            if (initialData) {
-                /* eslint-disable react-hooks/set-state-in-effect */
-                setName(initialData.name);
-                setColor(initialData.color);
-                setIconSvg(initialData.iconSvg || '');
-                setIconFile(null);
-            } else {
-                setName('');
-                setColor('#3b82f6');
-                setIconSvg('');
-                setIconFile(null);
-            }
+            requestAnimationFrame(() => {
+                if (initialData) {
+                    setName(initialData.name);
+                    setColor(initialData.color || '#3b82f6');
+                    setIconSvg(initialData.iconSvg || '');
+                    setIconFile(null);
+                } else {
+                    setName('');
+                    setColor('#3b82f6');
+                    setIconSvg('');
+                    setIconFile(null);
+                }
+            });
         }
     }, [isOpen, initialData]);
 

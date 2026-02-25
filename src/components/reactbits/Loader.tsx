@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -71,9 +70,14 @@ const RotatingText = forwardRef<RotatingTextRef, RotatingTextProps>((props, ref)
     const [currentTextIndex, setCurrentTextIndex] = useState<number>(0);
 
     const splitIntoCharacters = (text: string): string[] => {
-        if (typeof Intl !== 'undefined' && (Intl as any).Segmenter) {
-            const segmenter = new (Intl as any).Segmenter('en', { granularity: 'grapheme' });
-            return Array.from(segmenter.segment(text), (segment: any) => segment.segment);
+        if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+            type SegmenterType = {
+                new(locale: string, options: { granularity: 'grapheme' }): {
+                    segment: (text: string) => Iterable<{ segment: string }>;
+                };
+            };
+            const segmenter = new (Intl as unknown as { Segmenter: SegmenterType }).Segmenter('en', { granularity: 'grapheme' });
+            return Array.from(segmenter.segment(text), (segment: { segment: string }) => segment.segment);
         }
         return Array.from(text);
     };

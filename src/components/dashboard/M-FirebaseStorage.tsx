@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Folder, FileImage, ChevronRight, ChevronLeft, Search } from 'lucide-react';
@@ -47,6 +47,9 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
         return () => observer.disconnect();
     }, []);
 
+    const fileTypesKey = fileTypes.join(',');
+    const memoizedFileTypes = useMemo(() => fileTypes, [fileTypesKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
     useEffect(() => {
         if (!isOpen) return;
 
@@ -69,7 +72,7 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
                 // Prepare fetch promises for files (parallel)
                 const filePromises = result.items.map(async (item) => {
                     const extension = item.name.split('.').pop()?.toLowerCase() || '';
-                    if (fileTypes.length > 0 && !fileTypes.includes(extension)) return null;
+                    if (memoizedFileTypes.length > 0 && !memoizedFileTypes.includes(extension)) return null;
                     try {
                         const url = await getDownloadURL(item);
                         return {
@@ -106,9 +109,7 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
         return () => {
             cancelled = true;
         };
-        // Intentionally omit `fileTypes` from deps to avoid re-running on every render
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen, currentPath]);
+    }, [isOpen, currentPath, memoizedFileTypes]);
 
     const handleFolderClick = (path: string) => {
         setCurrentPath(path);

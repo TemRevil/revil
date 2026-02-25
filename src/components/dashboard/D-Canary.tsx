@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
@@ -14,6 +13,11 @@ import MConfirmModal from './M-ConfirmModal';
 import MContact from '../M-Contact';
 import Loader from '../reactbits/Loader';
 
+interface Attachment {
+    name: string;
+    url: string;
+}
+
 interface Meeting {
     id: string;
     title: string;
@@ -26,11 +30,6 @@ interface Meeting {
     googleEventId?: string;
 }
 
-interface Attachment {
-    name: string;
-    url: string;
-}
-
 interface Email {
     id: string;
     name: string;
@@ -40,6 +39,27 @@ interface Email {
     whatsapp: boolean;
     timestamp: number;
     attachments: Attachment[];
+}
+
+interface MeetingData {
+    Name?: string;
+    Time: string;
+    Date: string;
+    Email?: string;
+    MeetingLink?: string;
+    "What For"?: string;
+    UserTimezone?: number;
+    GoogleEventId?: string;
+}
+
+interface EmailData {
+    Name: string;
+    Email: string;
+    Message: string;
+    Number: string;
+    Whatsapp: boolean;
+    Timestamp: number;
+    "Files Attached"?: Attachment[];
 }
 
 const TIME_OPTIONS = [
@@ -86,10 +106,9 @@ const DCanary = () => {
         const unsubscribe = onSnapshot(doc(db, 'Settings', 'Canary'), (snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.data();
-                const meetingsMap = data.Meetings || {};
-                const meetingsList: Meeting[] = Object.entries(meetingsMap).map(([id, m]: [string, any]) => {
+                const meetingsMap = (data.Meetings || {}) as Record<string, MeetingData>;
+                const meetingsList: Meeting[] = Object.entries(meetingsMap).map(([id, m]) => {
                     const [d, mon, y] = m.Date.split('/').map(Number);
-
                     return {
                         id,
                         title: m.Name || 'Untitled Session',
@@ -104,8 +123,8 @@ const DCanary = () => {
                 });
                 setMeetings(meetingsList);
 
-                const emailsMap = data.Emails || {};
-                const emailsList: Email[] = Object.entries(emailsMap).map(([id, e]: [string, any]) => ({
+                const emailsMap = (data.Emails || {}) as Record<string, EmailData>;
+                const emailsList: Email[] = Object.entries(emailsMap).map(([id, e]) => ({
                     id,
                     name: e.Name,
                     email: e.Email,
@@ -351,7 +370,7 @@ const DCanary = () => {
                         endTime: end.toISOString()
                     });
 
-                    const resData = response.data as any;
+                    const resData = response.data as { status?: string; id?: string };
                     if (resData.status === 'success' && resData.id) {
                         newGoogleId = resData.id;
                     }
@@ -364,7 +383,7 @@ const DCanary = () => {
             const y = editingMeeting.date.getFullYear();
             const dateStr = `${day}/${mon}/${y}`;
 
-            const updatePayload: any = {
+            const updatePayload: Record<string, string> = {
                 [`Meetings.${editingMeeting.id}.Date`]: dateStr,
                 [`Meetings.${editingMeeting.id}.Time`]: editingMeeting.time,
                 [`Meetings.${editingMeeting.id}.Name`]: editingMeeting.title

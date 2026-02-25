@@ -12,11 +12,13 @@ interface PageTransitionProps {
 const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplete, nextSectionName = '', direction = 0 }: PageTransitionProps) => {
     const curtainRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
-    const [currentDirection, setCurrentDirection] = useState<'top' | 'bottom' | 'right' | 'left'>('top');
+    const [fontSize, setFontSize] = useState(Math.min(window.innerWidth / 6, 100));
+    const currentDirection: 'top' | 'bottom' | 'right' | 'left' =
+        direction === 2 ? 'right' :
+            direction === -2 ? 'left' :
+                direction > 0 ? 'bottom' : 'top';
 
     const displayName = nextSectionName.charAt(0).toUpperCase() + nextSectionName.slice(1);
-
-    const [fontSize, setFontSize] = useState(Math.min(window.innerWidth / 6, 100));
 
     useEffect(() => {
         const handleResize = () => {
@@ -32,7 +34,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
     let xPos = 0;
     const positions: number[] = [];
 
-    displayName.split('').forEach(char => {
+    displayName.split('').forEach((char: string) => {
         positions.push(xPos);
         xPos += char === ' ' ? spaceWidth : letterSpacing;
     });
@@ -42,21 +44,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
 
     useEffect(() => {
         if (isTransitioning && curtainRef.current) {
-            let selectedDir: 'top' | 'bottom' | 'right' | 'left' = 'top';
-
-            // Logic:
-            // direction > 0 (Next/Down): Page comes from Bottom. Curtain should wipe Up (from Bottom).
-            // direction < 0 (Prev/Up): Page comes from Top. Curtain should wipe Down (from Top).
-            // direction = 2 (Secret): Page comes from Right. Curtain should wipe Left (from Right).
-            // direction = -2 (Exit Secret): Page comes from Left. Curtain should wipe Right (from Left).
-
-            if (direction === 2) selectedDir = 'right';
-            else if (direction === -2) selectedDir = 'left';
-            else if (direction > 0) selectedDir = 'bottom';
-            else selectedDir = 'top';
-
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setCurrentDirection(selectedDir);
+            const selectedDir = currentDirection;
 
             curtainRef.current.style.display = 'block';
 
@@ -184,7 +172,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                 }
             });
         }
-    }, [isTransitioning, onCurtainCovered, onTransitionComplete, displayName, fontSize, direction]);
+    }, [isTransitioning, onCurtainCovered, onTransitionComplete, displayName, fontSize, currentDirection]);
 
     return (
         <div
@@ -200,7 +188,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                     viewBox={`0 0 ${svgWidth} ${svgHeight}`}
                     style={{ overflow: 'visible' }}
                 >
-                    {displayName.split('').map((char, index) => {
+                    {displayName.split('').map((char: string, index: number) => {
                         if (char === ' ') return null;
 
                         return (

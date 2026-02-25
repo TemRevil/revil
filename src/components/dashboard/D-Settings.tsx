@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Briefcase, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link } from 'lucide-react';
-const DEFAULT_HERO_URL = "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FHero.image.jpg?alt=media&token=1d698d9b-468a-42e7-92c6-b9cb127a5fc6";
+const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
 import { doc, onSnapshot, setDoc, updateDoc, deleteField, getDoc } from 'firebase/firestore';
@@ -335,9 +335,15 @@ export default function DSettings() {
                 } else if (heroImagePreview.startsWith('http')) {
                     // try to get metadata which is safer than fetch() for CORS
                     try {
-                        const fileRef = ref(storage, heroImagePreview);
-                        const metadata = await getMetadata(fileRef);
-                        setHeroImageSize(formatBytes(metadata.size));
+                        // Only try getMetadata if it looks like a Firebase URL
+                        if (heroImagePreview.includes('firebasestorage.googleapis.com')) {
+                            const fileRef = ref(storage, heroImagePreview);
+                            const metadata = await getMetadata(fileRef);
+                            setHeroImageSize(formatBytes(metadata.size));
+                        } else {
+                            // Fallback to fetch for non-firebase URLs
+                            throw new Error('Not a firebase URL');
+                        }
                     } catch {
                         // Only try fetch if getMetadata failed and it's not a local file
                         try {
@@ -395,9 +401,15 @@ export default function DSettings() {
                 } else if (profileImagePreview.startsWith('http')) {
                     // try to get metadata which is safer than fetch() for CORS
                     try {
-                        const fileRef = ref(storage, profileImagePreview);
-                        const metadata = await getMetadata(fileRef);
-                        setProfileImageSize(formatBytes(metadata.size));
+                        // Only try getMetadata if it looks like a Firebase URL
+                        if (profileImagePreview.includes('firebasestorage.googleapis.com')) {
+                            const fileRef = ref(storage, profileImagePreview);
+                            const metadata = await getMetadata(fileRef);
+                            setProfileImageSize(formatBytes(metadata.size));
+                        } else {
+                            // Fallback to fetch for non-firebase URLs
+                            throw new Error('Not a firebase URL');
+                        }
                     } catch {
                         try {
                             const res = await fetch(profileImagePreview, { method: 'GET' });

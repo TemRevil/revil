@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Check, RefreshCw, MoreVertical, Edit2, Trash2, Activity, Users, Plus, Clock, Briefcase, MousePointer2, Eye, Calendar, Globe } from 'lucide-react';
+import { Copy, Check, MoreVertical, Edit2, Trash2, Activity, Users, Plus, Clock, Briefcase, MousePointer2, Eye, Globe } from 'lucide-react';
 import anime from 'animejs';
-import { motion } from 'motion/react';
-import { doc, onSnapshot, getDoc, updateDoc, deleteField, collection, getDocs, setDoc } from 'firebase/firestore';
+import { motion } from 'framer-motion';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps } from 'recharts';
+import { doc, onSnapshot, updateDoc, collection, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Loader from '../reactbits/Loader';
 import Alert from '../Alert';
@@ -13,7 +14,7 @@ interface AnalyticsData {
     "Total Reach"?: string | number;
     "Reach (Per Device)"?: string | number;
     "Today's Viewers"?: string | number;
-    [key: string]: any;
+    [key: string]: string | number | undefined;
 }
 
 interface GeneratedLink {
@@ -29,9 +30,17 @@ interface GeneratedLink {
     interviewer: boolean;
 }
 
+interface ChartDataPoint {
+    label: string;
+    dateNum: string | number;
+    value: number;
+    fullDate: string;
+    prevValue?: number;
+}
 
 
-const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; onClose: () => void; data: string; isDark: boolean; linkName: string }) => {
+
+const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; onClose: () => void; data: string; linkName: string }) => {
     if (!isOpen) return null;
 
     const parseData = (raw: string) => {
@@ -169,10 +178,230 @@ const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; o
     );
 };
 
+const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+    if (active && payload && payload.length) {
+        const item = payload[0].payload as ChartDataPoint;
+        return (
+            <div className="p-4 rounded-2xl border border-white/10 shadow-2xl backdrop-blur-xl bg-black/80">
+                <div className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">{item.fullDate}</div>
+                <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                        <span className="text-sm font-bold text-primary">{payload[0].value?.toLocaleString()} <span className="text-muted font-normal text-xs uppercase tracking-tight ml-1">Views</span></span>
+                    </div>
+                    {payload[1] && (
+                        <div className="flex items-center gap-2 opacity-40">
+                            <div className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                            <span className="text-xs font-bold text-primary">{payload[1].value?.toLocaleString()} <span className="text-muted font-normal uppercase tracking-tight ml-1">Prev</span></span>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+    return null;
+};
+
+interface CustomTickProps {
+    x: number;
+    y: number;
+    payload: { value: string };
+    index: number;
+    data: ChartDataPoint[];
+}
+
+const CustomTick = ({ x, y, payload, index, data }: CustomTickProps) => {
+    const item = data[index];
+    if (!item) return null;
+    return (
+        <g transform={`translate(${x},${y})`}>
+            <text x={0} y={0} textAnchor="middle" className="fill-muted !text-[9px] font-bold uppercase tracking-widest">{payload.value}</text>
+            <text x={0} y={14} textAnchor="middle" className="fill-primary/40 !text-[11px] font-black">{item.dateNum}</text>
+        </g>
+    );
+};
+
+const AnalyticsChart = ({ data, filter, setFilter, mainStat, subStat }: {
+    data: ChartDataPoint[];
+    filter: 'daily' | 'weekly' | 'monthly';
+    setFilter: (f: 'daily' | 'weekly' | 'monthly') => void;
+    mainStat: string | number;
+    subStat: string | number;
+}) => {
+    return (
+        <div className="glass-panel p-8 flex flex-col gap-10 bg-black/40 border border-white/5 overflow-hidden">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-8">
+                <div className="flex gap-12">
+                    <div className="flex flex-col">
+                        <div className="text-4xl md:text-5xl font-black text-primary tracking-tighter">{mainStat}</div>
+                        <div className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] mt-2">Total Reach</div>
+                    </div>
+                    <div className="flex flex-col">
+                        <div className="text-4xl md:text-5xl font-black text-primary tracking-tighter flex items-center gap-3">
+                            {subStat}
+                            <span className="text-[9px] font-black text-success flex items-center gap-1 bg-success/10 px-2 py-0.5 rounded-full border border-success/20">
+                                <Plus size={8} className="text-success" /> 22%
+                            </span>
+                        </div>
+                        <div className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] mt-2">Device Reach</div>
+                    </div>
+                </div>
+
+                <div className="flex bg-white/5 p-1 rounded-full border border-white/5 self-end sm:self-auto backdrop-blur-md">
+                    {(['daily', 'weekly', 'monthly'] as const).map(f => (
+                        <button
+                            key={f}
+                            onClick={(e) => { e.stopPropagation(); setFilter(f); }}
+                            className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer ${filter === f
+                                ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
+                                : 'text-muted hover:text-primary hover:bg-white/5'
+                                }`}
+                        >
+                            {f}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="w-full h-[320px] md:h-[400px] mt-2 -ml-6 -mr-6" style={{ width: 'calc(100% + 1.5rem)' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={data} margin={{ top: 20, right: 30, left: 10, bottom: 0 }}>
+                        <defs>
+                            <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="0 0" vertical={false} stroke="rgba(255,255,255,0.03)" />
+                        <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            dy={15}
+                            interval={filter === 'daily' ? 1 : 0}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            tick={(props: any) => <CustomTick {...props} data={data} />}
+                        />
+                        <YAxis hide />
+                        <Tooltip content={CustomTooltip} cursor={{ stroke: 'rgba(59, 130, 246, 0.2)', strokeWidth: 2 }} />
+                        <Area
+                            type="monotone"
+                            dataKey="prevValue"
+                            stroke="#ffffff"
+                            fill="transparent"
+                            strokeWidth={2}
+                            strokeOpacity={0.05}
+                            strokeDasharray="4 4"
+                            dot={false}
+                            activeDot={false}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#3B82F6"
+                            fillOpacity={1}
+                            fill="url(#colorValue)"
+                            strokeWidth={4}
+                            dot={{ r: 4, fill: '#3B82F6', strokeWidth: 2, stroke: '#000', opacity: 1, strokeOpacity: 1 }}
+                            activeDot={{ r: 8, fill: '#3B82F6', strokeWidth: 4, stroke: '#fff' }}
+                            animationDuration={1000}
+                            animationEasing="ease-in-out"
+                        />
+                    </AreaChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+};
+
 const DLinks = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isDark, setIsDark] = useState(false);
     const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+    const [dailyMap, setDailyMap] = useState<Record<string, number | { total: number }> | null>(null);
+
+    // Convert dailyMap to sorted numeric series (ascending by date key)
+    const dailySeries = useMemo(() => {
+        if (!dailyMap) return [] as { date: string; value: number }[];
+        try {
+            const entries = Object.entries(dailyMap)
+                .filter(([k]) => k && k !== 'next')
+                .map(([k, v]) => {
+                    const val = typeof v === 'number' ? v : (v && typeof v === 'object' ? (v as { total: number }).total : 0);
+                    return { date: k, value: Number(val) || 0 };
+                });
+            entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            return entries;
+        } catch {
+            return [] as { date: string; value: number }[];
+        }
+    }, [dailyMap]);
+
+    const [chartFilter, setChartFilter] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+
+    const chartData = useMemo(() => {
+        if (!dailySeries || dailySeries.length === 0) return [];
+
+        let aggregated: ChartDataPoint[] = [];
+
+        if (chartFilter === 'daily') {
+            aggregated = dailySeries.slice(-14).map(s => {
+                const d = new Date(s.date);
+                return {
+                    label: d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
+                    dateNum: d.getDate(),
+                    value: s.value,
+                    fullDate: s.date
+                };
+            });
+        } else if (chartFilter === 'weekly') {
+            const weeks: Record<string, number> = {};
+            dailySeries.forEach(s => {
+                const d = new Date(s.date);
+                const day = d.getDay();
+                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                const monday = new Date(d.setDate(diff));
+                const weekKey = monday.toISOString().split('T')[0];
+                weeks[weekKey] = (weeks[weekKey] || 0) + s.value;
+            });
+            aggregated = Object.entries(weeks).map(([date, value]) => {
+                const d = new Date(date);
+                return {
+                    label: `WK ${d.getDate()}`,
+                    dateNum: d.getMonth() + 1,
+                    value,
+                    fullDate: date
+                };
+            }).sort((a, b) => new Date(a.fullDate).getTime() - new Date(b.fullDate).getTime()).slice(-10);
+        } else if (chartFilter === 'monthly') {
+            const months: Record<string, number> = {};
+            dailySeries.forEach(s => {
+                const d = new Date(s.date);
+                const monthKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+                months[monthKey] = (months[monthKey] || 0) + s.value;
+            });
+            aggregated = Object.entries(months).map(([key, value]) => {
+                const [year, month] = key.split('-');
+                const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                return {
+                    label: date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
+                    dateNum: parseInt(year),
+                    value,
+                    fullDate: key
+                };
+            }).sort((a, b) => new Date(a.fullDate).getTime() - new Date(b.fullDate).getTime());
+        }
+
+        // Comparison with previous period (e.g. last year same date)
+        return aggregated.map(item => {
+            const d = new Date(item.fullDate);
+            d.setFullYear(d.getFullYear() - 1);
+            const prevDateStr = d.toISOString().split('T')[0];
+            const prevData = dailyMap?.[prevDateStr];
+            const prevValue = prevData ? (typeof prevData === 'number' ? prevData : prevData.total || 0) : 0;
+            return { ...item, prevValue };
+        });
+    }, [dailySeries, chartFilter, dailyMap]);
 
     const [name, setName] = useState('');
     const [forField, setForField] = useState('');
@@ -185,6 +414,7 @@ const DLinks = () => {
     const [editFor, setEditFor] = useState('');
     const [activityLink, setActivityLink] = useState<GeneratedLink | null>(null);
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
+    // hover state removed — using recharts tooltip instead
     const [activeSection, setActiveSection] = useState<'analysis' | 'campaigns'>('analysis');
     const [isTransitioning, setIsTransitioning] = useState(false);
     const directionRef = useRef<number>(1);
@@ -273,15 +503,22 @@ const DLinks = () => {
         // Subscribe to Links sub-collection
         const linksUnsub = onSnapshot(collection(db, 'Settings', 'Views', 'Links'), (snapshot) => {
             const linksArray: GeneratedLink[] = [];
-            snapshot.forEach(doc => {
-                const item = doc.data();
+            snapshot.forEach(docSnap => {
+                const item = docSnap.data() as {
+                    Name?: string;
+                    For?: string;
+                    Code?: string;
+                    Rec_CLI?: string;
+                    Views?: number;
+                    Interviewer?: boolean;
+                };
                 linksArray.push({
-                    id: doc.id,
-                    name: item.Name,
-                    forField: item.For,
-                    code: item.Code || item.Rec_CLI,
+                    id: docSnap.id,
+                    name: item.Name || '',
+                    forField: item.For || '',
+                    code: item.Code || item.Rec_CLI || '',
                     fullLink: `${window.location.origin}${import.meta.env.BASE_URL}${item.Code || item.Rec_CLI || ''}`,
-                    viewed: item.Views > 0,
+                    viewed: (item.Views || 0) > 0,
                     counts: item.Views || 0,
                     createdAt: new Date(),
                     recCLI: item.Rec_CLI || '',
@@ -296,12 +533,24 @@ const DLinks = () => {
         const analysisUnsub = onSnapshot(doc(db, 'Settings', 'Views', 'Analysis', 'Main'), (docSnap) => {
             if (docSnap.exists()) {
                 setAnalytics(docSnap.data() as AnalyticsData);
+            } else {
+                setAnalytics(null);
+            }
+        });
+
+        // Subscribe to Analysis/Daily document (map of dates -> { total, unique })
+        const dailyUnsub = onSnapshot(doc(db, 'Settings', 'Views', 'Analysis', 'Daily'), (docSnap) => {
+            if (docSnap.exists()) {
+                setDailyMap(docSnap.data() as Record<string, number | { total: number }>);
+            } else {
+                setDailyMap(null);
             }
         });
 
         return () => {
             linksUnsub();
             analysisUnsub();
+            dailyUnsub();
         };
     }, []);
 
@@ -381,7 +630,8 @@ const DLinks = () => {
         setActiveMenu(null);
         try {
             const docRef = doc(db, 'Settings', 'Views', 'Links', id);
-            await updateDoc(docRef, { Views: deleteField() } as any);
+            await deleteDoc(docRef);
+            showAlert({ type: 'success', message: 'Portal link removed successfully.' });
         } catch {
             showAlert({ type: 'error', message: 'Failed to delete link.' });
         }
@@ -495,34 +745,13 @@ const DLinks = () => {
                             </div>
 
                             {/* Counter Cards */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="p-8 rounded-[32px] bg-white/[0.03] border border-white/10 backdrop-blur-xl relative overflow-hidden group transition-all hover:bg-white/[0.06]">
-                                    <div className="absolute top-0 right-0 p-4 opacity-15 group-hover:opacity-25 transition-opacity text-info">
-                                        <Eye size={48} />
-                                    </div>
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-info/80">Reach</span>
-                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.["Total Reach"] || '0'}</div>
-                                    <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Global Interactions</p>
-                                </div>
-
-                                <div className="p-8 rounded-[32px] bg-white/[0.03] border border-white/10 backdrop-blur-xl relative overflow-hidden group transition-all hover:bg-white/[0.06]">
-                                    <div className="absolute top-0 right-0 p-4 opacity-15 group-hover:opacity-25 transition-opacity text-secondary">
-                                        <Users size={48} />
-                                    </div>
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-secondary/80">Unique (Daily)</span>
-                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.["Reach (Per Device)"] || '0'}</div>
-                                    <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Device Nodes</p>
-                                </div>
-
-                                <div className="p-8 rounded-[32px] bg-white/[0.03] border border-white/10 backdrop-blur-xl relative overflow-hidden group transition-all hover:bg-white/[0.06]">
-                                    <div className="absolute top-0 right-0 p-4 opacity-15 group-hover:opacity-25 transition-opacity text-success">
-                                        <Calendar size={48} />
-                                    </div>
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-success/80">Today</span>
-                                    <div className="text-3xl font-black mt-1 text-primary">{analytics?.["Today's Viewers"] || '0'}</div>
-                                    <p className="text-[10px] font-bold text-muted mt-4 uppercase tracking-[0.2em] opacity-80">Live Traffic</p>
-                                </div>
-                            </div>
+                            <AnalyticsChart
+                                data={chartData}
+                                filter={chartFilter}
+                                setFilter={setChartFilter}
+                                mainStat={analytics?.["Total Reach"] || '0'}
+                                subStat={analytics?.["Reach (Per Device)"] || '0'}
+                            />
                         </div>
 
                     ) : (
@@ -728,7 +957,6 @@ const DLinks = () => {
                 isOpen={!!activityLink}
                 onClose={() => setActivityLink(null)}
                 data={activityLink?.recCLI || ''}
-                isDark={isDark}
                 linkName={activityLink?.name || 'Analytics'}
             />
 

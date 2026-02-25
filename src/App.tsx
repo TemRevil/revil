@@ -13,13 +13,23 @@ import Loader from './components/reactbits/Loader';
 import { Algorithm } from './components/Algorithm';
 import MCV from './components/M-CV';
 import MProjectView from './components/M-ProjectView';
-import MContributorView, { Contributor } from './components/M-ContributorView';
-import { Project } from './components/M-ProjectView';
+import MContributorView, { Contributor as ContributorViewData } from './components/M-ContributorView';
+import { ProjectData as Project, ContributorData as Contributor } from './types';
 
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
 function App() {
-  const [currentSection, setCurrentSection] = useState<Section>('home');
+  const [currentSection, setCurrentSection] = useState<Section>(() => {
+    const path = window.location.pathname;
+    const base = import.meta.env.BASE_URL;
+    const normPath = path.replace(/\/$/, '');
+    const normBase = base.replace(/\/$/, '');
+    if (normPath !== normBase && normPath !== '') {
+      return 'view_link';
+    }
+    return 'home';
+  });
+  const [previousSection, setPreviousSection] = useState<Section>('home');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextSection, setNextSection] = useState<Section>('home');
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
@@ -29,7 +39,7 @@ function App() {
   const [isCVModalOpen, setIsCVModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showProjectModal, setShowProjectModal] = useState(false);
-  const [selectedContributor, setSelectedContributor] = useState<Contributor | null>(null);
+  const [selectedContributor, setSelectedContributor] = useState<ContributorViewData | null>(null);
   const [showContributorModal, setShowContributorModal] = useState(false);
   const [hasAutoOpenedCV, setHasAutoOpenedCV] = useState(false);
 
@@ -54,16 +64,7 @@ function App() {
   // Derived loading state (avoid setting state synchronously inside effects)
   const appLoading = forceHideLoading ? false : !(isDataReady && isWindowReady);
 
-  useEffect(() => {
-    const path = window.location.pathname;
-    const base = import.meta.env.BASE_URL;
-    const normPath = path.replace(/\/$/, '');
-    const normBase = base.replace(/\/$/, '');
-    if (normPath !== normBase && normPath !== '') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCurrentSection('view_link');
-    }
-  }, []);
+
 
   const handleHeroAnimationComplete = useCallback(() => {
     const isInterviewerMode = sessionStorage.getItem('revil_interviewer_mode') === 'true';
@@ -95,9 +96,14 @@ function App() {
         dir = nextIdx > currIdx ? 1 : -1;
       }
 
+      if (section === 'secret') {
+        setPreviousSection(currentSection);
+      }
+
       setDirection(dir);
       setNextSection(section);
       setCurrentSection(section);
+
       setIsTransitioning(true);
     }
   }, [currentSection, isTransitioning]);
@@ -120,7 +126,7 @@ function App() {
   }, []);
 
   const handleContributorClick = useCallback((contributor: Contributor) => {
-    setSelectedContributor(contributor);
+    setSelectedContributor(contributor as unknown as ContributorViewData);
     setShowContributorModal(true);
   }, []);
 
@@ -153,6 +159,8 @@ function App() {
     if (currentSection === 'dashboard') return;
     touchStartX.current = e.targetTouches[0].clientX;
     touchStartY.current = e.targetTouches[0].clientY;
+    touchEndX.current = e.targetTouches[0].clientX;
+    touchEndY.current = e.targetTouches[0].clientY;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -167,9 +175,17 @@ function App() {
       return;
     }
 
-    const SWIPE_THRESHOLD = 120; // Less sensitive as requested
+    const SWIPE_THRESHOLD = 120; // High sensitivity to avoid accidental swipes
     const deltaX = touchStartX.current - touchEndX.current;
     const deltaY = touchStartY.current - touchEndY.current;
+
+    // VERY IMPORTANT: Reset values immediately so a rapid double-tap doesn't use old cached end values
+    touchStartX.current = 0; touchEndX.current = 0; touchStartY.current = 0; touchEndY.current = 0;
+
+    // If there was basically no movement (like a single tap or tiny jitter), ignore it
+    if (Math.abs(deltaX) < SWIPE_THRESHOLD && Math.abs(deltaY) < SWIPE_THRESHOLD) {
+      return;
+    }
 
     const container = getScrollContainer(currentSection);
     if (!container) return;
@@ -181,6 +197,8 @@ function App() {
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
       if (deltaX > SWIPE_THRESHOLD && currentSection !== 'secret') {
         navigateTo('secret');
+      } else if (deltaX < -SWIPE_THRESHOLD && currentSection === 'secret') {
+        navigateTo(previousSection);
       }
     } else {
       if (deltaY > SWIPE_THRESHOLD && scrolledToBottom) {
@@ -192,33 +210,46 @@ function App() {
         else if (currentSection === 'stack') navigateTo('home');
       }
     }
-    touchStartX.current = 0; touchEndX.current = 0; touchStartY.current = 0; touchEndY.current = 0;
   };
 
+
   // --- Wheel/Scroll Logic (Desktop) ---
-  const lastNavigationTime = useRef(0);
-  const scrollAccumulator = useRef(0);
   const lastScrollEventTime = useRef(0);
+  const scrollAccumulator = useRef(0);
+  const isScrollLocked = useRef(false);
+  const lastNavigationTime = useRef(0);
+  const lastDeltaY = useRef(0);
 
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
+      const now = Date.now();
+      const timeSinceLastEvent = now - lastScrollEventTime.current;
+      lastScrollEventTime.current = now;
+
+      const currentDelta = Math.abs(e.deltaY);
+      const isAccelerating = currentDelta > lastDeltaY.current + 8;
+      lastDeltaY.current = currentDelta;
+
+      // If user paused (50ms) OR made a new physical swipe (accelerated)
+      if (timeSinceLastEvent > 50 || isAccelerating) {
+        scrollAccumulator.current = 0;
+        isScrollLocked.current = false;
+      }
+
       if (isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') return;
       if (isTransitioning) return;
 
       const container = getScrollContainer(currentSection);
       if (!container) return;
 
-      const now = Date.now();
+      // If locked from a previous transition, ignore momentum
+      if (isScrollLocked.current) return;
 
-      // If user stopped scrolling for a while, reset pressure.
-      // But we allow rapid consecutive events to accumulate.
-      if (now - lastScrollEventTime.current > 150) {
+      // Block rapid consecutive interactions to let animation play
+      if (now - lastNavigationTime.current < 700) {
         scrollAccumulator.current = 0;
+        return;
       }
-      lastScrollEventTime.current = now;
-
-      // Cooldown to prevent double-skipping pages
-      if (now - lastNavigationTime.current < 600) return;
 
       const isScrollDown = e.deltaY > 0;
       const isScrollUp = e.deltaY < 0;
@@ -228,13 +259,10 @@ function App() {
       const scrolledToTop = container.scrollTop <= 5;
 
       // HIGH SENSITIVITY:
-      // A typical mouse wheel "notch" is often 100 deltaY. A trackpad swipe can be anything.
-      // Setting THRESHOLD to 20 ensures that even a gentle continuation triggers it.
-      const THRESHOLD = 20;
+      // A typical trackpad swipe shoots numbers extremely quickly.
+      const THRESHOLD = 50;
 
       if (isScrollDown && scrolledToBottom) {
-        // We are at the bottom.
-        // Add the scroll "pressure" to the accumulator.
         scrollAccumulator.current += e.deltaY;
 
         if (scrollAccumulator.current > THRESHOLD) {
@@ -242,10 +270,10 @@ function App() {
           else if (currentSection === 'stack') navigateTo('projects');
 
           scrollAccumulator.current = 0;
+          isScrollLocked.current = true; // Lock further navigation until scroll stops
           lastNavigationTime.current = now;
         }
       } else if (isScrollUp && scrolledToTop) {
-        // We are at the top.
         scrollAccumulator.current += e.deltaY;
 
         if (scrollAccumulator.current < -THRESHOLD) {
@@ -253,6 +281,7 @@ function App() {
           else if (currentSection === 'stack') navigateTo('home');
 
           scrollAccumulator.current = 0;
+          isScrollLocked.current = true; // Lock further navigation until scroll stops
           lastNavigationTime.current = now;
         }
       } else {

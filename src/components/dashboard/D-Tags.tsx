@@ -1,27 +1,46 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Tag, Edit2, Trash2, Users, UserPlus } from 'lucide-react';
 import { doc, collection, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
 import anime from 'animejs';
-import MTagForm, { TagData } from './M-TagForm';
-import MContributorForm, { ContributorData } from './M-ContributorForm';
+import { TagData, ContributorData, TagFormData } from '../../types';
+import MTagForm from './M-TagForm';
+import MContributorForm from './M-ContributorForm';
 import { createPortal } from 'react-dom';
 import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
+
+interface RawFirestoreTag {
+    Name?: string;
+    Color?: string;
+    Icon?: string;
+}
+
+interface RawFirestoreContributor {
+    Name?: string;
+    Role?: string;
+    Image?: string;
+    'Social Accounts'?: {
+        Github?: string;
+        Linkedin?: string;
+        Facebook?: string;
+        Instagram?: string;
+        Portfolio?: string;
+    };
+}
 
 const DTags = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isDark, setIsDark] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [activeSection, setActiveSection] = useState<'tags' | 'contributors'>('tags');
-    const [tags, setTags] = useState<any[]>([]);
-    const [contributors, setContributors] = useState<any[]>([]);
+    const [tags, setTags] = useState<TagData[]>([]);
+    const [contributors, setContributors] = useState<ContributorData[]>([]);
     const [tagModalOpen, setTagModalOpen] = useState(false);
     const [contribModalOpen, setContribModalOpen] = useState(false);
-    const [editingTag, setEditingTag] = useState<any>(null);
-    const [editingContributor, setEditingContributor] = useState<any | null>(null);
+    const [editingTag, setEditingTag] = useState<TagFormData | null>(null);
+    const [editingContributor, setEditingContributor] = useState<ContributorData | null>(null);
     const [optionsOpen, setOptionsOpen] = useState(false);
     const [optionsPos, setOptionsPos] = useState({ x: 0, y: 0 });
 
@@ -85,7 +104,7 @@ const DTags = () => {
             (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.data();
-                    const tagsData = Object.entries(data).map(([id, val]: [string, any]) => ({
+                    const tagsData = Object.entries(data).map(([id, val]: [string, RawFirestoreTag]) => ({
                         id,
                         name: val.Name || 'Untitled',
                         color: val.Color || '#3b82f6',
@@ -112,13 +131,13 @@ const DTags = () => {
         const unsubContributorsDoc = onSnapshot(doc(db, 'Tags', 'Contributors'), (snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.data();
-                const contribData = Object.entries(data)
-                    .filter(([, val]) => val && typeof val === 'object' && (val as any).Name)
-                    .map(([id, val]: [string, any]) => ({
+                const contribData: ContributorData[] = Object.entries(data)
+                    .filter(([, val]) => val && typeof val === 'object' && (val as RawFirestoreContributor).Name)
+                    .map(([id, val]: [string, RawFirestoreContributor]) => ({
                         id,
-                        name: val.Name || 'Anonymous',
+                        name: val.Name || 'Untitled',
                         role: val.Role || '',
-                        imagePreview: val.Image || '',
+                        image: val.Image || '',
                         socials: {
                             github: val['Social Accounts']?.Github || '',
                             linkedin: val['Social Accounts']?.Linkedin || '',
@@ -126,19 +145,19 @@ const DTags = () => {
                             instagram: val['Social Accounts']?.Instagram || '',
                             portfolio: val['Social Accounts']?.Portfolio || ''
                         }
-                    }));
+                    } as ContributorData));
                 setContributors(prev => [...prev.filter(c => !contribData.some(d => d.id === c.id)), ...contribData]);
             }
         });
 
         const unsubContributorsCol = onSnapshot(collection(db, 'Tags', 'Contributors', 'Profiles'), (snapshot) => {
-            const contribData = snapshot.docs.map(docSnap => {
-                const val = docSnap.data();
+            const contribData: ContributorData[] = snapshot.docs.map(doc => {
+                const val = doc.data();
                 return {
-                    id: docSnap.id,
+                    id: doc.id,
                     name: val.Name || val.name || 'Anonymous',
                     role: val.Role || val.role || '',
-                    imagePreview: val.Image || val.image || '',
+                    image: val.Image || val.image || '',
                     socials: {
                         github: (val['Social Accounts']?.Github || val.socials?.github || ''),
                         linkedin: (val['Social Accounts']?.Linkedin || val.socials?.linkedin || ''),
@@ -225,11 +244,11 @@ const DTags = () => {
         c.role.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const handleSaveTag = async (data: TagData) => {
+    const handleSaveTag = async (data: TagFormData) => {
         try {
             setIsLoading(true);
             const nextIndex = tags.length > 0
-                ? Math.max(...tags.map(t => parseInt(t.id)).filter(n => !isNaN(n))) + 1
+                ? Math.max(...tags.map(t => parseInt(t.id?.toString() || '0')).filter(n => !isNaN(n))) + 1
                 : 1;
             const id = data.id || nextIndex.toString();
 
@@ -284,17 +303,36 @@ const DTags = () => {
         try {
             setIsLoading(true);
             const nextIndex = contributors.length > 0
-                ? Math.max(...contributors.map(c => parseInt(c.id)).filter(n => !isNaN(n))) + 1
+                ? Math.max(...contributors.map(c => parseInt(c.id?.toString() || '0')).filter(n => !isNaN(n))) + 1
                 : 0;
             const id = data.id || nextIndex.toString();
             let imageUrl = '';
 
+            // Find the existing contributor to check for old image
+            const existingContributor = contributors.find(c => c.id?.toString() === id);
+            const oldImageUrl = typeof existingContributor?.image === 'string' ? existingContributor.image : '';
+
             if (typeof data.image === 'string') {
                 imageUrl = data.image;
             } else if (data.image instanceof File) {
-                const storageRef = ref(storage, `contributors/${id}_${data.image.name}`);
+                const now = new Date();
+                const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+                const safeName = data.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+                const fileName = `${safeName}-${dateStr}-${timeStr}.png`;
+                const storageRef = ref(storage, `src/imgs/Contributors/${fileName}`);
                 await uploadBytes(storageRef, data.image);
                 imageUrl = await getDownloadURL(storageRef);
+
+                // Delete the old image from storage if it exists and is different
+                if (oldImageUrl && oldImageUrl !== imageUrl) {
+                    try {
+                        const oldRef = ref(storage, oldImageUrl);
+                        await deleteObject(oldRef);
+                    } catch (err) {
+                        console.warn('Could not delete old contributor image:', err);
+                    }
+                }
             }
 
             const contribPayload = {
@@ -302,11 +340,11 @@ const DTags = () => {
                 Role: data.role,
                 Image: imageUrl,
                 'Social Accounts': {
-                    Github: data.socials.github || '',
-                    Linkedin: data.socials.linkedin || '',
-                    Facebook: data.socials.facebook || '',
-                    Instagram: data.socials.instagram || '',
-                    Portfolio: data.socials.portfolio || ''
+                    Github: data.socials?.github || '',
+                    Linkedin: data.socials?.linkedin || '',
+                    Facebook: data.socials?.facebook || '',
+                    Instagram: data.socials?.instagram || '',
+                    Portfolio: data.socials?.portfolio || ''
                 }
             };
 
@@ -493,7 +531,7 @@ const DTags = () => {
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 pb-12 overflow-visible">
-                                        {filteredTags.map((tag: any) => (
+                                        {filteredTags.map((tag: TagData) => (
                                             <div
                                                 key={tag.id}
                                                 className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group"
@@ -532,7 +570,7 @@ const DTags = () => {
                                                             <Edit2 size={isSmall ? 14 : 18} />
                                                         </button>
                                                         <button
-                                                            onClick={(e) => { e.stopPropagation(); handleDeleteTag(tag.id); }}
+                                                            onClick={(e) => { e.stopPropagation(); handleDeleteTag(tag.id?.toString() ?? ''); }}
                                                             className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border-none bg-red-500/10 hover:bg-red-500/20 text-red-500 cursor-pointer transition-colors"
                                                         >
                                                             <Trash2 size={isSmall ? 14 : 18} />
@@ -576,8 +614,8 @@ const DTags = () => {
                                                         backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)'
                                                     }}>
                                                         <div className="w-full h-full rounded-xl overflow-hidden flex items-center justify-center">
-                                                            {contributor.imagePreview ? (
-                                                                <img src={contributor.imagePreview} alt={contributor.name} className="w-full h-full object-cover" />
+                                                            {contributor.image ? (
+                                                                <img src={typeof contributor.image === 'string' ? contributor.image : undefined} alt={contributor.name} className="w-full h-full object-cover" />
                                                             ) : (
                                                                 <span className="text-xl sm:text-2xl font-bold bg-gradient-to-br from-purple-500 to-blue-500 bg-clip-text text-transparent">
                                                                     {contributor.name.charAt(0).toUpperCase()}
@@ -593,7 +631,7 @@ const DTags = () => {
                                                             <Edit2 size={isSmall ? 14 : 18} />
                                                         </button>
                                                         <button
-                                                            onClick={(e) => { e.stopPropagation(); handleDeleteContributor(contributor.id!); }}
+                                                            onClick={(e) => { e.stopPropagation(); handleDeleteContributor(contributor.id!.toString()); }}
                                                             className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border-none bg-red-500/10 hover:bg-red-500/20 text-red-500 cursor-pointer transition-colors"
                                                         >
                                                             <Trash2 size={isSmall ? 14 : 18} />
@@ -661,7 +699,7 @@ const DTags = () => {
                 isOpen={confirmConfig.isOpen}
                 title={confirmConfig.title}
                 message={confirmConfig.message}
-                type={confirmConfig.type as any}
+                type={confirmConfig.type}
                 onConfirm={confirmConfig.onConfirm}
                 onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
                 confirmText="Delete"

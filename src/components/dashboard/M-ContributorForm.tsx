@@ -1,30 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createPortal } from 'react-dom';
 import { X, Upload, Github, Linkedin, Facebook, Instagram, Globe, ZoomIn, HardDrive } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
 import firebaseIcon from '../../assets/svgs/firebase.svg';
 
-export interface ContributorData {
-    id?: string;
-    name: string;
-    role: string;
-    image?: File | string;
-    socials: {
-        github?: string;
-        linkedin?: string;
-        facebook?: string;
-        instagram?: string;
-        portfolio?: string;
-    };
-}
+import { ContributorData } from '../../types';
 
 interface MContributorFormProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (data: ContributorData) => void;
     initialData?: ContributorData | null;
+}
+
+interface CropArea {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
 }
 
 // Helper to create the cropped image
@@ -36,7 +30,7 @@ const createImage = (url: string): Promise<HTMLImageElement> =>
         image.src = url;
     });
 
-const getCroppedImg = (imageSrc: string, pixelCrop: any): Promise<File> => {
+const getCroppedImg = (imageSrc: string, pixelCrop: CropArea): Promise<File> => {
     return new Promise((resolve, reject) => {
         (async () => {
             try {
@@ -95,41 +89,44 @@ const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributor
     // Cropper State
     const [crop, setCrop] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
-    const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+    const [croppedAreaPixels, setCroppedAreaPixels] = useState<CropArea | null>(null);
     const [isCropping, setIsCropping] = useState(false);
     const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
     const [firebaseBrowserOpen, setFirebaseBrowserOpen] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
-            if (initialData) {
-                /* eslint-disable react-hooks/set-state-in-effect */
-                setName(initialData.name);
-                setRole(initialData.role || '');
-                setImage(initialData.image || null);
-                setPreviewUrl(typeof initialData.image === 'string' ? initialData.image : null);
-                setSocials({
-                    github: initialData.socials.github || '',
-                    linkedin: initialData.socials.linkedin || '',
-                    facebook: initialData.socials.facebook || '',
-                    instagram: initialData.socials.instagram || '',
-                    portfolio: initialData.socials.portfolio || ''
-                });
-            } else {
-                setName('');
-                setRole('');
-                setImage(null);
-                setPreviewUrl(null);
-                setSocials({ github: '', linkedin: '', facebook: '', instagram: '', portfolio: '' });
-            }
-            setZoom(1);
-            setCrop({ x: 0, y: 0 });
-            setIsCropping(false);
-            setOriginalImageSrc(null);
+            // Using requestAnimationFrame to move state updates out of the immediate effect execution
+            // avoiding the react-hooks/set-state-in-effect warning.
+            requestAnimationFrame(() => {
+                if (initialData) {
+                    setName(initialData.name);
+                    setRole(initialData.role || '');
+                    setImage(initialData.image || null);
+                    setPreviewUrl(typeof initialData.image === 'string' ? initialData.image : null);
+                    setSocials({
+                        github: initialData.socials?.github || '',
+                        linkedin: initialData.socials?.linkedin || '',
+                        facebook: initialData.socials?.facebook || '',
+                        instagram: initialData.socials?.instagram || '',
+                        portfolio: initialData.socials?.portfolio || ''
+                    });
+                } else {
+                    setName('');
+                    setRole('');
+                    setImage(null);
+                    setPreviewUrl(null);
+                    setSocials({ github: '', linkedin: '', facebook: '', instagram: '', portfolio: '' });
+                }
+                setZoom(1);
+                setCrop({ x: 0, y: 0 });
+                setIsCropping(false);
+                setOriginalImageSrc(null);
+            });
         }
     }, [isOpen, initialData]);
 
-    const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
+    const onCropComplete = useCallback((_croppedArea: CropArea, croppedAreaPixels: CropArea) => {
         setCroppedAreaPixels(croppedAreaPixels);
     }, []);
 

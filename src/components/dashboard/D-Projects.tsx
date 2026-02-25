@@ -1,31 +1,65 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, Github } from 'lucide-react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, listAll, deleteObject, getBlob } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
-import MProjectForm, { ProjectData } from './M-ProjectForm';
-import MProjectView, { getTechColor, getStackIcon } from '../M-ProjectView';
-import MContributorView from '../M-ContributorView';
+import MProjectForm from './M-ProjectForm';
+import { ProjectData, ContributorData, ProjectFormData, TagData } from '../../types';
+import MProjectView from '../M-ProjectView';
+import { getTechColor, getStackIcon } from '../../utils/projectUtils';
+import MContributorView, { Contributor } from '../M-ContributorView';
 import Loader from '../reactbits/Loader';
-import MConfirmModal from './M-ConfirmModal';
+import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
+
+interface RawFirestoreTag {
+    Name?: string;
+    Color?: string;
+    Icon?: string;
+}
+
+interface RawFirestoreContributor {
+    Name?: string;
+    Role?: string;
+    Image?: string;
+    "Social Accounts"?: Record<string, string>;
+}
+
+interface ProjectContributorEntry {
+    "Contributor Name"?: string;
+    "Role at Project"?: string;
+}
+
+interface ResolvedTag {
+    id?: string;
+    name: string;
+    color?: string;
+    iconSvg?: string;
+}
+
+interface ResolvedContributor {
+    id?: string;
+    name: string;
+    role: string;
+    image?: string;
+    links?: Record<string, string | undefined>;
+}
 
 
 const DProjects = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [projects, setProjects] = useState<ProjectData[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingProject, setEditingProject] = useState<ProjectData | null>(null);
+    const [editingProject, setEditingProject] = useState<ProjectFormData | null>(null);
     const [isDark, setIsDark] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-    const [activeMenu, setActiveMenu] = useState<string | null>(null);
+    const [activeMenu, setActiveMenu] = useState<string | number | null>(null);
     const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
     const [searchQuery, setSearchQuery] = useState('');
-    const [viewingProject, setViewingProject] = useState<any | null>(null);
-    const [viewingContributor, setViewingContributor] = useState<any | null>(null);
+    const [viewingProject, setViewingProject] = useState<ProjectData | null>(null);
+    const [viewingContributor, setViewingContributor] = useState<ContributorData | null>(null);
 
     // Confirmation Modal State
     const [confirmConfig, setConfirmConfig] = useState<{
@@ -33,7 +67,7 @@ const DProjects = () => {
         title: string;
         message: string;
         onConfirm: () => void;
-        type?: 'danger' | 'warning' | 'info';
+        type?: ConfirmType;
     }>({
         isOpen: false,
         title: '',
@@ -132,8 +166,8 @@ const DProjects = () => {
         setActiveMenu(null);
     };
 
-    const [availableTags, setAvailableTags] = useState<any[]>([]);
-    const [availableContributors, setAvailableContributors] = useState<any[]>([]);
+    const [availableTags, setAvailableTags] = useState<ResolvedTag[]>([]);
+    const [availableContributors, setAvailableContributors] = useState<ResolvedContributor[]>([]);
 
     useEffect(() => {
         // Fetch Tags Metadata
@@ -141,9 +175,9 @@ const DProjects = () => {
             (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    const loaded = Object.entries(data).map(([key, value]: [string, any]) => ({
+                    const loaded: ResolvedTag[] = Object.entries(data).map(([key, value]: [string, RawFirestoreTag]) => ({
                         id: key,
-                        name: value.Name,
+                        name: value.Name || '',
                         color: value.Color,
                         iconSvg: value.Icon
                     }));
@@ -161,9 +195,9 @@ const DProjects = () => {
             (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    const loaded = Object.entries(data).map(([key, value]: [string, any]) => ({
+                    const loaded: ResolvedContributor[] = Object.entries(data).map(([key, value]: [string, RawFirestoreContributor]) => ({
                         id: key,
-                        name: value.Name,
+                        name: value.Name || '',
                         role: value.Role || '',
                         image: value.Image || undefined,
                         links: value['Social Accounts'] || {}
@@ -190,19 +224,19 @@ const DProjects = () => {
                 const data = doc.data();
 
                 // Map Firestore structure back to ProjectData using metadata for enrichment
-                const tags: any[] = [];
+                const tags: TagData[] = [];
                 if (data.Tags) {
-                    Object.values(data.Tags).forEach((tagName: any) => {
+                    (Object.values(data.Tags) as string[]).forEach((tagName) => {
                         // Find full tag data from availableTags
                         const fullTag = availableTags.find(t => t.name === tagName);
                         tags.push(fullTag || { name: tagName });
                     });
                 }
 
-                const contributors: any[] = [];
+                const contributors: ContributorData[] = [];
                 if (data.Contributors) {
-                    Object.values(data.Contributors).forEach((c: any) => {
-                        const name = c["Contributor Name"];
+                    (Object.values(data.Contributors) as ProjectContributorEntry[]).forEach((c) => {
+                        const name = c["Contributor Name"] || '';
                         const projectRole = c["Role at Project"];
 
                         // Find full contributor data from availableContributors for images/links
@@ -222,14 +256,14 @@ const DProjects = () => {
 
                 const statusV = data.Views || {};
                 const rawStack = data.Stack || [];
-                const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack)).map((t: any) => {
-                    const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
-                    const globalTag = availableTags.find((gt: any) => gt.name?.toLowerCase() === name.toLowerCase());
+                const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack)).map((t: string | RawFirestoreTag) => {
+                    const name = typeof t === 'string' ? t : (t.Name || 'Unix');
+                    const globalTag = availableTags.find((gt) => gt.name?.toLowerCase() === name.toLowerCase());
 
                     return {
                         name,
-                        color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : (globalTag?.color || getTechColor(name)),
-                        iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (globalTag?.iconSvg || getStackIcon(name) || '')
+                        color: (typeof t === 'object' && (t.Color)) ? t.Color : (globalTag?.color || getTechColor(name)),
+                        iconSvg: (typeof t === 'object' && (t.Icon)) ? t.Icon : (globalTag?.iconSvg || getStackIcon(name) || '')
                     };
                 }).filter(t => t.name !== 'Unix');
 
@@ -255,16 +289,34 @@ const DProjects = () => {
         return () => unsub();
     }, [availableTags, availableContributors]);
 
-    const handleDeleteProject = (projectId: string) => {
+    const handleDeleteProject = (projectId: string | number) => {
         setConfirmConfig({
             isOpen: true,
             title: 'Delete Project',
-            message: `Are you sure you want to delete "${projectId}"? This action cannot be undone and all associated data will be removed.`,
+            message: 'Are you sure you want to permanently delete this project? This action cannot be undone.',
             type: 'danger',
             onConfirm: async () => {
                 try {
                     setIsLoading(true);
-                    await deleteDoc(doc(db, 'Projects', projectId));
+
+                    // Delete images from Firebase Storage
+                    const folderRef = ref(storage, `src/projects-imgs/${projectId}`);
+                    try {
+                        const listResult = await listAll(folderRef);
+                        for (const item of listResult.items) {
+                            try {
+                                await deleteObject(item);
+                            } catch (err) {
+                                console.warn(`Failed to delete storage item ${item.name}:`, err);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Could not clean up storage folder:', e);
+                    }
+
+                    // Delete Firestore document
+                    await deleteDoc(doc(db, 'Projects', projectId.toString()));
+                    showAlert({ type: 'success', message: 'Project deleted successfully.' });
                 } catch {
                     showAlert({ type: 'error', message: 'Failed to delete project.' });
                 } finally {
@@ -275,7 +327,7 @@ const DProjects = () => {
         setActiveMenu(null);
     };
 
-    const handleSaveProject = async (data: ProjectData) => {
+    const handleSaveProject = async (data: ProjectFormData) => {
         try {
             setIsLoading(true);
             const projectName = data.name;
@@ -292,15 +344,16 @@ const DProjects = () => {
                 try {
                     const listResult = await listAll(oldFolderRef);
 
-
                     for (const item of listResult.items) {
                         try {
-                            const blob = await getBlob(item);
+                            // Use getDownloadURL + fetch instead of getBlob to avoid CORS issues
+                            const downloadUrl = await getDownloadURL(item);
+                            const response = await fetch(downloadUrl);
+                            const blob = await response.blob();
                             const newRef = ref(storage, `src/projects-imgs/${projectName}/${item.name}`);
 
                             await uploadBytes(newRef, blob);
                             const newFileUrl = await getDownloadURL(newRef);
-
 
                             // Update iconUrl if this was the icon
                             if (item.name === 'icon' && typeof data.icon === 'string' && data.icon.includes(item.name)) {
@@ -311,8 +364,6 @@ const DProjects = () => {
                             await deleteObject(item);
                         } catch (itemErr) {
                             console.error(`Failed to move item ${item.name}:`, itemErr);
-                            // If we can't move one, we might want to continue or stop
-                            // For now, let's continue to move as many as possible
                         }
                     }
                 } catch (e) {
@@ -322,8 +373,9 @@ const DProjects = () => {
 
             // 2. Upload Project Icon (if new file provided)
             if (data.icon && typeof data.icon !== 'string') {
+                const iconFile = data.icon as File;
                 const iconRef = ref(storage, `src/projects-imgs/${projectName}/icon`);
-                await uploadBytes(iconRef, data.icon);
+                await uploadBytes(iconRef, iconFile);
                 iconUrl = await getDownloadURL(iconRef);
             }
 
@@ -351,7 +403,7 @@ const DProjects = () => {
                     } else {
                         imageUrls.push(file);
                     }
-                } else {
+                } else if (file instanceof File) {
                     const imgRef = ref(storage, `src/projects-imgs/${projectName}/${file.name}`);
                     await uploadBytes(imgRef, file);
                     const url = await getDownloadURL(imgRef);
@@ -359,15 +411,43 @@ const DProjects = () => {
                 }
             }
 
+            // 3b. Clean up removed images from Storage
+            if (editingProject) {
+                try {
+                    const folderRef = ref(storage, `src/projects-imgs/${projectName}`);
+                    const listResult = await listAll(folderRef);
+
+                    // Collect all final URLs (images + icon) for comparison
+                    const keptUrls = new Set([...imageUrls, iconUrl].filter(Boolean));
+
+                    for (const item of listResult.items) {
+                        // Skip the icon file — it's managed separately
+                        if (item.name === 'icon') continue;
+
+                        try {
+                            const fileUrl = await getDownloadURL(item);
+                            // If this storage file's URL is not in the kept set, delete it
+                            if (!keptUrls.has(fileUrl)) {
+                                await deleteObject(item);
+                            }
+                        } catch {
+                            // File might already be deleted or inaccessible, skip
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not clean up removed images:', e);
+                }
+            }
+
             // 4. Prepare Tags Map
             const tagsMap: Record<string, string> = {};
-            data.tags.forEach((tag, idx) => {
+            data.tags.forEach((tag: TagData, idx: number) => {
                 tagsMap[(idx + 1).toString()] = tag.name;
             });
 
             // 5. Prepare Contributors Map
-            const contributorsMap: Record<string, any> = {};
-            data.contributors.forEach((contrib, idx) => {
+            const contributorsMap: Record<string, { "Contributor Name": string; "Role at Project": string }> = {};
+            data.contributors.forEach((contrib: ContributorData, idx: number) => {
                 contributorsMap[(idx + 1).toString()] = {
                     "Contributor Name": contrib.name,
                     "Role at Project": contrib.role
@@ -637,6 +717,7 @@ const DProjects = () => {
             </div>
 
             <MProjectForm
+                key={isModalOpen ? (editingProject?.id || 'new') : 'none'}
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSaveProject}
@@ -647,7 +728,7 @@ const DProjects = () => {
                 isOpen={confirmConfig.isOpen}
                 title={confirmConfig.title}
                 message={confirmConfig.message}
-                type={confirmConfig.type as any}
+                type={confirmConfig.type}
                 onConfirm={confirmConfig.onConfirm}
                 onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
                 confirmText="Delete Project"
@@ -753,7 +834,7 @@ const DProjects = () => {
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteProject(activeMenu);
+                                if (activeMenu !== null) handleDeleteProject(activeMenu);
                             }}
                             className="w-full text-left flex items-center gap-2 bg-transparent border-none cursor-pointer rounded-lg text-sm p-2.5 transition-colors"
                             style={{
@@ -775,7 +856,7 @@ const DProjects = () => {
                     project={{
                         ...viewingProject,
                         title: viewingProject.name,
-                        images: viewingProject.images.map((img: any) => typeof img === 'string' ? img : URL.createObjectURL(img))
+                        images: viewingProject.images.map((img: string | File) => typeof img === 'string' ? img : URL.createObjectURL(img))
                     }}
                     onClose={() => setViewingProject(null)}
                     onContributorClick={(c) => setViewingContributor(c)}
@@ -785,8 +866,15 @@ const DProjects = () => {
                 <MContributorView
                     contributor={{
                         ...viewingContributor,
-                        links: viewingContributor.socials || viewingContributor.links
-                    }}
+                        image: typeof viewingContributor.image === 'string' ? viewingContributor.image : undefined,
+                        links: viewingContributor.links || (viewingContributor.socials ? {
+                            github: viewingContributor.socials.github,
+                            linkedin: viewingContributor.socials.linkedin,
+                            facebook: viewingContributor.socials.facebook,
+                            instagram: viewingContributor.socials.instagram,
+                            portfolio: viewingContributor.socials.portfolio,
+                        } : {})
+                    } as Contributor}
                     onClose={() => setViewingContributor(null)}
                 />
             )}

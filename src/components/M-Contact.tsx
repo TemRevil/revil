@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,6 +8,28 @@ import { httpsCallable } from 'firebase/functions';
 import { db, storage, functions } from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
+
+interface Meeting {
+  Date: string;
+  Time: string;
+  Name: string;
+  Email: string;
+  Reason?: string;
+  "What For"?: string;
+  dateObj: Date;
+  MeetingLink?: string;
+  GoogleEventId?: string;
+  UserLocalTime?: string;
+  UserTimezone?: number;
+  timestamp?: number;
+}
+
+interface MeetingFunctionResponse {
+  status: string;
+  message?: string;
+  link?: string;
+  id?: string;
+}
 
 const timezones = [
   { label: 'UTC-12:00', value: -12 },
@@ -69,7 +90,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     reason: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [existingMeetings, setExistingMeetings] = useState<any[]>([]);
+  const [existingMeetings, setExistingMeetings] = useState<Meeting[]>([]);
   const [bookingSuccess, setBookingSuccess] = useState<{ date: string, time: string, link: string } | null>(null);
   const [showNameTooltip, setShowNameTooltip] = useState(false);
   const [showEmailTooltip, setShowEmailTooltip] = useState(false);
@@ -134,13 +155,22 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       }
     });
 
-    const unsubscribeMeetings = onSnapshot(doc(db, 'Settings', 'Canary'), (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        const meetingsMap = data.Meetings || {};
-        const meetingsList = Object.values(meetingsMap).map((m: any) => ({
-          ...m,
-          dateObj: new Date(m.Date),
+    const unsubscribeMeetings = onSnapshot(doc(db, 'Settings', 'Canary'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const meetingsMap = (data.Meetings || {}) as Record<string, Partial<Meeting>>;
+        const meetingsList = Object.values(meetingsMap).map((m): Meeting => ({
+          Date: m.Date || '',
+          Time: m.Time || '',
+          Name: m.Name || '',
+          Email: m.Email || '',
+          Reason: m.Reason || m["What For"] || '',
+          dateObj: new Date(m.Date || Date.now()),
+          MeetingLink: m.MeetingLink,
+          GoogleEventId: m.GoogleEventId,
+          UserLocalTime: m.UserLocalTime,
+          UserTimezone: m.UserTimezone,
+          timestamp: m.timestamp
         }));
         setExistingMeetings(meetingsList);
       }
@@ -249,23 +279,47 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     return currentTime + 30 > slotTime;
   }, [hostOffset]);
 
-  // Recommend the next day if today is empty
+  // Automatically find the next available day ONCE on initialization or when switching to meeting tab
+  const hasAutoMoved = useRef(false);
   useEffect(() => {
-    if (selectedDate && selectedDate.toDateString() === new Date().toDateString()) {
-      const hasAvailableSlots = timeSlots.some((hostTime) => {
-        const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
-        const passed = isTimePassed(selectedDate, hostTime);
+    if (!selectedDate || activeTab !== 'meeting' || hasAutoMoved.current) return;
+
+    const checkAvailable = (date: Date) => {
+      return timeSlots.some((hostTime) => {
+        const isBusy = getMeetingsForDate(date).some(m => m.Time === hostTime);
+        const passed = isTimePassed(date, hostTime);
         return !isBusy && !passed;
       });
+    };
 
-      if (!hasAvailableSlots) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        setSelectedDate(tomorrow);
-        setCalendarDate(tomorrow);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (selectedDate < today || !checkAvailable(selectedDate)) {
+      let searchDate = new Date(selectedDate);
+      if (searchDate < today) searchDate = new Date(today);
+
+      let found = false;
+      for (let i = 0; i < 30; i++) {
+        if (checkAvailable(searchDate)) {
+          found = true;
+          break;
+        }
+        searchDate.setDate(searchDate.getDate() + 1);
+      }
+
+      if (found && searchDate.toDateString() !== selectedDate.toDateString()) {
+        setSelectedDate(searchDate);
+        setCalendarDate(searchDate);
       }
     }
-  }, [existingMeetings, hostTimezoneString, selectedDate, timeSlots, getMeetingsForDate, isTimePassed]);
+    hasAutoMoved.current = true;
+  }, [existingMeetings, hostTimezoneString, selectedDate, timeSlots, getMeetingsForDate, isTimePassed, activeTab]);
+
+  // Reset auto-move flag when modal closes (if it was an external state) or handle it inside the component
+  useEffect(() => {
+    return () => { hasAutoMoved.current = false; };
+  }, []);
 
   // --- THIS IS THE FIXED FUNCTION ---
   const handleMeetingSubmit = async (e: React.FormEvent) => {
@@ -311,7 +365,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         endTime: endDateUTC.toISOString()
       });
 
-      const result = response.data as any;
+      const result = response.data as MeetingFunctionResponse;
 
       if (result.status === 'error') {
         throw new Error(result.message);
@@ -353,15 +407,16 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
       await updateDoc(docRef, { [`Meetings.${nextId}`]: payload });
 
-      setBookingSuccess({ date: dateStr, time: selectedTime, link: meetLink });
+      setBookingSuccess({ date: dateStr, time: selectedTime || '', link: meetLink || '' });
       setMeetingData({ name: '', email: '', reason: '' });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Booking Error", error);
       // Clean up error message for UI
-      const msg = error.message?.includes("Invalid attendee email")
+      const err = error as { message?: string };
+      const msg = err.message?.includes("Invalid attendee email")
         ? "Invalid Email Address provided."
-        : (error.message || "Could not book meeting");
+        : (err.message || "Could not book meeting");
       showAlert({ type: 'error', message: msg });
     } finally {
       setIsSubmitting(false);
@@ -661,6 +716,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               const today = new Date();
                               today.setHours(0, 0, 0, 0);
                               const isPast = date < today;
+                              const hasFreeSlots = timeSlots.some((hostTime) => {
+                                const isBusy = getMeetingsForDate(date).some(m => m.Time === hostTime);
+                                const passed = isTimePassed(date, hostTime);
+                                return !isBusy && !passed;
+                              });
+
+                              const isBookable = !isPast && hasFreeSlots;
 
                               return (
                                 <div
@@ -672,7 +734,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                     borderRadius: '14px',
                                     cursor: 'pointer',
                                     position: 'relative',
-                                    opacity: isPast ? 0.5 : 1
+                                    opacity: isBookable ? 1 : 0.4,
                                   }}
                                 >
                                   {isSelected && (
@@ -695,7 +757,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   {/* Meeting Indicators on Calendar */}
                                   {hasMeetings && !isSelected && (
                                     <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginTop: '4px' }}>
-                                      {meetingsForDay.slice(0, 3).map((m: any, idx) => (
+                                      {meetingsForDay.slice(0, 3).map((m: Meeting, idx) => (
                                         <div key={idx} title={`${m.Time} - ${m.Name}`} style={{
                                           width: '4px', height: '4px', borderRadius: '50%',
                                           background: m.Email === 'temrevil@gmail.com' ? '#f59e0b' : '#10b981', // Host meetings orange, others green
@@ -755,7 +817,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                 {/* List of Meetings for that Day */}
                                 <div className="glass-surface" style={{ minHeight: '100px', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}` }}>
                                   {selectedDate && getMeetingsForDate(selectedDate).length > 0 ? (
-                                    getMeetingsForDate(selectedDate).map((m: any, i) => (
+                                    getMeetingsForDate(selectedDate).map((m: Meeting, i) => (
                                       <div key={i} className="flex items-center gap-3 py-1" style={{ borderBottom: i === getMeetingsForDate(selectedDate).length - 1 ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)') }}>
                                         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'rgb(59, 130, 246)', boxShadow: '0 0 8px rgba(59, 130, 246, 0.5)' }} />
                                         <div className="flex-1">
@@ -770,238 +832,246 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               </div>
 
                               {/* Time Slots & Form */}
-                              {selectedDate && selectedDate >= new Date(new Date().setHours(0, 0, 0, 0)) && (
-                                <>
-                                  {/* Timezone Selection (Before Available Slots) */}
-                                  <div ref={tzRef} style={{ position: 'relative', marginBottom: '24px' }}>
-                                    <div style={{ position: 'relative' }}>
-                                      <label
-                                        onMouseEnter={() => setShowTzTooltip(true)}
-                                        onMouseLeave={() => setShowTzTooltip(false)}
-                                        className="label-help flex items-center gap-2 mb-2"
-                                        style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}
-                                      >
-                                        <Globe size={14} className="opacity-70" /> User Timezone <AlertCircle size={14} className="opacity-70" />
-                                      </label>
+                              {selectedDate && (() => {
+                                const isPast = selectedDate < new Date(new Date().setHours(0, 0, 0, 0));
+                                const hasFreeSlots = timeSlots.some((hostTime) => {
+                                  const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
+                                  const passed = isTimePassed(selectedDate, hostTime);
+                                  return !isBusy && !passed;
+                                });
+                                return !isPast && hasFreeSlots;
+                              })() && (
+                                  <>
+                                    {/* Timezone Selection (Before Available Slots) */}
+                                    <div ref={tzRef} style={{ position: 'relative', marginBottom: '24px' }}>
+                                      <div style={{ position: 'relative' }}>
+                                        <label
+                                          onMouseEnter={() => setShowTzTooltip(true)}
+                                          onMouseLeave={() => setShowTzTooltip(false)}
+                                          className="label-help flex items-center gap-2 mb-2"
+                                          style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}
+                                        >
+                                          <Globe size={14} className="opacity-70" /> User Timezone <AlertCircle size={14} className="opacity-70" />
+                                        </label>
 
+                                        <AnimatePresence>
+                                          {showTzTooltip && (
+                                            <motion.div
+                                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                                              exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                              transition={{ duration: 0.2, ease: "easeOut" }}
+                                              className="tooltip-glass"
+                                              style={{
+                                                position: 'absolute',
+                                                bottom: '100%',
+                                                left: '0',
+                                                marginBottom: '10px',
+                                                width: '280px',
+                                                zIndex: 200,
+                                                pointerEvents: 'none'
+                                              }}
+                                            >
+                                              We've detected your timezone automatically, but you can adjust it here. Available slots will update to match your local area's time.
+                                              <div style={{
+                                                position: 'absolute',
+                                                top: '100%',
+                                                left: '12px',
+                                                width: '0',
+                                                height: '0',
+                                                borderLeft: '6px solid transparent',
+                                                borderRight: '6px solid transparent',
+                                                borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
+                                              }} />
+                                            </motion.div>
+                                          )}
+                                        </AnimatePresence>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsTimezoneDropdownOpen(!isTimezoneDropdownOpen)}
+                                        className="dashboard-input flex justify-between items-center text-left"
+                                        style={{ borderRadius: '12px', width: '100%', cursor: 'pointer' }}
+                                      >
+                                        <span style={{ fontSize: '0.85rem' }}>
+                                          {timezones.find(t => t.value === userTimezone)?.label || `UTC${userTimezone >= 0 ? '+' : ''}${userTimezone}:00`}
+                                        </span>
+                                        <ChevronRight size={16} style={{
+                                          transform: isTimezoneDropdownOpen ? 'rotate(90deg)' : 'none',
+                                          transition: 'transform 0.2s',
+                                          opacity: 0.5
+                                        }} />
+                                      </button>
                                       <AnimatePresence>
-                                        {showTzTooltip && (
+                                        {isTimezoneDropdownOpen && (
                                           <motion.div
-                                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                                            exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                            transition={{ duration: 0.2, ease: "easeOut" }}
-                                            className="tooltip-glass"
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -5 }}
+                                            className="dropdown-glass custom-scrollbar"
                                             style={{
-                                              position: 'absolute',
-                                              bottom: '100%',
-                                              left: '0',
-                                              marginBottom: '10px',
-                                              width: '280px',
-                                              zIndex: 200,
-                                              pointerEvents: 'none'
+                                              position: 'absolute', top: '100%', left: 0, right: 0,
+                                              marginTop: '8px', maxHeight: '200px', overflowY: 'auto',
+                                              zIndex: 100, borderRadius: '14px', padding: '8px'
                                             }}
                                           >
-                                            We've detected your timezone automatically, but you can adjust it here. Available slots will update to match your local area's time.
-                                            <div style={{
-                                              position: 'absolute',
-                                              top: '100%',
-                                              left: '12px',
-                                              width: '0',
-                                              height: '0',
-                                              borderLeft: '6px solid transparent',
-                                              borderRight: '6px solid transparent',
-                                              borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
-                                            }} />
+                                            {timezones.map(tz => (
+                                              <button
+                                                key={tz.value}
+                                                type="button"
+                                                onClick={() => { setUserTimezone(tz.value); setIsTimezoneDropdownOpen(false); }}
+                                                style={{
+                                                  width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none',
+                                                  background: userTimezone === tz.value ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                                                  color: userTimezone === tz.value ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
+                                                  fontSize: '0.8rem', fontWeight: userTimezone === tz.value ? 700 : 500,
+                                                  textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s'
+                                                }}
+                                                onMouseEnter={e => { if (userTimezone !== tz.value) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }}
+                                                onMouseLeave={e => { if (userTimezone !== tz.value) e.currentTarget.style.background = 'transparent'; }}
+                                              >
+                                                {tz.label}
+                                              </button>
+                                            ))}
                                           </motion.div>
                                         )}
                                       </AnimatePresence>
                                     </div>
 
-                                    <button
-                                      type="button"
-                                      onClick={() => setIsTimezoneDropdownOpen(!isTimezoneDropdownOpen)}
-                                      className="dashboard-input flex justify-between items-center text-left"
-                                      style={{ borderRadius: '12px', width: '100%', cursor: 'pointer' }}
-                                    >
-                                      <span style={{ fontSize: '0.85rem' }}>
-                                        {timezones.find(t => t.value === userTimezone)?.label || `UTC${userTimezone >= 0 ? '+' : ''}${userTimezone}:00`}
-                                      </span>
-                                      <ChevronRight size={16} style={{
-                                        transform: isTimezoneDropdownOpen ? 'rotate(90deg)' : 'none',
-                                        transition: 'transform 0.2s',
-                                        opacity: 0.5
-                                      }} />
-                                    </button>
-                                    <AnimatePresence>
-                                      {isTimezoneDropdownOpen && (
-                                        <motion.div
-                                          initial={{ opacity: 0, y: -10 }}
-                                          animate={{ opacity: 1, y: 0 }}
-                                          exit={{ opacity: 0, y: -5 }}
-                                          className="dropdown-glass custom-scrollbar"
-                                          style={{
-                                            position: 'absolute', top: '100%', left: 0, right: 0,
-                                            marginTop: '8px', maxHeight: '200px', overflowY: 'auto',
-                                            zIndex: 100, borderRadius: '14px', padding: '8px'
-                                          }}
-                                        >
-                                          {timezones.map(tz => (
-                                            <button
-                                              key={tz.value}
-                                              type="button"
-                                              onClick={() => { setUserTimezone(tz.value); setIsTimezoneDropdownOpen(false); }}
+                                    <div>
+                                      <h3 className="heading-sm mb-3 flex items-center gap-2"><Clock size={16} /> Available Slots</h3>
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                                        {convertedSlots.map((time, idx) => {
+                                          const hostTime = timeSlots[idx];
+                                          const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
+                                          const passed = isTimePassed(selectedDate, hostTime);
+                                          const isDisabled = isBusy || passed;
+                                          return (
+                                            <button key={time} onClick={() => setSelectedTime(time)} disabled={isDisabled}
                                               style={{
-                                                width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none',
-                                                background: userTimezone === tz.value ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                                                color: userTimezone === tz.value ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
-                                                fontSize: '0.8rem', fontWeight: userTimezone === tz.value ? 700 : 500,
-                                                textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s'
+                                                padding: '10px 8px', borderRadius: '12px',
+                                                border: `1px solid ${selectedTime === time ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`,
+                                                background: selectedTime === time ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
+                                                color: selectedTime === time ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
+                                                fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                                                opacity: isDisabled ? 0.3 : 1,
+                                                textDecoration: isDisabled ? 'line-through' : 'none'
                                               }}
-                                              onMouseEnter={e => { if (userTimezone !== tz.value) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }}
-                                              onMouseLeave={e => { if (userTimezone !== tz.value) e.currentTarget.style.background = 'transparent'; }}
-                                            >
-                                              {tz.label}
-                                            </button>
-                                          ))}
-                                        </motion.div>
+                                              onMouseEnter={(e) => {
+                                                if (selectedTime !== time && !isDisabled) {
+                                                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+                                                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+                                                }
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (selectedTime !== time && !isDisabled) {
+                                                  e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
+                                                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
+                                                }
+                                              }}
+                                            >{time}</button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-3">
+                                      <div>
+                                        <div style={{ position: 'relative' }}>
+                                          <label
+                                            onMouseEnter={() => setShowNameTooltip(true)}
+                                            onMouseLeave={() => setShowNameTooltip(false)}
+                                            className="label-help"
+                                          >
+                                            Name * <AlertCircle size={14} className="opacity-60" />
+                                          </label>
+
+                                          <AnimatePresence>
+                                            {showNameTooltip && (
+                                              <motion.div
+                                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                                transition={{ duration: 0.2, ease: "easeOut" }}
+                                                className="tooltip-glass"
+                                              >
+                                                Warning: your name will show in the calendar, if you want to hide it, please use a nickname.
+                                                <div style={{
+                                                  position: 'absolute',
+                                                  top: '100%',
+                                                  left: '12px',
+                                                  width: '0',
+                                                  height: '0',
+                                                  borderLeft: '6px solid transparent',
+                                                  borderRight: '6px solid transparent',
+                                                  borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
+                                                }} />
+                                              </motion.div>
+                                            )}
+                                          </AnimatePresence>
+                                        </div>
+                                        <input className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
+                                      </div>
+                                      <div>
+                                        <div style={{ position: 'relative' }}>
+                                          <label
+                                            onMouseEnter={() => setShowEmailTooltip(true)}
+                                            onMouseLeave={() => setShowEmailTooltip(false)}
+                                            className="label-help"
+                                          >
+                                            Email * <AlertCircle size={14} className="opacity-60" />
+                                          </label>
+
+                                          <AnimatePresence>
+                                            {showEmailTooltip && (
+                                              <motion.div
+                                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                                transition={{ duration: 0.2, ease: "easeOut" }}
+                                                className="tooltip-glass"
+                                              >
+                                                Please use a correct email address. I will send the Google Calendar invitation and meeting link directly to this inbox.
+                                                <div style={{
+                                                  position: 'absolute',
+                                                  top: '100%',
+                                                  left: '12px',
+                                                  width: '0',
+                                                  height: '0',
+                                                  borderLeft: '6px solid transparent',
+                                                  borderRight: '6px solid transparent',
+                                                  borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
+                                                }} />
+                                              </motion.div>
+                                            )}
+                                          </AnimatePresence>
+                                        </div>
+                                        <input type="email" className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
+                                      </div>
+                                      <div>
+                                        <label className="input-label font-semibold">Reason *</label>
+                                        <textarea className="dashboard-textarea" style={{ minHeight: '80px', borderRadius: '12px' }} placeholder="What's this meeting for?" rows={2} value={meetingData.reason} onChange={e => setMeetingData({ ...meetingData, reason: e.target.value })} />
+                                      </div>
+                                    </div>
+                                    <button onClick={handleMeetingSubmit} disabled={isSubmitting || !selectedDate || !selectedTime || !meetingData.email} className="btn-primary btn w-full" style={{ padding: '14px', borderRadius: '14px', opacity: (isSubmitting || !selectedDate || !selectedTime || !meetingData.email) ? 0.5 : 1 }}>
+                                      {isSubmitting ? (
+                                        <>
+                                          <motion.div
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                            style={{ display: 'flex' }}
+                                          >
+                                            <Clock size={16} />
+                                          </motion.div>
+                                          Booking...
+                                        </>
+                                      ) : (
+                                        'Confirm Booking'
                                       )}
-                                    </AnimatePresence>
-                                  </div>
-
-                                  <div>
-                                    <h3 className="heading-sm mb-3 flex items-center gap-2"><Clock size={16} /> Available Slots</h3>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px' }}>
-                                      {convertedSlots.map((time, idx) => {
-                                        const hostTime = timeSlots[idx];
-                                        const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
-                                        const passed = isTimePassed(selectedDate, hostTime);
-                                        const isDisabled = isBusy || passed;
-                                        return (
-                                          <button key={time} onClick={() => setSelectedTime(time)} disabled={isDisabled}
-                                            style={{
-                                              padding: '10px 8px', borderRadius: '12px',
-                                              border: `1px solid ${selectedTime === time ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`,
-                                              background: selectedTime === time ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-                                              color: selectedTime === time ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
-                                              fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                                              opacity: isDisabled ? 0.3 : 1,
-                                              textDecoration: isDisabled ? 'line-through' : 'none'
-                                            }}
-                                            onMouseEnter={(e) => {
-                                              if (selectedTime !== time && !isDisabled) {
-                                                e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
-                                                e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-                                              }
-                                            }}
-                                            onMouseLeave={(e) => {
-                                              if (selectedTime !== time && !isDisabled) {
-                                                e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-                                                e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
-                                              }
-                                            }}
-                                          >{time}</button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex flex-col gap-3">
-                                    <div>
-                                      <div style={{ position: 'relative' }}>
-                                        <label
-                                          onMouseEnter={() => setShowNameTooltip(true)}
-                                          onMouseLeave={() => setShowNameTooltip(false)}
-                                          className="label-help"
-                                        >
-                                          Name * <AlertCircle size={14} className="opacity-60" />
-                                        </label>
-
-                                        <AnimatePresence>
-                                          {showNameTooltip && (
-                                            <motion.div
-                                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                                              exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                              transition={{ duration: 0.2, ease: "easeOut" }}
-                                              className="tooltip-glass"
-                                            >
-                                              Warning: your name will show in the calendar, if you want to hide it, please use a nickname.
-                                              <div style={{
-                                                position: 'absolute',
-                                                top: '100%',
-                                                left: '12px',
-                                                width: '0',
-                                                height: '0',
-                                                borderLeft: '6px solid transparent',
-                                                borderRight: '6px solid transparent',
-                                                borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
-                                              }} />
-                                            </motion.div>
-                                          )}
-                                        </AnimatePresence>
-                                      </div>
-                                      <input className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
-                                    </div>
-                                    <div>
-                                      <div style={{ position: 'relative' }}>
-                                        <label
-                                          onMouseEnter={() => setShowEmailTooltip(true)}
-                                          onMouseLeave={() => setShowEmailTooltip(false)}
-                                          className="label-help"
-                                        >
-                                          Email * <AlertCircle size={14} className="opacity-60" />
-                                        </label>
-
-                                        <AnimatePresence>
-                                          {showEmailTooltip && (
-                                            <motion.div
-                                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                                              exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                              transition={{ duration: 0.2, ease: "easeOut" }}
-                                              className="tooltip-glass"
-                                            >
-                                              Please use a correct email address. I will send the Google Calendar invitation and meeting link directly to this inbox.
-                                              <div style={{
-                                                position: 'absolute',
-                                                top: '100%',
-                                                left: '12px',
-                                                width: '0',
-                                                height: '0',
-                                                borderLeft: '6px solid transparent',
-                                                borderRight: '6px solid transparent',
-                                                borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
-                                              }} />
-                                            </motion.div>
-                                          )}
-                                        </AnimatePresence>
-                                      </div>
-                                      <input type="email" className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
-                                    </div>
-                                    <div>
-                                      <label className="input-label font-semibold">Reason *</label>
-                                      <textarea className="dashboard-textarea" style={{ minHeight: '80px', borderRadius: '12px' }} placeholder="What's this meeting for?" rows={2} value={meetingData.reason} onChange={e => setMeetingData({ ...meetingData, reason: e.target.value })} />
-                                    </div>
-                                  </div>
-                                  <button onClick={handleMeetingSubmit} disabled={isSubmitting || !selectedDate || !selectedTime || !meetingData.email} className="btn-primary btn w-full" style={{ padding: '14px', borderRadius: '14px', opacity: (isSubmitting || !selectedDate || !selectedTime || !meetingData.email) ? 0.5 : 1 }}>
-                                    {isSubmitting ? (
-                                      <>
-                                        <motion.div
-                                          animate={{ rotate: 360 }}
-                                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                          style={{ display: 'flex' }}
-                                        >
-                                          <Clock size={16} />
-                                        </motion.div>
-                                        Booking...
-                                      </>
-                                    ) : (
-                                      'Confirm Booking'
-                                    )}
-                                  </button>
-                                </>
-                              )}
+                                    </button>
+                                  </>
+                                )}
                             </>
                           )}
                         </motion.div>

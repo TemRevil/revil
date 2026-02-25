@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import anime from 'animejs';
@@ -6,8 +5,47 @@ import { X, Search } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 
-import MProjectView, { getStackIcon, getTechColor, Project, isVideoFile } from './M-ProjectView';
+import MProjectView from './M-ProjectView';
 import MContributorView, { Contributor } from './M-ContributorView';
+import { ProjectData as Project, TagData as Tag, ContributorData } from '../types';
+import { getStackIcon, getTechColor, isVideoFile } from '../utils/projectUtils';
+
+interface RawContributorData {
+    Name?: string;
+    Role?: string;
+    Image?: string;
+    "Social Accounts"?: Record<string, string>;
+}
+
+interface RawTagData {
+    Name?: string;
+    Color?: string;
+    Icon?: string;
+}
+
+interface ProjectContributorData {
+    "Contributor Name"?: string;
+    "Role at Project"?: string;
+}
+
+interface FirestoreProject {
+    id: string;
+    Title?: string;
+    Description?: string;
+    "Project Images"?: string[];
+    Stack?: (string | RawTagData)[] | Record<string, string | RawTagData>;
+    Tags?: Record<string, string | RawTagData>;
+    Contributors?: Record<string, ProjectContributorData>;
+    "Repository Link"?: string;
+    "Live Link"?: string;
+    "Download Link"?: string;
+    Views?: {
+        Project?: number;
+        Github?: number;
+        Live?: number;
+        Download?: number;
+    };
+}
 
 const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -71,9 +109,6 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
             interval = setInterval(() => {
                 setCurrentImageIndex((prev) => (prev + 1) % project.images.length);
             }, 2000);
-        } else {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setCurrentImageIndex(0);
         }
         return () => clearInterval(interval);
     }, [isHovered, project.images.length]);
@@ -101,7 +136,10 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
     return (
         <motion.div
             onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            onMouseLeave={() => {
+                setIsHovered(false);
+                setCurrentImageIndex(0);
+            }}
             onClick={onClick}
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: isHovered ? -8 : 0 }}
@@ -162,7 +200,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                 transition={{ duration: 0.3 }}
                                 className="flex gap-1.5 flex-wrap"
                             >
-                                {(project.tags || []).slice(0, 2).map((tag: any, i) => (
+                                {(project.tags || []).slice(0, 2).map((tag: Tag, i) => (
                                     <div
                                         key={i}
                                         className="px-2.5 py-1 rounded-full bg-white/40 backdrop-blur-md text-xs font-semibold text-gray-800 shadow-sm flex items-center gap-1"
@@ -193,7 +231,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                             className="w-8 h-8 rounded-full border-2 border-white -ml-2 overflow-hidden bg-gray-100 shadow-sm"
                                             title={c.name}
                                         >
-                                            {c.image ? (
+                                            {c.image && typeof c.image === 'string' ? (
                                                 <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-500 text-[10px] font-bold">
@@ -237,10 +275,8 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
 const Projects = () => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const handwritingRef = useRef<HTMLDivElement>(null);
-    const [availableContributors, setAvailableContributors] = useState<any[]>([]);
-    const [availableTags, setAvailableTags] = useState<any[]>([]);
-    const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-    const [showProjectModal, setShowProjectModal] = useState(false);
+    const [availableContributors, setAvailableContributors] = useState<Contributor[]>([]);
+    const [availableTags, setAvailableTags] = useState<Tag[]>([]);
     const [selectedContributor, setSelectedContributor] = useState<Contributor | null>(null);
     const [showContributorModal, setShowContributorModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -260,11 +296,12 @@ const Projects = () => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 const loaded = Object.entries(data)
-                    .filter(([, val]) => val && typeof val === 'object' && (val as any).Name)
-                    .map(([id, val]: [string, any]) => ({
+                    .filter(([, val]) => val && typeof val === 'object' && (val as RawContributorData).Name)
+                    .map(([id, val]: [string, RawContributorData]): Contributor => ({
                         id,
                         name: val.Name || '',
                         role: val.Role || '',
+                        jobTitle: val.Role || '',
                         image: val.Image || '',
                         links: val["Social Accounts"] || {}
                     }));
@@ -282,9 +319,10 @@ const Projects = () => {
                     id: d.id,
                     name: val.Name || val.name || '',
                     role: val.Role || val.role || '',
+                    jobTitle: val.Role || val.role || '',
                     image: val.Image || val.image || '',
                     links: val["Social Accounts"] || val.links || val.socials || {}
-                };
+                } as Contributor;
             });
             setAvailableContributors(prev => {
                 const filtered = prev.filter(p => !loaded.some(l => l.id === p.id));
@@ -296,7 +334,7 @@ const Projects = () => {
         const unsubTags = onSnapshot(doc(db, 'Tags', 'Tags'), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                const loaded = Object.entries(data).map(([id, val]: [string, any]) => ({
+                const loaded = Object.entries(data).map(([id, val]: [string, RawTagData]): Tag => ({
                     id,
                     name: val.Name || 'Untitled',
                     color: val.Color || '#60a5fa',
@@ -313,7 +351,7 @@ const Projects = () => {
         };
     }, []);
 
-    const [rawProjects, setRawProjects] = useState<any[]>([]);
+    const [rawProjects, setRawProjects] = useState<FirestoreProject[]>([]);
 
     useEffect(() => {
         const unsub = onSnapshot(collection(db, 'Projects'), (snapshot) => {
@@ -327,7 +365,7 @@ const Projects = () => {
         return rawProjects.map(data => {
             const v = data.Views || {};
 
-            const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: any) => {
+            const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: ProjectContributorData): Contributor => {
                 const name = c["Contributor Name"] || '';
                 const projectRole = c["Role at Project"];
 
@@ -343,17 +381,17 @@ const Projects = () => {
                     jobTitle: fullContrib ? (fullContrib.role || fullContrib.jobTitle || 'Contributor') : 'Contributor',
                     image: fullContrib?.image || '',
                     links: fullContrib?.links || {}
-                };
+                } as Contributor;
             }) : [];
 
-            const resolveTag = (t: any) => {
-                const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
+            const resolveTag = (t: string | RawTagData) => {
+                const name = typeof t === 'string' ? t : (t.Name || 'Unix');
                 const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
 
                 return {
                     name,
-                    color: (typeof t === 'object' && (t.color || t.Color)) ? (t.color || t.Color) : (globalTag?.color || getTechColor(name)),
-                    iconSvg: (typeof t === 'object' && (t.iconSvg || t.Icon)) ? (t.iconSvg || t.Icon) : (globalTag?.iconSvg || getStackIcon(name) || '')
+                    color: (typeof t === 'object' && t.Color) ? t.Color : (globalTag?.color || getTechColor(name)),
+                    iconSvg: (typeof t === 'object' && t.Icon) ? t.Icon : (globalTag?.iconSvg || getStackIcon(name) || '')
                 };
             };
 
@@ -373,33 +411,25 @@ const Projects = () => {
                 description: data.Description || '',
                 fullDescription: data.Description || '',
                 images: data["Project Images"] || [],
-                stack: normalizedStack.map((t: any) => t.name),
+                stack: normalizedStack.map((t: Tag) => t.name),
                 tags: displayTags,
-                repoLink: data["Repository Link"],
-                liveLink: data["Live Link"],
+                repoLink: data["Repository Link"] || '',
+                liveLink: data["Live Link"] || '',
                 downloadLink: data["Download Link"] || '',
                 views: Number(v.Project || 0) || 0,
                 githubViews: Number(v.Github || 0) || 0,
                 liveViews: Number(v.Live || 0) || 0,
                 downloadViews: Number(v.Download || 0) || 0,
                 contributors: projectContributors
-            } as Project;
+            };
         });
     }, [rawProjects, availableContributors, availableTags]);
 
-    // Keep selectedProject in sync with data changes without causing loops
-    useEffect(() => {
-        if (selectedProject) {
-            const updated = projectsData.find(p => p.id === selectedProject.id);
-            if (updated && updated !== selectedProject) {
-                // Sync selectedProject when underlying data changes. This may
-                // trigger a re-render but is guarded by identity check. Disable
-                // the rule because this synchronization is intentional.
-                // eslint-disable-next-line react-hooks/set-state-in-effect
-                setSelectedProject(updated);
-            }
-        }
-    }, [projectsData, selectedProject]);
+    const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+    const selectedProject = useMemo(() =>
+        projectsData.find(p => p.id === selectedProjectId) || null,
+        [projectsData, selectedProjectId]
+    );
 
     const getLevenshteinDistance = (a: string, b: string) => {
         if (a.length === 0) return b.length;
@@ -494,7 +524,7 @@ const Projects = () => {
     }, []);
 
     useEffect(() => {
-        if (showProjectModal || showContributorModal) {
+        if (selectedProjectId || showContributorModal) {
             const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
             document.body.style.overflow = 'hidden';
             document.body.style.paddingRight = `${scrollbarWidth}px`;
@@ -506,7 +536,7 @@ const Projects = () => {
             document.body.style.overflow = 'unset';
             document.body.style.paddingRight = '0px';
         };
-    }, [showProjectModal, showContributorModal]);
+    }, [selectedProjectId, showContributorModal]);
 
     return (
         <div className="min-h-screen bg-primary transition-colors duration-300 pt-32 pb-20">
@@ -616,28 +646,22 @@ const Projects = () => {
                             key={project.id}
                             project={project}
                             index={index}
-                            onClick={() => {
-                                window.dispatchEvent(new CustomEvent('revil:project_open', {
-                                    detail: { id: project.id, title: project.title }
-                                }));
-                                setSelectedProject(project);
-                                setShowProjectModal(true);
-                            }}
+                            onClick={() => setSelectedProjectId(project.id)}
                         />
                     ))}
                 </div>
 
                 {/* Modals */}
                 <AnimatePresence>
-                    {showProjectModal && selectedProject && (
+                    {selectedProject && (
                         <MProjectView
                             project={selectedProject}
                             onClose={() => {
                                 window.dispatchEvent(new CustomEvent('revil:project_close'));
-                                setShowProjectModal(false);
+                                setSelectedProjectId(null);
                             }}
-                            onContributorClick={(contributor: Contributor) => {
-                                setSelectedContributor(contributor);
+                            onContributorClick={(contributor: ContributorData) => {
+                                setSelectedContributor(contributor as Contributor);
                                 setShowContributorModal(true);
                             }}
                         />
