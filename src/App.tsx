@@ -215,39 +215,29 @@ function App() {
 
   // --- Wheel/Scroll Logic (Desktop) ---
   const scrollAccumulator = useRef(0);
-  const scrollLockTimeout = useRef<NodeJS.Timeout | null>(null);
-  const accumulatorResetTimeout = useRef<NodeJS.Timeout | null>(null);
-  const canNavigate = useRef(true);
+  const lastWheelTime = useRef(0);
+  const navigationCooldownUntil = useRef(0);
 
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      // If we're locked out from navigation (because we just navigated),
-      // ANY incoming wheel event from lingering momentum pushes the unlock timer back.
-      if (!canNavigate.current) {
-        if (scrollLockTimeout.current) clearTimeout(scrollLockTimeout.current);
-        scrollLockTimeout.current = setTimeout(() => {
-          canNavigate.current = true;
-          scrollAccumulator.current = 0;
-        }, 150); // Require absolute stillness for 150ms to unlock
-        return;
-      }
+      const now = Date.now();
+
+      // HARD LOCK: After navigating, ignore ALL wheel events for 1.5s.
+      // No exceptions. No debounce. No acceleration detection.
+      // This is the only reliable way to beat trackpad momentum.
+      if (now < navigationCooldownUntil.current) return;
 
       if (isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') return;
-      if (isTransitioning) {
-        // Even if transitioning, reset the lock timer so we don't unlock mid-momentum
-        if (scrollLockTimeout.current) clearTimeout(scrollLockTimeout.current);
-        scrollLockTimeout.current = setTimeout(() => { canNavigate.current = true; scrollAccumulator.current = 0; }, 150);
-        return;
-      }
+      if (isTransitioning) return;
 
       const container = getScrollContainer(currentSection);
       if (!container) return;
 
-      // Reset the accumulator if the user pauses scrolling mid-swipe bounds
-      if (accumulatorResetTimeout.current) clearTimeout(accumulatorResetTimeout.current);
-      accumulatorResetTimeout.current = setTimeout(() => {
+      // Reset accumulator if user paused scrolling for 200ms (new gesture)
+      if (now - lastWheelTime.current > 200) {
         scrollAccumulator.current = 0;
-      }, 100);
+      }
+      lastWheelTime.current = now;
 
       const isScrollDown = e.deltaY > 0;
       const isScrollUp = e.deltaY < 0;
@@ -256,17 +246,14 @@ function App() {
       const scrolledToBottom = Math.ceil(container.clientHeight + container.scrollTop) >= container.scrollHeight - 5;
       const scrolledToTop = container.scrollTop <= 5;
 
-      // HIGH SENSITIVITY:
-      // A typical trackpad swipe shoots numbers extremely quickly.
       const THRESHOLD = 50;
 
       if (isScrollDown && scrolledToBottom) {
         scrollAccumulator.current += e.deltaY;
 
         if (scrollAccumulator.current > THRESHOLD) {
-          canNavigate.current = false;
-          if (scrollLockTimeout.current) clearTimeout(scrollLockTimeout.current);
-          scrollLockTimeout.current = setTimeout(() => { canNavigate.current = true; scrollAccumulator.current = 0; }, 150);
+          scrollAccumulator.current = 0;
+          navigationCooldownUntil.current = now + 1500; // Lock for 1.5s
 
           if (currentSection === 'home' || currentSection === 'view_link') navigateTo('stack');
           else if (currentSection === 'stack') navigateTo('projects');
@@ -275,15 +262,13 @@ function App() {
         scrollAccumulator.current += e.deltaY;
 
         if (scrollAccumulator.current < -THRESHOLD) {
-          canNavigate.current = false;
-          if (scrollLockTimeout.current) clearTimeout(scrollLockTimeout.current);
-          scrollLockTimeout.current = setTimeout(() => { canNavigate.current = true; scrollAccumulator.current = 0; }, 150);
+          scrollAccumulator.current = 0;
+          navigationCooldownUntil.current = now + 1500; // Lock for 1.5s
 
           if (currentSection === 'projects') navigateTo('stack');
           else if (currentSection === 'stack') navigateTo('home');
         }
       } else {
-        // We are in the middle of the content, reset navigation pressure
         scrollAccumulator.current = 0;
       }
     };
