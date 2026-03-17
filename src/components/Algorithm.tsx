@@ -79,6 +79,33 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         prevContactOpen.current = isContactOpen;
     }, [isContactOpen]);
 
+    // 1.5 Helper to increment specific daily stats in Firestore
+    const incrementDailyStat = useCallback(async (field: 'projectViews' | 'socialClicks') => {
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const dailyRef = doc(db, 'Settings', 'Views', 'Analysis', 'Daily');
+            const mainRef = doc(db, 'Settings', 'Views', 'Analysis', 'Main');
+
+            // Map the field to the corresponding Main document field
+            const mainField = field === 'projectViews' ? 'Total Project Views' : 'Total Social Clicks';
+
+            // Update Daily
+            await setDoc(dailyRef, {
+                [today]: {
+                    [field]: increment(1)
+                }
+            }, { merge: true });
+
+            // Update Main
+            await setDoc(mainRef, {
+                [mainField]: increment(1)
+            }, { merge: true });
+
+        } catch (error) {
+            console.error(`Error incrementing daily ${field}:`, error);
+        }
+    }, []);
+
     // 2. Listen for Project Events & Social Events
     useEffect(() => {
         const handleProjectOpen = (e: CustomEvent) => {
@@ -90,6 +117,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 metrics.current.projectStats[id] = { views: 0, duration: 0 };
             }
             metrics.current.projectStats[id].views += 1;
+            incrementDailyStat('projectViews');
         };
 
         const handleProjectClose = () => {
@@ -102,6 +130,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 metrics.current.socialStats[name] = { views: 0, duration: 0 };
             }
             metrics.current.socialStats[name].views += 1;
+            incrementDailyStat('socialClicks');
         };
 
         const handleSocialReturn = (e: CustomEvent) => {
@@ -144,11 +173,11 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 // Get Main analytics
                 const mainSnap = await getDoc(mainRef);
                 const mainData = mainSnap.exists() ? mainSnap.data() : {};
-                
+
                 // Get Daily analytics
                 const dailySnap = await getDoc(dailyRef);
                 const dailyData = dailySnap.exists() ? dailySnap.data() : {};
-                
+
                 const todayData = dailyData[today] || { total: 0, unique: 0 };
 
                 // Update counters for Main
@@ -166,14 +195,19 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 await setDoc(mainRef, {
                     "Total Reach": currentTotal + 1,
                     "Today's Viewers": newTodayTotal,
-                    "Reach (Per Device)": newUniqueToday
+                    "Reach (Per Device)": newUniqueToday,
+                    "Total Project Views": mainData["Total Project Views"] || 0,
+                    "Total Social Clicks": mainData["Total Social Clicks"] || 0
                 }, { merge: true });
 
                 // Update Daily map in Daily document
                 await setDoc(dailyRef, {
                     [today]: {
                         total: newTodayTotal,
-                        unique: newUniqueToday
+                        unique: newUniqueToday,
+                        // Initialize these if it's the first visit of the day
+                        projectViews: todayData.projectViews || 0,
+                        socialClicks: todayData.socialClicks || 0
                     }
                 }, { merge: true });
             } catch (error) {

@@ -170,10 +170,12 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 if (data && data['Social Links']) {
-                    const links = Object.entries(data['Social Links']).map(([name, url]) => ({
-                        name,
-                        url: url as string
-                    }));
+                    const links = Object.entries(data['Social Links'])
+                        .filter(([name]) => !name.toLowerCase().includes('instagram'))
+                        .map(([name, url]) => ({
+                            name,
+                            url: url as string
+                        }));
                     setSocialLinks(links);
                 }
             }
@@ -226,21 +228,23 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                     style={{ borderRadius: '32px' }}
                 >
                     {/* Premium Top Bar */}
-                    <div className="flex items-center justify-between px-8 py-5 border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/5">
-                        <div className="flex items-center gap-4">
-                            <motion.div layoutId="cv-icon" className="flex">
-                                <FileText size={18} className="text-secondary" />
+                    <div className="flex items-center justify-between px-6 md:px-8 py-6 relative z-10 shrink-0">
+                        {/* Elegant fade */}
+                        <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />
+
+                        <div className="flex items-center gap-3.5 px-5 py-2.5 bg-white/40 dark:bg-black/40 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-2xl shadow-sm">
+                            <motion.div layoutId="cv-icon" className="flex text-blue-500">
+                                <FileText size={16} strokeWidth={2.5} />
                             </motion.div>
-                            <span className="text-[10px] font-black text-sec uppercase tracking-[0.3em] font-sans">Fast Report</span>
+                            <span className="text-[11px] font-black text-primary uppercase tracking-[0.25em] font-sans mt-0.5">Fast Report</span>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <button
-                                onClick={onClose}
-                                className="p-2.5 hover:bg-red-500/10 dark:hover:bg-red-500/20 hover:text-red-500 rounded-xl transition-all text-sec"
-                            >
-                                <X size={20} />
-                            </button>
-                        </div>
+
+                        <button
+                            onClick={onClose}
+                            className="p-3 bg-white/40 dark:bg-black/40 backdrop-blur-xl border border-black/5 dark:border-white/10 hover:bg-red-500/10 dark:hover:bg-red-500/10 hover:border-red-500/20 dark:hover:border-red-500/30 hover:text-red-500 rounded-2xl transition-all text-sec shadow-sm group"
+                        >
+                            <X size={18} strokeWidth={2.5} className="group-hover:rotate-90 transition-transform duration-300" />
+                        </button>
                     </div>
 
                     {/* CV Content */}
@@ -248,8 +252,8 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                         <div className="max-w-3xl mx-auto space-y-14">
 
                             {/* Header Section */}
-                            <header className="space-y-6">
-                                <div className="space-y-2">
+                            <header className="space-y-5">
+                                <div className="space-y-3">
                                     <motion.h1
                                         initial={{ opacity: 0, x: -20 }}
                                         animate={{ opacity: 1, x: 0 }}
@@ -257,36 +261,36 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     >
                                         Mohammed <span className="text-blue-500">Ahmed</span>
                                     </motion.h1>
-                                    <p className="text-blue-500/80 dark:text-blue-400/80 font-sans font-bold tracking-[0.2em] text-xs uppercase">Software Architect & Frontend Expert</p>
+                                    <p className="text-blue-500/80 dark:text-blue-400/80 font-sans font-bold tracking-[0.2em] text-lg md:text-sm uppercase">Frontend Expert & AI Expert</p>
                                 </div>
 
-                                <div className="flex flex-wrap gap-x-8 gap-y-4 text-sm text-sec font-sans border-t border-black/5 dark:border-white/5 pt-6">
-                                    <a href="mailto:temrevil@gmail.com" className="flex items-center gap-2 hover:text-primary transition-colors">
-                                        <Mail size={14} className="text-blue-500" /> temrevil@gmail.com
+                                <div className="flex flex-wrap gap-x-8 gap-y-3 text-base text-sec font-sans">
+                                    <a href="mailto:temrevil@gmail.com" className="flex items-center gap-2.5 hover:text-primary transition-colors">
+                                        <Mail size={16} className="text-blue-500" /> temrevil@gmail.com
                                     </a>
-                                    <span className="flex items-center gap-2">
-                                        <Phone size={14} className="text-blue-500" /> +20 100 130 8280
+                                    <span className="flex items-center gap-2.5">
+                                        <Phone size={16} className="text-blue-500" /> +20 100 130 8280
                                     </span>
-                                    <span className="flex items-center gap-2">
-                                        <MapPin size={14} className="text-blue-500" /> Egypt, MA
+                                    <span className="flex items-center gap-2.5">
+                                        <MapPin size={16} className="text-blue-500" /> Egypt, MA
                                     </span>
                                 </div>
                             </header>
 
-                            <div className="grid md:grid-cols-[1fr_250px] gap-16">
-                                <div className="space-y-16">
+                            <div className="grid md:grid-cols-[1fr_250px] gap-16 pt-12 md:pt-8">
+                                <div className="space-y-20">
                                     {/* Summary Section */}
-                                    <section className="space-y-4">
-                                        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Overview</h2>
-                                        <p className="text-lg leading-relaxed text-sec font-medium">
+                                    <section className="space-y-6">
+                                        <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Overview</h2>
+                                        <p className="text-lg leading-relaxed text-sec font-medium block pb-4">
                                             Frontend Developer with 1+ year building React applications. Specialized in modern JavaScript frameworks, <span className="text-primary">Firebase integration</span>, and <span className="text-primary">AI-powered solutions</span>. Seeking remote frontend opportunities to contribute technical skills while completing university studies.
                                         </p>
                                     </section>
 
                                     {/* Projects Section (Dynamic) */}
-                                    <section className="space-y-8">
-                                        <div className="flex items-center justify-between border-b border-black/5 dark:border-white/5 pb-4">
-                                            <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Projects</h2>
+                                    <section className="space-y-10">
+                                        <div className="flex items-center justify-between border-b border-black/5 dark:border-white/5 pb-6">
+                                            <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Projects</h2>
                                         </div>
                                         <div className="space-y-10">
                                             {projects.length > 0 ? projects.map((project) => (
@@ -313,9 +317,9 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     </section>
 
                                     {/* Education Section */}
-                                    <section className="space-y-8">
-                                        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Academic Background</h2>
-                                        <div className="space-y-10">
+                                    <section className="space-y-10 pt-6">
+                                        <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Academic Background</h2>
+                                        <div className="space-y-10 pt-2">
                                             <div className="space-y-4">
                                                 <div className="flex justify-between items-start">
                                                     <h3 className="text-xl font-bold text-primary">Systems Information & Comp. Eng.</h3>
@@ -334,11 +338,11 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     </section>
                                 </div>
 
-                                <aside className="space-y-16">
+                                <aside className="space-y-20">
                                     {/* Skills Section */}
-                                    <section className="space-y-6">
-                                        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Toolbox</h2>
-                                        <div className="flex flex-wrap gap-2">
+                                    <section className="space-y-8">
+                                        <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Toolbox</h2>
+                                        <div className="flex flex-wrap gap-2 pt-2">
                                             {availableStack.length > 0 ? availableStack.map((skill) => (
                                                 <div key={skill.id} className="px-3 py-1.5 bg-black/[0.03] dark:bg-white/[0.05] border border-black/5 dark:border-white/5 rounded-lg">
                                                     <span className="text-[11px] font-bold text-sec">{skill.name}</span>
@@ -354,9 +358,9 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     </section>
 
                                     {/* Achievements */}
-                                    <section className="space-y-6">
-                                        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Impact</h2>
-                                        <div className="space-y-6 text-xs leading-relaxed text-sec">
+                                    <section className="space-y-8">
+                                        <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Impact</h2>
+                                        <div className="space-y-6 text-xs leading-relaxed text-sec pt-2">
                                             <p>Built <span className="text-primary font-bold">3 major apps</span> in 1st year.</p>
                                             <p>Native <span className="text-primary font-bold">AI integration</span> specialist.</p>
                                             <p>Cross-platform <span className="text-primary font-bold">Electron</span> expert.</p>
@@ -364,17 +368,17 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     </section>
 
                                     {/* Presence */}
-                                    <section className="space-y-6">
-                                        <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Connect</h2>
-                                        <div className="flex flex-col gap-3">
-                                            {socialLinks.map((link) => (
+                                    <section className="space-y-8">
+                                        <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Connect</h2>
+                                        <div className="flex flex-col gap-3 pt-2">
+                                            {socialLinks.filter(link => !link.name.toLowerCase().includes('instagram')).map((link) => (
                                                 <a
                                                     key={link.name}
                                                     href={link.url}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     onClick={() => trackClick(link.name)}
-                                                    className="flex items-center gap-3 text-xs font-bold text-sec hover:text-blue-500 transition-all group"
+                                                    className="flex items-center gap-3 text-xs md:text-sm font-bold text-sec hover:text-blue-500 transition-all group"
                                                 >
                                                     <span className="p-2 bg-black/5 dark:bg-white/5 rounded-lg group-hover:bg-blue-500/10 dark:group-hover:bg-blue-500/20 transition-colors">
                                                         {getSocialIcon(link.name)}

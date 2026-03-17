@@ -398,6 +398,67 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
     );
 });
 
+const shimmerKeyframes = `
+@keyframes shimmer-fast {
+    0% { transform: translateX(-150%) skewX(-20deg); }
+    100% { transform: translateX(150%) skewX(-20deg); }
+}
+`;
+
+const ProjectMediaImage = ({ src }: { src: string }) => {
+    const [isImageLoaded, setIsImageLoaded] = useState(false);
+    return (
+        <div style={{ position: 'absolute', inset: 0 }}>
+            <style>{shimmerKeyframes}</style>
+            {/* Skeleton Loader Container */}
+            <div 
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 1,
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    opacity: isImageLoaded ? 0 : 1,
+                    pointerEvents: 'none',
+                    transition: 'opacity 1s ease-out',
+                    overflow: 'hidden'
+                }}
+            >
+                {/* Moving Light effect - stopped when loaded */}
+                {!isImageLoaded && (
+                    <div 
+                        style={{
+                            position: 'absolute',
+                            inset: 0,
+                            width: '100%',
+                            height: '100%',
+                            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%)',
+                            animation: 'shimmer-fast 0.6s infinite ease-in-out'
+                        }}
+                    />
+                )}
+            </div>
+            <img 
+                src={src} 
+                onLoad={() => setIsImageLoaded(true)}
+                style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    objectFit: 'cover', 
+                    position: 'absolute', 
+                    inset: 0, 
+                    zIndex: 1,
+                    filter: isImageLoaded ? 'blur(0px)' : 'blur(20px)',
+                    opacity: isImageLoaded ? 1 : 0,
+                    transform: isImageLoaded ? 'scale(1)' : 'scale(1.05)',
+                    transition: 'all 0.2s ease-out'
+                }} 
+                alt="" 
+            />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)', zIndex: 2 }} />
+        </div>
+    );
+};
+
 const MProjectView = ({ project: initialProject, onClose, onContributorClick }: MProjectViewProps) => {
     const [project, setProject] = useState<Project>(initialProject);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -767,10 +828,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                             {isVideoFile(media) ? (
                                                 <VideoPlayer src={media} isActive={i === currentImageIndex} isMobile={isMobile} />
                                             ) : (
-                                                <div style={{ position: 'absolute', inset: 0 }}>
-                                                    <img src={media} style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0, zIndex: 1 }} alt="" />
-                                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)', zIndex: 2 }} />
-                                                </div>
+                                                <ProjectMediaImage src={media} />
                                             )}
                                         </div>
                                     ))}

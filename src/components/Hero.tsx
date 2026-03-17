@@ -336,6 +336,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
     const [isDark, setIsDark] = useState(false);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null);
+    const [isImageLoaded, setIsImageLoaded] = useState(false);
     const [profileName, setProfileName] = useState<string>('Tem Revil');
     const [profileTitle, setProfileTitle] = useState<string>('a Front-End');
     const hasNotifiedLoaded = useRef(false);
@@ -532,21 +533,37 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                         {/* Image Container - with floating animation */}
                         <div ref={imageContainerRef} className="relative p-4 border border-white/10 z-10 rounded-lg max-w-full glass-panel" style={{ borderRadius: '16px' }}>
                             <div className="relative w-full max-w-[320px] aspect-[4/5] overflow-hidden bg-white/5 rounded-sm">
-                                {heroImageUrl ? (
-                                    <img
-                                        src={heroImageUrl}
-                                        alt="User"
-                                        className="w-full h-full object-cover"
-                                        fetchPriority="high"
-                                    />
-                                ) : (
-                                    <img
-                                        src={DEFAULT_HERO_URL}
-                                        alt="User"
-                                        className="w-full h-full object-cover"
-                                        fetchPriority="high"
-                                    />
-                                )}
+                                <style>{`
+                                @keyframes shimmer-fast {
+                                    0% { transform: translateX(-150%) skewX(-20deg); }
+                                    100% { transform: translateX(150%) skewX(-20deg); }
+                                }
+                                `}</style>
+                                {/* Skeleton Loader Container */}
+                                <div 
+                                    className={`absolute inset-0 z-10 bg-white/5 overflow-hidden transition-opacity duration-1000 ease-out ${isImageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                                >
+                                    {/* Moving Light effect - only rendered when loading */}
+                                    {!isImageLoaded && (
+                                        <div 
+                                            className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                                            style={{ animation: 'shimmer-fast 1.2s infinite ease-in-out' }}
+                                        />
+                                    )}
+                                </div>
+
+                                <img
+                                    src={heroImageUrl || DEFAULT_HERO_URL}
+                                    alt="User"
+                                    onLoad={() => setIsImageLoaded(true)}
+                                    className="w-full h-full object-cover transition-all duration-[1500ms] ease-out"
+                                    style={{
+                                        filter: isImageLoaded ? 'blur(0px)' : 'blur(20px)',
+                                        opacity: isImageLoaded ? 1 : 0,
+                                        transform: isImageLoaded ? 'scale(1)' : 'scale(1.05)'
+                                    }}
+                                    fetchPriority="high"
+                                />
                             </div>
 
                             {/* Numbers */}

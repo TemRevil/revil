@@ -96,6 +96,44 @@ const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
     );
 };
 
+const shimmerKeyframes = `
+@keyframes shimmer-fast {
+    0% { transform: translateX(-150%) skewX(-20deg); }
+    100% { transform: translateX(150%) skewX(-20deg); }
+}
+`;
+
+const CardImage = ({ src, alt }: { src: string; alt: string }) => {
+    const [isImageLoaded, setIsImageLoaded] = useState(false);
+    return (
+        <>
+            <style>{shimmerKeyframes}</style>
+            {/* Skeleton Loader Container */}
+            <div 
+                className={`absolute inset-0 z-10 bg-white/5 overflow-hidden transition-opacity duration-1000 ease-out ${isImageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+            >
+                {/* Moving Light effect - only rendered when loading to stop the animation when complete */}
+                {!isImageLoaded && (
+                    <div 
+                        className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                        style={{ animation: 'shimmer-fast 1.2s infinite ease-in-out' }}
+                    />
+                )}
+            </div>
+            <img
+                src={src}
+                alt={alt}
+                onLoad={() => setIsImageLoaded(true)}
+                className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-[1500ms] ease-out ${!isImageLoaded ? 'scale-105' : ''}`}
+                style={{
+                    filter: isImageLoaded ? 'blur(0px)' : 'blur(20px)',
+                    opacity: isImageLoaded ? 1 : 0
+                }}
+            />
+        </>
+    );
+};
+
 const ProjectCard = ({ project, index, onClick }: { project: Project; index: number; onClick: () => void }) => {
     const cardRef = useRef<HTMLDivElement>(null);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -175,11 +213,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                     {isVideo ? (
                                         <CardVideo src={img} isActive={isHovered && currentImageIndex === i} />
                                     ) : (
-                                        <img
-                                            src={img}
-                                            alt={project.title}
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                        />
+                                        <CardImage src={img} alt={project.title || 'Project'} />
                                     )}
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60"></div>
                                 </div>
@@ -646,7 +680,10 @@ const Projects = () => {
                             key={project.id}
                             project={project}
                             index={index}
-                            onClick={() => setSelectedProjectId(project.id)}
+                            onClick={() => {
+                                window.dispatchEvent(new CustomEvent('revil:project_open', { detail: { id: project.id } }));
+                                setSelectedProjectId(project.id);
+                            }}
                         />
                     ))}
                 </div>
