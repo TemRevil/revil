@@ -12,10 +12,21 @@ interface StackItemProps {
     iconSize: number;
 }
 
-const StackItem = ({ icon, name, iconSize }: StackItemProps) => {
+const StackItem = ({ icon, name, iconSize, delay }: StackItemProps) => {
     const itemRef = useRef<HTMLDivElement>(null);
     const [isHovered, setIsHovered] = useState(false);
     const [imgError, setImgError] = useState(false);
+
+    useEffect(() => {
+        anime({
+            targets: itemRef.current,
+            opacity: [0, 1],
+            filter: ['blur(20px)', 'blur(0px)'],
+            duration: 1200,
+            delay: delay,
+            easing: 'easeOutExpo'
+        });
+    }, [delay]);
 
     const showFallback = !icon || imgError;
 
@@ -26,7 +37,7 @@ const StackItem = ({ icon, name, iconSize }: StackItemProps) => {
     return (
         <div
             ref={itemRef}
-            className="w-full h-full flex items-center justify-center p-3"
+            className="w-full h-full flex items-center justify-center p-3 opacity-0"
             style={{ minHeight: `${minHeight}px` }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}

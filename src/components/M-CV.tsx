@@ -283,7 +283,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     <section className="space-y-6">
                                         <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Overview</h2>
                                         <p className="text-lg leading-relaxed text-sec font-medium block pb-4">
-                                            Frontend Developer with 1+ year building React applications. Specialized in modern JavaScript frameworks, <span className="text-primary">Firebase integration</span>, and <span className="text-primary">AI-powered solutions</span>. Seeking remote frontend opportunities to contribute technical skills while completing university studies.
+                                            Frontend Developer with 3+ year building React applications. Specialized in modern JavaScript frameworks, <span className="text-primary">Firebase integration</span>, and <span className="text-primary">AI-powered solutions</span>. Seeking remote frontend opportunities and contributing my technical skills.
                                         </p>
                                     </section>
 
@@ -341,7 +341,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                 <aside className="space-y-20">
                                     {/* Skills Section */}
                                     <section className="space-y-8">
-                                        <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Toolbox</h2>
+                                        <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Stack</h2>
                                         <div className="flex flex-wrap gap-2 pt-2">
                                             {availableStack.length > 0 ? availableStack.map((skill) => (
                                                 <div key={skill.id} className="px-3 py-1.5 bg-black/[0.03] dark:bg-white/[0.05] border border-black/5 dark:border-white/5 rounded-lg">

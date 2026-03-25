@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, Check, MoreVertical, Edit2, Trash2, Activity, Users, Plus, Clock, Briefcase, MousePointer2, Eye, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCcw, Copy, Check, MoreVertical, Edit2, Trash2, Activity, Users, Plus, Clock, Briefcase, MousePointer2, Eye, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
 import anime from 'animejs';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps } from 'recharts';
@@ -9,6 +9,7 @@ import { db } from '../../lib/firebase';
 import Loader from '../reactbits/Loader';
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
+import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
 
 interface AnalyticsData {
     "Total Reach"?: string | number;
@@ -43,7 +44,7 @@ interface ChartDataPoint {
 
 
 
-const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; onClose: () => void; data: string; linkName: string }) => {
+const ActivityModal = ({ isOpen, onClose, onReset, data, linkName }: { isOpen: boolean; onClose: () => void; onReset: () => void; data: string; linkName: string }) => {
     if (!isOpen) return null;
 
     const parseData = (raw: string) => {
@@ -100,10 +101,16 @@ const ActivityModal = ({ isOpen, onClose, data, linkName }: { isOpen: boolean; o
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
             <div className="glass-panel w-full max-w-[500px] flex flex-col animate-scale-in relative overflow-hidden max-h-[90vh]" onClick={e => e.stopPropagation()}>
                 <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                    <h2 className="heading-sm m-0">{linkName} Analytics</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-                        <Plus size={20} className="rotate-45" />
-                    </button>
+                    <h2 className="heading-sm m-0 flex-1 truncate pr-4">{linkName} Analytics</h2>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={onReset} className="px-3 py-1.5 bg-red-500/10 text-red-500 hover:bg-red-500/20 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center gap-1.5 border border-red-500/20">
+                            <RefreshCcw size={14} />
+                            <span>Reset</span>
+                        </button>
+                        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                            <Plus size={20} className="rotate-45" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="p-6 overflow-y-auto flex flex-col gap-6">
@@ -799,6 +806,19 @@ const DLinks = () => {
     const [editFor, setEditFor] = useState('');
     const [activityLink, setActivityLink] = useState<GeneratedLink | null>(null);
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
+    // Confirmation Modal State
+    const [confirmConfig, setConfirmConfig] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        type?: ConfirmType;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { }
+    });
     // hover state removed — using recharts tooltip instead
     const [activeSection, setActiveSection] = useState<'analysis' | 'campaigns'>('analysis');
     const [isTransitioning, setIsTransitioning] = useState(false);
@@ -1014,6 +1034,19 @@ const DLinks = () => {
             showAlert({ type: 'success', message: 'Portal link removed successfully.' });
         } catch {
             showAlert({ type: 'error', message: 'Failed to delete link.' });
+        }
+    };
+
+    const handleResetLinkAnalysis = async (id: string) => {
+        if (!id) return;
+        setActiveMenu(null);
+        try {
+            const docRef = doc(db, 'Settings', 'Views', 'Links', id);
+            await updateDoc(docRef, { Views: 0, Rec_CLI: '' });
+            setActivityLink(null);
+            showAlert({ type: 'success', message: 'Portal analytics reset successfully.' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to reset analytics.' });
         }
     };
 
@@ -1292,7 +1325,30 @@ const DLinks = () => {
                         <div className="mx-2 my-1 h-[1px]" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
                         <button onClick={(e) => {
                             e.stopPropagation();
-                            handleDeleteLink(activeMenu);
+                            setConfirmConfig({
+                                isOpen: true,
+                                title: 'Reset Analytics',
+                                message: 'Are you sure you want to completely reset this link\'s analytics? This cannot be undone.',
+                                type: 'warning',
+                                onConfirm: () => handleResetLinkAnalysis(activeMenu)
+                            });
+                        }}
+                            className="w-full text-left flex items-center gap-2 bg-transparent border-none cursor-pointer rounded-lg text-sm p-2.5 transition-colors"
+                            style={{ color: 'rgb(249, 115, 22)', fontFamily: "'Inter', sans-serif" }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(249, 115, 22, 0.1)' : 'rgba(249, 115, 22, 0.05)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                            <RefreshCcw size={16} /> Reset Analytics
+                        </button>
+                        <div className="mx-2 my-1 h-[1px]" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+                        <button onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmConfig({
+                                isOpen: true,
+                                title: 'Remove Portal Link',
+                                message: 'Are you sure you want to remove this portal? This will permanently delete it.',
+                                type: 'danger',
+                                onConfirm: () => handleDeleteLink(activeMenu)
+                            });
                         }}
                             className="w-full text-left flex items-center gap-2 bg-transparent border-none cursor-pointer rounded-lg text-sm p-2.5 transition-colors"
                             style={{ color: 'rgb(239, 68, 68)', fontFamily: "'Inter', sans-serif" }}
@@ -1339,6 +1395,17 @@ const DLinks = () => {
             <ActivityModal
                 isOpen={!!activityLink}
                 onClose={() => setActivityLink(null)}
+                onReset={() => {
+                    if (activityLink) {
+                        setConfirmConfig({
+                            isOpen: true,
+                            title: 'Reset link Analytics',
+                            message: 'Are you sure you want to completely reset this link\'s analytics? This cannot be undone.',
+                            type: 'warning',
+                            onConfirm: () => handleResetLinkAnalysis(activityLink.id)
+                        });
+                    }
+                }}
                 data={activityLink?.recCLI || ''}
                 linkName={activityLink?.name || 'Analytics'}
             />
@@ -1351,6 +1418,15 @@ const DLinks = () => {
                     duration={alert.duration ?? 4000}
                 />
             )}
+
+            <MConfirmModal
+                isOpen={confirmConfig.isOpen}
+                title={confirmConfig.title}
+                message={confirmConfig.message}
+                type={confirmConfig.type}
+                onConfirm={confirmConfig.onConfirm}
+                onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+            />
         </div>
     );
 };
