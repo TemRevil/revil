@@ -346,7 +346,7 @@ const AnalyticsChart = ({ data, filter, setFilter, isDark, windowWidth }: {
     const totalPages = pages.length;
     // Clamp pageIndex inline so it's never out of bounds on the render that follows a filter change
     const safePageIndex = Math.min(pageIndex, totalPages - 1);
-    const currentPageData = pages[safePageIndex] || [];
+    const currentPageData = useMemo(() => pages[safePageIndex] || [], [pages, safePageIndex]);
 
     // Dynamic stats from the current page
     const pageTotal = useMemo(() => currentPageData.reduce((sum, d) => sum + (d.value || 0), 0), [currentPageData]);
@@ -362,18 +362,22 @@ const AnalyticsChart = ({ data, filter, setFilter, isDark, windowWidth }: {
     useEffect(() => {
         const target = Math.max(0, totalPages - 1);
         if (pageIndex !== target) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setPageIndex(target);
+             
             setDirection(0);
         }
     }, [totalPages, filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const changePageRef = useRef<(newIndex: number) => void>(() => { });
-    changePageRef.current = (newIndex: number) => {
-        if (newIndex >= 0 && newIndex < totalPages && newIndex !== safePageIndex) {
-            setDirection(newIndex > safePageIndex ? 1 : -1);
-            setPageIndex(newIndex);
-        }
-    };
+    useEffect(() => {
+        changePageRef.current = (newIndex: number) => {
+            if (newIndex >= 0 && newIndex < totalPages && newIndex !== safePageIndex) {
+                setDirection(newIndex > safePageIndex ? 1 : -1);
+                setPageIndex(newIndex);
+            }
+        };
+    }, [totalPages, safePageIndex]);
     const changePage = useCallback((newIndex: number) => changePageRef.current(newIndex), []);
 
     // Touch gestures — use native listeners for { passive: false } support
@@ -453,7 +457,9 @@ const AnalyticsChart = ({ data, filter, setFilter, isDark, windowWidth }: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pageVariants: any = {
         enter: (dir: number) => ({ x: dir > 0 ? '80%' : '-80%', opacity: 0 }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         center: { x: 0, opacity: 1, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] as any } },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         exit: (dir: number) => ({ x: dir > 0 ? '-30%' : '30%', opacity: 0, transition: { duration: 0.2, ease: [0.4, 0, 1, 1] as any } })
     };
 
@@ -681,9 +687,10 @@ const DLinks = () => {
                 .filter(([k]) => k && k !== 'next')
                 .map(([k, v]) => {
                     const isObj = v && typeof v === 'object';
-                    const val = typeof v === 'number' ? v : (isObj ? (v as any).total : 0);
-                    const pViews = isObj ? (v as any).projectViews || 0 : 0;
-                    const sClicks = isObj ? (v as any).socialClicks || 0 : 0;
+                    const obj = isObj ? (v as { total?: number; projectViews?: number; socialClicks?: number }) : null;
+                    const val = typeof v === 'number' ? v : (obj ? obj.total || 0 : 0);
+                    const pViews = obj ? obj.projectViews || 0 : 0;
+                    const sClicks = obj ? obj.socialClicks || 0 : 0;
                     return {
                         date: k,
                         value: Number(val) || 0,

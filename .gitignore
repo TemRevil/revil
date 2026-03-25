@@ -1,49 +1,43 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
+dist-ssr/
 dev-dist/
 build/
-functions/lib/
+
+# IDEs & Editor
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+
+# Environment & Logs
 .env
-.parcel-cache/
-/.idea/
-/.vscode/
+.env.local
+.env.*.local
 *.log
-# Logs
-logs
-*.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Security
-.env
-.env.local
-.env.*.local
-
 # Firebase
-firestore.rules
-storage.rules
-functions/
 .firebase/
 .firebaserc
+firestore.rules
+storage.rules
 firestore.indexes.json
+functions/lib/
+functions/
 
+# Project configuration
+cors.json
 .antigravity

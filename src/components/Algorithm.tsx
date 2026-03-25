@@ -154,7 +154,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             window.removeEventListener('revil:social_click', handleSocialClick as EventListener);
             window.removeEventListener('revil:social_return', handleSocialReturn as EventListener);
         };
-    }, []);
+    }, [incrementDailyStat]);
 
     // 2.5 Global Analytics Tracking
     const hasTrackedVisit = useRef(false);

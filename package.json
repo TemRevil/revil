@@ -11,23 +11,20 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
-    "@types/animejs": "^3.1.4",
     "animejs": "^3.2.2",
-    "clsx": "^2.1.1",
     "firebase": "^12.6.0",
-    "gapi-script": "^1.2.0",
     "lucide-react": "^0.555.0",
     "motion": "^12.24.7",
     "react": "^19.2.3",
     "recharts": "^2.5.0",
     "react-dom": "^19.2.3",
-    "react-easy-crop": "^5.5.6",
-    "tailwind-merge": "^3.4.0"
+    "react-easy-crop": "^5.5.6"
   },
   "devDependencies": {
     "@babel/plugin-transform-react-jsx": "^7.27.1",
     "@babel/plugin-transform-typescript": "^7.28.5",
     "@eslint/js": "^9.39.1",
+    "@types/animejs": "^3.1.4",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
