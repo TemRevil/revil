@@ -49,7 +49,8 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
         liveLink: '',
         downloadLink: '',
         images: [],
-        icon: undefined
+        icon: undefined,
+        listing: 0
     });
 
     const [isDark, setIsDark] = useState(true);
@@ -184,8 +185,8 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
 
     // --- HANDLERS ---
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        const { name, value, type } = e.target as HTMLInputElement;
+        setFormData(prev => ({ ...prev, [name]: type === 'number' ? Number(value) : value }));
     };
 
     const isVideo = (file: File | string) => {
@@ -338,17 +339,19 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                                 </div>
 
                                 <div className="flex flex-col gap-6">
-                                    <div>
-                                        <label className="dashboard-label">Project Name *</label>
-                                        <input
-                                            type="text"
-                                            name="name"
-                                            value={formData.name}
-                                            onChange={handleInputChange}
-                                            placeholder="My Awesome Project"
-                                            className="dashboard-input"
-                                            required
-                                        />
+                                    <div className="grid grid-cols-1 gap-4">
+                                        <div>
+                                            <label className="dashboard-label">Project Name *</label>
+                                            <input
+                                                type="text"
+                                                name="name"
+                                                value={formData.name}
+                                                onChange={handleInputChange}
+                                                placeholder="My Awesome Project"
+                                                className="dashboard-input"
+                                                required
+                                            />
+                                        </div>
                                     </div>
 
                                     <div>

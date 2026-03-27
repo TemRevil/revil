@@ -454,7 +454,8 @@ const Projects = () => {
                 githubViews: Number(v.Github || 0) || 0,
                 liveViews: Number(v.Live || 0) || 0,
                 downloadViews: Number(v.Download || 0) || 0,
-                contributors: projectContributors
+                contributors: projectContributors,
+                listing: Number(data.Listing ?? (data as any).listing ?? 0) || 0
             };
         });
     }, [rawProjects, availableContributors, availableTags]);
@@ -497,7 +498,14 @@ const Projects = () => {
                 return selectedTags.every(tag => projectTags.includes(tag.toLowerCase()));
             });
         }
-        if (searchQuery.length < 2) return results;
+        if (searchQuery.length < 2) {
+            return [...results].sort((a, b) => {
+                const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
+                const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
+                if (aVal !== bVal) return aVal - bVal;
+                return (a.title || '').localeCompare(b.title || '');
+            });
+        }
 
         const query = searchQuery.toLowerCase();
         const scored = results.map(project => {

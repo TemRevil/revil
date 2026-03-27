@@ -209,7 +209,6 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         style={{ width: isMobile ? '36px' : '48px', height: isMobile ? '36px' : '48px' }}
                     >
                         <motion.button
-                            layoutId="cv-trigger"
                             className={`
                                 btn-icon absolute inset-0 flex items-center justify-center
                                 ${isMobile ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'}
@@ -225,8 +224,8 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             onMouseEnter={() => setHoveredTab('cv')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <motion.div layoutId="cv-icon" className="flex">
-                                <FileText size={iconSize} strokeWidth={2} />
+                            <motion.div layoutId="cv-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 260, mass: 1 }}>
+                                <FileText size={20} strokeWidth={2.5} />
                             </motion.div>
                         </motion.button>
                         <Tooltip text="📄 Digital CV" show={hoveredTab === 'cv'} isDark={isDark} />
@@ -259,7 +258,6 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         style={{ width: isMobile ? '36px' : '48px', height: isMobile ? '36px' : '48px' }}
                     >
                         <motion.button
-                            layoutId="contact-trigger"
                             className={`
                                 btn-icon absolute inset-0 flex items-center justify-center
                                 ${isMobile ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'}
@@ -274,15 +272,9 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             onClick={onOpenContact}
                             onMouseEnter={() => setHoveredTab('mail')}
                             onMouseLeave={() => setHoveredTab(null)}
-                            transition={{
-                                type: 'spring',
-                                damping: 30,
-                                stiffness: 260,
-                                mass: 1
-                            }}
                         >
-                            <motion.div layoutId="contact-icon" className="flex">
-                                <Mail size={iconSize} strokeWidth={2} />
+                            <motion.div layoutId="contact-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 260, mass: 1 }}>
+                                <Mail size={24} strokeWidth={2} />
                             </motion.div>
                         </motion.button>
                         <Tooltip text="📩 Contact" show={hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)} isDark={isDark} />

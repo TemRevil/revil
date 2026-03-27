@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, Github } from 'lucide-react';
-import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, Github, GripVertical } from 'lucide-react';
+import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { Reorder, useDragControls } from 'motion/react';
 import { ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
 import Alert from '../Alert';
@@ -47,6 +48,204 @@ interface ResolvedContributor {
     links?: Record<string, string | undefined>;
 }
 
+
+interface ProjectRowProps {
+    project: ProjectData;
+    isDark: boolean;
+    dragWidth: string;
+    tableColumns: string;
+    tableMinWidth: string;
+    searchQuery: string;
+    setViewingProject: (p: ProjectData) => void;
+    onReorderEnd: () => void;
+    onEdit: (p: ProjectData) => void;
+    onDelete: (id: string) => void;
+    activeMenu: string | number | null;
+    setActiveMenu: (id: string | number | null) => void;
+    setMenuPos: (pos: { top: number; right: number }) => void;
+}
+
+const ProjectRow = ({
+    project,
+    isDark,
+    dragWidth,
+    tableColumns,
+    tableMinWidth,
+    searchQuery,
+    setViewingProject,
+    setViewingContributor,
+    onReorderEnd,
+    onEdit,
+    onDelete,
+    activeMenu,
+    setActiveMenu,
+    setMenuPos
+}: ProjectRowProps) => {
+    const controls = useDragControls();
+
+    return (
+        <Reorder.Item
+            value={project}
+            dragListener={false}
+            dragControls={controls}
+            className="grid p-4 border-b items-center transition-colors cursor-pointer"
+            style={{
+                gridTemplateColumns: `${dragWidth} ${tableColumns}`,
+                borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                minWidth: `calc(${tableMinWidth} + ${dragWidth})`,
+                position: 'relative',
+                background: 'var(--card-bg)'
+            }}
+            onClick={() => setViewingProject(project)}
+            onDragEnd={onReorderEnd}
+            whileDrag={{
+                background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                zIndex: 100
+            }}
+        >
+            {/* Drag Handle */}
+            <div 
+                className={`flex items-center justify-center text-sec transition-opacity ${searchQuery.length < 2 ? 'opacity-40 hover:opacity-100 cursor-grab' : 'opacity-10 cursor-not-allowed'}`}
+                onPointerDown={(e) => searchQuery.length < 2 && controls.start(e)}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <GripVertical size={18} />
+            </div>
+
+            {/* Project Info */}
+            <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
+                    {project.icon ? (
+                        typeof project.icon === 'string' ? (
+                            <img src={project.icon} alt={project.name} className="w-full h-full object-cover" />
+                        ) : (
+                            <img src={URL.createObjectURL(project.icon)} alt={project.name} className="w-full h-full object-cover" />
+                        )
+                    ) : project.images.length > 0 ? (
+                        <div className="w-full h-full bg-blue-500 text-white flex items-center justify-center font-bold">{project.name.charAt(0)}</div>
+                    ) : (
+                        <span className="text-xl">📁</span>
+                    )}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-primary truncate" style={{ maxWidth: '100%' }} title={project.name}>{project.name}</div>
+                    <div className="text-xs text-sec opacity-70" style={{
+                        maxWidth: '250px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                    }} title={project.description}>
+                        {project.description}
+                    </div>
+                </div>
+            </div>
+
+            {/* Tags - Minimalist Badges */}
+            <div className="flex items-center">
+                {project.tags && project.tags.length > 0 ? (
+                    <div className="flex items-center">
+                        {project.tags.slice(0, 5).map((tag, idx) => (
+                            <div key={idx} title={tag.name}
+                                className="w-8 h-8 rounded-full flex items-center justify-center border shadow-sm relative transition-all hover:z-20 cursor-help hover:scale-110"
+                                style={{
+                                    backgroundColor: tag.color ? `${tag.color}40` : 'rgba(59, 130, 246, 0.25)',
+                                    borderColor: tag.color || 'rgba(59, 130, 246, 0.5)',
+                                    color: 'white',
+                                    zIndex: 10 - idx,
+                                    marginLeft: idx === 0 ? 0 : -12,
+                                    backdropFilter: 'blur(4px)',
+                                    transform: `translateX(-${idx * 2}px)`
+                                }}>
+                                {tag.iconSvg ? (
+                                    (tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image')) ? (
+                                        <img src={tag.iconSvg} alt={tag.name} className="w-4 h-4 object-contain" />
+                                    ) : (
+                                        <span className="w-4 h-4 flex items-center justify-center"
+                                            style={{ filter: isDark ? 'brightness(0) invert(1)' : 'none' }}
+                                            dangerouslySetInnerHTML={{ __html: tag.iconSvg }} />
+                                    )
+                                ) : (
+                                    <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200">{tag.name.charAt(0)}</span>
+                                )}
+                            </div>
+                        ))}
+                        {project.tags.length > 5 && (
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center border-2 border-white dark:border-[#1a1a1a] bg-gray-100 dark:bg-white/10 text-[9px] font-bold text-sec shadow-sm relative" style={{ zIndex: 0, marginLeft: -10 }}>
+                                +{project.tags.length - 5}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="text-xs text-sec">—</div>
+                )}
+            </div>
+
+            {/* Contributors */}
+            <div className="flex items-center gap-2">
+                {project.contributors && project.contributors.length > 0 ? (
+                    <div className="flex items-center">
+                        {project.contributors.slice(0, 5).map((c, i) => (
+                            <div key={i}
+                                className="w-7 h-7 rounded-full overflow-hidden border-2 border-white dark:border-[#1a1a1a] bg-gray-200 shadow-sm relative transition-all hover:z-20 cursor-pointer hover:scale-110"
+                                title={c.name}
+                                style={{
+                                    zIndex: 10 - i,
+                                    marginLeft: i === 0 ? 0 : -12,
+                                    transform: `translateX(-${i * 2}px)`
+                                }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setViewingContributor(c);
+                                }}
+                            >
+                                {c.image ? (
+                                    typeof c.image === 'string' ? (
+                                        <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <img src={URL.createObjectURL(c.image)} alt={c.name} className="w-full h-full object-cover" />
+                                    )
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-xs font-bold bg-accent/10 text-accent">{c.name.charAt(0)}</div>
+                                )}
+                            </div>
+                        ))}
+                        {project.contributors.length > 5 && (
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center border-2 border-white dark:border-[#1a1a1a] bg-gray-200 dark:bg-white/10 text-[9px] font-bold text-sec shadow-sm relative" style={{ zIndex: 0, marginLeft: -12 }}>
+                                +{project.contributors.length - 5}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="text-xs text-sec">—</div>
+                )}
+            </div>
+
+            {/* Views */}
+            <div className="flex items-center gap-1.5 text-sec">
+                <Eye size={16} />
+                {typeof project.views === 'number' ? project.views : 0}
+            </div>
+
+            {/* Actions */}
+            <div className="text-right relative">
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setMenuPos({
+                            top: rect.bottom + 4,
+                            right: window.innerWidth - rect.right
+                        });
+                        setActiveMenu(activeMenu === project.id ? null : project.id!);
+                    }}
+                    className={`p-2 rounded-lg border-none bg-transparent cursor-pointer transition-all ${activeMenu === project.id ? 'text-blue-500 bg-blue-500/10' : 'text-sec hover:bg-black/5 dark:hover:bg-white/5'}`}
+                >
+                    <MoreVertical size={20} />
+                </button>
+            </div>
+        </Reorder.Item>
+    );
+};
 
 const DProjects = () => {
     const [isLoading, setIsLoading] = useState(false);
@@ -101,9 +300,21 @@ const DProjects = () => {
     };
 
     const filteredProjects = useMemo(() => {
-        if (searchQuery.length < 2) return projects;
+        let sorted = [...projects].sort((a, b) => {
+            const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
+            const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
+            if (aVal !== bVal) return aVal - bVal;
+            const aName = (a.name || '').toLowerCase();
+            const bName = (b.name || '').toLowerCase();
+            return aName.localeCompare(bName);
+        });
+
+        if (searchQuery.length < 2) {
+            return sorted;
+        }
 
         const query = searchQuery.toLowerCase();
+        // ... (rest of search scoring logic)
 
         const scored = projects.map(project => {
             let minDistance = Infinity;
@@ -281,7 +492,9 @@ const DProjects = () => {
                     views: Number(statusV.Project || 0) || 0,
                     githubViews: Number(statusV.Github || 0) || 0,
                     liveViews: Number(statusV.Live || 0) || 0,
-                    images: data["Project Images"] || []
+                    downloadViews: Number(data.Views?.Download || 0) || 0,
+                    images: data["Project Images"] || [],
+                    listing: Number(data.Listing ?? data.listing ?? 0) || 0
                 } as ProjectData;
             });
             setProjects(loaded);
@@ -469,7 +682,8 @@ const DProjects = () => {
                     "Live": (data.liveViews || 0).toString(),
                     "Download": (data.downloadViews || 0).toString(),
                     "Project": (data.views || 0).toString()
-                }
+                },
+                "Listing": data.listing || 0
             };
 
             // 7. Save to Firestore
@@ -487,6 +701,27 @@ const DProjects = () => {
         }
     };
 
+    const handleReorder = (reordered: ProjectData[]) => {
+        const withNewListing = reordered.map((p, idx) => ({ ...p, listing: idx + 1 }));
+        setProjects(withNewListing);
+    };
+
+    const persistOrder = async () => {
+        // Update indices in Firestore
+        const batch = writeBatch(db);
+        filteredProjects.forEach((p, idx) => {
+            const pRef = doc(db, 'Projects', p.id);
+            batch.update(pRef, { Listing: idx + 1 });
+        });
+
+        try {
+            await batch.commit();
+        } catch (error) {
+            console.error("Reorder persistence failed:", error);
+            showAlert({ type: 'error', message: 'Failed to save projects order.' });
+        }
+    };
+
     // Responsive sizing
     const gap = isExtraSmall ? '16px' : '24px';
     const searchWidth = isExtraSmall ? '100%' : (isSmall ? '180px' : '300px');
@@ -495,12 +730,14 @@ const DProjects = () => {
     const buttonPadding = isExtraSmall ? '10px 16px' : '12px 24px';
 
     // Table columns and min-width responsive settings
+    const dragWidth = '40px';
+    const actionWidth = '56px';
     const tableColumns = isExtraSmall
-        ? 'minmax(180px, 1.5fr) 120px 120px 70px 56px'
+        ? `minmax(140px, 1fr) 80px 80px 60px ${actionWidth}`
         : isSmall
-            ? 'minmax(220px, 2fr) 160px 140px 80px 56px'
-            : 'minmax(240px, 2.5fr) 160px 140px 80px 56px';
-    const tableMinWidth = isExtraSmall ? '550px' : isSmall ? '650px' : '750px';
+            ? `minmax(180px, 1fr) 120px 100px 70px ${actionWidth}`
+            : `minmax(240px, 1fr) 180px 140px 80px ${actionWidth}`;
+    const tableMinWidth = isExtraSmall ? '500px' : isSmall ? '680px' : '820px';
 
     return (
         <div className="h-[90%] flex flex-col" style={{ gap: gap }}>
@@ -545,10 +782,11 @@ const DProjects = () => {
                 <div className="flex-1 overflow-auto custom-scrollbar">
                     {/* Header */}
                     <div className="grid p-4 border-b text-sec font-semibold text-sm" style={{
-                        gridTemplateColumns: tableColumns,
+                        gridTemplateColumns: `${dragWidth} ${tableColumns}`,
                         borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                        minWidth: tableMinWidth
+                        minWidth: `calc(${tableMinWidth} + ${dragWidth})`
                     }}>
+                        <div style={{ textAlign: 'center' }}></div>
                         <div>Project Name</div>
                         <div>Tags</div>
                         <div>Contributors</div>
@@ -557,162 +795,37 @@ const DProjects = () => {
                     </div>
 
                     {/* Table Body */}
-                    <div className="min-w-0">
+                    <Reorder.Group
+                        axis="y"
+                        values={filteredProjects}
+                        onReorder={handleReorder}
+                        className="min-w-0"
+                    >
                         {filteredProjects.length === 0 ? (
                             <div className="p-12 text-center text-sec">
                                 {searchQuery ? "No projects match your search." : "No projects found. Click \"Add Project\" to start."}
                             </div>
                         ) : (
                             filteredProjects.map((project) => (
-                                <div key={project.id}
-                                    onClick={() => setViewingProject(project)}
-                                    className="grid p-4 border-b items-center transition-colors cursor-pointer"
-                                    style={{
-                                        gridTemplateColumns: tableColumns,
-                                        borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                                        minWidth: tableMinWidth
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                >
-                                    {/* Project Info */}
-                                    <div className="flex items-center gap-4" style={{ gridColumn: '1' }}>
-                                        <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-                                            {project.icon ? (
-                                                typeof project.icon === 'string' ? (
-                                                    <img src={project.icon} alt={project.name} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <img src={URL.createObjectURL(project.icon)} alt={project.name} className="w-full h-full object-cover" />
-                                                )
-                                            ) : project.images.length > 0 ? (
-                                                <div className="w-full h-full bg-blue-500 text-white flex items-center justify-center font-bold">{project.name.charAt(0)}</div>
-                                            ) : (
-                                                <span className="text-xl">📁</span>
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-primary truncate" style={{ maxWidth: '100%' }} title={project.name}>{project.name}</div>
-                                            <div className="text-xs text-sec opacity-70" style={{
-                                                maxWidth: '250px',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap'
-                                            }} title={project.description}>
-                                                {project.description}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Tags - Minimalist Badges */}
-                                    <div className="flex items-center" style={{ gridColumn: '2' }}>
-                                        {project.tags && project.tags.length > 0 ? (
-                                            <div className="flex items-center">
-                                                {project.tags.slice(0, 5).map((tag, idx) => (
-                                                    <div key={idx} title={tag.name}
-                                                        className="w-8 h-8 rounded-full flex items-center justify-center border shadow-sm relative transition-all hover:z-20 cursor-help hover:scale-110"
-                                                        style={{
-                                                            backgroundColor: tag.color ? `${tag.color}40` : 'rgba(59, 130, 246, 0.25)',
-                                                            borderColor: tag.color || 'rgba(59, 130, 246, 0.5)',
-                                                            color: 'white',
-                                                            zIndex: 10 - idx,
-                                                            marginLeft: idx === 0 ? 0 : -12,
-                                                            backdropFilter: 'blur(4px)',
-                                                            transform: `translateX(-${idx * 2}px)`
-                                                        }}>
-                                                        {tag.iconSvg ? (
-                                                            (tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image')) ? (
-                                                                <img src={tag.iconSvg} alt={tag.name} className="w-4 h-4 object-contain" />
-                                                            ) : (
-                                                                <span className="w-4 h-4 flex items-center justify-center"
-                                                                    style={{ filter: isDark ? 'brightness(0) invert(1)' : 'none' }}
-                                                                    dangerouslySetInnerHTML={{ __html: tag.iconSvg }} />
-                                                            )
-                                                        ) : (
-                                                            <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200">{tag.name.charAt(0)}</span>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                                {project.tags.length > 5 && (
-                                                    <div className="w-7 h-7 rounded-full flex items-center justify-center border-2 border-white dark:border-[#1a1a1a] bg-gray-100 dark:bg-white/10 text-[9px] font-bold text-sec shadow-sm relative" style={{ zIndex: 0, marginLeft: -10 }}>
-                                                        +{project.tags.length - 5}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="text-xs text-sec">—</div>
-                                        )}
-                                    </div>
-
-                                    {/* Contributors */}
-                                    <div className="flex items-center gap-2" style={{ gridColumn: '3' }}>
-                                        {project.contributors && project.contributors.length > 0 ? (
-                                            <div className="flex items-center">
-                                                {project.contributors.slice(0, 5).map((c, i) => (
-                                                    <div key={i}
-                                                        className="w-7 h-7 rounded-full overflow-hidden border-2 border-white dark:border-[#1a1a1a] bg-gray-200 shadow-sm relative transition-all hover:z-20 cursor-pointer hover:scale-110"
-                                                        title={c.name}
-                                                        style={{
-                                                            zIndex: 10 - i,
-                                                            marginLeft: i === 0 ? 0 : -12,
-                                                            transform: `translateX(-${i * 2}px)`
-                                                        }}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setViewingContributor(c);
-                                                        }}
-                                                    >
-                                                        {c.image ? (
-                                                            typeof c.image === 'string' ? (
-                                                                <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
-                                                            ) : (
-                                                                <img src={URL.createObjectURL(c.image)} alt={c.name} className="w-full h-full object-cover" />
-                                                            )
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-xs font-bold bg-accent/10 text-accent">{c.name.charAt(0)}</div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                                {project.contributors.length > 5 && (
-                                                    <div className="w-7 h-7 rounded-full flex items-center justify-center border-2 border-white dark:border-[#1a1a1a] bg-gray-200 dark:bg-white/10 text-[9px] font-bold text-sec shadow-sm relative" style={{ zIndex: 0, marginLeft: -12 }}>
-                                                        +{project.contributors.length - 5}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="text-xs text-sec">—</div>
-                                        )}
-                                    </div>
-
-                                    {/* Views */}
-                                    <div className="flex items-center gap-1.5 text-sec" style={{ gridColumn: '4' }}>
-                                        <Eye size={16} />
-                                        {typeof project.views === 'number' ? project.views : 0}
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="text-right relative" style={{ gridColumn: '5' }}>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                // Calculate positioning to be exactly next to the button
-                                                // top should be slightly below the button center
-                                                // right should match the button's right edge
-                                                setMenuPos({
-                                                    top: rect.bottom + 4,
-                                                    right: window.innerWidth - rect.right
-                                                });
-                                                setActiveMenu(activeMenu === project.id ? null : project.id!);
-                                            }}
-                                            className={`p-2 rounded-lg border-none bg-transparent cursor-pointer transition-all ${activeMenu === project.id ? 'text-blue-500 bg-blue-500/10' : 'text-sec hover:bg-black/5 dark:hover:bg-white/5'}`}
-                                        >
-                                            <MoreVertical size={20} />
-                                        </button>
-                                    </div>
-                                </div>
+                                <ProjectRow 
+                                    key={project.id} 
+                                    project={project} 
+                                    isDark={isDark} 
+                                    dragWidth={dragWidth}
+                                    tableColumns={tableColumns}
+                                    tableMinWidth={tableMinWidth}
+                                    searchQuery={searchQuery}
+                                    setViewingProject={setViewingProject}
+                                    onReorderEnd={persistOrder}
+                                    onEdit={handleEditProject}
+                                    onDelete={handleDeleteProject}
+                                    activeMenu={activeMenu}
+                                    setActiveMenu={setActiveMenu}
+                                    setMenuPos={setMenuPos}
+                                />
                             ))
                         )}
-                    </div>
+                    </Reorder.Group>
                 </div>
             </div>
 

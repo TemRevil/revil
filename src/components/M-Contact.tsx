@@ -555,7 +555,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1400, padding: '1rem',
         }} onClick={onClose}>
         <motion.div
-          layoutId="contact-trigger"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
           transition={{
             type: 'spring',
             damping: 30,
@@ -573,7 +575,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
             borderRadius: isMobile ? '0' : '24px',
             display: 'flex',
             flexDirection: 'column',
-          }} onClick={e => e.stopPropagation()}>
+            pointerEvents: 'auto'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Internal background elements */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />
+
           {/* Main Content Wrapper (Fixed Header/Tabs, Internal Scroll) */}
           <div className="flex flex-col flex-1 overflow-hidden" style={{ overscrollBehavior: 'contain' }}>
 
@@ -583,7 +591,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                 <div className="flex items-center gap-3">
                   <motion.div
                     layoutId="contact-icon"
-                    className="flex text-info"
+                    className="flex items-center justify-center"
                     transition={{
                       type: 'spring',
                       damping: 30,

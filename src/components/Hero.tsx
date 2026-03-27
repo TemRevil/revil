@@ -4,7 +4,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Plus, Briefcase } from 'lucide-react';
 
-const DEFAULT_HERO_URL = "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FHero.image.jpg?alt=media&token=1d698d9b-468a-42e7-92c6-b9cb127a5fc6";
+const DEFAULT_HERO_URL = "";
 
 // True handwriting animation - letter by letter
 const HandwritingText = ({
@@ -337,6 +337,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null);
     const [isImageLoaded, setIsImageLoaded] = useState(false);
+    const [imageError, setImageError] = useState(false);
     const [profileName, setProfileName] = useState<string>('Tem Revil');
     const [profileTitle, setProfileTitle] = useState<string>('a Front-End');
     const hasNotifiedLoaded = useRef(false);
@@ -540,12 +541,12 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                                 }
                                 `}</style>
                                 {/* Skeleton Loader Container */}
-                                <div 
+                                <div
                                     className={`absolute inset-0 z-10 bg-white/5 overflow-hidden transition-opacity duration-1000 ease-out ${isImageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
                                 >
                                     {/* Moving Light effect - only rendered when loading */}
                                     {!isImageLoaded && (
-                                        <div 
+                                        <div
                                             className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
                                             style={{ animation: 'shimmer-fast 1.2s infinite ease-in-out' }}
                                         />
@@ -553,9 +554,10 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                                 </div>
 
                                 <img
-                                    src={heroImageUrl || DEFAULT_HERO_URL}
+                                    src={imageError ? DEFAULT_HERO_URL : (heroImageUrl || DEFAULT_HERO_URL)}
                                     alt="User"
                                     onLoad={() => setIsImageLoaded(true)}
+                                    onError={() => setImageError(true)}
                                     className="w-full h-full object-cover transition-all duration-[1500ms] ease-out"
                                     style={{
                                         filter: isImageLoaded ? 'blur(0px)' : 'blur(20px)',
@@ -572,7 +574,6 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                         </div>
                     </div>
                 </div>
-
             </div>
         </div>
     );

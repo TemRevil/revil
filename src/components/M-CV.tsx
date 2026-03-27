@@ -12,6 +12,7 @@ interface CVProject {
     title: string;
     stack: string[];
     fullData?: unknown;
+    listing?: number;
 }
 
 type StackItem = { id: string; name: string; icon?: string };
@@ -156,8 +157,14 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                     id: doc.id,
                     title: mappedProject.title,
                     stack: normalizedStack,
-                    fullData: mappedProject
+                    fullData: mappedProject,
+                    listing: data.Listing ?? data.listing ?? 0
                 };
+            }).sort((a, b) => {
+                const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
+                const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
+                if (aVal !== bVal) return aVal - bVal;
+                return (a.title || '').localeCompare(b.title || '');
             });
             setProjects(loaded);
         });
@@ -218,14 +225,12 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             {/* Modal Container */}
             <div className="fixed inset-0 z-[1501] flex items-center justify-center p-4 md:p-12 pointer-events-none">
                 <motion.div
-                    layoutId="cv-trigger"
-                    initial={{ opacity: 0, scale: 0.95, y: 30 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 30 }}
-                    transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ type: 'spring', damping: 30, stiffness: 260, mass: 1 }}
                     onClick={(e) => e.stopPropagation()}
                     className="glass-panel-deep relative w-full max-w-5xl h-full max-h-[85vh] overflow-hidden pointer-events-auto flex flex-col border border-black/5 dark:border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.1)] dark:shadow-[0_30px_60px_rgba(0,0,0,0.5)]"
-                    style={{ borderRadius: '32px' }}
                 >
                     {/* Premium Top Bar */}
                     <div className="flex items-center justify-between px-6 md:px-8 py-6 relative z-10 shrink-0">
@@ -233,8 +238,8 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                         <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />
 
                         <div className="flex items-center gap-3.5 px-5 py-2.5 bg-white/40 dark:bg-black/40 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-2xl shadow-sm">
-                            <motion.div layoutId="cv-icon" className="flex text-blue-500">
-                                <FileText size={16} strokeWidth={2.5} />
+                            <motion.div layoutId="cv-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 260, mass: 1 }}>
+                                <FileText size={20} strokeWidth={2.5} />
                             </motion.div>
                             <span className="text-[11px] font-black text-primary uppercase tracking-[0.25em] font-sans mt-0.5">Fast Report</span>
                         </div>

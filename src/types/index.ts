@@ -44,6 +44,7 @@ export interface ProjectData {
     githubViews?: number;
     liveViews?: number;
     downloadViews?: number;
+    listing?: number;
 }
 
 export interface ProjectFormData extends Omit<ProjectData, 'images' | 'icon'> {
