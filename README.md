@@ -1,11 +1,10 @@
-# Revil
+# Revil | Main Profile
+![Main Profile](https://img.shields.io/badge/Status-Primary%20Ecosystem-blue?style=for-the-badge&logo=github)
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&style=flat-square)
-![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&style=flat-square)
-![Firebase](https://img.shields.io/badge/Firebase-Backend-FFCA28?logo=firebase&style=flat-square)
 
-**Revil** is a premium, ultra-responsive developer portfolio ecosystem designed for high-end digital presence. It consists of a stunning user-facing showcase and a powerful, real-time Administrative Dashboard to manage every facet of a professional career.
+**Revil** is my **Main Professional Profile** and a premium, ultra-responsive developer portfolio ecosystem. Designed for high-end digital presence, it consists of a stunning user-facing showcase and a powerful, real-time Administrative Dashboard to manage every facet of my professional career as a **Frontend & AI Expert**.
 
 ---
 
@@ -49,20 +48,10 @@ npm install
 npm run dev
 ```
 
-### Environment Configuration
-Create a `.env` file in the root directory and add your Firebase credentials:
-```env
-VITE_FIREBASE_API_KEY=your_key
-VITE_FIREBASE_AUTH_DOMAIN=your_domain
-VITE_FIREBASE_PROJECT_ID=your_id
-VITE_FIREBASE_STORAGE_BUCKET=your_bucket
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_id
-VITE_FIREBASE_APP_ID=your_app_id
-```
-
 ---
 
 ## 📂 Architecture Overview
+
 
 ```text
 src/
@@ -98,4 +87,5 @@ Distributed under the MIT License. See `LICENSE` for more information.
 ---
 
 Built with precision for the next generation of web presence.
-**[Visit Website](https://temrevil.com)** • **Developed by Revil**
+**[Visit Website](https://temrevil.com)** • **Main Portfolio of Mohammed Ahmed**
+
