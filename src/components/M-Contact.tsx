@@ -555,13 +555,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1400, padding: '1rem',
         }} onClick={onClose}>
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
+          initial={{ opacity: 0, scale: 0.3, y: 400 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.3, y: 400 }}
           transition={{
             type: 'spring',
             damping: 30,
-            stiffness: 260,
+            stiffness: 350,
             mass: 1
           }}
           className="glass-panel-deep"
@@ -595,7 +595,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     transition={{
                       type: 'spring',
                       damping: 30,
-                      stiffness: 260,
+                      stiffness: 350,
                       mass: 1
                     }}
                   >

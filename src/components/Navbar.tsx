@@ -224,7 +224,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             onMouseEnter={() => setHoveredTab('cv')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <motion.div layoutId="cv-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 260, mass: 1 }}>
+                            <motion.div layoutId="cv-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
                                 <FileText size={20} strokeWidth={2.5} />
                             </motion.div>
                         </motion.button>
@@ -273,7 +273,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             onMouseEnter={() => setHoveredTab('mail')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <motion.div layoutId="contact-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 260, mass: 1 }}>
+                            <motion.div layoutId="contact-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
                                 <Mail size={24} strokeWidth={2} />
                             </motion.div>
                         </motion.button>
