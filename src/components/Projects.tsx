@@ -45,6 +45,8 @@ interface FirestoreProject {
         Live?: number;
         Download?: number;
     };
+    Listing?: number | string;
+    listing?: number | string;
 }
 
 const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
@@ -455,7 +457,7 @@ const Projects = () => {
                 liveViews: Number(v.Live || 0) || 0,
                 downloadViews: Number(v.Download || 0) || 0,
                 contributors: projectContributors,
-                listing: Number(data.Listing ?? (data as any).listing ?? 0) || 0
+                listing: Number(data.Listing ?? data.listing ?? 0) || 0
             };
         });
     }, [rawProjects, availableContributors, availableTags]);

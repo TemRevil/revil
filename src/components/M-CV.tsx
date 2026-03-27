@@ -233,29 +233,33 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                     onClick={(e) => e.stopPropagation()}
                     className="glass-panel-deep relative w-full max-w-5xl h-full max-h-[85vh] overflow-hidden pointer-events-auto flex flex-col border border-black/5 dark:border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.1)] dark:shadow-[0_30px_60px_rgba(0,0,0,0.5)]"
                 >
-                    {/* Premium Top Bar */}
-                    <div className="flex items-center justify-between px-6 md:px-8 py-6 relative z-10 shrink-0">
-                        {/* Elegant fade */}
-                        <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />
-
-                        <div className="flex items-center gap-3.5 px-5 py-2.5 bg-white/40 dark:bg-black/40 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-2xl shadow-sm">
-                            <motion.div layoutId="cv-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
-                                <FileText size={20} strokeWidth={2.5} />
-                            </motion.div>
-                            <span className="text-[11px] font-black text-primary uppercase tracking-[0.25em] font-sans mt-0.5">Fast Report</span>
+                    {/* Header & Title */}
+                    <div className="p-6 pb-0 flex flex-col gap-4 relative z-10 shrink-0 font-sans">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <motion.div
+                                    layoutId="cv-icon"
+                                    className="flex items-center justify-center"
+                                    transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}
+                                >
+                                    <FileText size={26} strokeWidth={2} className="text-blue-500" />
+                                </motion.div>
+                                <h2 className="text-2xl font-bold text-primary m-0 tracking-tight" style={{ fontSize: '1.5rem' }}>
+                                    Fast Report
+                                </h2>
+                            </div>
+                            <button
+                                onClick={onClose}
+                                className="p-3 bg-white/40 dark:bg-black/40 backdrop-blur-xl border border-black/5 dark:border-white/10 hover:bg-red-500/10 dark:hover:bg-red-500/10 hover:border-red-500/20 dark:hover:border-red-500/30 hover:text-red-500 rounded-full transition-all text-sec shadow-sm group"
+                            >
+                                <X size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+                            </button>
                         </div>
-
-                        <button
-                            onClick={onClose}
-                            className="p-3 bg-white/40 dark:bg-black/40 backdrop-blur-xl border border-black/5 dark:border-white/10 hover:bg-red-500/10 dark:hover:bg-red-500/10 hover:border-red-500/20 dark:hover:border-red-500/30 hover:text-red-500 rounded-2xl transition-all text-sec shadow-sm group"
-                        >
-                            <X size={18} strokeWidth={2.5} className="group-hover:rotate-90 transition-transform duration-300" />
-                        </button>
                     </div>
 
                     {/* CV Content */}
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-10 md:p-16 selection:bg-blue-500/30">
-                        <div className="max-w-3xl mx-auto space-y-14">
+                    <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-6 py-2 selection:bg-blue-500/30">
+                        <div className="max-w-4xl mx-auto space-y-10">
 
                             {/* Header Section */}
                             <header className="space-y-5">
@@ -283,22 +287,22 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                 </div>
                             </header>
 
-                            <div className="grid md:grid-cols-[1fr_250px] gap-16 pt-12 md:pt-8">
-                                <div className="space-y-20">
+                            <div className="grid md:grid-cols-[1fr_350px] gap-10 pt-10 md:pt-6">
+                                <div className="space-y-16">
                                     {/* Summary Section */}
-                                    <section className="space-y-6">
+                                    <section className="space-y-4">
                                         <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Overview</h2>
-                                        <p className="text-lg leading-relaxed text-sec font-medium block pb-4">
-                                            Frontend Developer with 3+ year building React applications. Specialized in modern JavaScript frameworks, <span className="text-primary">Firebase integration</span>, and <span className="text-primary">AI-powered solutions</span>. Seeking remote frontend opportunities and contributing my technical skills.
+                                        <p className="text-lg leading-relaxed text-sec font-medium block">
+                                            Frontend Developer with 3+ year building React applications. Specialized in modern JavaScript frameworks, <span className="text-primary">Firebase integration</span>, and <span className="text-primary">AI-powered solutions using tools, once published, with exclusive invitations to experience them firsthand</span>. Seeking remote opportunities and contributing my technical skills.
                                         </p>
                                     </section>
 
                                     {/* Projects Section (Dynamic) */}
-                                    <section className="space-y-10">
-                                        <div className="flex items-center justify-between border-b border-black/5 dark:border-white/5 pb-6">
+                                    <section className="space-y-8">
+                                        <div className="flex items-center justify-between border-b border-black/5 dark:border-white/5 pb-4">
                                             <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Projects</h2>
                                         </div>
-                                        <div className="space-y-10">
+                                        <div className="space-y-8">
                                             {projects.length > 0 ? projects.map((project) => (
                                                 <motion.div
                                                     key={project.id}
@@ -310,9 +314,14 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                                         <h3 className="text-2xl font-bold text-primary group-hover:text-blue-500 transition-colors uppercase tracking-tight">{project.title}</h3>
                                                         <ExternalLink size={16} className="text-blue-500/0 group-hover:text-blue-500 transition-all opacity-0 group-hover:opacity-100" />
                                                     </div>
-                                                    <div className="flex flex-wrap gap-2">
+                                                    <div className="flex flex-wrap gap-1.5 pt-1">
                                                         {project.stack.map((tech) => (
-                                                            <span key={tech} className="text-[10px] font-bold text-muted uppercase tracking-widest">{tech}</span>
+                                                            <span
+                                                                key={tech}
+                                                                className="px-2.5 py-1 bg-black/[0.04] dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-full text-[9.5px] font-black text-blue-500/80 uppercase tracking-wider"
+                                                            >
+                                                                {tech}
+                                                            </span>
                                                         ))}
                                                     </div>
                                                 </motion.div>
@@ -323,9 +332,9 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     </section>
 
                                     {/* Education Section */}
-                                    <section className="space-y-10 pt-6">
+                                    <section className="space-y-8 pt-4">
                                         <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Academic Background</h2>
-                                        <div className="space-y-10 pt-2">
+                                        <div className="space-y-8 pt-2">
                                             <div className="space-y-4">
                                                 <div className="flex justify-between items-start">
                                                     <h3 className="text-xl font-bold text-primary">Systems Information & Comp. Eng.</h3>
@@ -344,19 +353,26 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     </section>
                                 </div>
 
-                                <aside className="space-y-20">
+                                <aside className="space-y-12">
                                     {/* Skills Section */}
-                                    <section className="space-y-8">
+                                    <section className="space-y-6">
                                         <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Stack</h2>
                                         <div className="flex flex-wrap gap-2 pt-2">
                                             {availableStack.length > 0 ? availableStack.map((skill) => (
-                                                <div key={skill.id} className="px-3 py-1.5 bg-black/[0.03] dark:bg-white/[0.05] border border-black/5 dark:border-white/5 rounded-lg">
-                                                    <span className="text-[11px] font-bold text-sec">{skill.name}</span>
-                                                </div>
+                                                <motion.div
+                                                    key={skill.id}
+                                                    whileHover={{ scale: 1.05, y: -2 }}
+                                                    className="px-3.5 py-1.5 bg-white/40 dark:bg-black/20 backdrop-blur-md border border-black/[0.03] dark:border-white/[0.05] rounded-2xl shadow-sm cursor-default transition-all hover:bg-white/60 dark:hover:bg-black/40 hover:border-blue-500/20"
+                                                >
+                                                    <span className="text-[12px] font-bold text-sec whitespace-nowrap">{skill.name}</span>
+                                                </motion.div>
                                             )) : (
                                                 ["React", "Next.js", "TypeScript", "Firebase", "Node.js"].map(skill => (
-                                                    <div key={skill} className="px-3 py-1.5 bg-black/[0.03] dark:bg-white/[0.05] border border-black/5 dark:border-white/5 rounded-lg opacity-50">
-                                                        <span className="text-[11px] font-bold text-sec">{skill}</span>
+                                                    <div
+                                                        key={skill}
+                                                        className="px-3.5 py-1.5 bg-white/20 dark:bg-black/10 backdrop-blur-sm border border-black/[0.03] dark:border-white/[0.05] rounded-2xl opacity-50"
+                                                    >
+                                                        <span className="text-[12px] font-bold text-sec">{skill}</span>
                                                     </div>
                                                 ))
                                             )}
@@ -364,9 +380,9 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     </section>
 
                                     {/* Achievements */}
-                                    <section className="space-y-8">
+                                    <section className="space-y-6">
                                         <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Impact</h2>
-                                        <div className="space-y-6 text-xs leading-relaxed text-sec pt-2">
+                                        <div className="space-y-4 text-xs leading-relaxed text-sec pt-2">
                                             <p>Built <span className="text-primary font-bold">3 major apps</span> in 1st year.</p>
                                             <p>Native <span className="text-primary font-bold">AI integration</span> specialist.</p>
                                             <p>Cross-platform <span className="text-primary font-bold">Electron</span> expert.</p>
@@ -374,7 +390,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     </section>
 
                                     {/* Presence */}
-                                    <section className="space-y-8">
+                                    <section className="space-y-6">
                                         <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Connect</h2>
                                         <div className="flex flex-col gap-3 pt-2">
                                             {socialLinks.filter(link => !link.name.toLowerCase().includes('instagram')).map((link) => (
@@ -398,7 +414,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                             </div>
 
                             {/* Footer */}
-                            <footer className="pt-20 border-t border-black/5 dark:border-white/5 flex flex-col items-center gap-4">
+                            <footer className="pt-12 border-t border-black/5 dark:border-white/5 flex flex-col items-center gap-4">
                                 <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-black text-muted uppercase tracking-[0.2em]">English (Prof.)</span>
                                     <div className="w-1 h-1 rounded-full bg-black/10 dark:bg-white/10" />

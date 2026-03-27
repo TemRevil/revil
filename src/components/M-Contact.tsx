@@ -556,18 +556,25 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         }} onClick={onClose}>
         <motion.div
           initial={{ opacity: 0, scale: 0.3, y: 400 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
+          animate={{
+            opacity: 1,
+            scale: 1,
+            y: 0,
+            width: isMobile ? '90vw' : (activeTab === 'meeting' ? '1100px' : '600px'),
+            height: isMobile ? '90dvh' : (activeTab === 'meeting' ? '720px' : '680px'),
+          }}
           exit={{ opacity: 0, scale: 0.3, y: 400 }}
           transition={{
             type: 'spring',
             damping: 30,
             stiffness: 350,
-            mass: 1
+            mass: 1,
+            // Allow width and height to have a slightly smoother transition if desired
+            width: { duration: 0.4, ease: [0.4, 0, 0.2, 1] },
+            height: { duration: 0.4, ease: [0.4, 0, 0.2, 1] }
           }}
           className="glass-panel-deep"
           style={{
-            width: isMobile ? '90vw' : (activeTab === 'meeting' ? '1100px' : '600px'),
-            height: isMobile ? '90dvh' : (activeTab === 'meeting' ? '720px' : '680px'),
             maxWidth: isMobile ? '90vw' : '95vw',
             maxHeight: isMobile ? '90dvh' : '92vh',
             transformOrigin: 'bottom center',
