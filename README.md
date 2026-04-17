@@ -48,6 +48,23 @@ npm install
 npm run dev
 ```
 
+### 🐳 Run with Docker
+You can directly run the application inside an isolated Docker container without needing Node installed locally:
+```bash
+# Build the Docker image
+docker build -t revil-portfolio .
+
+# Run the container on port 3000
+docker run -p 3000:3000 revil-portfolio
+```
+
+## 🤖 Continuous Integration & Security
+
+We maintain high-end reliability and stability across the entire project through automated defenses:
+- **Zero-Error Automation**: Every push to the repository runs through aggressive GitHub Action workflows. It strictly tests against `npm run lint` and `npx tsc --noEmit`.
+- **Email Red Alerts**: If a syntax error, bad prop, or type issue is ever committed, the deployment instantly aborts to protect production, and GitHub natively emails the owner with a link to the exact line of code failure.
+- **Rogue DOM Protection**: The React application runs an aggressive `MutationObserver` on the real DOM. If external browser extensions (e.g., VPNs or adware) attempt to inject malicious `.style` tags or rotating CSS animations over the UI, the engine instantly destroys them to preserve pixel-perfect branding.
+
 ---
 
 ## 📂 Architecture Overview
