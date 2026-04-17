@@ -84,6 +84,7 @@ const getIcon = (name: string) => {
 const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: number }) => {
     const iconRef = useRef<HTMLAnchorElement>(null);
     const { trackClick } = useSocialTracker();
+    const [isHovered, setIsHovered] = useState(false);
 
     useEffect(() => {
         anime({
@@ -98,7 +99,7 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
 
     const iconElement = createElement(getIcon(name), {
         size: 32,
-        className: "text-gray-500 group-hover:text-black transition-colors duration-300",
+        className: `transition-colors duration-300 ${isHovered ? 'text-black' : 'text-gray-500'}`,
         strokeWidth: 1.5
     });
 
@@ -109,12 +110,21 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => trackClick(name)}
-            className="group relative flex items-center justify-center p-3 rounded-xl transition-all duration-300 hover:bg-zinc-100 hover:scale-110"
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            className={`relative flex items-center justify-center p-3 rounded-xl transition-all duration-300 ${isHovered ? 'bg-zinc-100 scale-110' : ''}`}
         >
             {iconElement}
 
             {/* Tooltip */}
-            <span className="absolute lg:right-full lg:mr-3 lg:top-1/2 lg:-translate-y-1/2 lg:bottom-auto lg:left-auto lg:translate-x-0 bottom-full mb-3 lg:mb-0 left-1/2 -translate-x-1/2 lg:left-auto px-3 py-1.5 bg-black text-white rounded-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 shadow-xl">
+            <span 
+                className="absolute md:right-full md:mr-3 md:top-1/2 md:-translate-y-1/2 md:bottom-auto md:left-auto md:translate-x-0 bottom-full mb-3 md:mb-0 left-1/2 -translate-x-1/2 md:left-auto px-3 py-1.5 rounded-lg text-xs font-bold transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 shadow-xl"
+                style={{ 
+                    opacity: isHovered ? 1 : 0,
+                    backgroundColor: 'var(--text-primary)',
+                    color: 'var(--bg-primary)'
+                }}
+            >
                 {name}
             </span>
         </a>

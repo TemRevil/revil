@@ -534,7 +534,8 @@ const DTags = () => {
                                         {filteredTags.map((tag: TagData) => (
                                             <div
                                                 key={tag.id}
-                                                className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group"
+                                                className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group cursor-pointer hover:shadow-lg hover:-translate-y-1"
+                                                onClick={() => { setEditingTag(tag); setTagModalOpen(true); }}
                                                 style={{
                                                     backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255, 255, 255, 0.4)',
                                                     backdropFilter: 'blur(16px)',
@@ -562,7 +563,7 @@ const DTags = () => {
                                                             <Tag size={isSmall ? 24 : 32} />
                                                         )}
                                                     </div>
-                                                    <div className={`flex gap-1 transition-all ${isSmall ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0'}`}>
+                                                    <div className="flex gap-1 transition-all opacity-100">
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); setEditingTag(tag); setTagModalOpen(true); }}
                                                             className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border-none bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 cursor-pointer transition-colors"
@@ -597,7 +598,8 @@ const DTags = () => {
                                         {filteredContributors.map((contributor) => (
                                             <div
                                                 key={contributor.id}
-                                                className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group"
+                                                className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group cursor-pointer hover:shadow-lg hover:-translate-y-1"
+                                                onClick={() => { setEditingContributor(contributor); setContribModalOpen(true); }}
                                                 style={{
                                                     opacity: revealedSections.contributors ? 1 : 0,
                                                     backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255, 255, 255, 0.4)',
@@ -623,7 +625,7 @@ const DTags = () => {
                                                             )}
                                                         </div>
                                                     </div>
-                                                    <div className={`flex gap-1 transition-all ${isSmall ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0'}`}>
+                                                    <div className="flex gap-1 transition-all opacity-100">
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); setEditingContributor(contributor); setContribModalOpen(true); }}
                                                             className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border-none bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 cursor-pointer transition-colors"

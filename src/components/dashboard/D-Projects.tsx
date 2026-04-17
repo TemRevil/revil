@@ -57,9 +57,8 @@ interface ProjectRowProps {
     tableMinWidth: string;
     searchQuery: string;
     setViewingProject: (p: ProjectData) => void;
+    setViewingContributor: (c: ContributorData) => void;
     onReorderEnd: () => void;
-    onEdit: (p: ProjectData) => void;
-    onDelete: (id: string) => void;
     activeMenu: string | number | null;
     setActiveMenu: (id: string | number | null) => void;
     setMenuPos: (pos: { top: number; right: number }) => void;
@@ -102,7 +101,7 @@ const ProjectRow = ({
             }}
         >
             {/* Drag Handle */}
-            <div 
+            <div
                 className={`flex items-center justify-center text-sec transition-opacity ${searchQuery.length < 2 ? 'opacity-40 hover:opacity-100 cursor-grab' : 'opacity-10 cursor-not-allowed'}`}
                 onPointerDown={(e) => searchQuery.length < 2 && controls.start(e)}
                 onClick={(e) => e.stopPropagation()}
@@ -708,8 +707,10 @@ const DProjects = () => {
         // Update indices in Firestore
         const batch = writeBatch(db);
         filteredProjects.forEach((p, idx) => {
-            const pRef = doc(db, 'Projects', p.id);
-            batch.update(pRef, { Listing: idx + 1 });
+            if (p.id) {
+                const pRef = doc(db, 'Projects', p.id.toString());
+                batch.update(pRef, { Listing: idx + 1 });
+            }
         });
 
         try {
@@ -805,18 +806,17 @@ const DProjects = () => {
                             </div>
                         ) : (
                             filteredProjects.map((project) => (
-                                <ProjectRow 
-                                    key={project.id} 
-                                    project={project} 
-                                    isDark={isDark} 
+                                <ProjectRow
+                                    key={project.id}
+                                    project={project}
+                                    isDark={isDark}
                                     dragWidth={dragWidth}
                                     tableColumns={tableColumns}
                                     tableMinWidth={tableMinWidth}
                                     searchQuery={searchQuery}
                                     setViewingProject={setViewingProject}
+                                    setViewingContributor={setViewingContributor}
                                     onReorderEnd={persistOrder}
-                                    onEdit={handleEditProject}
-                                    onDelete={handleDeleteProject}
                                     activeMenu={activeMenu}
                                     setActiveMenu={setActiveMenu}
                                     setMenuPos={setMenuPos}

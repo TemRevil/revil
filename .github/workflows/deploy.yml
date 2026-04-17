@@ -38,6 +38,10 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm install
+      - name: Check Linting Rules
+        run: npm run lint
+      - name: Check TypeScript Types
+        run: npx tsc --noEmit
       - name: Build
         run: |
           npm run build

@@ -4,7 +4,8 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Plus, Briefcase } from 'lucide-react';
 
-const DEFAULT_HERO_URL = "";
+// 1x1 transparent GIF to prevent empty src errors and allow onLoad to trigger properly
+const DEFAULT_HERO_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 // True handwriting animation - letter by letter
 const HandwritingText = ({
