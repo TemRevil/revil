@@ -591,7 +591,7 @@ const Projects = () => {
                         ref={handwritingRef}
                         className="text-4xl opacity-0 mb-[-15px] ml-2.5"
                         style={{
-                            fontFamily: "'Rock Salt', cursive",
+                            fontFamily: "'Permanent Marker', cursive",
                             color: 'var(--accent)'
                         }}
                     >

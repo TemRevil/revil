@@ -22,12 +22,23 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "allowJs": true,
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
   "include": [
     "src",
     "next-env.d.ts",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    "dist/types/**/*.ts",
+    "dist/dev/types/**/*.ts"
   ],
-
+  "exclude": [
+    "node_modules"
+  ]
 }
