@@ -6,7 +6,7 @@ import tsEslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', '.next']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -38,7 +38,7 @@ export default defineConfig([
     languageOptions: {
       parser: tsEslint.parser,
       parserOptions: {
-        project: ['./tsconfig.json', './tsconfig.node.json'],
+        project: ['./tsconfig.json'],
         ecmaVersion: 'latest',
         sourceType: 'module',
         ecmaFeatures: { jsx: true },
