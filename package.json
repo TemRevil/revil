@@ -4,21 +4,22 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.1.17",
+    "@tailwindcss/postcss": "^4.2.2",
     "animejs": "^3.2.2",
     "firebase": "^12.6.0",
     "lucide-react": "^0.555.0",
     "motion": "^12.24.7",
+    "next": "^16.2.4",
     "react": "^19.2.3",
-    "recharts": "^2.5.0",
     "react-dom": "^19.2.3",
-    "react-easy-crop": "^5.5.6"
+    "react-easy-crop": "^5.5.6",
+    "recharts": "^2.5.0"
   },
   "devDependencies": {
     "@babel/plugin-transform-react-jsx": "^7.27.1",
@@ -27,16 +28,13 @@
     "@types/animejs": "^3.1.4",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.22",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.10",
     "tailwindcss": "^4.1.17",
-    "typescript-eslint": "^8.48.1",
-    "vite": "^7.3.1",
-    "vite-plugin-pwa": "^1.2.0"
+    "typescript-eslint": "^8.48.1"
   }
 }

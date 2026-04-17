@@ -917,7 +917,7 @@ const DLinks = () => {
                     name: item.Name || '',
                     forField: item.For || '',
                     code: item.Code || item.Rec_CLI || '',
-                    fullLink: `${window.location.origin}${import.meta.env.BASE_URL}${item.Code || item.Rec_CLI || ''}`,
+                    fullLink: `${window.location.origin}/${item.Code || item.Rec_CLI || ''}`,
                     viewed: (item.Views || 0) > 0,
                     counts: item.Views || 0,
                     createdAt: new Date(),

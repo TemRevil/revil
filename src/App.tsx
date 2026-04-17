@@ -20,8 +20,9 @@ type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_li
 
 function App() {
   const [currentSection, setCurrentSection] = useState<Section>(() => {
+    if (typeof window === 'undefined') return 'home';
     const path = window.location.pathname;
-    const base = import.meta.env.BASE_URL;
+    const base = "";
     const normPath = path.replace(/\/$/, '');
     const normBase = base.replace(/\/$/, '');
     if (normPath !== normBase && normPath !== '') {
@@ -67,7 +68,7 @@ function App() {
 
 
   const handleHeroAnimationComplete = useCallback(() => {
-    const isInterviewerMode = sessionStorage.getItem('revil_interviewer_mode') === 'true';
+    const isInterviewerMode = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('revil_interviewer_mode') === 'true' : false;
     if (isInterviewerMode && !hasAutoOpenedCV && (currentSection === 'home' || currentSection === 'view_link')) {
       setHasAutoOpenedCV(true);
       setIsCVModalOpen(true);

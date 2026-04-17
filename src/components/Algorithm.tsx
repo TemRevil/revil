@@ -226,7 +226,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
             const path = window.location.pathname;
             const pathParts = path.split('/').filter(Boolean);
-            const baseParts = import.meta.env.BASE_URL.split('/').filter(Boolean);
+            const baseParts = "/".split('/').filter(Boolean);
             const code = pathParts.length > baseParts.length ? pathParts[pathParts.length - 1] : '';
 
             if (!code) return;
