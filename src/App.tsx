@@ -315,6 +315,7 @@ function App() {
     return () => mainContainer.removeEventListener('touchmove', preventPullToRefresh);
   }, [currentSection, isContactModalOpen]);
 
+  // Fixes #4: Prevent unintended yellow page UI rotation on transitions
   const variants = {
     enter: (direction: number) => {
       if (Math.abs(direction) === 2) {
