@@ -75,8 +75,6 @@ const ProjectRow = ({
     setViewingProject,
     setViewingContributor,
     onReorderEnd,
-    onEdit,
-    onDelete,
     activeMenu,
     setActiveMenu,
     setMenuPos
@@ -300,7 +298,7 @@ const DProjects = () => {
     };
 
     const filteredProjects = useMemo(() => {
-        let sorted = [...projects].sort((a, b) => {
+        const sorted = [...projects].sort((a, b) => {
             const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
             const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
             if (aVal !== bVal) return aVal - bVal;
