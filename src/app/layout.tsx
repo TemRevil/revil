@@ -3,6 +3,7 @@ import './globals.css'
 import '../lib/firebase'
 import ClientProtection from './ClientProtection'
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const metadata: Metadata = {
   title: 'Tem Revil | Main Profile',
   description: 'Main Professional Profile and an advanced portfolio ecosystem.',
