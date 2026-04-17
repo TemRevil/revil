@@ -5,9 +5,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  basePath: process.env.GITHUB_ACTIONS ? '/revil' : '',
+  assetPrefix: process.env.GITHUB_ACTIONS ? '/revil/' : '',
   typescript: {
     ignoreBuildErrors: true,
   }
