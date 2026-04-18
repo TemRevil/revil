@@ -29,18 +29,9 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    const letterSpacing = fontSize * 0.65;
-    const spaceWidth = fontSize * 0.4;
-    let xPos = 0;
-    const positions: number[] = [];
-
-    displayName.split('').forEach((char: string) => {
-        positions.push(xPos);
-        xPos += char === ' ' ? spaceWidth : letterSpacing;
-    });
-
-    const svgWidth = xPos + 20;
-    const svgHeight = fontSize * 1.4;
+    // Using natural SVG kerning with Caveat font
+    const svgWidth = '100%';
+    const svgHeight = fontSize * 2;
 
     useEffect(() => {
         if (isTransitioning && curtainRef.current) {
@@ -90,7 +81,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
 
                         letters.forEach((letter, index) => {
                             const textEl = letter as SVGTextElement;
-                            const estimatedLength = fontSize * 2;
+                            const estimatedLength = fontSize * 3;
 
                             anime({
                                 targets: textEl,
@@ -183,31 +174,36 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
             <div className="absolute flex items-center justify-center" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', height: '100%' }}>
                 <svg
                     ref={svgRef}
-                    width={svgWidth}
-                    height={svgHeight}
-                    viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+                    width="100%"
+                    height="100%"
                     style={{ overflow: 'visible' }}
                 >
-                    {displayName.split('').map((char: string, index: number) => {
-                        if (char === ' ') return null;
+                    <text
+                        x="50%"
+                        y="50%"
+                        dominantBaseline="central"
+                        textAnchor="middle"
+                        fontFamily="'Caveat', cursive"
+                        fontSize={fontSize}
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ paintOrder: 'stroke fill', fill: 'transparent', stroke: 'var(--text-primary)', strokeOpacity: 1 }}
+                    >
+                        {displayName.split('').map((char: string, index: number) => {
+                            if (char === ' ') return <tspan key={index}> </tspan>;
 
-                        return (
-                            <text
-                                key={index}
-                                className="letter-path"
-                                x={positions[index]}
-                                y={fontSize}
-                                fontFamily="'Permanent Marker', cursive"
-                                fontSize={fontSize}
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                style={{ paintOrder: 'stroke fill', visibility: 'hidden', fill: 'transparent', stroke: 'var(--text-primary)', strokeOpacity: 1 }}
-                            >
-                                {char}
-                            </text>
-                        );
-                    })}
+                            return (
+                                <tspan
+                                    key={index}
+                                    className="letter-path"
+                                    style={{ visibility: 'hidden' }}
+                                >
+                                    {char}
+                                </tspan>
+                            );
+                        })}
+                    </text>
                 </svg>
             </div>
         </div>

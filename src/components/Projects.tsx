@@ -589,9 +589,9 @@ const Projects = () => {
                 <div className="mb-8 pl-0">
                     <div
                         ref={handwritingRef}
-                        className="text-4xl opacity-0 mb-[-15px] ml-2.5"
+                        className="text-5xl opacity-0 mb-[-20px] ml-2.5"
                         style={{
-                            fontFamily: "'Permanent Marker', cursive",
+                            fontFamily: "'Caveat', cursive",
                             color: 'var(--accent)'
                         }}
                     >

@@ -278,9 +278,9 @@ const Stack = () => {
                 <div className="mb-14">
                     <div
                         ref={handwritingRef}
-                        className="text-3xl md:text-4xl opacity-0 mb-[-10px] ml-2"
+                        className="text-4xl md:text-5xl opacity-0 mb-[-15px] ml-2"
                         style={{
-                            fontFamily: "'Permanent Marker', cursive",
+                            fontFamily: "'Caveat', cursive",
                             color: 'var(--accent)'
                         }}
                     >
