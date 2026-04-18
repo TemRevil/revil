@@ -139,7 +139,11 @@ const Stack = () => {
 
     type StackData = { icon?: string; name?: string };
     const [stackItems, setStackItems] = useState<StackData[]>([]);
-    const [socialLinks, setSocialLinks] = useState<{ name: string, url: string }[]>([]);
+    const [socialLinks, setSocialLinks] = useState<{ name: string, url: string }[]>([
+        { name: 'Github', url: 'https://github.com/TemRevil' },
+        { name: 'LinkedIn', url: 'https://linkedin.com/in/temrevil' },
+        { name: 'Instagram', url: 'https://instagram.com/temrevil' }
+    ]);
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
     // Track window width for responsive behavior
