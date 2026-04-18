@@ -30,8 +30,6 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
     }, []);
 
     // Using natural SVG kerning with Caveat font
-    const svgWidth = '100%';
-    const svgHeight = fontSize * 2;
 
     useEffect(() => {
         if (isTransitioning && curtainRef.current) {
