@@ -99,18 +99,13 @@ const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
     );
 };
 
-const shimmerKeyframes = `
-@keyframes shimmer-fast {
-    0% { transform: translateX(-150%) skewX(-20deg); }
-    100% { transform: translateX(150%) skewX(-20deg); }
-}
-`;
+// shimmer-fast keyframes are now in globals.css
 
 const CardImage = ({ src, alt }: { src: string; alt: string }) => {
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     return (
         <>
-            <style>{shimmerKeyframes}</style>
+            {/* shimmer-fast keyframes are in globals.css */}
             {/* Skeleton Loader Container */}
             <div 
                 className={`absolute inset-0 z-10 bg-white/5 overflow-hidden transition-opacity duration-1000 ease-out ${isImageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}

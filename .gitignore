@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 
 # Build outputs
@@ -32,8 +32,6 @@ lerna-debug.log*
 # Firebase
 .firebase/
 .firebaserc
-firestore.rules
-storage.rules
 firestore.indexes.json
 functions/lib/
 functions/

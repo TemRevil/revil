@@ -657,12 +657,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                         {/* Image Container - with floating animation */}
                         <div ref={imageContainerRef} className="relative p-4 border border-white/10 z-10 rounded-lg max-w-full glass-panel" style={{ borderRadius: '16px' }}>
                             <div className="relative w-full max-w-[320px] aspect-[4/5] overflow-hidden bg-white/5 rounded-sm">
-                                <style>{`
-                                @keyframes shimmer-fast {
-                                    0% { transform: translateX(-150%) skewX(-20deg); }
-                                    100% { transform: translateX(150%) skewX(-20deg); }
-                                }
-                                `}</style>
+                                {/* shimmer-fast keyframes are in globals.css */}
                                 {/* Skeleton Loader Container */}
                                 <div
                                     className={`absolute inset-0 z-10 bg-white/5 overflow-hidden transition-opacity duration-1000 ease-out ${isImageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}

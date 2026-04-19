@@ -1,0 +1,102 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Function to check if the user is the admin
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'temrevil@gmail.com';
+    }
+
+    // Allow public read access to core portfolio data
+    match /Projects/{projectId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      // Admin can update anything; public users can only increment Views sub-fields
+      allow update: if isAdmin() || (
+         // Only the 'Views' top-level key can change
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['Views'])
+         // Views must remain a map
+         && request.resource.data.Views is map
+      );
+    }
+    
+    match /Tags/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Settings Collection Handling
+    match /Settings/Account {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /Settings/Views {
+      allow read: if true;
+      allow update: if (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'totalViews', 'totalProjectViews', 'totalSocialClicks', 
+          'visitorCount', 'dailyViews', 'projectViews'
+        ]) &&
+        request.resource.data.totalViews is number &&
+        request.resource.data.totalProjectViews is number &&
+        request.resource.data.totalSocialClicks is number &&
+        // Prevent arbitrary value manipulation — values must only increase
+        request.resource.data.totalViews >= resource.data.totalViews &&
+        request.resource.data.totalProjectViews >= resource.data.totalProjectViews &&
+        request.resource.data.totalSocialClicks >= resource.data.totalSocialClicks &&
+        // Cap maximum single-session increment to prevent abuse
+        request.resource.data.totalViews <= resource.data.totalViews + 10 &&
+        request.resource.data.totalProjectViews <= resource.data.totalProjectViews + 100 &&
+        request.resource.data.totalSocialClicks <= resource.data.totalSocialClicks + 100
+      );
+      allow create, delete: if isAdmin();
+    }
+
+    match /Settings/Canary {
+      allow read: if true;
+      // Admin has full write access
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        // Only allow modifications to Emails or Meetings maps
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['Emails', 'Meetings'])
+        // Rate-limit: cap total entries to prevent spam flooding
+        && request.resource.data.Emails.size() <= 50
+        && request.resource.data.Meetings.size() <= 100
+        // Ensure document doesn't grow unbounded (Firestore 1MB limit safety)
+        && request.resource.size() < 500 * 1024
+      );
+    }
+
+    // Settings/Views subcollections — analytics written by public visitors
+    // Daily & Main analytics (Algorithm.tsx uses setDoc with merge)
+    match /Settings/Views/Analysis/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Link tracking (Algorithm.tsx increments Views + patches Rec_CLI)
+    match /Settings/Views/Links/{linkId} {
+      allow read: if true;
+      allow update: if true;
+      allow create, delete: if isAdmin();
+    }
+
+    // Social click tracking (useSocialTracker.ts uses setDoc merge + updateDoc)
+    match /Settings/Views/Socials/{socialName} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // All other Settings docs — admin only
+    match /Settings/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Secure everything else (require admin access)
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

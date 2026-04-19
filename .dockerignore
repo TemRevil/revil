@@ -1,6 +1,11 @@
 node_modules
 .git
 .github
+.next
 dist
 .env
 .DS_Store
+.firebase
+.jules
+.antigravity
+*.log

@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Craft rules for Firebase Storage
+// See https://firebase.google.com/docs/storage/security
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Contact form email attachments — public write with strict constraints
+    match /emails/{emailId}/{fileName} {
+      allow read: if true;
+      allow write: if 
+        // Max 10MB per file
+        request.resource.size < 10 * 1024 * 1024
+        // Only allow safe file types
+        && request.resource.contentType.matches('(image|application/pdf|text/plain|application/msword|application/vnd\\.openxmlformats).*');
+    }
+
+    // Everything else — public read, admin-only write
+    match /{allPaths=**} {
+      // Allow public read access to all files
+      allow read: if true;
+      
+      // Allow write access only to the admin (with size safety net)
+      allow write: if request.auth != null 
+        && request.auth.token.email == 'temrevil@gmail.com'
+        && request.resource.size < 50 * 1024 * 1024;
+    }
+  }
+}

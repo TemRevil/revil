@@ -1245,6 +1245,25 @@ textarea,
   animation: float 6s ease-in-out infinite reverse;
 }
 
+/* Shimmer loading animation (used by project cards and media) */
+@keyframes shimmer-fast {
+  0% { transform: translateX(-150%) skewX(-20deg); }
+  100% { transform: translateX(150%) skewX(-20deg); }
+}
+
+/* Scroll wheel indicator animation */
+@keyframes scrollWheel {
+  0% { transform: translateY(0); opacity: 1; }
+  50% { transform: translateY(15px); opacity: 1; }
+  100% { transform: translateY(15px); opacity: 0; }
+}
+
+/* Hide scrollbars for modal and creators containers */
+.modal-scroll-container::-webkit-scrollbar { display: none; }
+.modal-scroll-container { -ms-overflow-style: none; scrollbar-width: none; }
+.creators-scroll-container::-webkit-scrollbar { display: none; }
+.creators-scroll-container { -ms-overflow-style: none; scrollbar-width: none; }
+
 /* ========================================
    12. GRADIENTS & EFFECTS
    ======================================== */

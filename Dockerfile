@@ -1,19 +1,27 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci --ignore-scripts
 
 # Copy application source code
 COPY . .
 
-# Build the application
+# Build the application (static export to /app/dist)
 RUN npm run build
 
-# Install a lightweight static server to serve the app
+# --- Production stage ---
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install a lightweight static server
 RUN npm install -g serve
+
+# Copy only the built output from the builder stage
+COPY --from=builder /app/dist ./dist
 
 # Expose port (default for serve is 3000)
 EXPOSE 3000

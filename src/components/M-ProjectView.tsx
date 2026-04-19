@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
-import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { sanitizeSvg } from '../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor } from '../utils/projectUtils';
@@ -399,18 +399,13 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
     );
 });
 
-const shimmerKeyframes = `
-@keyframes shimmer-fast {
-    0% { transform: translateX(-150%) skewX(-20deg); }
-    100% { transform: translateX(150%) skewX(-20deg); }
-}
-`;
+// shimmer-fast keyframes are now in globals.css
 
 const ProjectMediaImage = ({ src }: { src: string }) => {
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     return (
         <div style={{ position: 'absolute', inset: 0 }}>
-            <style>{shimmerKeyframes}</style>
+            {/* shimmer-fast keyframes are in globals.css */}
             {/* Skeleton Loader Container */}
             <div 
                 style={{
@@ -466,7 +461,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const [isDark, setIsDark] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
     const [availableTags, setAvailableTags] = useState<TagItem[]>([]);
 
     const sortedMedia = React.useMemo(() => {
@@ -511,15 +506,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         if (!project.repoLink || !project.id) return;
         try {
             const projectRef = doc(db, 'Projects', project.id.toString());
-            const snap = await getDoc(projectRef);
-            if (snap.exists()) {
-                const currentViews = snap.data().Views || {};
-                const currentVal = typeof currentViews.Github === 'number' ? currentViews.Github : parseInt(String(currentViews.Github || "0"));
-                const newVal = (currentVal + 1).toString();
-                await updateDoc(projectRef, {
-                    "Views.Github": newVal
-                });
-            }
+            await updateDoc(projectRef, { "Views.Github": increment(1) });
         } catch (err) {
             console.warn("Could not increment github views:", err);
         }
@@ -529,15 +516,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         if ((!project.liveLink && !project.demoLink) || !project.id) return;
         try {
             const projectRef = doc(db, 'Projects', project.id.toString());
-            const snap = await getDoc(projectRef);
-            if (snap.exists()) {
-                const currentViews = snap.data().Views || {};
-                const currentVal = typeof currentViews.Live === 'number' ? currentViews.Live : parseInt(String(currentViews.Live || "0"));
-                const newVal = (currentVal + 1).toString();
-                await updateDoc(projectRef, {
-                    "Views.Live": newVal
-                });
-            }
+            await updateDoc(projectRef, { "Views.Live": increment(1) });
         } catch (err) {
             console.warn("Could not increment live views:", err);
         }
@@ -547,15 +526,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         if (!project.downloadLink || !project.id) return;
         try {
             const projectRef = doc(db, 'Projects', project.id.toString());
-            const snap = await getDoc(projectRef);
-            if (snap.exists()) {
-                const currentViews = snap.data().Views || {};
-                const currentVal = typeof currentViews.Download === 'number' ? currentViews.Download : parseInt(String(currentViews.Download || "0"));
-                const newVal = (currentVal + 1).toString();
-                await updateDoc(projectRef, {
-                    "Views.Download": newVal
-                });
-            }
+            await updateDoc(projectRef, { "Views.Download": increment(1) });
         } catch (err) {
             console.warn("Could not increment download views:", err);
         }
@@ -608,6 +579,10 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         return () => unsub();
     }, []);
 
+    // Ref to track latest availableTags without causing effect re-runs
+    const availableTagsRef = useRef<TagItem[]>(availableTags);
+    availableTagsRef.current = availableTags;
+
     // Sync with Firestore for real-time views
     useEffect(() => {
         if (!project.id) return;
@@ -617,8 +592,8 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         const resolveTag = (t: string | { name?: string; Name?: string; color?: string; Color?: string; iconSvg?: string; Icon?: string } | null | undefined) => {
             if (!t) return { name: 'Unknown', color: '#60a5fa', iconSvg: '' };
             const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
-            // Try to find in global tags
-            const globalTag = availableTags.find(gt => gt.name.toLowerCase() === name.toLowerCase());
+            // Use ref to get latest tags without causing re-subscription
+            const globalTag = availableTagsRef.current.find(gt => gt.name.toLowerCase() === name.toLowerCase());
 
             return {
                 name,
@@ -669,26 +644,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
             }
         });
 
-        // Increment project views on mount
-        const incrementViews = async () => {
-            try {
-                const snap = await getDoc(projectRef);
-                if (snap.exists()) {
-                    const currentViews = snap.data().Views || {};
-                    const currentVal = typeof currentViews.Project === 'number' ? currentViews.Project : parseInt(String(currentViews.Project || "0"));
-                    const newVal = (currentVal + 1).toString();
-                    await updateDoc(projectRef, {
-                        "Views.Project": newVal
-                    });
-                }
-            } catch (err) {
-                console.warn("Could not increment views:", err);
-            }
-        };
-        incrementViews();
+        // Atomically increment project views on mount
+        updateDoc(projectRef, { "Views.Project": increment(1) }).catch(err =>
+            console.warn("Could not increment views:", err)
+        );
 
         return () => unsub();
-    }, [project.id, availableTags, project.name, project.title]);
+    }, [project.id, project.name, project.title]);
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
@@ -1167,21 +1129,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                 </motion.div>
             </motion.div>
 
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                @keyframes slideUp { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: translateY(0); } }
-                @keyframes slideDown { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(60px); } }
-                @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes scrollWheel { 
-                    0% { transform: translateY(0); opacity: 1; } 
-                    50% { transform: translateY(15px); opacity: 1; }
-                    100% { transform: translateY(15px); opacity: 0; } 
-                }
-                .modal-scroll-container::-webkit-scrollbar { display: none; }
-                .creators-scroll-container::-webkit-scrollbar { display: none; }
-                * { scroll-behavior: smooth; }
-            ` }} />
+            {/* Keyframes (scrollWheel, scrollbar hiding) now in globals.css */}
         </motion.div>,
         document.body
     );

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe } from 'lucide-react';
-import { doc, updateDoc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, onSnapshot, getDoc, runTransaction } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import { db, storage, functions } from '../lib/firebase';
@@ -95,7 +95,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const [showNameTooltip, setShowNameTooltip] = useState(false);
   const [showEmailTooltip, setShowEmailTooltip] = useState(false);
   const { alert, showAlert, hideAlert } = useSafeAlert(4000);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
 
   // Timezone States
   const [hostTimezoneString, setHostTimezoneString] = useState('UTC+02:00 (EET)'); // Default
@@ -377,35 +377,36 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
       // 4. Save to Firebase
       const docRef = doc(db, 'Settings', 'Canary');
-      const docSnap = await getDoc(docRef);
-
-      let nextId = "1";
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const meetings = data.Meetings || {};
-        const keys = Object.keys(meetings).map(k => parseInt(k, 10)).filter(k => !isNaN(k));
-        if (keys.length > 0) nextId = (Math.max(...keys) + 1).toString();
-      }
-
       const dateStr = formatDateDDMMYYYY(selectedDate);
-      // Save it in the host's perspective so they see it in their local time in their dashboard
-      const hostPerspecTime = convertTimeToHost(selectedTime);
+      // Use a transaction to safely generate the next meeting ID without race conditions
+      await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(docRef);
+        let nextId = "1";
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const meetings = data.Meetings || {};
+          const keys = Object.keys(meetings).map(k => parseInt(k, 10)).filter(k => !isNaN(k));
+          if (keys.length > 0) nextId = (Math.max(...keys) + 1).toString();
+        }
 
-      const payload = {
-        Date: dateStr,
-        Time: hostPerspecTime,
-        UserLocalTime: selectedTime,
-        UserTimezone: userTimezone,
-        Email: meetingData.email.trim(),
-        "What For": meetingData.reason,
-        Name: meetingData.name,
-        timestamp: Date.now(),
-        MeetingLink: meetLink,
-        GoogleEventId: googleEventId // Store the ID for reliable deletion/updates
-      };
+        // Save it in the host's perspective so they see it in their local time in their dashboard
+        const hostPerspecTime = convertTimeToHost(selectedTime);
 
+        const payload = {
+          Date: dateStr,
+          Time: hostPerspecTime,
+          UserLocalTime: selectedTime,
+          UserTimezone: userTimezone,
+          Email: meetingData.email.trim(),
+          "What For": meetingData.reason,
+          Name: meetingData.name,
+          timestamp: Date.now(),
+          MeetingLink: meetLink,
+          GoogleEventId: googleEventId // Store the ID for reliable deletion/updates
+        };
 
-      await updateDoc(docRef, { [`Meetings.${nextId}`]: payload });
+        transaction.update(docRef, { [`Meetings.${nextId}`]: payload });
+      });
 
       setBookingSuccess({ date: dateStr, time: selectedTime || '', link: meetLink || '' });
       setMeetingData({ name: '', email: '', reason: '' });
@@ -510,38 +511,40 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
     try {
       const docRef = doc(db, 'Settings', 'Canary');
-      const docSnap = await getDoc(docRef);
-
-      let nextId = "1";
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const emails = data.Emails || {};
-        const keys = Object.keys(emails).map(k => parseInt(k, 10)).filter(k => !isNaN(k));
-        if (keys.length > 0) nextId = (Math.max(...keys) + 1).toString();
-      }
-
-      // Handle File Uploads
-      const uploadedFiles = [];
-      if (formData.attachments.length > 0) {
-        for (const file of formData.attachments) {
-          const fileRef = ref(storage, `emails/${nextId}/${file.name}`);
-          const snapshot = await uploadBytes(fileRef, file);
-          const downloadURL = await getDownloadURL(snapshot.ref);
-          uploadedFiles.push({ name: file.name, url: downloadURL });
+      // Use a transaction to safely generate the next email ID without race conditions
+      await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(docRef);
+        let nextId = "1";
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const emails = data.Emails || {};
+          const keys = Object.keys(emails).map(k => parseInt(k, 10)).filter(k => !isNaN(k));
+          if (keys.length > 0) nextId = (Math.max(...keys) + 1).toString();
         }
-      }
 
-      const payload = {
-        Name: formData.name,
-        Email: formData.email,
-        "Files Attached": uploadedFiles,
-        Message: formData.message,
-        Number: formData.number,
-        Whatsapp: formData.hasWhatsapp,
-        Timestamp: Date.now()
-      };
+        // Handle File Uploads (outside transaction since Storage is separate)
+        const uploadedFiles = [];
+        if (formData.attachments.length > 0) {
+          for (const file of formData.attachments) {
+            const fileRef = ref(storage, `emails/${nextId}/${file.name}`);
+            const snapshot = await uploadBytes(fileRef, file);
+            const downloadURL = await getDownloadURL(snapshot.ref);
+            uploadedFiles.push({ name: file.name, url: downloadURL });
+          }
+        }
 
-      await updateDoc(docRef, { [`Emails.${nextId}`]: payload });
+        const payload = {
+          Name: formData.name,
+          Email: formData.email,
+          "Files Attached": uploadedFiles,
+          Message: formData.message,
+          Number: formData.number,
+          Whatsapp: formData.hasWhatsapp,
+          Timestamp: Date.now()
+        };
+
+        transaction.update(docRef, { [`Emails.${nextId}`]: payload });
+      });
 
       showAlert({ type: 'success', message: "Message sent! I'll get back to you soon." });
       setFormData({
@@ -812,7 +815,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                       {meetingsForDay.slice(0, 3).map((m: Meeting, idx) => (
                                         <div key={idx} title={`${m.Time} - ${m.Name}`} style={{
                                           width: '4px', height: '4px', borderRadius: '50%',
-                                          background: m.Email === 'temrevil@gmail.com' ? '#f59e0b' : '#10b981', // Host meetings orange, others green
+                                          background: m.Name === meetingData.name ? '#f59e0b' : '#10b981', // Owner meetings orange, others green
                                           position: 'relative', zIndex: 1
                                         }} />
                                       ))}
@@ -852,7 +855,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               {bookingSuccess.link && bookingSuccess.link.startsWith('http') ? (
                                 <div style={{ padding: '16px', background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', borderRadius: '12px', width: '100%' }}>
                                   <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Google Meet Link</div>
-                                  <a href={bookingSuccess.link} target="_blank" rel="noreferrer" style={{ color: 'rgb(59, 130, 246)', fontWeight: 600, wordBreak: 'break-all', textDecoration: 'none' }}>
+                                  <a href={bookingSuccess.link} target="_blank" rel="noopener noreferrer" style={{ color: 'rgb(59, 130, 246)', fontWeight: 600, wordBreak: 'break-all', textDecoration: 'none' }}>
                                     {bookingSuccess.link}
                                   </a>
                                 </div>
