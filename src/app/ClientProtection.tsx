@@ -60,7 +60,7 @@ function isScriptTrusted(node: Node): boolean {
   try {
     const url = new URL(src, window.location.origin);
     if (url.origin === window.location.origin) return true;
-  } catch (e) {
+  } catch {
     if (src.startsWith('/')) return true;
   }
 
