@@ -55,6 +55,15 @@ function isScriptTrusted(node: Node): boolean {
   if (!(node instanceof HTMLScriptElement)) return false;
   const src = node.src || '';
   if (!src) return false; // Inline scripts with no src
+  
+  // Allow same-origin scripts (crucial for Next.js dynamic chunks)
+  try {
+    const url = new URL(src, window.location.origin);
+    if (url.origin === window.location.origin) return true;
+  } catch (e) {
+    if (src.startsWith('/')) return true;
+  }
+
   return TRUSTED_SCRIPT_DOMAINS.some(domain => src.includes(domain));
 }
 

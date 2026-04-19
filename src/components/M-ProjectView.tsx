@@ -582,7 +582,9 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
 
     // Ref to track latest availableTags without causing effect re-runs
     const availableTagsRef = useRef<TagItem[]>(availableTags);
-    availableTagsRef.current = availableTags;
+    useEffect(() => {
+        availableTagsRef.current = availableTags;
+    }, [availableTags]);
 
     // Sync with Firestore for real-time views
     useEffect(() => {

@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Github, Linkedin, Globe, Instagram, Facebook, User } from 'lucide-react';
 import { ContributorData } from '../types';
