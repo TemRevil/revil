@@ -44,6 +44,22 @@ function App() {
   const [showContributorModal, setShowContributorModal] = useState(false);
   const [hasAutoOpenedCV, setHasAutoOpenedCV] = useState(false);
 
+  // Version Control & Forced Cache Invalidation
+  // Update APP_VERSION whenever you want to force all return users to clear their localStorage
+  useEffect(() => {
+    const APP_VERSION = 'v1.0.1'; // Change this to force a wipe
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      const currentVersion = localStorage.getItem('revil_app_version');
+      if (currentVersion !== APP_VERSION) {
+        console.warn('[Version Control] Mismatch detected. Purging heavy caches...');
+        localStorage.clear();
+        sessionStorage.clear();
+        localStorage.setItem('revil_app_version', APP_VERSION);
+        window.location.reload();
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const handleLoad = () => setIsWindowReady(true);
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
