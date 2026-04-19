@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { sanitizeSvg } from '../../lib/sanitize';
 import { createPortal } from 'react-dom';
 import { X, Upload, Plus, Image as ImageIcon, Github, ExternalLink, Trash2, Eye, Edit } from 'lucide-react';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
@@ -530,7 +531,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                                                 tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image') ? (
                                                     <img src={tag.iconSvg} className="w-4 h-4 object-contain" alt={tag.name} />
                                                 ) : (
-                                                    <span className="w-4 h-4 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: tag.iconSvg }} />
+                                                    <span className="w-4 h-4 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.iconSvg) }} />
                                                 )
                                             )}
                                             <span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{tag.name}</span>
@@ -697,7 +698,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                                             tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image') ? (
                                                 <img src={tag.iconSvg} className="w-8 h-8 object-contain" alt={tag.name} />
                                             ) : (
-                                                <span className="w-8 h-8 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: tag.iconSvg }} />
+                                                <span className="w-8 h-8 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.iconSvg) }} />
                                             )
                                         )}
                                         <span className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{tag.name}</span>
@@ -899,7 +900,7 @@ const LiveProjectCard = ({ project, isDark }: { project: ProjectFormData; isDark
                                     ) : (
                                         <span className="w-3.5 h-3.5 flex items-center justify-center"
                                             style={{ filter: 'brightness(0) invert(1)' }}
-                                            dangerouslySetInnerHTML={{ __html: tech.iconSvg }} />
+                                            dangerouslySetInnerHTML={{ __html: sanitizeSvg(tech.iconSvg) }} />
                                     )
                                 )}
                                 {tech.name}

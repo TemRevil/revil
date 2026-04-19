@@ -1,8 +1,10 @@
 # Revil | Main Profile
-![Main Profile](https://img.shields.io/badge/Status-Primary%20Ecosystem-blue?style=for-the-badge&logo=github)
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)
-![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&style=flat-square)
+![Next.js](https://img.shields.io/badge/Next.js%2015-black?style=flat-square&logo=next.js)
+![React](https://img.shields.io/badge/React%2019-%2320232a.svg?style=flat-square&logo=react&logoColor=%2361DAFB)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind%204-%2338B2AC.svg?style=flat-square&logo=tailwind-css&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)
+![Motion](https://img.shields.io/badge/Motion-000000?style=flat-square&logo=framer&logoColor=white)
+![Firebase](https://img.shields.io/badge/Firebase-%23039BE5.svg?style=flat-square&logo=firebase)
 
 **Revil** is my **Main Professional Profile** and a premium, ultra-responsive developer portfolio ecosystem. Designed for high-end digital presence, it consists of a stunning user-facing showcase and a powerful, real-time Administrative Dashboard to manage every facet of my professional career as a **Frontend & AI Expert**.
 
@@ -24,9 +26,9 @@ A private, real-time command center built for elite project management:
 - **Link Architect**: Generate trackable custom URLs for specific clients to monitor when they view your portfolio.
 
 ### ⚡ Technical Excellence
-- **React 19 & Vite**: Leveraging the latest in front-end performance and concurrent rendering.
-- **Real-time Firestore**: Live data synchronization across all devices without page refreshes.
-- **Cloud Infrastructure**: Scalable backend logic using Firebase Cloud Functions and secure file handling via Firebase Storage.
+- **React 19 & Next.js 15**: Leveraging the latest in front-end performance, App Router, and server-side capabilities.
+- **Robust Security**: Hardened Firestore rules, environment variable isolation, CSP compliance, and secure sanitized SVG rendering.
+- **Cloud Infrastructure**: Scalable backend logic using Firebase Cloud Functions, Realtime live data synchronization, and secure file handling via Firebase Storage.
 
 ---
 
@@ -60,10 +62,11 @@ docker run -p 3000:3000 revil-portfolio
 
 ## 🤖 Continuous Integration & Security
 
-We maintain high-end reliability and stability across the entire project through automated defenses:
-- **Zero-Error Automation**: Every push to the repository runs through aggressive GitHub Action workflows. It strictly tests against `npm run lint` and `npx tsc --noEmit`.
+We maintain high-end reliability and stability across the entire project through automated defenses and strict security policies:
+- **Zero-Error Automation**: Every push to the protected `main` branch runs through aggressive GitHub Action workflows. It rigidly tests against `npm run lint`, `npm run build`, and enforces strict TypeScript standards.
+- **Data & Configuration Security**: The project utilizes hardened, defense-in-depth Firestore and Storage rules, consolidated real-time listeners, and strict CSP headers. Environment variables are managed securely using `NEXT_PUBLIC_*` prefixes.
+- **Rogue DOM Protection**: The React application runs `ClientProtection`, an aggressive `MutationObserver` on the real DOM. It shields against malicious external browser extensions, strictly sanitizes HTML/SVG injections via `sanitizeSvg()`, and destroys unauthorized style injections.
 - **Email Red Alerts**: If a syntax error, bad prop, or type issue is ever committed, the deployment instantly aborts to protect production, and GitHub natively emails the owner with a link to the exact line of code failure.
-- **Rogue DOM Protection**: The React application runs an aggressive `MutationObserver` on the real DOM. If external browser extensions (e.g., VPNs or adware) attempt to inject malicious `.style` tags or rotating CSS animations over the UI, the engine instantly destroys them to preserve pixel-perfect branding.
 
 ---
 
@@ -72,14 +75,15 @@ We maintain high-end reliability and stability across the entire project through
 
 ```text
 src/
+├── app/                 # Next.js App Router (layout, pages, globals.css)
+│   └── ClientProtection.tsx # Core DOM shield & security layer
 ├── components/          # React components
 │   ├── dashboard/       # Specialized Admin Dashboard modules
-│   ├── reactbits/       # Premium UI components (Loaders, etc.)
 │   └── M-*.tsx          # Reusable Modals
-├── lib/                 # Core engine (Firebase, logic)
-├── style.css            # Elite Design System & global utilities
-├── App.tsx              # Navigation & Global Logic
-└── Algorithm.tsx        # Interaction Tracking Engine
+├── hooks/               # Custom React hooks (e.g., useTheme)
+├── lib/                 # Core logic (Firebase setup, data structures)
+├── utils/               # Global utility functions (e.g., sanitizeSvg)
+└── App.tsx              # Main Navigation & Global Application Wrapper
 ```
 
 ---
@@ -88,11 +92,12 @@ src/
 
 | Domain | Technology |
 | :--- | :--- |
-| **Framework** | [React 19](https://react.dev/), [Vite 7](https://vitejs.dev/) |
+| **Framework** | [React 19](https://react.dev/), [Next.js 15](https://nextjs.org/) |
 | **Backend** | [Firebase](https://firebase.google.com/) (Firestore, Functions, Storage) |
-| **Animation** | [Anime.js](https://animejs.com/), [Framer Motion](https://www.framer.com/motion/) |
+| **Animation** | [Anime.js](https://animejs.com/), [Framer Motion](https://motion.dev/) |
+| **Security** | ClientProtection DOM Shield, Hardened Rules, strict CSP |
 | **Icons** | [Lucide React](https://lucide.dev/) |
-| **Styling** | Vanilla CSS (Custom Design System), Tailwind Utility Layer |
+| **Styling** | Vanilla CSS (Custom Design System), Tailwind CSS v4 |
 | **Logic** | TypeScript |
 
 ---

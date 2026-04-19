@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { sanitizeSvg } from '../../lib/sanitize';
 import { createPortal } from 'react-dom';
 import { X, HardDrive } from 'lucide-react';
 import MFirebaseStorage from './M-FirebaseStorage';
@@ -98,7 +99,7 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
                                 ) : (
                                     <div
                                         className="w-[18px] h-[18px] flex items-center justify-center overflow-hidden text-inherit"
-                                        dangerouslySetInnerHTML={{ __html: iconSvg }}
+                                        dangerouslySetInnerHTML={{ __html: sanitizeSvg(iconSvg) }}
                                     />
                                 )
                             ) : (
@@ -171,7 +172,7 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
                                         <div
                                             className="w-12 h-12 flex items-center justify-center overflow-hidden"
                                             style={{ color }}
-                                            dangerouslySetInnerHTML={{ __html: iconSvg }}
+                                            dangerouslySetInnerHTML={{ __html: sanitizeSvg(iconSvg) }}
                                         />
                                     )}
                                 </div>

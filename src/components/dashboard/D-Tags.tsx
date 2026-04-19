@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { sanitizeSvg } from '../../lib/sanitize';
 import { Search, Plus, Tag, Edit2, Trash2, Users, UserPlus } from 'lucide-react';
 import { doc, collection, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -556,7 +557,7 @@ const DTags = () => {
                                                                 <img src={tag.iconSvg} alt={tag.name} className="w-full h-full object-contain" />
                                                             ) : (
                                                                 <div className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>svg]:fill-current"
-                                                                    dangerouslySetInnerHTML={{ __html: tag.iconSvg }}
+                                                                    dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.iconSvg) }}
                                                                 />
                                                             )
                                                         ) : (

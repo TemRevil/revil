@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { sanitizeSvg } from '../../lib/sanitize';
 import { createPortal } from 'react-dom';
 import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, Github, GripVertical } from 'lucide-react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
@@ -159,7 +160,7 @@ const ProjectRow = ({
                                     ) : (
                                         <span className="w-4 h-4 flex items-center justify-center"
                                             style={{ filter: isDark ? 'brightness(0) invert(1)' : 'none' }}
-                                            dangerouslySetInnerHTML={{ __html: tag.iconSvg }} />
+                                            dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.iconSvg || '') }} />
                                     )
                                 ) : (
                                     <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200">{tag.name.charAt(0)}</span>
