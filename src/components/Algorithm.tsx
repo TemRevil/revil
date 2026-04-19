@@ -20,7 +20,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
 
     // Session Start
-    const sessionStart = useRef(Date.now());
+    const sessionStart = useRef(0);
 
     // Metrics Refs
     const metrics = useRef({
@@ -35,7 +35,13 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     });
 
     // Tracking active section time
-    const lastSectionCheck = useRef(Date.now());
+    const lastSectionCheck = useRef(0);
+
+    // Initialize time refs on mount (avoids calling Date.now() during render)
+    useEffect(() => {
+        sessionStart.current = Date.now();
+        lastSectionCheck.current = Date.now();
+    }, []);
 
     // Contact Open Tracking
     const prevContactOpen = useRef(isContactOpen);
@@ -287,163 +293,6 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
         recordLink();
     }, [onNavigate, showAlert]);
-
-    // 3. Sync to Firestore (Final Push with Accumulation)
-    const syncData = useCallback(async () => {
-        const linkId = sessionStorage.getItem('revil_link_id');
-        if (!linkId || metrics.current.isSyncing) return;
-
-        const totalSessionSeconds = Math.floor((Date.now() - sessionStart.current) / 1000);
-        const m = metrics.current;
-
-        // Prevent syncing if session is too short and has no activity
-        if (totalSessionSeconds < 5 && m.contactOpens === 0 && Object.keys(m.projectStats).length === 0 && Object.keys(m.socialStats).length === 0) {
-            return;
-        }
-
-        metrics.current.isSyncing = true;
-
-        // Helper to parse time strings into total seconds
-        const parseToSecs = (raw: string | null, label: string) => {
-            if (!raw) return 0;
-            try {
-                const regex = new RegExp(`${label}:\\s*(.*?)(?:,|]|$)`);
-                const match = raw.match(regex);
-                if (!match) return 0;
-                const timeStr = match[1];
-
-                const msMatch = timeStr.match(/(\d+)m\s*(\d+)s/);
-                if (msMatch) return (parseInt(msMatch[1]) * 60) + parseInt(msMatch[2]);
-
-                const mMatch = timeStr.match(/([\d.]+)m/);
-                if (mMatch) return Math.floor(parseFloat(mMatch[1]) * 60);
-            } catch (e) {
-                console.error(`Error parsing ${label} seconds:`, e);
-            }
-            return 0;
-        };
-
-        const parseProjects = (raw: string | null) => {
-            const pMap: Record<string, { seconds: number; views: number }> = {};
-            if (!raw) return pMap;
-            try {
-                const pStr = raw.match(/Projects:\[(.*?)\]/)?.[1] || raw.match(/P:\[(.*?)\]/)?.[1] || '';
-                if (pStr) {
-                    pStr.split('|').forEach(item => {
-                        const parts = item.split(':');
-                        if (parts.length >= 2) {
-                            const id = parts[0];
-                            const timePart = parts[1];
-                            const viewsMatch = item.match(/\((\d+)x\)$/) || item.match(/:(\d+)v$/);
-                            const views = viewsMatch ? parseInt(viewsMatch[1]) : 0;
-
-                            let seconds = 0;
-                            const msMatch = timePart.match(/(\d+)m\s*(\d+)s/);
-                            const mMatch = timePart.match(/([\d.]+)m/);
-                            if (msMatch) seconds = (parseInt(msMatch[1]) * 60) + parseInt(msMatch[2]);
-                            else if (mMatch) seconds = Math.floor(parseFloat(mMatch[1]) * 60);
-
-                            pMap[id] = { seconds, views };
-                        }
-                    });
-                }
-            } catch (e) {
-                console.error("Error parsing projects:", e);
-            }
-            return pMap;
-        };
-
-        const parseSocials = (raw: string | null) => {
-            const sMap: Record<string, { seconds: number; views: number }> = {};
-            if (!raw) return sMap;
-            try {
-                const sStr = raw.match(/Socials:\[(.*?)\]/)?.[1] || '';
-                if (sStr) {
-                    sStr.split('|').forEach(item => {
-                        const parts = item.split(':');
-                        if (parts.length >= 2) {
-                            const id = parts[0];
-                            const timePart = parts[1];
-                            const viewsMatch = item.match(/\((\d+)x\)$/);
-                            const views = viewsMatch ? parseInt(viewsMatch[1]) : 0;
-
-                            let seconds = 0;
-                            const msMatch = timePart.match(/(\d+)m\s*(\d+)s/);
-                            if (msMatch) seconds = (parseInt(msMatch[1]) * 60) + parseInt(msMatch[2]);
-
-                            sMap[id] = { seconds, views };
-                        }
-                    });
-                }
-            } catch (e) {
-                console.error("Error parsing socials:", e);
-            }
-            return sMap;
-        };
-
-        let baseTotalSecs = 0;
-        let baseStackSecs = 0;
-        let baseContact = 0;
-        let baseProjects = {} as Record<string, { seconds: number; views: number }>;
-        let baseSocials = {} as Record<string, { seconds: number; views: number }>;
-
-        try {
-            baseTotalSecs = parseToSecs(metrics.current.baseMetrics, 'Session') || parseToSecs(metrics.current.baseMetrics, 'T');
-            baseStackSecs = parseToSecs(metrics.current.baseMetrics, 'Stack') || parseToSecs(metrics.current.baseMetrics, 'S');
-            baseContact = parseInt(metrics.current.baseMetrics?.match(/Contact:(\d+)/)?.[1] || metrics.current.baseMetrics?.match(/C:(\d+)/)?.[1] || '0');
-            baseProjects = parseProjects(metrics.current.baseMetrics);
-            baseSocials = parseSocials(metrics.current.baseMetrics);
-        } catch (e) {
-            console.error("Critical parsing error in syncData, using fallbacks:", e);
-        }
-
-        const finalTotalSecs = baseTotalSecs + totalSessionSeconds;
-        const finalStackSecs = baseStackSecs + m.stackTime;
-        const finalContact = baseContact + m.contactOpens;
-
-        const formatTime = (s: number) => {
-            const mins = Math.floor(s / 60);
-            const secs = Math.floor(s % 60);
-            return `${mins}m ${secs}s`;
-        };
-
-        // Merge project stats
-        const mergedProjects = { ...baseProjects };
-        Object.entries(m.projectStats).forEach(([id, stats]) => {
-            if (!mergedProjects[id]) mergedProjects[id] = { seconds: 0, views: 0 };
-            mergedProjects[id].seconds += stats.duration;
-            mergedProjects[id].views += stats.views;
-        });
-
-        const projStr = Object.entries(mergedProjects).map(([id, stats]) => {
-            return `${id}:${formatTime(stats.seconds)}(${stats.views}x)`;
-        }).join('|');
-
-        // Merge social stats
-        const mergedSocials = { ...baseSocials };
-        Object.entries(m.socialStats).forEach(([id, stats]) => {
-            if (!mergedSocials[id]) mergedSocials[id] = { seconds: 0, views: 0 };
-            mergedSocials[id].seconds += stats.duration;
-            mergedSocials[id].views += stats.views;
-        });
-
-        const socialStr = Object.entries(mergedSocials).map(([id, stats]) => {
-            return `${id}:${formatTime(stats.seconds)}(${stats.views}x)`;
-        }).join('|');
-
-        const recString = `Session:${formatTime(finalTotalSecs)}, Stack:${formatTime(finalStackSecs)}, Contact:${finalContact}, Projects:[${projStr}], Socials:[${socialStr}]`;
-
-        try {
-            const docRef = doc(db, 'Settings', 'Views', 'Links', linkId);
-            await updateDoc(docRef, {
-                Rec_CLI: recString
-            });
-        } catch {
-            showAlert({ type: 'error', message: 'Final sync failed. Some activity might not be saved.' });
-        } finally {
-            metrics.current.isSyncing = false;
-        }
-    }, [showAlert]);
 
     // Only Sync at the very end — using keepalive fetch for reliability
     useEffect(() => {
