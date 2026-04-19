@@ -283,6 +283,34 @@ textarea,
   opacity: 0.3;
 }
 
+/* Accessibility: Disable heavy animations and GPU-intensive effects for reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .blob {
+    animation: none !important;
+    filter: blur(60px);
+    opacity: 0.5;
+  }
+  
+  .dark .blob {
+    opacity: 0.15;
+  }
+
+  /* Replace expensive backdrop-filter blur with solid semi-transparent backgrounds */
+  .glass-panel,
+  .glass-panel-dark,
+  .glass-dropdown {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Reduce all transition durations */
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 /* ========================================
    4. LAYOUT & UTILITIES
    ======================================== */

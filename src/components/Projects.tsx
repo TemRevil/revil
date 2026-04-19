@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import anime from 'animejs';
 import { X, Search } from 'lucide-react';
 import { db } from '../lib/firebase';
+import { sanitizeSvg } from '../lib/sanitize';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 
 import MProjectView from './M-ProjectView';
@@ -125,6 +126,7 @@ const CardImage = ({ src, alt }: { src: string; alt: string }) => {
             <img
                 src={src}
                 alt={alt}
+                loading="lazy"
                 onLoad={() => setIsImageLoaded(true)}
                 className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-[1500ms] ease-out ${!isImageLoaded ? 'scale-105' : ''}`}
                 style={{
@@ -268,7 +270,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                             title={c.name}
                                         >
                                             {c.image && typeof c.image === 'string' ? (
-                                                <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
+                                                <img src={c.image} alt={c.name} loading="lazy" className="w-full h-full object-cover" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-500 text-[10px] font-bold">
                                                     {c.name ? c.name.charAt(0) : '?'}
@@ -661,7 +663,7 @@ const Projects = () => {
                                             />
                                         ) : (
                                             <div
-                                                dangerouslySetInnerHTML={{ __html: tag.iconSvg }}
+                                                dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.iconSvg) }}
                                                 className="w-8 h-8 fill-current"
                                                 style={{ opacity: isActive ? 1 : 0.6 }}
                                             />

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { sanitizeSvg } from '../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor } from '../utils/projectUtils';
 import { ProjectData as Project, ContributorData as Contributor, TagData as TagItem } from '../types';
 
@@ -957,7 +958,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                                         : (typeof tag.icon === 'string' && tag.icon.startsWith('<svg')) ?
                                                             <div
                                                                 style={{ width: '100%', height: '100%', color: tag.color }}
-                                                                dangerouslySetInnerHTML={{ __html: tag.icon }}
+                                                                dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.icon) }}
                                                             />
                                                             : <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: tag.color, boxShadow: `0 0 10px ${tag.color}` }} />
                                                 ) : <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: tag.color, boxShadow: `0 0 10px ${tag.color}` }} />}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { LayoutGroup, AnimatePresence, motion } from 'framer-motion';
 import Hero from './components/Hero';
 import Navbar from './components/Navbar';
@@ -7,7 +7,7 @@ import PageTransition from './components/PageTransition';
 import Projects from './components/Projects';
 import MContact from './components/M-Contact';
 import SecretPage from './components/SecretPage';
-import Dashboard from './components/Dashboard';
+const Dashboard = lazy(() => import('./components/Dashboard'));
 import { ChevronRight } from 'lucide-react';
 import Loader from './components/reactbits/Loader';
 import { Algorithm } from './components/Algorithm';
@@ -142,7 +142,7 @@ function App() {
       case 'secret':
         return <SecretPage onNavigate={navigateTo} />;
       case 'dashboard':
-        return <Dashboard onNavigate={navigateTo} />;
+        return <Suspense fallback={<Loader isOpen={true} isFullScreen={true} />}><Dashboard onNavigate={navigateTo} /></Suspense>;
       case 'view_link':
         return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
       default:

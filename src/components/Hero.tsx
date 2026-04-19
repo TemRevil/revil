@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -139,19 +140,89 @@ interface AvailabilityData {
 const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark: boolean; entryDelay?: number; isReady?: boolean }) => {
     const badgeRef = useRef<HTMLDivElement>(null);
     const pulseRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
+    const tooltipRef = useRef<HTMLDivElement>(null);
     const [availData, setAvailData] = useState<AvailabilityData | null>(null);
-    const [showTooltip, setShowTooltip] = useState(false);
+    const [tooltipVisible, setTooltipVisible] = useState(false);
+    const [tooltipMounted, setTooltipMounted] = useState(false);
+    const [tooltipPos, setTooltipPos] = useState<{ top: number | 'auto'; bottom: number | 'auto'; left: number; width: number; arrowLeft: number; flipBelow: boolean }>({ top: 0, bottom: 'auto', left: 0, width: 320, arrowLeft: 160, flipBelow: false });
     const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const unmountTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const updateTooltipPosition = () => {
+        if (!triggerRef.current) return;
+
+        const rect = triggerRef.current.getBoundingClientRect();
+        
+        // Responsive width: max 320px, but adapts to small phone screens leaving 16px margins
+        const tooltipW = Math.min(320, window.innerWidth - 32); 
+        const gap = 16;
+        
+        // Approximate height just to check if it fits above the badge
+        const estimatedHeight = tooltipRef.current?.offsetHeight || 260; 
+
+        let flipBelow = false;
+        let top: number | 'auto' = 'auto';
+        let bottom: number | 'auto' = 'auto';
+
+        // Check if there is space above the badge
+        if (rect.top > estimatedHeight + gap + 10) {
+            // Space above exists: anchor to bottom so it grows upwards perfectly
+            bottom = window.innerHeight - rect.top + gap;
+        } else {
+            // Not enough space: anchor to top to grow downwards
+            top = rect.bottom + gap;
+            flipBelow = true;
+        }
+
+        // Center horizontally on badge
+        const badgeCenter = rect.left + (rect.width / 2);
+        let left = badgeCenter - (tooltipW / 2);
+        
+        // Clamp to edges min 16px
+        left = Math.max(16, Math.min(left, window.innerWidth - tooltipW - 16));
+
+        // Calculate arrow position relative to tooltip to always point at badge center
+        // Needs to clamp slightly so arrow doesn't clip out of the rounded corners
+        let arrowLeft = badgeCenter - left;
+        arrowLeft = Math.max(24, Math.min(arrowLeft, tooltipW - 24));
+
+        setTooltipPos({ top, bottom, left, width: tooltipW, arrowLeft, flipBelow });
+    };
+
+    // Show tooltip with animation
+    const openTooltip = () => {
+        if (hideTimeoutRef.current) { clearTimeout(hideTimeoutRef.current); hideTimeoutRef.current = null; }
+        if (unmountTimeoutRef.current) { clearTimeout(unmountTimeoutRef.current); unmountTimeoutRef.current = null; }
+        updateTooltipPosition();
+        setTooltipMounted(true);
+        // RAF to let mount paint, then animate in
+        requestAnimationFrame(() => requestAnimationFrame(() => setTooltipVisible(true)));
+    };
+
+    // Hide tooltip with exit animation, then unmount
+    const closeTooltip = () => {
+        setTooltipVisible(false);
+        unmountTimeoutRef.current = setTimeout(() => setTooltipMounted(false), 350);
+    };
 
     const handleMouseEnter = () => {
-        if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-        setShowTooltip(true);
+        if (hideTimeoutRef.current) { clearTimeout(hideTimeoutRef.current); hideTimeoutRef.current = null; }
+        if (unmountTimeoutRef.current) { clearTimeout(unmountTimeoutRef.current); unmountTimeoutRef.current = null; }
+        openTooltip();
     };
 
     const handleMouseLeave = () => {
-        hideTimeoutRef.current = setTimeout(() => {
-            setShowTooltip(false);
-        }, 300); // Grace period to move mouse to tooltip
+        hideTimeoutRef.current = setTimeout(() => closeTooltip(), 250);
+    };
+
+    const handleTooltipEnter = () => {
+        if (hideTimeoutRef.current) { clearTimeout(hideTimeoutRef.current); hideTimeoutRef.current = null; }
+        if (unmountTimeoutRef.current) { clearTimeout(unmountTimeoutRef.current); unmountTimeoutRef.current = null; }
+    };
+
+    const handleTooltipLeave = () => {
+        hideTimeoutRef.current = setTimeout(() => closeTooltip(), 200);
     };
 
     useEffect(() => {
@@ -167,7 +238,6 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
         if (!isReady) return;
         const startDelay = entryDelay + 500;
 
-        // Pulse animation for the dot
         const pulse = anime({
             targets: pulseRef.current,
             scale: [1, 1.5],
@@ -177,7 +247,6 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
             easing: 'easeOutQuad'
         });
 
-        // Badge entrance - synchronized via prop
         anime({
             targets: badgeRef.current,
             opacity: [0, 1],
@@ -190,6 +259,24 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
         return () => pulse.pause();
     }, [entryDelay, isReady]);
 
+    // Reposition on scroll/resize while mounted
+    useEffect(() => {
+        if (!tooltipMounted) return;
+        const update = () => updateTooltipPosition();
+        window.addEventListener('scroll', update, true);
+        window.addEventListener('resize', update);
+        return () => {
+            window.removeEventListener('scroll', update, true);
+            window.removeEventListener('resize', update);
+        };
+    }, [tooltipMounted]);
+
+    // Cleanup on unmount
+    useEffect(() => () => {
+        if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+        if (unmountTimeoutRef.current) clearTimeout(unmountTimeoutRef.current);
+    }, []);
+
     const availabilityStr = availData?.['Current Availability'] || '100%';
     const availabilityPercent = parseInt(availabilityStr);
     const currentTime = availData?.['Current Time'] || 'UTC+02:00';
@@ -200,11 +287,11 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
     const restCount = projects.length - 3;
 
     const getDotColor = (percent: number) => {
-        if (percent >= 100) return '#22c55e'; // Green
-        if (percent >= 75) return '#a3e635';  // Lime
-        if (percent >= 50) return '#facc15';  // Yellow
-        if (percent >= 25) return '#fb923c';  // Orange
-        return '#f87171';                     // Red
+        if (percent >= 100) return '#22c55e';
+        if (percent >= 75) return '#a3e635';
+        if (percent >= 50) return '#facc15';
+        if (percent >= 25) return '#fb923c';
+        return '#f87171';
     };
 
     const getAvailText = (percent: number) => {
@@ -215,9 +302,116 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
 
     const dotColor = getDotColor(availabilityPercent);
 
+    // Portal tooltip with proper enter/exit animation
+    const tooltipElement = tooltipMounted && projects.length > 0
+        ? createPortal(
+            <div
+                ref={tooltipRef}
+                onMouseEnter={handleTooltipEnter}
+                onMouseLeave={handleTooltipLeave}
+                style={{
+                    position: 'fixed',
+                    top: tooltipPos.top,
+                    bottom: tooltipPos.bottom,
+                    left: tooltipPos.left,
+                    width: tooltipPos.width,
+                    zIndex: 99999,
+                    transformOrigin: tooltipPos.flipBelow ? 'top center' : 'bottom center',
+                    opacity: tooltipVisible ? 1 : 0,
+                    transform: tooltipVisible
+                        ? 'scale(1) translateY(0)'
+                        : `scale(0.92) translateY(${tooltipPos.flipBelow ? '-12px' : '12px'})`,
+                    transition: 'opacity 0.35s cubic-bezier(0.32, 0.72, 0, 1), transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
+                    pointerEvents: tooltipVisible ? 'auto' : 'none',
+                    borderRadius: 28,
+                    padding: window.innerWidth <= 380 ? 16 : 24,
+                    background: isDark
+                        ? 'linear-gradient(160deg, rgba(25, 25, 40, 0.7) 0%, rgba(10, 10, 15, 0.88) 100%)'
+                        : 'linear-gradient(160deg, rgba(255, 255, 255, 0.72) 0%, rgba(240, 240, 255, 0.9) 100%)',
+                    backdropFilter: 'blur(80px) saturate(200%)',
+                    WebkitBackdropFilter: 'blur(80px) saturate(200%)',
+                    border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.06)',
+                    boxShadow: isDark
+                        ? '0 32px 80px rgba(0, 0, 0, 0.55), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)'
+                        : '0 32px 80px rgba(0, 0, 0, 0.1), inset 0 0.5px 0 rgba(255, 255, 255, 0.65)',
+                }}
+            >
+                {/* Arrow connector */}
+                <div
+                    style={{
+                        position: 'absolute',
+                        left: tooltipPos.arrowLeft,
+                        transform: 'translateX(-50%) rotate(45deg)',
+                        width: 14,
+                        height: 14,
+                        ...(tooltipPos.flipBelow
+                            ? { top: -7, borderLeft: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.06)', borderTop: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.06)' }
+                            : { bottom: -7, borderRight: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.06)', borderBottom: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.06)' }
+                        ),
+                        background: isDark ? 'rgba(12, 12, 20, 0.88)' : 'rgba(242, 242, 255, 0.9)',
+                        backdropFilter: 'blur(80px)',
+                        WebkitBackdropFilter: 'blur(80px)',
+                    }}
+                />
+
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-4 pb-3" style={{ borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)' }}>
+                    <Briefcase size={15} className="text-info" />
+                    <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-muted">Availability Status</span>
+                </div>
+
+                {/* Projects */}
+                <div className="flex flex-col gap-4">
+                    {displayedProjects.map((p: HeroProject, i: number) => (
+                        <div key={i} className="flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between gap-4">
+                                <span className="text-[14px] font-bold text-primary tracking-tight">{p.name || 'Project'}</span>
+                                <span
+                                    className="text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border"
+                                    style={{
+                                        backgroundColor: (p.status || '').toLowerCase() === 'completed'
+                                            ? 'rgba(16, 185, 129, 0.15)'
+                                            : (p.status || '').toLowerCase() === 'pending'
+                                                ? 'rgba(245, 158, 11, 0.15)'
+                                                : 'rgba(59, 130, 246, 0.15)',
+                                        color: (p.status || '').toLowerCase() === 'completed'
+                                            ? '#10b981'
+                                            : (p.status || '').toLowerCase() === 'pending'
+                                                ? '#f59e0b'
+                                                : '#3b82f6',
+                                        borderColor: (p.status || '').toLowerCase() === 'completed'
+                                            ? 'rgba(16, 185, 129, 0.3)'
+                                            : (p.status || '').toLowerCase() === 'pending'
+                                                ? 'rgba(245, 158, 11, 0.3)'
+                                                : 'rgba(59, 130, 246, 0.3)'
+                                    }}
+                                >
+                                    {p.status || 'Active'}
+                                </span>
+                            </div>
+                            {p.description && (
+                                <p className="text-[12px] text-muted leading-snug italic font-medium">
+                                    {p.description}
+                                </p>
+                            )}
+                        </div>
+                    ))}
+                    {restCount > 0 && (
+                        <div className="flex items-center justify-center gap-2 mt-1 pt-3 text-muted hover:text-sec transition-all" style={{ borderTop: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)' }}>
+                            <Plus size={14} strokeWidth={3} />
+                            <span className="text-[12px] font-black">{restCount} rest managed</span>
+                        </div>
+                    )}
+                </div>
+            </div>,
+            document.body
+        )
+        : null;
+
     return (
         <div ref={badgeRef} className="flex items-center gap-4 opacity-0 flex-wrap justify-center relative">
             <div
+                ref={triggerRef}
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
                 className="group cursor-default transition-all active:scale-[0.98] flex items-center gap-3 px-7 py-3.5 rounded-full relative z-[100]"
@@ -236,81 +430,6 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
                 <span className="text-[15px] font-bold text-primary tracking-tight">
                     {getAvailText(availabilityPercent)}
                 </span>
-
-                {/* Tooltip - Positioned higher with iOS Liquid Glass look */}
-                {projects.length > 0 && (
-                    <div
-                        onMouseEnter={handleMouseEnter}
-                        onMouseLeave={handleMouseLeave}
-                        className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-[195px] md:mb-[275px] p-6 rounded-[32px] border border-white/20 z-[99999] w-[320px] transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] origin-bottom ${showTooltip
-                            ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
-                            : 'opacity-0 scale-95 translate-y-4 pointer-events-none'
-                            }`}
-                        style={{
-                            background: isDark
-                                ? 'linear-gradient(160deg, rgba(25, 25, 40, 0.7) 0%, rgba(10, 10, 15, 0.9) 100%)'
-                                : 'linear-gradient(160deg, rgba(255, 255, 255, 0.7) 0%, rgba(240, 240, 255, 0.9) 100%)',
-                            backdropFilter: 'blur(64px) saturate(180%)',
-                            WebkitBackdropFilter: 'blur(64px) saturate(180%)',
-                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.15)'
-                        }}
-                    >
-                        {/* Connector Mark (Arrow) */}
-                        <div
-                            className="absolute top-[calc(100%-10px)] left-1/2 -translate-x-1/2 w-5 h-5 rotate-45 border-r border-b border-white/10"
-                            style={{
-                                background: isDark ? 'rgba(10, 10, 15, 0.9)' : 'rgba(240, 240, 255, 0.9)',
-                                zIndex: -1
-                            }}
-                        ></div>
-                        <div className="flex items-center gap-3 mb-4 pb-2 border-b border-white/10">
-                            <Briefcase size={16} className="text-info" />
-                            <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-muted">Availability Status.</span>
-                        </div>
-                        <div className="flex flex-col gap-5">
-                            {displayedProjects.map((p: HeroProject, i: number) => (
-                                <div key={i} className="flex flex-col gap-1.5">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <span className="text-[15px] font-bold text-primary tracking-tight">{p.name || 'Project'}</span>
-                                        <span
-                                            className="text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest border"
-                                            style={{
-                                                backgroundColor: (p.status || '').toLowerCase() === 'completed'
-                                                    ? 'rgba(16, 185, 129, 0.15)'
-                                                    : (p.status || '').toLowerCase() === 'pending'
-                                                        ? 'rgba(245, 158, 11, 0.15)'
-                                                        : 'rgba(59, 130, 246, 0.15)',
-                                                color: (p.status || '').toLowerCase() === 'completed'
-                                                    ? '#10b981'
-                                                    : (p.status || '').toLowerCase() === 'pending'
-                                                        ? '#f59e0b'
-                                                        : '#3b82f6',
-                                                borderColor: (p.status || '').toLowerCase() === 'completed'
-                                                    ? 'rgba(16, 185, 129, 0.3)'
-                                                    : (p.status || '').toLowerCase() === 'pending'
-                                                        ? 'rgba(245, 158, 11, 0.3)'
-                                                        : 'rgba(59, 130, 246, 0.3)'
-                                            }}
-                                        >
-                                            {p.status || 'Active'}
-                                        </span>
-                                    </div>
-                                    {p.description && (
-                                        <p className="text-[12px] text-muted leading-snug text-center italic font-medium">
-                                            {p.description}
-                                        </p>
-                                    )}
-                                </div>
-                            ))}
-                            {restCount > 0 && (
-                                <div className="flex items-center justify-center gap-2 mt-1 pt-3 border-t border-white/10 text-muted hover:text-sec transition-all">
-                                    <Plus size={14} strokeWidth={3} />
-                                    <span className="text-[12px] font-black">{restCount} rest managed</span>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* iOS Time Lockup Style */}
@@ -322,6 +441,9 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
             }}>
                 {currentTime.split(' ')[0]}
             </div>
+
+            {/* Portal tooltip */}
+            {tooltipElement}
         </div>
     );
 };

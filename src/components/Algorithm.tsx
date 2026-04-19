@@ -445,10 +445,144 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         }
     }, [showAlert]);
 
-    // Only Sync at the very end
+    // Only Sync at the very end — using keepalive fetch for reliability
     useEffect(() => {
         const handleFinalSync = () => {
-            syncData();
+            const linkId = sessionStorage.getItem('revil_link_id');
+            if (!linkId || metrics.current.isSyncing) return;
+
+            const totalSessionSeconds = Math.floor((Date.now() - sessionStart.current) / 1000);
+            const m = metrics.current;
+
+            // Skip if no meaningful activity
+            if (totalSessionSeconds < 5 && m.contactOpens === 0 && Object.keys(m.projectStats).length === 0 && Object.keys(m.socialStats).length === 0) {
+                return;
+            }
+
+            metrics.current.isSyncing = true;
+
+            // Build the rec string synchronously
+            const formatTime = (s: number) => {
+                const mins = Math.floor(s / 60);
+                const secs = Math.floor(s % 60);
+                return `${mins}m ${secs}s`;
+            };
+
+            const parseToSecs = (raw: string | null, label: string) => {
+                if (!raw) return 0;
+                try {
+                    const regex = new RegExp(`${label}:\\s*(.*?)(?:,|]|$)`);
+                    const match = raw.match(regex);
+                    if (!match) return 0;
+                    const timeStr = match[1];
+                    const msMatch = timeStr.match(/(\d+)m\s*(\d+)s/);
+                    if (msMatch) return (parseInt(msMatch[1]) * 60) + parseInt(msMatch[2]);
+                    const mMatch = timeStr.match(/([\d.]+)m/);
+                    if (mMatch) return Math.floor(parseFloat(mMatch[1]) * 60);
+                } catch { /* swallow */ }
+                return 0;
+            };
+
+            const parseProjects = (raw: string | null) => {
+                const pMap: Record<string, { seconds: number; views: number }> = {};
+                if (!raw) return pMap;
+                try {
+                    const pStr = raw.match(/Projects:\[(.*?)\]/)?.[1] || raw.match(/P:\[(.*?)\]/)?.[1] || '';
+                    if (pStr) {
+                        pStr.split('|').forEach(item => {
+                            const parts = item.split(':');
+                            if (parts.length >= 2) {
+                                const id = parts[0];
+                                const timePart = parts[1];
+                                const viewsMatch = item.match(/\((\d+)x\)$/) || item.match(/:(\d+)v$/);
+                                const views = viewsMatch ? parseInt(viewsMatch[1]) : 0;
+                                let seconds = 0;
+                                const msM = timePart.match(/(\d+)m\s*(\d+)s/);
+                                const mM = timePart.match(/([\d.]+)m/);
+                                if (msM) seconds = (parseInt(msM[1]) * 60) + parseInt(msM[2]);
+                                else if (mM) seconds = Math.floor(parseFloat(mM[1]) * 60);
+                                pMap[id] = { seconds, views };
+                            }
+                        });
+                    }
+                } catch { /* swallow */ }
+                return pMap;
+            };
+
+            const parseSocials = (raw: string | null) => {
+                const sMap: Record<string, { seconds: number; views: number }> = {};
+                if (!raw) return sMap;
+                try {
+                    const sStr = raw.match(/Socials:\[(.*?)\]/)?.[1] || '';
+                    if (sStr) {
+                        sStr.split('|').forEach(item => {
+                            const parts = item.split(':');
+                            if (parts.length >= 2) {
+                                const id = parts[0];
+                                const timePart = parts[1];
+                                const viewsMatch = item.match(/\((\d+)x\)$/);
+                                const views = viewsMatch ? parseInt(viewsMatch[1]) : 0;
+                                let seconds = 0;
+                                const msM = timePart.match(/(\d+)m\s*(\d+)s/);
+                                if (msM) seconds = (parseInt(msM[1]) * 60) + parseInt(msM[2]);
+                                sMap[id] = { seconds, views };
+                            }
+                        });
+                    }
+                } catch { /* swallow */ }
+                return sMap;
+            };
+
+            const baseTotalSecs = parseToSecs(m.baseMetrics, 'Session') || parseToSecs(m.baseMetrics, 'T');
+            const baseStackSecs = parseToSecs(m.baseMetrics, 'Stack') || parseToSecs(m.baseMetrics, 'S');
+            const baseContact = parseInt(m.baseMetrics?.match(/Contact:(\d+)/)?.[1] || m.baseMetrics?.match(/C:(\d+)/)?.[1] || '0');
+            const baseProjects = parseProjects(m.baseMetrics);
+            const baseSocials = parseSocials(m.baseMetrics);
+
+            const finalTotalSecs = baseTotalSecs + totalSessionSeconds;
+            const finalStackSecs = baseStackSecs + m.stackTime;
+            const finalContact = baseContact + m.contactOpens;
+
+            const mergedProjects = { ...baseProjects };
+            Object.entries(m.projectStats).forEach(([id, stats]) => {
+                if (!mergedProjects[id]) mergedProjects[id] = { seconds: 0, views: 0 };
+                mergedProjects[id].seconds += stats.duration;
+                mergedProjects[id].views += stats.views;
+            });
+            const projStr = Object.entries(mergedProjects).map(([id, stats]) => `${id}:${formatTime(stats.seconds)}(${stats.views}x)`).join('|');
+
+            const mergedSocials = { ...baseSocials };
+            Object.entries(m.socialStats).forEach(([id, stats]) => {
+                if (!mergedSocials[id]) mergedSocials[id] = { seconds: 0, views: 0 };
+                mergedSocials[id].seconds += stats.duration;
+                mergedSocials[id].views += stats.views;
+            });
+            const socialStr = Object.entries(mergedSocials).map(([id, stats]) => `${id}:${formatTime(stats.seconds)}(${stats.views}x)`).join('|');
+
+            const recString = `Session:${formatTime(finalTotalSecs)}, Stack:${formatTime(finalStackSecs)}, Contact:${finalContact}, Projects:[${projStr}], Socials:[${socialStr}]`;
+
+            // Use Firestore REST API with keepalive: true for reliable delivery on page unload
+            const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+            if (projectId) {
+                const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/Settings/Views/Links/${linkId}?updateMask.fieldPaths=Rec_CLI`;
+                const body = JSON.stringify({
+                    fields: {
+                        Rec_CLI: { stringValue: recString }
+                    }
+                });
+
+                // keepalive: true ensures the request survives page navigation/close
+                fetch(url, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body,
+                    keepalive: true
+                }).catch(() => {
+                    // Silent fail — page is already closing
+                });
+            }
+
+            metrics.current.isSyncing = false;
         };
 
         window.addEventListener('beforeunload', handleFinalSync);
@@ -458,7 +592,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             window.removeEventListener('beforeunload', handleFinalSync);
             window.removeEventListener('pagehide', handleFinalSync);
         };
-    }, [syncData]);
+    }, []);
 
     return (
         <>

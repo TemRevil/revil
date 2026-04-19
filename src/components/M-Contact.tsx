@@ -438,13 +438,50 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  // File upload constraints
+  const MAX_FILES = 5;
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  const ALLOWED_TYPES = [
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
+    'application/pdf',
+    'text/plain',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ];
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
-      setFormData(prev => ({
-        ...prev,
-        attachments: [...prev.attachments, ...newFiles]
-      }));
+      const currentCount = formData.attachments.length;
+
+      // Check total file count
+      if (currentCount + newFiles.length > MAX_FILES) {
+        showAlert({ type: 'warning', message: `Maximum ${MAX_FILES} files allowed.` });
+        return;
+      }
+
+      // Validate each file
+      const validFiles: File[] = [];
+      for (const file of newFiles) {
+        if (file.size > MAX_FILE_SIZE) {
+          showAlert({ type: 'warning', message: `"${file.name}" exceeds 10MB limit.` });
+          continue;
+        }
+        if (!ALLOWED_TYPES.includes(file.type)) {
+          showAlert({ type: 'warning', message: `"${file.name}" — file type not allowed. Use images, PDFs, or documents.` });
+          continue;
+        }
+        validFiles.push(file);
+      }
+
+      if (validFiles.length > 0) {
+        setFormData(prev => ({
+          ...prev,
+          attachments: [...prev.attachments, ...validFiles]
+        }));
+      }
     }
   };
 
