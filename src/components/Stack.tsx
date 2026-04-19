@@ -46,20 +46,21 @@ const StackItem = ({ icon, name, iconSize, delay }: StackItemProps) => {
                 {showFallback ? (
                     <Code size={fallbackSize} className="text-zinc-400" />
                 ) : (
-                    <div
+                    <img
+                        src={icon}
+                        alt={name}
+                        title={name}
+                        onError={() => setImgError(true)}
                         style={{
                             width: `${iconSize}px`,
                             height: `${iconSize}px`,
-                            backgroundImage: `url(${icon})`,
-                            backgroundSize: 'contain',
-                            backgroundPosition: 'center',
-                            backgroundRepeat: 'no-repeat',
+                            objectFit: 'contain',
+                            objectPosition: 'center',
                             opacity: isHovered ? 1 : 0.6,
                             filter: isHovered ? 'grayscale(0%)' : 'grayscale(100%)',
-                            transition: 'all 0.3s ease'
+                            transition: 'all 0.3s ease',
+                            display: 'block'
                         }}
-                        title={name}
-                        onError={() => setImgError(true)}
                     />
                 )}
             </div>

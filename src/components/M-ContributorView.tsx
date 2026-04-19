@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Github, Linkedin, Globe, Instagram, Facebook, User } from 'lucide-react';
 import { ContributorData } from '../types';
-
+import useTheme from '../hooks/useTheme';
 export interface Contributor extends Omit<ContributorData, 'image'> {
     name: string;
     role: string;
@@ -16,15 +16,7 @@ interface MContributorViewProps {
 }
 
 const MContributorView = ({ contributor, onClose }: MContributorViewProps) => {
-    const [isDark, setIsDark] = useState(false);
-
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
+    const isDark = useTheme();
 
     return createPortal(
         <div style={{

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, getDoc, runTransaction } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 // Convert milliseconds to seconds
@@ -22,35 +22,41 @@ export const useSocialTracker = () => {
     const [pendingVisit, setPendingVisit] = useState<{ linkName: string; clickId: string; clickTime: number } | null>(null);
 
     const trackClick = useCallback(async (linkName: string) => {
-        const clickTime = Date.now();
-        try {
-            // Get existing social data to find next click number
-            const socialRef = doc(db, 'Settings', 'Views', 'Socials', linkName);
-            const socialSnap = await getDoc(socialRef);
-            
-            let nextClickNum = 1;
-            if (socialSnap.exists()) {
-                const data = socialSnap.data();
-                // Find highest numeric key
-                const existingKeys = Object.keys(data)
-                    .map(key => parseInt(key))
-                    .filter(num => !isNaN(num));
-                if (existingKeys.length > 0) {
-                    nextClickNum = Math.max(...existingKeys) + 1;
-                }
-            }
+            const clickTime = Date.now();
+            let clickKey = '';
 
-            // Record click as a map entry in social document
-            const clickKey = nextClickNum.toString();
-            await setDoc(socialRef, {
-                [clickKey]: {
-                    timestamp: formatTimestamp(clickTime),
-                    duration: null // Will be updated on return
-                }
-            }, { merge: true });
+            try {
+                const socialRef = doc(db, 'Settings', 'Views', 'Socials', linkName);
 
-            // Set pending state for duration tracking
-            setPendingVisit({ linkName, clickId: clickKey, clickTime });
+                // Use transaction to avoid lost-updates if two users click at exact same time
+                await runTransaction(db, async (transaction) => {
+                    const socialSnap = await transaction.get(socialRef);
+                    let nextClickNum = 1;
+
+                    if (socialSnap.exists()) {
+                        const data = socialSnap.data();
+                        // Find highest numeric key
+                        const existingKeys = Object.keys(data)
+                            .map(key => parseInt(key))
+                            .filter(num => !isNaN(num));
+                        if (existingKeys.length > 0) {
+                            nextClickNum = Math.max(...existingKeys) + 1;
+                        }
+                    }
+
+                    clickKey = nextClickNum.toString();
+                    transaction.set(socialRef, {
+                        [clickKey]: {
+                            timestamp: formatTimestamp(clickTime),
+                            duration: null // Will be updated on return
+                        }
+                    }, { merge: true });
+                });
+
+                if (clickKey) {
+                    // Set pending state for duration tracking
+                    setPendingVisit({ linkName, clickId: clickKey, clickTime });
+                }
 
             // Dispatch Global Event for Algorithm.tsx (Session Recording)
             window.dispatchEvent(new CustomEvent('revil:social_click', {

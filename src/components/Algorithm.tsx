@@ -409,6 +409,11 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             const socialStr = Object.entries(mergedSocials).map(([id, stats]) => `${id}:${formatTime(stats.seconds)}(${stats.views}x)`).join('|');
 
             const recString = `Session:${formatTime(finalTotalSecs)}, Stack:${formatTime(finalStackSecs)}, Contact:${finalContact}, Projects:[${projStr}], Socials:[${socialStr}]`;
+            
+            // Truncate to avoid 64KB keepalive limit
+            const finalRecString = new Blob([recString]).size > 60000 
+                ? recString.substring(0, Math.floor(60000 / 4)) + "...(truncated)"
+                : recString;
 
             // Use Firestore REST API with keepalive: true for reliable delivery on page unload
             const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
@@ -416,7 +421,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/Settings/Views/Links/${linkId}?updateMask.fieldPaths=Rec_CLI`;
                 const body = JSON.stringify({
                     fields: {
-                        Rec_CLI: { stringValue: recString }
+                        Rec_CLI: { stringValue: finalRecString }
                     }
                 });
 

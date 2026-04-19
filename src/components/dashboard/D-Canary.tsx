@@ -136,6 +136,9 @@ const DCanary = () => {
                 })).sort((a, b) => b.timestamp - a.timestamp);
                 setEmails(emailsList);
             }
+        }, (err) => {
+            console.warn("[Connection] Canary sync error:", err);
+            if (!navigator.onLine) console.warn("User is offline");
         });
         return () => unsubscribe();
     }, []);

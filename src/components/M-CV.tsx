@@ -28,6 +28,11 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
     const { trackClick } = useSocialTracker();
     const [projects, setProjects] = useState<CVProject[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
+    const [contactInfo, setContactInfo] = useState({
+        email: 'temrevil@gmail.com',
+        phone: '+20 100 130 8280',
+        location: 'Egypt, MA'
+    });
     const [availableStack, setAvailableStack] = useState<StackItem[]>([]);
     const [availableContributors, setAvailableContributors] = useState<Contributor[]>([]);
 
@@ -185,6 +190,11 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                         }));
                     setSocialLinks(links);
                 }
+                setContactInfo(prev => ({
+                    email: data.Email || prev.email,
+                    phone: data.Phone || prev.phone,
+                    location: data.Location || prev.location
+                }));
             }
         });
         return () => unsub();
@@ -275,14 +285,14 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                 </div>
 
                                 <div className="flex flex-wrap gap-x-8 gap-y-3 text-base text-sec font-sans">
-                                    <a href="mailto:temrevil@gmail.com" className="flex items-center gap-2.5 hover:text-primary transition-colors">
-                                        <Mail size={16} className="text-blue-500" /> temrevil@gmail.com
+                                    <a href={`mailto:${contactInfo.email}`} className="flex items-center gap-2.5 hover:text-primary transition-colors">
+                                        <Mail size={16} className="text-blue-500" /> {contactInfo.email}
                                     </a>
                                     <span className="flex items-center gap-2.5">
-                                        <Phone size={16} className="text-blue-500" /> +20 100 130 8280
+                                        <Phone size={16} className="text-blue-500" /> {contactInfo.phone}
                                     </span>
                                     <span className="flex items-center gap-2.5">
-                                        <MapPin size={16} className="text-blue-500" /> Egypt, MA
+                                        <MapPin size={16} className="text-blue-500" /> {contactInfo.location}
                                     </span>
                                 </div>
                             </header>

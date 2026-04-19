@@ -7,6 +7,7 @@ import { db } from '../lib/firebase';
 import { sanitizeSvg } from '../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor } from '../utils/projectUtils';
 import { ProjectData as Project, ContributorData as Contributor, TagData as TagItem } from '../types';
+import useTheme from '../hooks/useTheme';
 
 // These are utility functions exported from this file
 interface MProjectViewProps {
@@ -458,7 +459,7 @@ const ProjectMediaImage = ({ src }: { src: string }) => {
 const MProjectView = ({ project: initialProject, onClose, onContributorClick }: MProjectViewProps) => {
     const [project, setProject] = useState<Project>(initialProject);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     const [isHovered, setIsHovered] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
@@ -652,13 +653,6 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         return () => unsub();
     }, [project.id, project.name, project.title]);
 
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
 
     useEffect(() => {
         const handleResize = () => {

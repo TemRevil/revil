@@ -8,6 +8,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, storage, functions } from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
+import useTheme from '../hooks/useTheme';
 
 interface Meeting {
   Date: string;
@@ -68,7 +69,7 @@ interface MContactProps {
 }
 
 const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MContactProps, 'isOpen'>) => {
-  const [isDark, setIsDark] = useState(false);
+  const isDark = useTheme();
   const [formData, setFormData] = useState({
     name: '',
     email: '', // Added email field for message form
@@ -424,15 +425,6 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     }
   };
 
-  useEffect(() => {
-    const checkTheme = () => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    };
-    checkTheme();
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;

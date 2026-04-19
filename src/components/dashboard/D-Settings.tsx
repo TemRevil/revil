@@ -435,12 +435,13 @@ export default function DSettings() {
         };
     }, [profileImagePreview, profileImageFile]);
 
-    // Load profile info from Firestore
+    // Load profile and hero info from Firestore
     useEffect(() => {
         const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'), (snap) => {
             if (snap.exists()) {
                 const data = snap.data();
                 if (data.imageUrl && !profileImageDirty) setProfileImagePreview(data.imageUrl);
+                if (data.heroImageUrl && !heroImageFile) setHeroImagePreview(data.heroImageUrl);
                 if (data.name && !isEditingProfile && !profileInfoDirty) setProfileName(data.name);
                 if (data.title && !isEditingProfile && !profileInfoDirty) setProfileTitle(data.title);
                 if (data['Social Links'] && !isEditingProfile && !profileInfoDirty) {
@@ -452,23 +453,10 @@ export default function DSettings() {
                 }
             }
         }, (err) => {
-            console.error('Error fetching profile settings', err);
+            console.error('Error fetching account settings', err);
         });
         return () => unsubscribe();
-    }, [profileImageDirty, isEditingProfile, profileInfoDirty]);
-
-    // Load hero image from Firestore
-    useEffect(() => {
-        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'), (snap) => {
-            if (snap.exists()) {
-                const data = snap.data();
-                if (data.heroImageUrl && !heroImageFile) setHeroImagePreview(data.heroImageUrl);
-            }
-        }, (err) => {
-            console.error('Error fetching hero settings', err);
-        });
-        return () => unsubscribe();
-    }, [heroImageFile]);
+    }, [profileImageDirty, isEditingProfile, profileInfoDirty, heroImageFile]);
 
     // Cropper State
     const [crop, setCrop] = useState({ x: 0, y: 0 });
