@@ -70,6 +70,10 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    console.log('Hello world from temrevil.com deployment check');
+  }, []);
+
   // Safety timer to hide loader if data never arrives
   useEffect(() => {
     const safety = setTimeout(() => {
