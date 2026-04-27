@@ -31,10 +31,22 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
     const [contactInfo, setContactInfo] = useState({
         email: 'temrevil@gmail.com',
         phone: '+20 100 130 8280',
-        location: 'Egypt, MA'
+        location: 'El Mansoura, Egypt'
     });
     const [availableStack, setAvailableStack] = useState<StackItem[]>([]);
     const [availableContributors, setAvailableContributors] = useState<Contributor[]>([]);
+
+    const normalizeLocation = (location?: string) => {
+        if (!location) return undefined;
+        const trimmed = location.trim();
+        const normalized = trimmed.toLowerCase();
+
+        if (['egypt, ma', 'ma, egypt', 'mansoura, egypt', 'el mansourah, egypt'].includes(normalized)) {
+            return 'El Mansoura, Egypt';
+        }
+
+        return trimmed;
+    };
 
     // Fetch Contributors
     useEffect(() => {
@@ -193,7 +205,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                 setContactInfo(prev => ({
                     email: data.Email || prev.email,
                     phone: data.Phone || prev.phone,
-                    location: data.Location || prev.location
+                    location: normalizeLocation(data.Location) || prev.location
                 }));
             }
         });
@@ -281,7 +293,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     >
                                         Mohammed <span className="text-blue-500">Ahmed</span>
                                     </motion.h1>
-                                    <p className="text-blue-500/80 dark:text-blue-400/80 font-sans font-bold tracking-[0.2em] text-lg md:text-sm uppercase">Frontend Expert & AI Expert</p>
+                                    <p className="text-blue-500/80 dark:text-blue-400/80 font-sans font-bold tracking-[0.2em] text-lg md:text-sm uppercase">Frontend Engineer & AI Engineer</p>
                                 </div>
 
                                 <div className="flex flex-wrap gap-x-8 gap-y-3 text-base text-sec font-sans">
@@ -303,7 +315,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                     <section className="space-y-4">
                                         <h2 className="text-sm md:text-base lg:text-lg font-black uppercase tracking-[0.3em] text-blue-500">Overview</h2>
                                         <p className="text-lg leading-relaxed text-sec font-medium block">
-                                            Frontend Developer with 3+ year building React applications. Specialized in modern JavaScript frameworks, <span className="text-primary">Firebase integration</span>, and <span className="text-primary">AI-powered solutions using tools, once published, with exclusive invitations to experience them firsthand</span>. Seeking remote opportunities and contributing my technical skills.
+                                            Frontend engineer based in <span className="text-primary">El Mansoura, Egypt</span> with 3+ years building React applications. Specialized in modern JavaScript frameworks, <span className="text-primary">Firebase integration</span>, motion-rich interfaces, and <span className="text-primary">AI-powered product experiences</span>. Seeking remote opportunities and building polished digital products people can use, share, and remember.
                                         </p>
                                     </section>
 

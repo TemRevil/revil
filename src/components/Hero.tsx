@@ -645,6 +645,15 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                     <div className="mt-12 md:mt-20 md:ml-4 md:pl-4 relative z-[5000]">
                         <AvailableBadge isDark={isDark} entryDelay={timing.rest} isReady={isReady} />
                     </div>
+
+                    <div className="mt-6 max-w-xl space-y-3 text-sm sm:text-base leading-relaxed text-sec">
+                        <p className="font-medium">
+                            Tem Revil is Mohammed Ahmed, a frontend and AI engineer based in El Mansoura, Egypt, building polished React, Next.js, TypeScript, Firebase, and AI-enhanced digital experiences.
+                        </p>
+                        <p>
+                            If you searched for Tem Revil, Temrevil, Mohammed Ahmed, Tem, Tim, or a frontend engineer in El Mansoura or El Mansourah, this portfolio is the main place to explore his projects, profile, and contact details.
+                        </p>
+                    </div>
                 </div>
 
                 {/* Right Content - Image */}
@@ -673,7 +682,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
 
                                 <img
                                     src={imageError ? DEFAULT_HERO_URL : (heroImageUrl || DEFAULT_HERO_URL)}
-                                    alt="User"
+                                    alt={`${profileName} portrait`}
                                     onLoad={() => setIsImageLoaded(true)}
                                     onError={() => setImageError(true)}
                                     className="w-full h-full object-cover transition-all duration-[1500ms] ease-out"
