@@ -6,7 +6,7 @@ import ClientProtection from './ClientProtection'
 
 const siteUrl = 'https://temrevil.com'
 const siteName = 'Tem Revil'
-const siteTitle = 'Tem Revil | Mohammed Ahmed - Frontend & AI Engineer in El Mansoura'
+const siteTitle = 'Tem Revil | Portfolio'
 const siteDescription =
   'Tem Revil is the portfolio of Mohammed Ahmed, a frontend and AI engineer in El Mansoura, Egypt, building React, Next.js, TypeScript, Firebase, motion-rich UI, and AI-enhanced web experiences.'
 

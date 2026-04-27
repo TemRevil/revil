@@ -646,14 +646,6 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                         <AvailableBadge isDark={isDark} entryDelay={timing.rest} isReady={isReady} />
                     </div>
 
-                    <div className="mt-6 max-w-xl space-y-3 text-sm sm:text-base leading-relaxed text-sec">
-                        <p className="font-medium">
-                            Tem Revil is Mohammed Ahmed, a frontend and AI engineer based in El Mansoura, Egypt, building polished React, Next.js, TypeScript, Firebase, and AI-enhanced digital experiences.
-                        </p>
-                        <p>
-                            If you searched for Tem Revil, Temrevil, Mohammed Ahmed, Tem, Tim, or a frontend engineer in El Mansoura or El Mansourah, this portfolio is the main place to explore his projects, profile, and contact details.
-                        </p>
-                    </div>
                 </div>
 
                 {/* Right Content - Image */}
