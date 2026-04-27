@@ -1,15 +1,21 @@
 /** @type {import('next').NextConfig} */
+const configuredBasePath = process.env.NEXT_PUBLIC_BASE_PATH?.replace(/\/$/, '') || ''
+
 const nextConfig = {
   output: 'export',
   distDir: 'dist',
   images: {
     unoptimized: true,
   },
-  basePath: process.env.GITHUB_ACTIONS ? '/revil' : '',
-  assetPrefix: process.env.GITHUB_ACTIONS ? '/revil/' : '',
+  ...(configuredBasePath
+    ? {
+        basePath: configuredBasePath,
+        assetPrefix: `${configuredBasePath}/`,
+      }
+    : {}),
   typescript: {
     ignoreBuildErrors: false,
-  }
-};
+  },
+}
 
-export default nextConfig;
+export default nextConfig

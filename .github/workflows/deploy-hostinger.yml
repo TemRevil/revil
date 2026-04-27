@@ -1,0 +1,136 @@
+name: Release to Hostinger
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: production
+  cancel-in-progress: true
+
+env:
+  NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+  NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+  NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
+  DEPLOY_ROOT: /home/${{ secrets.HOSTINGER_SSH_USERNAME }}/domains/temrevil.com
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload static build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-dist
+          path: dist
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://temrevil.com
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download static build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: site-dist
+          path: deploy_bundle
+
+      - name: Add Apache runtime config
+        run: cp deploy/hostinger/.htaccess deploy_bundle/.htaccess
+
+      - name: Create release archive
+        run: tar -czf release.tgz -C deploy_bundle .
+
+      - name: Prepare remote deploy directories
+        uses: appleboy/ssh-action@v1
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          envs: DEPLOY_ROOT,RELEASE_SHA
+          script: |
+            set -eu
+            mkdir -p "$DEPLOY_ROOT/.codex-deploy/incoming"
+            mkdir -p "$DEPLOY_ROOT/.codex-deploy/releases"
+            mkdir -p "$DEPLOY_ROOT/.codex-deploy/backups"
+
+      - name: Upload release archive
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          source: release.tgz
+          target: ${{ env.DEPLOY_ROOT }}/.codex-deploy/incoming
+
+      - name: Activate release on Hostinger
+        uses: appleboy/ssh-action@v1
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          envs: DEPLOY_ROOT,RELEASE_SHA
+          script: |
+            set -eu
+            CURRENT_DIR="$DEPLOY_ROOT/public_html"
+            INCOMING_ARCHIVE="$DEPLOY_ROOT/.codex-deploy/incoming/release.tgz"
+            STAGE_DIR="$DEPLOY_ROOT/.codex-deploy/releases/$RELEASE_SHA"
+            BACKUP_DIR="$DEPLOY_ROOT/.codex-deploy/backups/$(date +%Y%m%d%H%M%S)"
+
+            rm -rf "$STAGE_DIR"
+            mkdir -p "$STAGE_DIR"
+            tar -xzf "$INCOMING_ARCHIVE" -C "$STAGE_DIR"
+
+            if [ -d "$CURRENT_DIR/.well-known" ]; then
+              mkdir -p "$STAGE_DIR/.well-known"
+              cp -a "$CURRENT_DIR/.well-known/." "$STAGE_DIR/.well-known/"
+            fi
+
+            mkdir -p "$BACKUP_DIR"
+            mv "$CURRENT_DIR" "$BACKUP_DIR/public_html"
+            mv "$STAGE_DIR" "$CURRENT_DIR"
+            rm -f "$INCOMING_ARCHIVE"
