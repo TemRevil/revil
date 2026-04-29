@@ -6,6 +6,9 @@ dist/
 dist-ssr/
 dev-dist/
 build/
+.next/
+*.tsbuildinfo
+.npm-cache/
 
 # IDEs & Editor
 .idea/
@@ -32,11 +35,16 @@ lerna-debug.log*
 # Firebase
 .firebase/
 .firebaserc
-firestore.indexes.json
 functions/lib/
 functions/
 
 # Project configuration
 cors.json
 .antigravity
-.next/
+
+# Local assistant / audit artifacts
+.codex/
+.temp-claude-seo/
+.hostinger-openapi.json
+.hostinger-zone.json
+.hostinger-zone-after.json

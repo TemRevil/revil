@@ -9,6 +9,17 @@
     "start": "next start",
     "lint": "eslint ."
   },
+  "overrides": {
+    "ajv@6.12.6": "6.14.0",
+    "brace-expansion@1.1.12": "1.1.13",
+    "brace-expansion@2.0.2": "2.0.3",
+    "flatted@3.3.3": "3.4.2",
+    "lodash@4.17.23": "4.18.1",
+    "minimatch@3.1.2": "3.1.4",
+    "minimatch@9.0.5": "9.0.7",
+    "picomatch@4.0.3": "4.0.4",
+    "protobufjs@7.5.4": "7.5.5"
+  },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.2",
     "animejs": "^3.2.2",
