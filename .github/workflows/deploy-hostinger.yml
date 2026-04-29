@@ -88,6 +88,7 @@ jobs:
           username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
           password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
           port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          timeout: 90s
           envs: DEPLOY_ROOT,RELEASE_SHA
           script: |
             set -eu
@@ -102,6 +103,7 @@ jobs:
           username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
           password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
           port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          timeout: 90s
           source: release.tgz
           target: ${{ env.DEPLOY_ROOT }}/.codex-deploy/incoming
 
@@ -114,6 +116,7 @@ jobs:
           username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
           password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
           port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          timeout: 90s
           envs: DEPLOY_ROOT,RELEASE_SHA
           script: |
             set -eu
