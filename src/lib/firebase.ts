@@ -28,10 +28,14 @@ const app = initializeApp(firebaseConfig);
 // function) can grab a token and attach the X-Firebase-AppCheck header.
 let appCheck: AppCheck | undefined;
 if (typeof window !== 'undefined') {
-    // Enable debug token for localhost development
+    // Enable debug token for localhost development.
+    // Use a FIXED token from .env.local (NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN) so it
+    // persists across sessions — register it ONCE in the Firebase console. Falling
+    // back to `true` makes Firebase mint a random token that must be re-registered
+    // every time IndexedDB resets.
     if (process.env.NODE_ENV === 'development') {
         // @ts-expect-error — Firebase debug token flag
-        self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+        self.FIREBASE_APPCHECK_DEBUG_TOKEN = process.env.NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN || true;
     }
 
     appCheck = initializeAppCheck(app, {
