@@ -7,7 +7,7 @@ import {
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions'; // Used by M-Contact.tsx for httpsCallable
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, type AppCheck } from 'firebase/app-check';
 
 const firebaseConfig = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -23,7 +23,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // Initialize App Check with reCAPTCHA Enterprise
-// This runs only in the browser — SSR/build skips it
+// This runs only in the browser — SSR/build skips it.
+// Exported so non-SDK callers (e.g. the raw fetch() to the syncSession HTTP
+// function) can grab a token and attach the X-Firebase-AppCheck header.
+let appCheck: AppCheck | undefined;
 if (typeof window !== 'undefined') {
     // Enable debug token for localhost development
     if (process.env.NODE_ENV === 'development') {
@@ -31,11 +34,12 @@ if (typeof window !== 'undefined') {
         self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
     }
 
-    initializeAppCheck(app, {
+    appCheck = initializeAppCheck(app, {
         provider: new ReCaptchaEnterpriseProvider('6LeyDfQsAAAAANACZEBPx9luTXrgcY9zHPF_4uE5'),
         isTokenAutoRefreshEnabled: true,
     });
 }
+export { appCheck };
 
 // Initialize Firestore with modern multi-tab persistence settings
 export const db = initializeFirestore(app, {

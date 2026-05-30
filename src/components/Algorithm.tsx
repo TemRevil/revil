@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { doc, getDoc, updateDoc, increment, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { getToken } from 'firebase/app-check';
+import { db, appCheck } from '../lib/firebase';
 import Alert from './Alert';
 import useSafeAlert from '../hooks/useSafeAlert';
 
@@ -22,6 +23,12 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     // Session Start
     const sessionStart = useRef(0);
 
+    // Cached App Check token. syncSession is an HTTP function with enforceAppCheck,
+    // so its raw fetch() must send an X-Firebase-AppCheck header. We can't reliably
+    // await getToken() during page-unload, so we keep a fresh token here and attach
+    // it synchronously. Refreshed on mount + every 20 min (tokens last ~1h).
+    const appCheckToken = useRef('');
+
     // Metrics Refs
     const metrics = useRef({
         stackTime: 0, // seconds
@@ -41,6 +48,22 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     useEffect(() => {
         sessionStart.current = Date.now();
         lastSectionCheck.current = Date.now();
+    }, []);
+
+    // Warm + refresh the App Check token for the syncSession HTTP call.
+    useEffect(() => {
+        const ac = appCheck;
+        if (!ac) return;
+        let active = true;
+        const refresh = async () => {
+            try {
+                const { token } = await getToken(ac, false);
+                if (active) appCheckToken.current = token;
+            } catch { /* offline / reCAPTCHA hiccup — fetch just omits the header */ }
+        };
+        refresh();
+        const id = setInterval(refresh, 20 * 60 * 1000);
+        return () => { active = false; clearInterval(id); };
     }, []);
 
     // Contact Open Tracking
@@ -427,9 +450,14 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 || 'https://us-central1-temrevil1.cloudfunctions.net/syncSession';
             const body = JSON.stringify({ linkId, recCli: finalRecString });
 
+            // syncSession enforces App Check, so attach the X-Firebase-AppCheck header
+            // from the token warmed on mount (can't await getToken() during unload).
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (appCheckToken.current) headers['X-Firebase-AppCheck'] = appCheckToken.current;
+
             fetch(cfUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body,
                 keepalive: true
             }).catch(() => {
