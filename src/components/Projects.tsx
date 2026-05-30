@@ -290,12 +290,16 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                     {project.title}
                 </h3>
                 <p
-                    className="text-body text-sec leading-relaxed flex-1 overflow-hidden"
+                    className="text-body text-sec overflow-hidden"
                     style={{
                         display: '-webkit-box',
                         WebkitLineClamp: 3,
                         WebkitBoxOrient: 'vertical',
-                        textOverflow: 'ellipsis'
+                        overflow: 'hidden',
+                        // Explicit line-height + maxHeight hard-caps at 3 lines even if the
+                        // -webkit-box clamp is defeated (e.g. by flex-grow). 3 × 1.6 = 4.8em.
+                        lineHeight: 1.6,
+                        maxHeight: '4.8em',
                     }}
                 >
                     {project.description}
