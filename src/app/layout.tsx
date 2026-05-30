@@ -293,6 +293,16 @@ export default function RootLayout({
   return (
     <html lang="en" className={`dark ${fontVariables}`}>
       <head>
+        {/* Canonical-domain redirect: forward GitHub Pages (temrevil.github.io/revil)
+            visitors to temrevil.com. Runs first in <head> so it fires before any other
+            resource loads. Path after /revil (e.g. a link code) and query/hash are kept.
+            No-op on temrevil.com itself (hostname check fails). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{if(location.hostname==='temrevil.github.io'){var p=location.pathname;if(p==='/revil'){p='/';}else if(p.indexOf('/revil/')===0){p=p.slice(6);}location.replace('https://temrevil.com'+p+location.search+location.hash);}}catch(e){}})();",
+          }}
+        />
         {/* Google Search Console verification */}
         <meta name="google-site-verification" content="uQR0p6nF_uFGSNYBtO-_tKpQ6W-Qu_LrwF77SLoEprc" />
         {/* Content Security Policy — defense-in-depth against XSS.
