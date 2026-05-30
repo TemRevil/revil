@@ -37,6 +37,7 @@ lerna-debug.log*
 .firebaserc
 functions/lib/
 functions/
+*-firebase-adminsdk-*.json
 
 # Project configuration
 cors.json
@@ -44,7 +45,11 @@ cors.json
 
 # Local assistant / audit artifacts
 .codex/
+.claude/
 .temp-claude-seo/
 .hostinger-openapi.json
 .hostinger-zone.json
 .hostinger-zone-after.json
+*.bak
+AUDIT.md
+AUDIT.ar.md

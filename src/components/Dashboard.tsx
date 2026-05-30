@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import anime from 'animejs';
-import { Layout, Eye, Settings, Bird, LogOut, Tag, User } from 'lucide-react';
+import { Layout, Eye, Settings, Bird, LogOut, Tag, User, GitBranch } from 'lucide-react';
 import DProjects from './dashboard/D-Projects';
 import DTags from './dashboard/D-Tags';
 import DLinks from './dashboard/D-Links';
 import DSettings from './dashboard/D-Settings';
 import DCanary from './dashboard/D-Canary';
+import DDeveloper from './dashboard/D-Developer';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
@@ -91,6 +92,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
         { id: 'projects', label: 'Projects', icon: Layout },
         { id: 'tags', label: 'Tags', icon: Tag },
         { id: 'views', label: 'Views', icon: Eye },
+        { id: 'developer', label: 'Developer', icon: GitBranch },
         { id: 'settings', label: 'Settings', icon: Settings },
         { id: 'canary', label: 'Canary', icon: Bird },
     ];
@@ -205,7 +207,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                 </nav>
 
                 {/* Bottom Actions - Locked at the end */}
-                <div className="pt-4 mt-2 border-t border-[var(--navbar-border)]">
+                <div className="pt-4 mt-2 border-t border-[var(--section-border)]">
                     <button
                         onClick={() => onNavigate && onNavigate('home')}
                         className={`
@@ -258,6 +260,8 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                             <DTags />
                         ) : activeTab === 'views' ? (
                             <DLinks />
+                        ) : activeTab === 'developer' ? (
+                            <DDeveloper />
                         ) : activeTab === 'settings' ? (
                             <DSettings />
                         ) : activeTab === 'canary' ? (

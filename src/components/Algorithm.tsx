@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { doc, getDoc, updateDoc, increment, collection, getDocs, setDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, increment, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Alert from './Alert';
 import useSafeAlert from '../hooks/useSafeAlert';
@@ -95,16 +95,18 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             // Map the field to the corresponding Main document field
             const mainField = field === 'projectViews' ? 'Total Project Views' : 'Total Social Clicks';
 
-            // Update Daily
+            // Update Daily (lastWrite satisfies rate-limit rule)
             await setDoc(dailyRef, {
                 [today]: {
                     [field]: increment(1)
-                }
+                },
+                lastWrite: serverTimestamp()
             }, { merge: true });
 
             // Update Main
             await setDoc(mainRef, {
-                [mainField]: increment(1)
+                [mainField]: increment(1),
+                lastWrite: serverTimestamp()
             }, { merge: true });
 
         } catch (error) {
@@ -197,13 +199,14 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                     localStorage.setItem(`revil_visitor_today_${today}`, 'true');
                 }
 
-                // Update Main document
+                // Update Main document (lastWrite satisfies rate-limit rule)
                 await setDoc(mainRef, {
                     "Total Reach": currentTotal + 1,
                     "Today's Viewers": newTodayTotal,
                     "Reach (Per Device)": newUniqueToday,
                     "Total Project Views": mainData["Total Project Views"] || 0,
-                    "Total Social Clicks": mainData["Total Social Clicks"] || 0
+                    "Total Social Clicks": mainData["Total Social Clicks"] || 0,
+                    lastWrite: serverTimestamp()
                 }, { merge: true });
 
                 // Update Daily map in Daily document
@@ -214,7 +217,8 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                         // Initialize these if it's the first visit of the day
                         projectViews: todayData.projectViews || 0,
                         socialClicks: todayData.socialClicks || 0
-                    }
+                    },
+                    lastWrite: serverTimestamp()
                 }, { merge: true });
             } catch (error) {
                 console.error("Global Analytics Error:", error);
@@ -275,7 +279,8 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                     // Increment view count in Settings/Views/Links/{foundId}
                     const docRef = doc(db, 'Settings', 'Views', 'Links', foundId);
                     await updateDoc(docRef, {
-                        Views: increment(1)
+                        Views: increment(1),
+                        lastWrite: serverTimestamp()
                     });
                 }
 
@@ -415,28 +420,25 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 ? recString.substring(0, Math.floor(60000 / 4)) + "...(truncated)"
                 : recString;
 
-            // Use Firestore REST API with keepalive: true for reliable delivery on page unload
-            const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-            if (projectId) {
-                const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/Settings/Views/Links/${linkId}?updateMask.fieldPaths=Rec_CLI`;
-                const body = JSON.stringify({
-                    fields: {
-                        Rec_CLI: { stringValue: finalRecString }
-                    }
-                });
+            // Use Cloud Function with keepalive: true for reliable delivery on page unload.
+            // The function validates server-side and writes with admin privileges.
+            // Configurable via NEXT_PUBLIC_SYNC_SESSION_URL (defaults to the temrevil1 prod URL).
+            const cfUrl = process.env.NEXT_PUBLIC_SYNC_SESSION_URL
+                || 'https://us-central1-temrevil1.cloudfunctions.net/syncSession';
+            const body = JSON.stringify({ linkId, recCli: finalRecString });
 
-                // keepalive: true ensures the request survives page navigation/close
-                fetch(url, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body,
-                    keepalive: true
-                }).catch(() => {
-                    // Silent fail — page is already closing
-                });
-            }
+            fetch(cfUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body,
+                keepalive: true
+            }).catch(() => {
+                // Silent fail — page is already closing
+            });
 
-            metrics.current.isSyncing = false;
+            // Do NOT reset isSyncing — this is a one-shot per page lifetime. Resetting it
+            // synchronously let both `beforeunload` and `pagehide` (which commonly both fire
+            // on close/navigation) send the session POST twice, double-counting the visit.
         };
 
         window.addEventListener('beforeunload', handleFinalSync);

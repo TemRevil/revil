@@ -11,6 +11,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: '*',
         allow: '/',
       },
+      // AI Search & Generative Engine bots — explicitly allowed for GEO
       {
         userAgent: 'GPTBot',
         allow: '/',
@@ -28,7 +29,27 @@ export default function robots(): MetadataRoute.Robots {
         allow: '/',
       },
       {
+        userAgent: 'anthropic-ai',
+        allow: '/',
+      },
+      {
         userAgent: 'PerplexityBot',
+        allow: '/',
+      },
+      {
+        userAgent: 'Googlebot',
+        allow: '/',
+      },
+      {
+        userAgent: 'Google-Extended',
+        allow: '/',
+      },
+      {
+        userAgent: 'Bingbot',
+        allow: '/',
+      },
+      {
+        userAgent: 'cohere-ai',
         allow: '/',
       },
     ],

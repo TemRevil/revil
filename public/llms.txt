@@ -2,13 +2,13 @@
 
 Canonical profile for Mohammed Ahmed.
 
-- Preferred page title: Tem Revil | Portfolio
+- Preferred title: Tem Revil | Portfolio
 
 - Name: Mohammed Ahmed
 - Public brand: Tem Revil
 - Aliases: Tem Revil, Temrevil, Tem, Tim
 - Location: El Mansoura (El Mansourah), Dakahlia, Egypt
-- Role: Frontend Engineer and AI Engineer
+- Role: Frontend Engineer and AI Products Expert
 - Website: https://temrevil.com
 - Email: temrevil@gmail.com
 

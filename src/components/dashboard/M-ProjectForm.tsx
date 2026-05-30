@@ -7,6 +7,8 @@ import { db } from '../../lib/firebase';
 import anime from 'animejs';
 
 import { ProjectData, TagData, ContributorData } from '../../types';
+import FileImage from '../FileImage';
+import { useObjectURL } from '../../hooks/useObjectURL';
 
 interface ProjectFormData extends Omit<ProjectData, 'images' | 'icon'> {
     images: (File | string)[];
@@ -38,6 +40,34 @@ interface RawFirestoreContributor {
         Portfolio?: string;
     };
 }
+
+/** Small helper that revokes its blob URL on unmount — used for video previews
+ *  (FileImage handles the same job for <img> tags). */
+const GalleryVideoPreview = ({ file }: { file: string | File }) => {
+    const url = useObjectURL(file);
+    if (!url) return null;
+    return <video src={url} className="w-full h-full object-cover" />;
+};
+
+/** LivePreviewCard image/video slot — handles blob URL cleanup automatically. */
+const LivePreviewItem = ({
+    img,
+    isVid,
+    alt,
+    style,
+}: {
+    img: string | File;
+    isVid: boolean;
+    alt: string;
+    style: React.CSSProperties;
+}) => {
+    const url = useObjectURL(img);
+    if (!url) return null;
+    if (isVid) {
+        return <video src={url} muted autoPlay loop playsInline style={style} />;
+    }
+    return <img src={url} alt={alt} style={style} />;
+};
 
 const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFormProps, 'initialData'> & { initialData?: MProjectFormProps['initialData'] }) => {
     // --- STATE ---
@@ -434,8 +464,8 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                                                 style={{ borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)', backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }}
                                             >
                                                 {formData.icon ? (
-                                                    <img
-                                                        src={typeof formData.icon === 'string' ? formData.icon : URL.createObjectURL(formData.icon)}
+                                                    <FileImage
+                                                        src={formData.icon}
                                                         className="w-full h-full object-cover"
                                                         alt="Icon"
                                                     />
@@ -464,13 +494,10 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                                                 {formData.images.map((file, idx) => (
                                                     <div key={idx} className={`aspect-video rounded-lg overflow-hidden relative group ${isDark ? 'bg-white/5' : 'bg-gray-100'}`}>
                                                         {isVideo(file) ? (
-                                                            <video
-                                                                src={typeof file === 'string' ? file : URL.createObjectURL(file)}
-                                                                className="w-full h-full object-cover"
-                                                            />
+                                                            <GalleryVideoPreview file={file} />
                                                         ) : (
-                                                            <img
-                                                                src={typeof file === 'string' ? file : URL.createObjectURL(file)}
+                                                            <FileImage
+                                                                src={file}
                                                                 className="w-full h-full object-cover"
                                                                 alt={`Gallery ${idx + 1}`}
                                                             />
@@ -572,8 +599,8 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                                             className={`flex items-center gap-3 p-3 rounded-lg ${isDark ? 'bg-white/5 border border-white/10' : 'bg-gray-50 border border-gray-200'} group`}
                                         >
                                             {contrib.image ? (
-                                                <img
-                                                    src={typeof contrib.image === 'string' ? contrib.image : URL.createObjectURL(contrib.image)}
+                                                <FileImage
+                                                    src={contrib.image}
                                                     className="w-10 h-10 rounded-lg object-cover"
                                                     alt={contrib.name}
                                                 />
@@ -818,29 +845,11 @@ const LiveProjectCard = ({ project, isDark }: { project: ProjectFormData; isDark
                             ? (img.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || img.includes('/videos/'))
                             : img.type.startsWith('video/');
 
-                        return isVid ? (
-                            <video
+                        return (
+                            <LivePreviewItem
                                 key={i}
-                                src={typeof img === 'string' ? img : URL.createObjectURL(img)}
-                                muted
-                                autoPlay
-                                loop
-                                playsInline
-                                style={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover',
-                                    opacity: i === currentImageIndex ? 1 : 0,
-                                    transition: 'opacity 0.5s ease, transform 0.5s ease',
-                                }}
-                            />
-                        ) : (
-                            <img
-                                key={i}
-                                src={typeof img === 'string' ? img : URL.createObjectURL(img)}
+                                img={img}
+                                isVid={!!isVid}
                                 alt={project.name}
                                 style={{
                                     position: 'absolute',

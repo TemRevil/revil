@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
@@ -107,20 +107,26 @@ const DCanary = () => {
             if (snapshot.exists()) {
                 const data = snapshot.data();
                 const meetingsMap = (data.Meetings || {}) as Record<string, MeetingData>;
-                const meetingsList: Meeting[] = Object.entries(meetingsMap).map(([id, m]) => {
-                    const [d, mon, y] = m.Date.split('/').map(Number);
-                    return {
-                        id,
-                        title: m.Name || 'Untitled Session',
-                        time: m.Time,
-                        date: new Date(y, mon - 1, d),
-                        email: m.Email,
-                        link: m.MeetingLink,
-                        reason: m["What For"],
-                        userTimezone: m.UserTimezone || -(new Date().getTimezoneOffset() / 60),
-                        googleEventId: m.GoogleEventId
-                    };
-                });
+                const meetingsList: Meeting[] = Object.entries(meetingsMap)
+                    .map(([id, m]): Meeting | null => {
+                        // Guard untrusted Firestore data: a meeting written without a valid
+                        // DD/MM/YYYY Date string would throw on .split and blank the whole list.
+                        const parts = (m.Date || '').split('/').map(Number);
+                        if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+                        const [d, mon, y] = parts;
+                        return {
+                            id,
+                            title: m.Name || 'Untitled Session',
+                            time: m.Time,
+                            date: new Date(y, mon - 1, d),
+                            email: m.Email,
+                            link: m.MeetingLink,
+                            reason: m["What For"],
+                            userTimezone: m.UserTimezone || -(new Date().getTimezoneOffset() / 60),
+                            googleEventId: m.GoogleEventId
+                        };
+                    })
+                    .filter((m): m is Meeting => m !== null);
                 setMeetings(meetingsList);
 
                 const emailsMap = (data.Emails || {}) as Record<string, EmailData>;

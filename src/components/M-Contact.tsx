@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe } from 'lucide-react';
-import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import { db, storage, functions } from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
 import useTheme from '../hooks/useTheme';
+
+/** Pragmatic email validator: requires local@domain.tld and rejects whitespace.
+ *  Not RFC 5322 perfect, but rejects 99% of typos / pasted junk. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const isValidEmail = (s: string) => EMAIL_RE.test(s.trim());
 
 interface Meeting {
   Date: string;
@@ -130,6 +135,14 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     // Clear any previous booking success when date changes
     setBookingSuccess(null);
   }, [selectedDate]);
+
+  // Clear the selected time whenever the date OR the timezone changes.
+  // Otherwise a slot picked on one day stays "selected" on a day where it's
+  // booked/passed (→ books an invalid slot), and after a timezone switch the
+  // stored time string no longer matches any visible button but is still submitted.
+  useEffect(() => {
+    setSelectedTime(null);
+  }, [selectedDate, userTimezone]);
 
   // Calendar Helpers
   const getDaysInMonth = (date: Date) => {
@@ -328,7 +341,15 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
     // Basic Validation
     if (!selectedDate || !selectedTime) return;
-    if (!meetingData.email || !meetingData.email.includes('@')) {
+    // Guard: the selected slot must still be a currently-offered, non-passed slot
+    // (defends against a slot that became unavailable after selection).
+    // isTimePassed takes (date, host-perspective time) — convert the user-time first.
+    if (!convertedSlots.includes(selectedTime) || isTimePassed(selectedDate, convertTimeToHost(selectedTime))) {
+      setSelectedTime(null);
+      showAlert({ type: 'warning', message: 'That time slot is no longer available. Please pick another.' });
+      return;
+    }
+    if (!meetingData.email || !isValidEmail(meetingData.email)) {
       showAlert({ type: 'error', message: "Please enter a valid email address." }); // Custom Alert
       return;
     }
@@ -406,7 +427,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           GoogleEventId: googleEventId // Store the ID for reliable deletion/updates
         };
 
-        transaction.update(docRef, { [`Meetings.${nextId}`]: payload });
+        transaction.update(docRef, { [`Meetings.${nextId}`]: payload, lastMeetingWrite: serverTimestamp() });
       });
 
       setBookingSuccess({ date: dateStr, time: selectedTime || '', link: meetLink || '' });
@@ -494,7 +515,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       showAlert({ type: 'warning', message: "Please fill in all required fields (Name, Email, Message)." });
       return;
     }
-    if (!formData.email.includes('@')) {
+    if (!isValidEmail(formData.email)) {
       showAlert({ type: 'warning', message: "Please enter a valid email address." });
       return;
     }
@@ -502,8 +523,20 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     setIsSubmitting(true);
 
     try {
+      // 1. Handle File Uploads (outside transaction to prevent duplicate uploads on retry)
+      const uploadedFiles: { name: string, url: string }[] = [];
+      if (formData.attachments.length > 0) {
+        const uniqueFolderId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        for (const file of formData.attachments) {
+          const fileRef = ref(storage, `emails/${uniqueFolderId}/${file.name}`);
+          const snapshot = await uploadBytes(fileRef, file);
+          const downloadURL = await getDownloadURL(snapshot.ref);
+          uploadedFiles.push({ name: file.name, url: downloadURL });
+        }
+      }
+
+      // 2. Transaction to safely generate the next email ID and save data
       const docRef = doc(db, 'Settings', 'Canary');
-      // Use a transaction to safely generate the next email ID without race conditions
       await runTransaction(db, async (transaction) => {
         const docSnap = await transaction.get(docRef);
         let nextId = "1";
@@ -512,17 +545,6 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           const emails = data.Emails || {};
           const keys = Object.keys(emails).map(k => parseInt(k, 10)).filter(k => !isNaN(k));
           if (keys.length > 0) nextId = (Math.max(...keys) + 1).toString();
-        }
-
-        // Handle File Uploads (outside transaction since Storage is separate)
-        const uploadedFiles = [];
-        if (formData.attachments.length > 0) {
-          for (const file of formData.attachments) {
-            const fileRef = ref(storage, `emails/${nextId}/${file.name}`);
-            const snapshot = await uploadBytes(fileRef, file);
-            const downloadURL = await getDownloadURL(snapshot.ref);
-            uploadedFiles.push({ name: file.name, url: downloadURL });
-          }
         }
 
         const payload = {
@@ -535,7 +557,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           Timestamp: Date.now()
         };
 
-        transaction.update(docRef, { [`Emails.${nextId}`]: payload });
+        transaction.update(docRef, { [`Emails.${nextId}`]: payload, lastEmailWrite: serverTimestamp() });
       });
 
       showAlert({ type: 'success', message: "Message sent! I'll get back to you soon." });
@@ -713,7 +735,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                           <button
                             onClick={() => {
                               setDirection(-1);
-                              setCalendarDate(new Date(calendarDate.setMonth(calendarDate.getMonth() - 1)));
+                              setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
                             }}
                             style={{ padding: '8px', borderRadius: '10px', border: 'none', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', color: 'var(--text-primary)', cursor: 'pointer' }}>
                             <ChevronLeft size={16} />
@@ -721,7 +743,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                           <button
                             onClick={() => {
                               setDirection(1);
-                              setCalendarDate(new Date(calendarDate.setMonth(calendarDate.getMonth() + 1)));
+                              setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
                             }}
                             style={{ padding: '8px', borderRadius: '10px', border: 'none', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', color: 'var(--text-primary)', cursor: 'pointer' }}>
                             <ChevronRight size={16} />

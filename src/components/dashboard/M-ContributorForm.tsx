@@ -68,9 +68,9 @@ const getCroppedImg = (imageSrc: string, pixelCrop: CropArea): Promise<File> => 
                         reject(new Error('Canvas is empty'));
                         return;
                     }
-                    const file = new File([blob], 'cropped_image.png', { type: 'image/png' });
+                    const file = new File([blob], 'cropped_image.webp', { type: 'image/webp' });
                     resolve(file);
-                }, 'image/png');
+                }, 'image/webp');
             } catch (e) {
                 reject(e);
             }
@@ -83,6 +83,15 @@ const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributor
     const [role, setRole] = useState('');
     const [image, setImage] = useState<File | string | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+    // Revoke any blob: previewUrl when it changes or component unmounts
+    useEffect(() => {
+        return () => {
+            if (previewUrl && previewUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(previewUrl);
+            }
+        };
+    }, [previewUrl]);
     const [socials, setSocials] = useState({
         github: '', linkedin: '', facebook: '', instagram: '', portfolio: ''
     });

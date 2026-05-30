@@ -1,11 +1,62 @@
+# Dependencies (installed fresh in container)
 node_modules
+
+# Version control
 .git
 .github
+
+# Build outputs (rebuilt in container)
 .next
 dist
+dist-ssr
+dev-dist
+build
+*.tsbuildinfo
+
+# Environment & secrets
 .env
-.DS_Store
+.env.local
+.env.*.local
+*-firebase-adminsdk-*.json
+
+# Firebase tooling (not needed in container)
 .firebase
-.jules
-.antigravity
+.firebaserc
+functions/
+
+# IDE & editor files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Claude / AI assistant artifacts
+.codex/
+.temp-claude-seo/
+AUDIT.md
+
+# Misc project config not needed in container
+.antigravity
+.jules
+cors.json
+.hostinger-openapi.json
+.hostinger-zone.json
+.hostinger-zone-after.json
+
+# Docker (avoid recursive copy)
+Dockerfile
+docker-compose*.yml
+.dockerignore

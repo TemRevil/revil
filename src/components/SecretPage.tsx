@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'lucide-react';
 import { getAuth, GoogleAuthProvider, signInWithPopup as authSignInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../lib/firebase';
+import { useSettings } from '../contexts/SettingsContext';
 
 type SecretNavigate = (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
 
@@ -14,14 +15,17 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
     const [isDark, setIsDark] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [profile, setProfile] = useState<{ imageUrl?: string; name?: string; title?: string }>({
-        imageUrl: '',
-        name: 'Action Center',
-        title: 'Authorized Revil Only'
-    });
     const auth = getAuth();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
+
+    // Shared Settings/Account listener (single Firestore connection for all components)
+    const { account } = useSettings();
+    const profile = {
+        imageUrl: account?.imageUrl || '',
+        name: account?.name || 'Action Center',
+        title: account?.title || 'Authorized Revil Only'
+    };
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
@@ -29,20 +33,6 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
         const observer = new MutationObserver(checkTheme);
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         return () => observer.disconnect();
-    }, []);
-
-    useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'Settings', 'Account'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                setProfile({
-                    imageUrl: data.imageUrl || '',
-                    name: data.name || 'Action Center',
-                    title: data.title || 'Authorized Revil Only'
-                });
-            }
-        });
-        return () => unsub();
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -54,11 +44,33 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
             const result = await authSignInWithPopup(auth, provider);
             const details = getAdditionalUserInfo(result);
 
+            // LOGIN-ONLY: Reject any account that doesn't already exist in Firebase Auth.
+            // signInWithPopup auto-creates accounts for OAuth providers, so we detect
+            // new users via getAdditionalUserInfo and immediately delete + sign out.
             if (details?.isNewUser) {
-                await deleteUser(result.user);
-                setError('Wrong Shot.');
+                try {
+                    await deleteUser(result.user);
+                } catch {
+                    // delete can fail (needs-recent-login / token issues) — ensure we never
+                    // leave an unrecognized account signed in regardless.
+                } finally {
+                    await auth.signOut();
+                }
+                setError('Access denied — account not recognized.');
                 return;
             }
+
+            // Force-refresh the ID token so a freshly-minted `admin` custom claim is
+            // picked up immediately (otherwise it only applies on the next token refresh,
+            // and all admin Firestore/Storage writes would be rejected this session).
+            try { await result.user.getIdToken(true); } catch { /* non-fatal */ }
+
+            // Fire-and-forget login alert email
+            const notifyLogin = httpsCallable(functions, 'notifyLogin');
+            notifyLogin({
+                userAgent: navigator.userAgent,
+                provider: result.user.providerData?.[0]?.providerId || 'google.com',
+            }).catch(() => {}); // Silent — don't block login
 
             if (onNavigate) {
                 onNavigate('dashboard');

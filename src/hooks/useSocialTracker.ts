@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { doc, updateDoc, runTransaction } from 'firebase/firestore';
+import { doc, updateDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 // Convert milliseconds to seconds
@@ -25,6 +25,20 @@ export const useSocialTracker = () => {
             const clickTime = Date.now();
             let clickKey = '';
 
+            // Always notify Algorithm.tsx for in-app session recording, regardless of
+            // whether the remote Firestore write succeeds (offline / rate-limited / rejected).
+            const notifyInApp = () => window.dispatchEvent(new CustomEvent('revil:social_click', {
+                detail: { name: linkName },
+            }));
+
+            // The Socials/{name} create rule requires this exact charset; if the name
+            // doesn't match, the write would be rejected — skip the remote write but
+            // still fire the in-app event so the click is counted locally.
+            if (!/^[a-zA-Z0-9_-]{1,40}$/.test(linkName)) {
+                notifyInApp();
+                return;
+            }
+
             try {
                 const socialRef = doc(db, 'Settings', 'Views', 'Socials', linkName);
 
@@ -49,7 +63,8 @@ export const useSocialTracker = () => {
                         [clickKey]: {
                             timestamp: formatTimestamp(clickTime),
                             duration: null // Will be updated on return
-                        }
+                        },
+                        lastWrite: serverTimestamp() // required by rate-limit rule
                     }, { merge: true });
                 });
 
@@ -57,15 +72,13 @@ export const useSocialTracker = () => {
                     // Set pending state for duration tracking
                     setPendingVisit({ linkName, clickId: clickKey, clickTime });
                 }
-
-            // Dispatch Global Event for Algorithm.tsx (Session Recording)
-            window.dispatchEvent(new CustomEvent('revil:social_click', {
-                detail: { name: linkName }
-            }));
-
-        } catch (error) {
-            console.error('Error tracking social click:', error);
-        }
+            } catch (error) {
+                console.error('Error tracking social click:', error);
+            } finally {
+                // Fire the in-app event even if the Firestore write failed, so the
+                // session recorder + analytics never silently undercount a real click.
+                notifyInApp();
+            }
     }, []);
 
     useEffect(() => {
@@ -79,7 +92,8 @@ export const useSocialTracker = () => {
                     // Update duration for this click as a string
                     const socialRef = doc(db, 'Settings', 'Views', 'Socials', pendingVisit.linkName);
                     await updateDoc(socialRef, {
-                        [`${pendingVisit.clickId}.duration`]: durationSec.toString()
+                        [`${pendingVisit.clickId}.duration`]: durationSec.toString(),
+                        lastWrite: serverTimestamp() // required by rate-limit rule
                     });
 
                     // Dispatch Global Event for Algorithm.tsx (Session Recording)

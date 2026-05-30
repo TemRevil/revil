@@ -10,7 +10,8 @@
   --bg-secondary: #ffffff;
   --text-primary: #000000;
   --text-secondary: #374151;
-  --text-muted: #6b7280;
+  /* Darkened from #6b7280 → #52525b for WCAG AA (4.5:1) contrast on glass/light surfaces */
+  --text-muted: #52525b;
 
   /* Colors - Semantic */
   --accent: #3395ff;
@@ -28,11 +29,17 @@
   /* Navbar */
   --navbar-bg: rgba(255, 255, 255, 0.3);
   --navbar-border: rgba(255, 255, 255, 0.3);
+  --subnav-bg: rgba(255, 255, 255, 0.35);
 
   /* Cards */
   --card-bg: rgba(255, 255, 255, 0.9);
   --card-border: rgba(0, 0, 0, 0.05);
   --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+
+  /* Section / panel borders — visible in both themes */
+  --section-border: rgba(0, 0, 0, 0.1);
+  --section-bg: rgba(255, 255, 255, 0.7);
+  --section-shadow: 0 2px 16px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
 
   /* Inputs */
   --input-bg: rgba(0, 0, 0, 0.05);
@@ -56,6 +63,13 @@
   /* Tooltip Specific */
   --tooltip-bg: rgba(255, 255, 255, 0.85);
   --tooltip-text: #000000;
+
+  /* GitHub Commits Graph */
+  --commits-l0: rgba(0, 0, 0, 0.05);
+  --commits-l1: rgba(51, 149, 255, 0.18);
+  --commits-l2: rgba(51, 149, 255, 0.38);
+  --commits-l3: rgba(51, 149, 255, 0.62);
+  --commits-l4: rgba(51, 149, 255, 0.92);
 }
 
 .dark {
@@ -75,11 +89,17 @@
   /* Navbar */
   --navbar-bg: rgba(0, 0, 0, 0.4);
   --navbar-border: rgba(255, 255, 255, 0.1);
+  --subnav-bg: rgba(0, 0, 0, 0.5);
 
   /* Cards */
   --card-bg: rgba(0, 0, 0, 0.6);
   --card-border: rgba(255, 255, 255, 0.1);
   --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+
+  /* Section / panel borders */
+  --section-border: rgba(255, 255, 255, 0.1);
+  --section-bg: rgba(255, 255, 255, 0.03);
+  --section-shadow: 0 2px 16px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2);
 
   /* Inputs */
   --input-bg: rgba(255, 255, 255, 0.05);
@@ -96,6 +116,13 @@
   /* Tooltip Specific */
   --tooltip-bg: rgba(20, 20, 25, 0.85);
   --tooltip-text: #ffffff;
+
+  /* GitHub Commits Graph */
+  --commits-l0: rgba(255, 255, 255, 0.04);
+  --commits-l1: rgba(51, 149, 255, 0.14);
+  --commits-l2: rgba(51, 149, 255, 0.32);
+  --commits-l3: rgba(51, 149, 255, 0.56);
+  --commits-l4: rgba(51, 149, 255, 0.88);
 }
 
 /* ========================================
@@ -112,8 +139,20 @@ body {
   overscroll-behavior-y: contain;
 }
 
+/* Global keyboard focus indicator (WCAG 2.4.7). Only shows for keyboard/AT users
+   via :focus-visible — never on mouse click. Replaces the various outline:none. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Don't show the ring for mouse/touch focus */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-primary);
@@ -376,76 +415,48 @@ textarea,
   }
 }
 
-@keyframes pop {
-  0% {
-    transform: scale(0.95);
-    opacity: 0;
-  }
+/* NOTE: @keyframes pop/scaleIn/fadeIn/slideUp and matching .animate-* helpers
+   are defined later in this file (Animation Classes section). Earlier duplicates
+   were removed to ensure a single source of truth. */
 
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes scale-in {
-  from {
-    transform: scale(0);
-    opacity: 0;
-  }
-
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-slide-up {
-  animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.animate-pop {
-  animation: pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-.animate-scale-in {
-  animation: scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-.animate-fade-in {
-  animation: fade-in 0.3s ease-out forwards;
-}
-
-/* Tooltip System */
+/* Tooltip System
+ *
+ * NOTE: nav-tooltip is rendered via createPortal into document.body so it
+ * escapes the <nav>'s `-translate-x-1/2`. Without that escape, the parent
+ * transform creates a containing block that nukes backdrop-filter on the
+ * tooltip's inner element (CSS spec).
+ *
+ * We do NOT use `transform` or `translate` anywhere on this element or its
+ * ancestors — both would break backdrop-filter on the inner. Positioning is
+ * done via `position: fixed; left + bottom` from the React component
+ * (measured against the button's rect). Animation is pure `opacity` +
+ * `margin-bottom` (margin offsets the anchor without any transform).
+ */
 .nav-tooltip {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(-5px) scale(0.9);
+  /* position is set inline via portal (fixed + left/bottom) */
   opacity: 0;
   pointer-events: none;
+  /* Default (hide) transition: smooth opacity + position fade-out */
   transition:
     opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 100;
-  margin-bottom: 8px;
+    margin-bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  /* z-60 sits ABOVE the navbar AND sub-nav (both z-50) so navbar tooltips
+     are never covered by the sub-navigation pill on Projects/Developer pages.
+     Still well below modals (1400+) so any open modal covers the tooltip. */
+  z-index: 60;
+  margin-bottom: 0;
   display: block !important;
-  /* Ensure it stays in DOM for transition */
 }
 
 .nav-tooltip.show {
   opacity: 1;
-  transform: translateX(-50%) translateY(-12px) scale(1);
+  margin-bottom: 5px; /* tiny lift on show */
+  /* On show: opacity snaps INSTANTLY to 1 so the blur is fully visible
+     from the first frame (no perceived "blur fade-in"). Slide-in via
+     margin-bottom is kept smooth. */
+  transition:
+    opacity 0s,
+    margin-bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .nav-tooltip-inner {
@@ -454,42 +465,35 @@ textarea,
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
-  backdrop-filter: blur(32px) saturate(200%);
-  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  /* IMPORTANT: do NOT also write -webkit-backdrop-filter here. Lightning CSS
+     (used by Tailwind v4 / Turbopack) de-duplicates the pair and drops the
+     unprefixed version — meaning Chrome (which needs `backdrop-filter`,
+     not `-webkit-`) gets nothing. Write the unprefixed version only and let
+     the build pipeline emit the prefix for Safari. */
+  backdrop-filter: blur(32px) saturate(2);
   position: relative;
   overflow: hidden;
 }
 
+/* Match the navbar pill: same translucent bg, same soft shadow, NO visible border
+   (navbar has no border class — it relies on bg + backdrop-blur + shadow for the glass edge) */
 .dark .nav-tooltip-inner {
-  background: rgba(10, 10, 12, 0.4);
+  background: rgba(0, 0, 0, 0.6);
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow:
-    0 10px 40px rgba(0, 0, 0, 0.7),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent; /* keep the box-sizing consistent */
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .light .nav-tooltip-inner,
 :root:not(.dark) .nav-tooltip-inner {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.4);
   color: #111;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.12),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  border: 1px solid transparent;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
-/* Liquid Glass Border Highlight */
-.nav-tooltip-inner::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-  z-index: 1;
-}
+/* (Removed the white liquid-glass top edge — navbar pill doesn't have one,
+   so the tooltip looks consistent without it.) */
 
 .nav-tooltip-arrow {
   position: absolute;
@@ -499,8 +503,7 @@ textarea,
   width: 12px;
   height: 12px;
   transform: rotate(45deg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px); /* unprefixed only — see note in .nav-tooltip-inner */
   z-index: -1;
 }
 
@@ -532,14 +535,6 @@ textarea,
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-}
-
-.flex-row-center {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
   gap: 16px;
 }
 
@@ -959,13 +954,6 @@ textarea,
    ======================================== */
 
 /* Headings */
-.heading-xl {
-  font-size: 2.5rem;
-  font-weight: 800;
-  color: var(--text-primary);
-  line-height: 1.1;
-}
-
 .heading-lg {
   font-size: 1.875rem;
   font-weight: 700;
@@ -1233,18 +1221,6 @@ textarea,
   animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.animate-pulse-gentle {
-  animation: pulse 2s ease-in-out infinite;
-}
-
-.animate-float {
-  animation: float 8s ease-in-out infinite;
-}
-
-.animate-float-reverse {
-  animation: float 6s ease-in-out infinite reverse;
-}
-
 /* Shimmer loading animation (used by project cards and media) */
 @keyframes shimmer-fast {
   0% { transform: translateX(-150%) skewX(-20deg); }
@@ -1258,45 +1234,99 @@ textarea,
   100% { transform: translateY(15px); opacity: 0; }
 }
 
-/* Hide scrollbars for modal and creators containers */
-.modal-scroll-container::-webkit-scrollbar { display: none; }
-.modal-scroll-container { -ms-overflow-style: none; scrollbar-width: none; }
+/* Hide scrollbars for creators containers */
 .creators-scroll-container::-webkit-scrollbar { display: none; }
 .creators-scroll-container { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* GitHub Commits Graph */
+@keyframes commits-pulse {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.35; }
+}
+
+.commits-cell-skeleton {
+  background: var(--accent);
+  opacity: 0.15;
+  animation: commits-pulse 1.8s ease-in-out infinite;
+}
+
+/* ========================================
+   11b. STREAK WIDGET
+   ======================================== */
+
+/* Pulsing status dot for "active" streak indicator */
+.streak-status-dot {
+  animation: streak-status-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes streak-status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+
+/* Featured repo cards — neutral hover (no accent colour), only on real hover devices */
+@media (hover: hover) {
+  .featured-repo-card:hover {
+    border-color: rgba(128, 128, 128, 0.45) !important;
+    background: var(--section-bg) !important;
+    transform: translateY(-3px);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.1);
+  }
+
+  .dark .featured-repo-card:hover {
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  }
+
+  .featured-repo-card:hover .repo-rank-watermark {
+    opacity: 0.1 !important;
+  }
+
+  .featured-repo-card:hover .repo-arrow-box {
+    background: rgba(128, 128, 128, 0.12) !important;
+    border-color: var(--section-border) !important;
+  }
+
+  .featured-repo-card:hover .repo-arrow-icon {
+    color: var(--text-primary) !important;
+    transform: translate(1px, -1px);
+  }
+}
+
+.featured-repo-card:hover .featured-repo-arrow svg {
+  transform: translate(2px, -2px);
+}
+
+.featured-repo-arrow {
+  opacity: 0.6;
+  transition: opacity 0.25s ease;
+}
+
+.featured-repo-card:hover .featured-repo-arrow {
+  opacity: 1;
+}
+
+/* GitHub stat cards */
+.github-stat-card {
+  border: 1px solid var(--section-border) !important;
+  background: var(--section-bg) !important;
+  box-shadow: var(--section-shadow);
+}
+
+@media (hover: hover) {
+  .github-stat-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(51, 149, 255, 0.3) !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(51, 149, 255, 0.1);
+  }
+
+  .dark .github-stat-card:hover {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(51, 149, 255, 0.12);
+  }
+}
 
 /* ========================================
    12. GRADIENTS & EFFECTS
    ======================================== */
-
-/* Gradient Backgrounds */
-.gradient-accent {
-  background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
-}
-
-.gradient-accent-vibrant {
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
-}
-
-.gradient-fade-down {
-  background: linear-gradient(180deg, var(--card-bg) 0%, transparent 100%);
-}
-
-/* Glow Effects */
-.glow-accent {
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4), 0 0 40px rgba(139, 92, 246, 0.2);
-}
-
-.glow-accent-sm {
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-}
-
-.glow-accent-lg {
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-.glow-accent-lg:hover {
-  box-shadow: 0 12px 32px rgba(59, 130, 246, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-}
 
 /* Shadows */
 .shadow-sm {
@@ -1323,11 +1353,92 @@ textarea,
    13. GLASSMORPHISM COMPONENTS
    ======================================== */
 
+/* ── Developer page responsive helpers ── */
+
+/* Bottom row: streak beside featured projects */
+.dev-bottom-row {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  align-items: stretch;
+}
+
+@media (min-width: 640px) {
+  .dev-bottom-row {
+    flex-direction: row;
+    /* top-align so the two section labels share the same baseline */
+    align-items: flex-start;
+    gap: 40px;
+  }
+}
+
+/* Streak column: label stacked above the fire, both centered.
+   Fixed-ish width on desktop so it reads as a tidy column beside the repos. */
+.dev-streak-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+@media (min-width: 640px) {
+  .dev-streak-col {
+    width: 200px;
+  }
+}
+
+/* Featured repos: 1 col → 2 col → 3 col */
+.dev-repos-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 500px) {
+  .dev-repos-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 900px) {
+  .dev-repos-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Stats grid: 2 col on mobile → 4 col on sm+ */
+.dev-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .dev-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Developer section panel — visible in light and dark mode */
+.dev-panel {
+  background: var(--section-bg);
+  border: 1px solid var(--section-border);
+  box-shadow: var(--section-shadow);
+  border-radius: 20px;
+  backdrop-filter: blur(12px); /* unprefixed only — Lightning CSS strips dupes */
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+@media (hover: hover) {
+  .dev-panel:hover {
+    border-color: rgba(51, 149, 255, 0.22);
+  }
+}
+
 /* Base Glass Panel */
 .glass-panel {
   background-color: var(--card-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px); /* unprefixed only — Lightning CSS strips dupes */
   border: 1px solid var(--card-border);
   box-shadow: var(--card-shadow);
   border-radius: 24px;
@@ -1337,8 +1448,7 @@ textarea,
 /* Deep Glass Panel (for modals) */
 .glass-panel-deep {
   background: var(--glass-bg-deep);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(1.8); /* unprefixed only — Lightning CSS strips dupes */
   border: 1px solid var(--card-border);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
   border-radius: 24px;
@@ -1354,8 +1464,7 @@ textarea,
 /* Glass Dropdown */
 .dropdown-glass {
   background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(1.8); /* unprefixed only — Lightning CSS strips dupes */
   border: 1px solid rgba(0, 0, 0, 0.08);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
 }
@@ -1555,8 +1664,7 @@ textarea,
   border: none;
   border-radius: 12px;
   background-color: var(--input-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px); /* unprefixed only — Lightning CSS strips dupes */
   color: var(--text-primary);
   font-family: inherit;
   font-size: 0.875rem;
@@ -1668,8 +1776,7 @@ textarea,
   background-color: var(--input-bg);
   border: 1px solid var(--input-border);
   border-radius: 12px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px); /* unprefixed only — Lightning CSS strips dupes */
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
@@ -1706,70 +1813,6 @@ textarea,
 
 .toggle-switch.active .toggle-knob {
   left: 22px;
-}
-
-/* Range Slider */
-.range-slider-container {
-  flex: 1;
-  position: relative;
-}
-
-.range-slider-track {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 6px;
-  transform: translateY(-50%);
-  background-color: var(--input-bg);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.range-slider-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent) 0%, #8b5cf6 100%);
-  border-radius: 3px;
-  transition: width 0.1s ease;
-}
-
-.range-slider {
-  width: 100%;
-  height: 24px;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  outline: none;
-  position: relative;
-  z-index: 1;
-}
-
-.range-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
-  border: 3px solid var(--accent);
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  transition: all 0.15s ease;
-}
-
-.range-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-}
-
-.range-slider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
-  border: 3px solid var(--accent);
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 /* ========================================
@@ -1828,39 +1871,6 @@ textarea,
    18. DECORATIVE ELEMENTS
    ======================================== */
 
-/* Decorative Orbs */
-.orb {
-  position: absolute;
-  filter: blur(40px);
-  pointer-events: none;
-}
-
-.orb-blue {
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
-}
-
-.orb-purple {
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
-}
-
-/* Grid Pattern Overlay */
-.grid-pattern {
-  position: absolute;
-  inset: 0;
-  background-size: 40px 40px;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image:
-    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
-}
-
-.dark .grid-pattern {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-}
-
 /* Dots Pattern Background */
 .bg-dots-pattern {
   background-image: radial-gradient(var(--card-border) 1px, transparent 1px);
@@ -1869,56 +1879,6 @@ textarea,
 
 .dark .bg-dots-pattern {
   background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-}
-
-/* Corner Decorations */
-.corner-decoration {
-  position: absolute;
-  width: 30px;
-  height: 30px;
-  pointer-events: none;
-}
-
-.corner-tl {
-  top: 20px;
-  left: 20px;
-  border-left: 2px solid rgba(59, 130, 246, 0.4);
-  border-top: 2px solid rgba(59, 130, 246, 0.4);
-  border-radius: 4px 0 0 0;
-}
-
-.corner-tr {
-  top: 20px;
-  right: 20px;
-  border-right: 2px solid rgba(139, 92, 246, 0.4);
-  border-top: 2px solid rgba(139, 92, 246, 0.4);
-  border-radius: 0 4px 0 0;
-}
-
-.corner-bl {
-  bottom: 20px;
-  left: 20px;
-  border-left: 2px solid rgba(139, 92, 246, 0.4);
-  border-bottom: 2px solid rgba(139, 92, 246, 0.4);
-  border-radius: 0 0 0 4px;
-}
-
-.corner-br {
-  bottom: 20px;
-  right: 20px;
-  border-right: 2px solid rgba(59, 130, 246, 0.4);
-  border-bottom: 2px solid rgba(59, 130, 246, 0.4);
-  border-radius: 0 0 4px 0;
-}
-
-.dark .corner-tl,
-.dark .corner-br {
-  border-color: rgba(59, 130, 246, 0.5);
-}
-
-.dark .corner-tr,
-.dark .corner-bl {
-  border-color: rgba(139, 92, 246, 0.5);
 }
 
 /* Project Description Truncation */
@@ -1949,8 +1909,7 @@ textarea,
   position: fixed;
   inset: 0;
   background-color: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px); /* unprefixed only — Lightning CSS strips dupes */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1966,8 +1925,7 @@ textarea,
 
 .modal-content {
   background-color: var(--card-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px); /* unprefixed only — Lightning CSS strips dupes */
   border-radius: 20px;
   box-shadow: var(--card-shadow);
   max-width: 480px;
@@ -2005,8 +1963,7 @@ textarea,
   padding: 8px 12px;
   border-radius: 8px;
   background-color: var(--input-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px); /* unprefixed only — Lightning CSS strips dupes */
   font-size: 0.875rem;
   color: var(--text-primary);
 }
@@ -2282,67 +2239,3 @@ textarea,
   }
 }
 
-/* ========================================
-   22. COUNTER COMPONENT (ReactBits)
-   ======================================== */
-
-.rb-counter-container {
-  position: relative;
-  display: inline-flex;
-  vertical-align: middle;
-  line-height: normal;
-  overflow: visible;
-}
-
-.rb-counter-counter {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.rb-counter-digit {
-  position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  overflow: hidden !important;
-  font-variant-numeric: tabular-nums;
-  contain: paint;
-}
-
-.rb-counter-number {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  white-space: nowrap;
-  user-select: none;
-  transform: translateZ(0);
-  /* Force GPU layer */
-}
-
-.rb-gradient-container {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 10;
-}
-
-.rb-top-gradient {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 11;
-}
-
-.rb-bottom-gradient {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 11;
-}

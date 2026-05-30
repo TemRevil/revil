@@ -691,7 +691,7 @@ const DLinks = () => {
         if (!dailyMap) return [] as { date: string; value: number; projectViews: number; socialClicks: number }[];
         try {
             const entries = Object.entries(dailyMap)
-                .filter(([k]) => k && k !== 'next')
+                .filter(([k]) => k && k !== 'next' && !isNaN(new Date(k).getTime()))
                 .map(([k, v]) => {
                     const isObj = v && typeof v === 'object';
                     const obj = isObj ? (v as { total?: number; projectViews?: number; socialClicks?: number }) : null;
@@ -736,10 +736,15 @@ const DLinks = () => {
         } else if (chartFilter === 'weekly') {
             const weeks: Record<string, { total: number; p: number; s: number }> = {};
             dailySeries.forEach(s => {
+                // s.date is a UTC YYYY-MM-DD key; compute the ISO-week Monday in UTC.
+                // Using local getDay()/getDate() bucketed dates into the wrong week for
+                // anyone west of UTC.
                 const d = new Date(s.date);
-                const day = d.getDay();
-                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-                const monday = new Date(new Date(s.date).setDate(diff));
+                const day = d.getUTCDay();
+                const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+                const monday = new Date(d);
+                monday.setUTCDate(diff);
+                if (isNaN(monday.getTime())) return;
                 const weekKey = monday.toISOString().split('T')[0];
                 if (!weeks[weekKey]) weeks[weekKey] = { total: 0, p: 0, s: 0 };
                 weeks[weekKey].total += s.value;
@@ -787,6 +792,8 @@ const DLinks = () => {
         // Comparison with previous period (e.g. last year same date)
         return aggregated.map(item => {
             const d = new Date(item.fullDate);
+            // Guard against invalid dates (e.g. monthly keys like "2026-05" with no day)
+            if (isNaN(d.getTime())) return { ...item, prevValue: 0 };
             d.setFullYear(d.getFullYear() - 1);
             const prevDateStr = d.toISOString().split('T')[0];
             const prevData = dailyMap?.[prevDateStr];

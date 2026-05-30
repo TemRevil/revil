@@ -6,7 +6,8 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
-import { getFunctions } from 'firebase/functions';
+import { getFunctions } from 'firebase/functions'; // Used by M-Contact.tsx for httpsCallable
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 
 const firebaseConfig = {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -20,6 +21,21 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Initialize App Check with reCAPTCHA Enterprise
+// This runs only in the browser — SSR/build skips it
+if (typeof window !== 'undefined') {
+    // Enable debug token for localhost development
+    if (process.env.NODE_ENV === 'development') {
+        // @ts-expect-error — Firebase debug token flag
+        self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    }
+
+    initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider('6LeyDfQsAAAAANACZEBPx9luTXrgcY9zHPF_4uE5'),
+        isTokenAutoRefreshEnabled: true,
+    });
+}
 
 // Initialize Firestore with modern multi-tab persistence settings
 export const db = initializeFirestore(app, {

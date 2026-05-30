@@ -24,6 +24,7 @@
     "@tailwindcss/postcss": "^4.2.2",
     "animejs": "^3.2.2",
     "firebase": "^12.6.0",
+    "lottie-react": "^2.4.1",
     "lucide-react": "^0.555.0",
     "motion": "^12.24.7",
     "next": "^16.2.4",
@@ -32,17 +33,19 @@
     "react-easy-crop": "^5.5.6",
     "recharts": "^2.5.0"
   },
+  "browserslist": [
+    "last 2 versions",
+    "Safari >= 15",
+    "iOS >= 15",
+    "not dead"
+  ],
   "devDependencies": {
-    "@babel/plugin-transform-react-jsx": "^7.27.1",
-    "@babel/plugin-transform-typescript": "^7.28.5",
     "@eslint/js": "^9.39.1",
     "@types/animejs": "^3.1.4",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
-    "autoprefixer": "^10.4.22",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "postcss": "^8.5.10",
     "tailwindcss": "^4.1.17",

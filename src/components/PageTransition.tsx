@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import anime from 'animejs';
 
 interface PageTransitionProps {
@@ -163,10 +164,15 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
         }
     }, [isTransitioning, onCurtainCovered, onTransitionComplete, displayName, fontSize, currentDirection]);
 
-    return (
+    if (typeof document === 'undefined') return null;
+
+    return createPortal(
         <div
             ref={curtainRef}
-            className={`fixed inset-0 overflow-hidden z-50 ${currentDirection}`}
+            /* Portaled to <body> at z-1000 so the transition curtain layers ABOVE the
+               body-portaled nav/availability tooltips (z-60) — covering them during a
+               page transition — while still sitting below modals (z-1400+). */
+            className={`fixed inset-0 overflow-hidden z-[1000] ${currentDirection}`}
             style={{ backgroundColor: 'transparent', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', display: 'none' }}
         >
             <div className="absolute flex items-center justify-center" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', height: '100%' }}>
@@ -181,7 +187,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                         y="50%"
                         dominantBaseline="central"
                         textAnchor="middle"
-                        fontFamily="'Caveat', cursive"
+                        fontFamily="var(--font-caveat), cursive"
                         fontSize={fontSize}
                         strokeWidth="1.2"
                         strokeLinecap="round"
@@ -204,7 +210,8 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                     </text>
                 </svg>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 };
 

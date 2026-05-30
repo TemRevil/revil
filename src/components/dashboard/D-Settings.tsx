@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
-import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Briefcase, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Briefcase, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link, Sun, Moon, GripVertical } from 'lucide-react';
+import { Reorder, useDragControls } from 'motion/react';
 const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
@@ -108,14 +109,62 @@ const getCroppedImg = (imageSrc: string, pixelCrop: unknown): Promise<File> => {
                         return;
                     }
 
-                    const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
+                    const file = new File([blob], 'cropped.webp', { type: 'image/webp' });
                     resolve(file);
-                }, 'image/jpeg');
+                }, 'image/webp');
             } catch (e) {
                 reject(e);
             }
         })();
     });
+};
+
+/* ──────────────────────────────────────────────────────────────
+   Sortable "Projects Being Handled" row. Drag is bound only to the
+   grip handle (dragListener=false + dragControls) so the Edit/Delete
+   buttons stay clickable without triggering an accidental reorder.
+   ────────────────────────────────────────────────────────────── */
+const SortableProjectRow = ({ project, onEdit, onDelete }: {
+    project: HandlingProject;
+    onEdit: (p: HandlingProject) => void;
+    onDelete: (p: HandlingProject) => void;
+}) => {
+    const dragControls = useDragControls();
+    return (
+        <Reorder.Item
+            value={project}
+            dragListener={false}
+            dragControls={dragControls}
+            className="p-4 rounded-xl bg-gray-500/5 border border-gray-500/5 flex justify-between items-center gap-3 stack-on-small min-w-0"
+        >
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+                <button
+                    type="button"
+                    onPointerDown={(e) => dragControls.start(e)}
+                    className="btn-icon shrink-0 text-muted cursor-grab active:cursor-grabbing"
+                    style={{ touchAction: 'none' }}
+                    aria-label={`Drag ${project.name} to reorder`}
+                >
+                    <GripVertical size={16} />
+                </button>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h4 className="heading-sm truncate max-w-full">{project.name}</h4>
+                        <span className={`badge ${project.status === 'active' ? 'badge-active' : project.status === 'pending' ? 'badge-pending' : 'badge-blue'}`}>
+                            {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                        </span>
+                    </div>
+                    {project.description ? (
+                        <p className="text-muted project-desc" title={project.description}>{project.description}</p>
+                    ) : null}
+                </div>
+            </div>
+            <div className="flex gap-1 mt-3 sm:mt-0">
+                <button onClick={() => onEdit(project)} className="btn-icon" aria-label={`Edit ${project.name}`}><Edit2 size={16} /></button>
+                <button onClick={() => onDelete(project)} className="btn-icon text-red-500 hover:bg-red-500/10" aria-label={`Delete ${project.name}`}><Trash2 size={16} /></button>
+            </div>
+        </Reorder.Item>
+    );
 };
 
 
@@ -137,7 +186,7 @@ export default function DSettings() {
     const [stackModalOpen, setStackModalOpen] = useState(false);
     const [editingStack, setEditingStack] = useState<StackItem | null>(null);
     const [firebaseBrowserOpen, setFirebaseBrowserOpen] = useState(false);
-    const [firebaseSelectTarget, setFirebaseSelectTarget] = useState<'hero' | 'profile' | null>(null);
+    const [firebaseSelectTarget, setFirebaseSelectTarget] = useState<'hero' | 'heroDark' | 'profile' | null>(null);
 
     // Confirmation Modal State
     const [confirmConfig, setConfirmConfig] = useState<{
@@ -155,7 +204,20 @@ export default function DSettings() {
 
     const [heroImagePreview, setHeroImagePreview] = useState<string>(DEFAULT_HERO_URL);
     const [heroImageFile, setHeroImageFile] = useState<File | null>(null);
+    const [heroImageDirty, setHeroImageDirty] = useState(false);
     const heroImageInputRef = useRef<HTMLInputElement>(null);
+
+    // Dark mode hero image
+    const [heroImagePreviewDark, setHeroImagePreviewDark] = useState<string>('');
+    const [heroImageFileDark, setHeroImageFileDark] = useState<File | null>(null);
+    const [heroImageDirtyDark, setHeroImageDirtyDark] = useState(false);
+    const heroImageInputRefDark = useRef<HTMLInputElement>(null);
+
+    // Which hero image the single uploader is currently editing (light / dark)
+    const [heroImageMode, setHeroImageMode] = useState<'light' | 'dark'>('light');
+
+    // Max upload size for hero images (matches "Max 2MB" helper text)
+    const HERO_MAX_BYTES = 2 * 1024 * 1024;
 
     const [profileImagePreview, setProfileImagePreview] = useState<string>('');
     const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
@@ -188,6 +250,11 @@ export default function DSettings() {
     const [heroImageResolution, setHeroImageResolution] = useState<string>('');
     const [heroImageSize, setHeroImageSize] = useState<string>('');
     const [heroImageSizeLoading, setHeroImageSizeLoading] = useState(false);
+
+    // Dark hero image resolution & size display
+    const [heroImageResolutionDark, setHeroImageResolutionDark] = useState<string>('');
+    const [heroImageSizeDark, setHeroImageSizeDark] = useState<string>('');
+    const [heroImageSizeLoadingDark, setHeroImageSizeLoadingDark] = useState(false);
 
     const directionRef = useRef<number>(1);
     const [isTransitioning, setIsTransitioning] = useState(false);
@@ -371,6 +438,63 @@ export default function DSettings() {
         };
     }, [heroImagePreview, heroImageFile]);
 
+    // Dark hero: resolution & size display
+    useEffect(() => {
+        if (!heroImagePreviewDark) {
+            setHeroImageResolutionDark('');
+            setHeroImageSizeDark('');
+            return;
+        }
+
+        const checkRes = async () => {
+            try {
+                const img = await createImage(heroImagePreviewDark, false);
+                setHeroImageResolutionDark(`${img.naturalWidth}×${img.naturalHeight}`);
+            } catch {
+                setHeroImageResolutionDark('');
+            }
+        };
+        checkRes();
+
+        (async () => {
+            setHeroImageSizeLoadingDark(true);
+            try {
+                if (heroImageFileDark) {
+                    setHeroImageSizeDark(formatBytes(heroImageFileDark.size));
+                } else if (heroImagePreviewDark.startsWith('data:')) {
+                    const bytes = sizeFromDataUrl(heroImagePreviewDark);
+                    setHeroImageSizeDark(formatBytes(bytes));
+                } else if (heroImagePreviewDark.startsWith('http')) {
+                    try {
+                        if (heroImagePreviewDark.includes('firebasestorage.googleapis.com')) {
+                            const fileRef = ref(storage, heroImagePreviewDark);
+                            const metadata = await getMetadata(fileRef);
+                            setHeroImageSizeDark(formatBytes(metadata.size));
+                        } else {
+                            throw new Error('Not a firebase URL');
+                        }
+                    } catch {
+                        try {
+                            const res = await fetch(heroImagePreviewDark, { method: 'GET' });
+                            if (res.ok) {
+                                const blob = await res.blob();
+                                setHeroImageSizeDark(formatBytes(blob.size));
+                            }
+                        } catch {
+                            setHeroImageSizeDark('');
+                        }
+                    }
+                } else {
+                    setHeroImageSizeDark('');
+                }
+            } catch {
+                setHeroImageSizeDark('');
+            } finally {
+                setHeroImageSizeLoadingDark(false);
+            }
+        })();
+    }, [heroImagePreviewDark, heroImageFileDark]);
+
     // profile image resolution & size (best-effort size like hero)
     useEffect(() => {
         if (!profileImagePreview) {
@@ -435,13 +559,19 @@ export default function DSettings() {
         };
     }, [profileImagePreview, profileImageFile]);
 
-    // Load profile and hero info from Firestore
+    // Load profile and hero info from Firestore.
+    // Dirty flags (heroImageDirty / heroImageDirtyDark) prevent the snapshot from
+    // clobbering unsaved local changes — including changes made via the Firebase browser
+    // (where heroImageFile is null but a new URL was selected).
     useEffect(() => {
         const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'), (snap) => {
             if (snap.exists()) {
                 const data = snap.data();
                 if (data.imageUrl && !profileImageDirty) setProfileImagePreview(data.imageUrl);
-                if (data.heroImageUrl && !heroImageFile) setHeroImagePreview(data.heroImageUrl);
+                if (data.heroImageUrl && !heroImageDirty) setHeroImagePreview(data.heroImageUrl);
+                if (data.heroImageUrlDark !== undefined && !heroImageDirtyDark) {
+                    setHeroImagePreviewDark(data.heroImageUrlDark || '');
+                }
                 if (data.name && !isEditingProfile && !profileInfoDirty) setProfileName(data.name);
                 if (data.title && !isEditingProfile && !profileInfoDirty) setProfileTitle(data.title);
                 if (data['Social Links'] && !isEditingProfile && !profileInfoDirty) {
@@ -456,7 +586,7 @@ export default function DSettings() {
             console.error('Error fetching account settings', err);
         });
         return () => unsubscribe();
-    }, [profileImageDirty, isEditingProfile, profileInfoDirty, heroImageFile]);
+    }, [profileImageDirty, isEditingProfile, profileInfoDirty, heroImageDirty, heroImageDirtyDark]);
 
     // Cropper State
     const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -514,9 +644,11 @@ export default function DSettings() {
 
     const handleSaveAvailability = async () => {
         try {
-            const projectsMap = handlingProjects.reduce((acc, project) => {
+            // Stamp each project's array index as its `order` so the manual
+            // drag-sort order is what reloads (map keys alone don't preserve it).
+            const projectsMap = handlingProjects.reduce((acc, project, index) => {
                 const { id, ...projectData } = project;
-                acc[id] = projectData;
+                acc[id] = { ...projectData, order: index };
                 return acc;
             }, {} as { [key: string]: Omit<HandlingProject, 'id'> });
 
@@ -547,6 +679,8 @@ export default function DSettings() {
     };
 
     const handleSaveHeroImage = async (silent = false) => {
+        // Only save if the user actually changed it
+        if (!heroImageDirty) return;
         if (!heroImageFile && !heroImagePreview) return;
 
         try {
@@ -560,6 +694,7 @@ export default function DSettings() {
                 const downloadURL = await getDownloadURL(storageRef);
 
                 await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrl: downloadURL }, { merge: true });
+                setHeroImageFile(null);
             } else if (heroImagePreview && heroImagePreview.startsWith('http')) {
                 // Selected from Firebase / remote URL - just persist the URL
                 await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrl: heroImagePreview }, { merge: true });
@@ -568,10 +703,61 @@ export default function DSettings() {
                 return;
             }
 
+            setHeroImageDirty(false);
             if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Hero image updated!', duration: 3000 });
         } catch (error) {
             console.error("Error updating hero image:", error);
             safeSetAlert({ show: true, type: 'error', message: 'Failed to update hero image.' });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSaveHeroImageDark = async (silent = false) => {
+        if (!heroImageDirtyDark) return;
+
+        // Allow saving even if empty (user wants to clear the dark variant)
+        if (!heroImageFileDark && !heroImagePreviewDark) {
+            try {
+                // setDoc + merge is safer than updateDoc — works even if the field
+                // or doc didn't exist before. deleteField() removes the value.
+                await setDoc(
+                    doc(db, 'Settings', 'Account'),
+                    { heroImageUrlDark: deleteField() },
+                    { merge: true },
+                );
+                setHeroImageDirtyDark(false);
+                if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Dark hero image cleared.', duration: 3000 });
+            } catch (error) {
+                console.error('Error clearing dark hero image:', error);
+                safeSetAlert({ show: true, type: 'error', message: 'Failed to clear dark hero image.' });
+            }
+            return;
+        }
+
+        try {
+            setIsLoading(true);
+
+            if (heroImageFileDark) {
+                const fileExtension = heroImageFileDark.name.split('.').pop();
+                const fileName = `Hero.image.dark.${fileExtension}`;
+                const storageRef = ref(storage, `src/imgs/Settings/${fileName}`);
+                await uploadBytes(storageRef, heroImageFileDark);
+                const downloadURL = await getDownloadURL(storageRef);
+
+                await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrlDark: downloadURL }, { merge: true });
+                setHeroImageFileDark(null);
+            } else if (heroImagePreviewDark && heroImagePreviewDark.startsWith('http')) {
+                await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrlDark: heroImagePreviewDark }, { merge: true });
+            } else {
+                return;
+            }
+
+            setHeroImageDirtyDark(false);
+            if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Dark hero image updated!', duration: 3000 });
+        } catch (error) {
+            console.error("Error updating dark hero image:", error);
+            safeSetAlert({ show: true, type: 'error', message: 'Failed to update dark hero image.' });
         } finally {
             setIsLoading(false);
         }
@@ -588,6 +774,7 @@ export default function DSettings() {
             await Promise.all([
                 handleSaveAvailability(),
                 handleSaveHeroImage(true),
+                handleSaveHeroImageDark(true),
                 handleSaveProfileImage(true),
                 handleSaveProfileInfo(true)
             ]);
@@ -630,6 +817,14 @@ export default function DSettings() {
                 const heroData = heroSnap.data();
                 setHeroImagePreview(heroData.heroImageUrl ?? DEFAULT_HERO_URL);
                 setHeroImageFile(null);
+                setHeroImageDirty(false);
+                setHeroImagePreviewDark(heroData.heroImageUrlDark ?? '');
+                setHeroImageFileDark(null);
+                setHeroImageDirtyDark(false);
+            } else {
+                // Even if doc fetch failed, reset dirty flags so user isn't stuck thinking changes still apply
+                setHeroImageDirty(false);
+                setHeroImageDirtyDark(false);
             }
 
             const availSnap = await getDoc(doc(db, 'Settings', 'Availability'));
@@ -648,10 +843,9 @@ export default function DSettings() {
 
                 const projectsMap = availData['Projects Being Handled'] as { [key: string]: Omit<HandlingProject, 'id'> };
                 if (projectsMap) {
-                    const projectsArray: HandlingProject[] = Object.entries(projectsMap).map(([id, projectData]) => ({
-                        id,
-                        ...projectData
-                    }));
+                    const projectsArray: HandlingProject[] = Object.entries(projectsMap)
+                        .map(([id, projectData], i) => ({ id, ...projectData, order: projectData.order ?? i }))
+                        .sort((a, b) => a.order - b.order);
                     setHandlingProjects(projectsArray);
                 }
             }
@@ -660,7 +854,16 @@ export default function DSettings() {
             safeSetAlert({ show: true, type: 'info', message: 'All staged changes canceled.' });
         } catch (err) {
             console.error('Error cancelling changes', err);
-            safeSetAlert({ show: true, type: 'error', message: 'Failed to cancel changes.' });
+            // Even on Firestore failure, clear dirty flags + uploads so the user
+            // isn't left in a stuck "unsaved" state. The UI will sync next snapshot.
+            setHeroImageDirty(false);
+            setHeroImageDirtyDark(false);
+            setHeroImageFile(null);
+            setHeroImageFileDark(null);
+            setProfileImageDirty(false);
+            setProfileInfoDirty(false);
+            setHasUnsavedChanges(false);
+            safeSetAlert({ show: true, type: 'error', message: 'Cancel failed to reach Firestore. Local edits cleared.' });
         } finally {
             setIsLoading(false);
         }
@@ -725,13 +928,13 @@ export default function DSettings() {
                     }
                 }
 
-                // Parse and set handling projects
+                // Parse and set handling projects (sorted by persisted order;
+                // legacy projects without `order` fall back to their map position)
                 const projectsMap = data['Projects Being Handled'] as { [key: string]: Omit<HandlingProject, 'id'> };
                 if (projectsMap) {
-                    const projectsArray: HandlingProject[] = Object.entries(projectsMap).map(([id, projectData]) => ({
-                        id,
-                        ...projectData
-                    }));
+                    const projectsArray: HandlingProject[] = Object.entries(projectsMap)
+                        .map(([id, projectData], i) => ({ id, ...projectData, order: projectData.order ?? i }))
+                        .sort((a, b) => a.order - b.order);
                     setHandlingProjects(projectsArray);
                 } else {
                     setHandlingProjects([]);
@@ -794,7 +997,8 @@ export default function DSettings() {
                 id: nextId.toString(),
                 name: name,
                 description: description,
-                status: status
+                status: status,
+                order: prev.length
             }]);
         }
         setProjectModalOpen(false);
@@ -874,15 +1078,54 @@ export default function DSettings() {
     // Account handlers
     const handleHeroImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file && file.type.startsWith('image/')) {
-            setHeroImageFile(file);
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                setHeroImagePreview(event.target?.result as string);
-                setHasUnsavedChanges(true);
-            };
-            reader.readAsDataURL(file);
+        // Always reset so the user can re-pick the same file later
+        e.target.value = '';
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            safeSetAlert({ show: true, type: 'error', message: 'Please pick an image file.' });
+            return;
         }
+        if (file.size > HERO_MAX_BYTES) {
+            safeSetAlert({ show: true, type: 'error', message: `Image too large (${formatBytes(file.size)}). Max ${formatBytes(HERO_MAX_BYTES)}.` });
+            return;
+        }
+        setHeroImageFile(file);
+        setHeroImageDirty(true);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            setHeroImagePreview(event.target?.result as string);
+            setHasUnsavedChanges(true);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleHeroImageUploadDark = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            safeSetAlert({ show: true, type: 'error', message: 'Please pick an image file.' });
+            return;
+        }
+        if (file.size > HERO_MAX_BYTES) {
+            safeSetAlert({ show: true, type: 'error', message: `Image too large (${formatBytes(file.size)}). Max ${formatBytes(HERO_MAX_BYTES)}.` });
+            return;
+        }
+        setHeroImageFileDark(file);
+        setHeroImageDirtyDark(true);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            setHeroImagePreviewDark(event.target?.result as string);
+            setHasUnsavedChanges(true);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleClearHeroImageDark = () => {
+        setHeroImagePreviewDark('');
+        setHeroImageFileDark(null);
+        setHeroImageDirtyDark(true);
+        setHasUnsavedChanges(true);
     };
 
     const handleProfileImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -916,28 +1159,31 @@ export default function DSettings() {
     const handleCropSave = async () => {
         if (originalImageSrc && croppedAreaPixels) {
             try {
+                setIsLoading(true);
                 const croppedFile = await getCroppedImg(originalImageSrc, croppedAreaPixels);
                 if (croppedFile) {
-                    setProfileImageFile(croppedFile);
-                    setProfileImagePreview(URL.createObjectURL(croppedFile));
-                    setHasUnsavedChanges(true);
-                    setProfileImageDirty(true);
+                    // Perform immediate upload to Firebase
+                    const storageRef = ref(storage, `src/imgs/Settings/Profile_${Date.now()}_cropped.webp`);
+                    await uploadBytes(storageRef, croppedFile);
+                    const downloadURL = await getDownloadURL(storageRef);
+
+                    // Update Firestore immediately
+                    await setDoc(doc(db, 'Settings', 'Account'), { imageUrl: downloadURL }, { merge: true });
+
+                    setProfileImagePreview(downloadURL);
+                    setProfileImageFile(null);
+                    setProfileImageDirty(false);
+                    
+                    safeSetAlert({ show: true, type: 'success', message: 'Profile image cropped and saved!', duration: 3000 });
                 }
             } catch (e) {
-                console.error("Crop failed", e);
-                // If it's a security/CORS error on a remote URL, give a specific hint
-                if (originalImageSrc.startsWith('http')) {
-                    safeSetAlert({
-                        show: true,
-                        type: 'error',
-                        message: 'CORS Blocked: Please run the "gsutil" command in your Firebase console to allow image cropping.'
-                    });
-                } else {
-                    safeSetAlert({ show: true, type: 'error', message: 'Failed to crop image.' });
-                }
+                console.error("Crop/Save failed", e);
+                safeSetAlert({ show: true, type: 'error', message: 'Failed to save cropped image.' });
+            } finally {
+                setIsLoading(false);
+                setIsCropping(false);
+                setOriginalImageSrc(null);
             }
-            setIsCropping(false);
-            setOriginalImageSrc(null);
         }
     };
 
@@ -997,7 +1243,7 @@ export default function DSettings() {
             setIsLoading(true);
 
             if (profileImageFile) {
-                const storageRef = ref(storage, `src/imgs/Settings/Profile_${Date.now()}_cropped.jpg`);
+                const storageRef = ref(storage, `src/imgs/Settings/Profile_${Date.now()}_cropped.webp`);
                 await uploadBytes(storageRef, profileImageFile);
                 const downloadURL = await getDownloadURL(storageRef);
 
@@ -1038,40 +1284,30 @@ export default function DSettings() {
 
     if (isCropping && originalImageSrc) {
         return createPortal(
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-lg z-[3000] flex flex-col items-center justify-center animate-fade-in" style={{ padding: '20px' }}>
-                <div className="w-full max-w-lg mx-auto">
-                    {/* Cropper Container (Header + Canvas + Controls share one background) */}
-                    <div className={`relative w-full overflow-hidden rounded-2xl ${isDark ? 'gradient-radial-dark' : 'gradient-radial-light'}`}>
-                        {/* Crop Area Header (now inside the background) */}
-                        <div className="flex items-center gap-4 p-5 px-6 border-b border-white/8">
-                            <div className="icon-box icon-box-md gradient-accent-vibrant glow-accent">
-                                <ZoomIn size={22} color="white" strokeWidth={2.5} />
-                            </div>
-                            <div>
-                                <div className={`font-bold text-lg ${isDark ? 'text-white' : 'text-gray-900'}`} style={{ letterSpacing: '-0.02em' }}>
-                                    Crop Your Photo
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[3000] flex items-center justify-center p-4 animate-fade-in">
+                <div className="w-full max-w-lg">
+                    <div className={`glass-panel overflow-hidden rounded-2xl border ${isDark ? 'border-white/10 bg-zinc-900/90' : 'border-black/5 bg-white/90'}`}>
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-5 border-b border-white/5">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+                                    <ZoomIn size={20} />
                                 </div>
-                                <div className={`flex items-center gap-2 text-sm mt-1 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-                                    Drag to reposition, scroll to zoom
+                                <div>
+                                    <h3 className="font-bold text-base leading-none">Crop Photo</h3>
+                                    <p className="text-[11px] text-muted mt-1 uppercase tracking-wider font-medium opacity-60">Adjust your profile image</p>
                                 </div>
                             </div>
+                            <button 
+                                onClick={handleCropCancel}
+                                className="p-2 rounded-full hover:bg-white/5 text-muted transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
                         </div>
 
-                        {/* Cropper Canvas (fixed height) */}
-                        <div style={{ height: '380px' }} className="relative overflow-hidden">
-                            {/* Animated Gradient Orbs */}
-                            <div className="orb orb-blue animate-float" style={{ top: '-50%', left: '-20%', width: '60%', height: '100%' }} />
-                            <div className="orb orb-purple animate-float-reverse" style={{ bottom: '-30%', right: '-20%', width: '50%', height: '80%' }} />
-
-                            {/* Subtle Grid Pattern */}
-                            <div className="grid-pattern" />
-
-                            {/* Corner Decorations */}
-                            <div className="corner-decoration corner-tl" />
-                            <div className="corner-decoration corner-tr" />
-                            <div className="corner-decoration corner-bl" />
-                            <div className="corner-decoration corner-br" />
-
+                        {/* Cropper Area */}
+                        <div className="relative h-[400px] w-full bg-black/20">
                             <Cropper
                                 image={originalImageSrc}
                                 crop={crop}
@@ -1085,75 +1321,62 @@ export default function DSettings() {
                                 style={{
                                     containerStyle: { background: 'transparent' },
                                     cropAreaStyle: {
-                                        border: '3px solid rgba(255, 255, 255, 0.9)',
-                                        boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 40px rgba(59, 130, 246, 0.3)'
+                                        border: '2px solid white',
+                                        boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)'
                                     }
                                 }}
                             />
                         </div>
 
-                        {/* Controls Panel placed on top of the same background so it reads as part of the component */}
-                        <div className="p-6" style={{ borderTop: '1px solid transparent', background: isDark ? 'linear-gradient(180deg, rgba(13,13,26,0.45), rgba(13,13,26,0.45))' : 'linear-gradient(180deg, rgba(248,250,252,0.06), rgba(226,232,240,0.06))' }}>
-                            <div className="flex-col gap-6" style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>
-                                {/* Zoom Control */}
-                                <div className="flex items-center gap-4 p-4 rounded-lg" style={{ background: 'transparent' }}>
-                                    <div className="icon-box icon-box-sm">
-                                        <ZoomIn size={18} />
-                                    </div>
+                        {/* Controls */}
+                        <div className="p-6 flex flex-col gap-6">
+                            <div className="flex items-center gap-4">
+                                <span className="text-xs font-semibold text-muted w-10">Zoom</span>
+                                <input
+                                    type="range"
+                                    value={zoom}
+                                    min={1}
+                                    max={3}
+                                    step={0.01}
+                                    onChange={(e) => setZoom(Number(e.target.value))}
+                                    className="flex-1 h-1.5 bg-gray-500/20 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                                <span className="text-xs font-mono text-blue-500 w-10 text-right font-bold">
+                                    {Math.round(zoom * 100)}%
+                                </span>
+                            </div>
 
-                                    <div className="range-slider-container">
-                                        <div className="range-slider-track">
-                                            <div
-                                                className="range-slider-fill"
-                                                style={{ width: `${((zoom - 1) / 2) * 100}%` }}
-                                            />
-                                        </div>
-                                        <input
-                                            type="range"
-                                            value={zoom}
-                                            min={1}
-                                            max={3}
-                                            step={0.02}
-                                            aria-label="Zoom"
-                                            onChange={(e) => setZoom(Number(e.target.value))}
-                                            className="range-slider"
-                                        />
-                                    </div>
-
-                                    <div className="gradient-accent glow-accent-sm rounded-sm text-white text-center font-semibold text-xs" style={{ minWidth: '52px', padding: '6px 12px' }}>
-                                        {Math.round(zoom * 100)}%
-                                    </div>
+                            <div className="flex flex-wrap items-center justify-between gap-4">
+                                <div className="text-[11px] text-muted max-w-[200px]">
+                                    <span className="opacity-60">Drag to move. Scroll or use slider to zoom.</span>
                                 </div>
-
-                                {/* Action Buttons */}
-                                <div className="flex justify-end gap-3 items-center">
+                                
+                                <div className="flex items-center gap-2">
                                     <button
                                         type="button"
-                                        onClick={handleCropSave}
-                                        className="btn btn-primary"
+                                        onClick={handleCropCancel}
+                                        className="btn btn-secondary text-xs px-4 py-2"
                                     >
-                                        Save Crop
+                                        Cancel
                                     </button>
+                                    
                                     {originalImageSrc.startsWith('http') && (
                                         <button
                                             type="button"
                                             onClick={handleSkipCrop}
-                                            className="btn btn-secondary px-4 py-2 text-sm border-white/20 bg-white/5 hover:bg-white/10"
+                                            className="btn btn-secondary text-xs px-4 py-2 bg-blue-500/5 border-blue-500/10 text-blue-500 hover:bg-blue-500/10"
                                         >
-                                            Skip & Use Original
+                                            Skip
                                         </button>
                                     )}
+
                                     <button
                                         type="button"
-                                        onClick={handleCropCancel}
-                                        className="btn btn-secondary"
+                                        onClick={handleCropSave}
+                                        className="btn btn-primary text-xs px-6 py-2 shadow-lg shadow-blue-500/20"
                                     >
-                                        Close
+                                        Save Changes
                                     </button>
-
-                                    <div className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'} ml-2`}>
-                                        Changes will be applied when you click <strong>Apply Changes</strong>
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1301,49 +1524,46 @@ export default function DSettings() {
                                         <Briefcase size={22} className="mr-2" />
                                         Projects Being Handled
                                     </h3>
-                                    <p className="text-muted text-xs">{handlingProjects.length} projects</p>
+                                    <p className="text-muted text-xs">
+                                        {handlingProjects.length} projects
+                                        {handlingProjects.length > 1 && ' · drag to reorder'}
+                                    </p>
                                 </div>
                                 <button onClick={() => { setEditingProject(null); setProjectModalOpen(true); }} className="btn btn-primary sm:w-auto flex justify-center items-center mt-3 sm:mt-0" aria-label="Add project">
                                     <Plus size={18} /> <span className="hidden sm:inline">Add</span>
                                 </button>
                             </div>
 
-                            <div className="flex flex-col gap-3">
-                                {handlingProjects.length === 0 ? (
-                                    <div className="p-8 text-center text-sec border-2 border-dashed border-gray-500/10 rounded-xl">
-                                        No projects. Click "Add" to add one.
-                                    </div>
-                                ) : handlingProjects.map(project => (
-                                    <div key={project.id} className="p-4 rounded-xl bg-gray-500/5 border border-gray-500/5 flex justify-between items-center gap-3 stack-on-small min-w-0">
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                <h4 className="heading-sm truncate max-w-full">{project.name}</h4>
-                                                <span className={`badge ${project.status === 'active' ? 'badge-active' : project.status === 'pending' ? 'badge-pending' : 'badge-blue'}`}>
-                                                    {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-                                                </span>
-                                            </div>
-                                            {project.description ? (
-                                                <p className="text-muted project-desc" title={project.description}>{project.description}</p>
-                                            ) : null}
-                                        </div>
-                                        <div className="flex gap-1 mt-3 sm:mt-0">
-                                            <button onClick={() => { setEditingProject(project); setProjectModalOpen(true); }} className="btn-icon" aria-label={`Edit ${project.name}`}><Edit2 size={16} /></button>
-                                            <button onClick={() => {
-                                                setConfirmConfig({
-                                                    isOpen: true,
-                                                    title: 'Remove Project',
-                                                    message: `Are you sure you want to remove "${project.name}" from your currently handled projects list?`,
-                                                    type: 'danger',
-                                                    onConfirm: () => {
-                                                        setHandlingProjects(prev => prev.filter(p => p.id !== project.id));
-                                                        setHasUnsavedChanges(true);
-                                                    }
-                                                });
-                                            }} className="btn-icon text-red-500 hover:bg-red-500/10" aria-label={`Delete ${project.name}`}><Trash2 size={16} /></button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                            {handlingProjects.length === 0 ? (
+                                <div className="p-8 text-center text-sec border-2 border-dashed border-gray-500/10 rounded-xl">
+                                    No projects. Click "Add" to add one.
+                                </div>
+                            ) : (
+                                <Reorder.Group
+                                    axis="y"
+                                    values={handlingProjects}
+                                    onReorder={(next) => { setHandlingProjects(next); setHasUnsavedChanges(true); }}
+                                    className="flex flex-col gap-3 list-none p-0 m-0"
+                                >
+                                    {handlingProjects.map(project => (
+                                        <SortableProjectRow
+                                            key={project.id}
+                                            project={project}
+                                            onEdit={(p) => { setEditingProject(p); setProjectModalOpen(true); }}
+                                            onDelete={(p) => setConfirmConfig({
+                                                isOpen: true,
+                                                title: 'Remove Project',
+                                                message: `Are you sure you want to remove "${p.name}" from your currently handled projects list?`,
+                                                type: 'danger',
+                                                onConfirm: () => {
+                                                    setHandlingProjects(prev => prev.filter(x => x.id !== p.id));
+                                                    setHasUnsavedChanges(true);
+                                                },
+                                            })}
+                                        />
+                                    ))}
+                                </Reorder.Group>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1378,53 +1598,118 @@ export default function DSettings() {
 
                 {activeTab === 'account' && (
                     <div className="settings-section grid grid-cols-1 md:grid-cols-12 gap-6 items-start" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
-                        <div className="settings-panel md:col-span-4 glass-panel p-6 flex flex-col gap-4" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
-                            <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
-                                <User size={22} className="mr-3" />
-                                Hero Section Image
-                            </h3>
-                            <div className="group relative overflow-hidden w-full max-w-full mx-auto md:mx-0 rounded-md bg-zinc-900/50 flex items-center justify-center border border-white/5" style={{ paddingTop: '133%' }}>
-                                {heroImagePreview ? (
-                                    <img src={heroImagePreview} alt="Hero Preview" className="absolute inset-0 w-full h-full object-cover rounded-md" />
-                                ) : (
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500 gap-2">
-                                        <User size={48} className="opacity-20" />
-                                        <span className="text-xs font-semibold uppercase tracking-widest opacity-30">No Image</span>
-                                    </div>
+                        <div className="settings-panel md:col-span-4 glass-panel p-6 flex flex-col gap-5" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
+                            <div className="flex items-center justify-between gap-3">
+                                <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-0">
+                                    <User size={22} className="mr-3" />
+                                    Hero Section Images
+                                </h3>
+                                {heroImageMode === 'dark' && heroImagePreviewDark && (
+                                    <button
+                                        onClick={handleClearHeroImageDark}
+                                        className="text-[10px] uppercase tracking-wider text-red-400/70 hover:text-red-400 transition shrink-0"
+                                        title="Clear dark hero image"
+                                    >
+                                        Clear
+                                    </button>
                                 )}
-
-                                <div className="absolute inset-0 bg-white/10 backdrop-blur-sm flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity rounded-md">
-                                    <button
-                                        onClick={() => heroImageInputRef.current?.click()}
-                                        aria-label="Upload hero image"
-                                        className="inline-flex items-center gap-3 px-4 py-2 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 font-semibold hover:bg-blue-500/20 transition"
-                                    >
-                                        <span className="p-1.5 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/10">
-                                            <Upload size={16} className="text-blue-400" />
-                                        </span>
-                                        <span className="hidden sm:inline text-blue-400 tracking-wide font-semibold">Upload</span>
-                                    </button>
-
-                                    <button
-                                        onClick={() => { setFirebaseSelectTarget('hero'); setFirebaseBrowserOpen(true); }}
-                                        className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-orange-400/10 border border-orange-400/20 text-orange-400 font-semibold hover:bg-orange-400/20 transition"
-                                    >
-                                        < HardDrive size={16} className="text-orange-400" />
-                                        <span className="text-orange-400">Browse</span>
-                                    </button>
-
-                                    <input ref={heroImageInputRef} type="file" accept="image/*" onChange={handleHeroImageUpload} style={{ display: 'none' }} />
-                                </div>
                             </div>
-                            {heroImageResolution ? (
-                                <p className="text-muted text-xs mt-2">
-                                    Resolution: <span className="font-mono text-xs">{heroImageResolution}</span>
-                                    {heroImageSize && <span className="text-muted"> &nbsp;•&nbsp; <span className="font-mono text-xs">{heroImageSize}</span></span>}
-                                    {heroImageSizeLoading && <span className="text-muted"> &nbsp;•&nbsp; <span className="text-xs">checking...</span></span>}
-                                </p>
-                            ) : (
-                                <p className="text-muted text-xs mt-2">JPG, PNG or GIF. Max 2MB</p>
-                            )}
+
+                            {/* Light / Dark toggle — one uploader, switch which image you're editing */}
+                            <div
+                                role="tablist"
+                                aria-label="Hero image mode"
+                                className="grid grid-cols-2 gap-1 p-1 rounded-xl"
+                                style={{ background: 'rgba(128,128,128,0.06)', border: '1px solid var(--section-border)' }}
+                            >
+                                {(['light', 'dark'] as const).map((mode) => {
+                                    const active = heroImageMode === mode;
+                                    const isLight = mode === 'light';
+                                    const missing = !isLight && !heroImagePreviewDark;
+                                    return (
+                                        <button
+                                            key={mode}
+                                            role="tab"
+                                            aria-selected={active}
+                                            onClick={() => setHeroImageMode(mode)}
+                                            className="flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer"
+                                            style={active
+                                                ? { background: 'var(--accent)', color: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.12)' }
+                                                : { background: 'transparent', color: 'var(--text-muted)' }}
+                                        >
+                                            {isLight ? <Sun size={15} /> : <Moon size={15} />}
+                                            {isLight ? 'Light' : 'Dark'}
+                                            {missing && (
+                                                <span
+                                                    className="w-1.5 h-1.5 rounded-full"
+                                                    style={{ background: 'currentColor', opacity: 0.45 }}
+                                                    title="No dark image set"
+                                                />
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Active uploader, bound to the selected mode */}
+                            {(() => {
+                                const isLight = heroImageMode === 'light';
+                                const preview = isLight ? heroImagePreview : heroImagePreviewDark;
+                                const resolution = isLight ? heroImageResolution : heroImageResolutionDark;
+                                const fileSize = isLight ? heroImageSize : heroImageSizeDark;
+                                const sizeLoading = isLight ? heroImageSizeLoading : heroImageSizeLoadingDark;
+                                const onUpload = () => (isLight ? heroImageInputRef : heroImageInputRefDark).current?.click();
+                                const onBrowse = () => { setFirebaseSelectTarget(isLight ? 'hero' : 'heroDark'); setFirebaseBrowserOpen(true); };
+                                return (
+                                    <div className="flex flex-col gap-2">
+                                        <div className="group relative overflow-hidden w-full max-w-full mx-auto md:mx-0 rounded-md bg-[var(--input-bg)] flex items-center justify-center border border-[var(--section-border)]" style={{ paddingTop: '133%' }}>
+                                            {preview ? (
+                                                <img src={preview} alt={isLight ? 'Hero Light Preview' : 'Hero Dark Preview'} className="absolute inset-0 w-full h-full object-cover rounded-md" />
+                                            ) : (
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center text-muted gap-2">
+                                                    {isLight ? <User size={48} className="opacity-20" /> : <Moon size={40} className="opacity-20" />}
+                                                    <span className="text-xs font-semibold uppercase tracking-widest opacity-30">{isLight ? 'No Image' : 'No Dark Image'}</span>
+                                                    {!isLight && <span className="text-[10px] text-muted opacity-70 px-4 text-center">Falls back to light image if empty</span>}
+                                                </div>
+                                            )}
+
+                                            <div className="absolute inset-0 bg-white/10 backdrop-blur-sm flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity rounded-md">
+                                                <button
+                                                    onClick={onUpload}
+                                                    aria-label={isLight ? 'Upload light hero image' : 'Upload dark hero image'}
+                                                    className="inline-flex items-center gap-3 px-4 py-2 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 font-semibold hover:bg-blue-500/20 transition"
+                                                >
+                                                    <span className="p-1.5 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/10">
+                                                        <Upload size={16} className="text-blue-400" />
+                                                    </span>
+                                                    <span className="hidden sm:inline text-blue-400 tracking-wide font-semibold">Upload</span>
+                                                </button>
+
+                                                <button
+                                                    onClick={onBrowse}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-orange-400/10 border border-orange-400/20 text-orange-400 font-semibold hover:bg-orange-400/20 transition"
+                                                >
+                                                    <HardDrive size={16} className="text-orange-400" />
+                                                    <span className="text-orange-400">Browse</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {resolution ? (
+                                            <p className="text-muted text-xs">
+                                                Resolution: <span className="font-mono text-xs">{resolution}</span>
+                                                {fileSize && <span className="text-muted"> &nbsp;•&nbsp; <span className="font-mono text-xs">{fileSize}</span></span>}
+                                                {sizeLoading && <span className="text-muted"> &nbsp;•&nbsp; <span className="text-xs">checking...</span></span>}
+                                            </p>
+                                        ) : (
+                                            <p className="text-muted text-xs">{isLight ? 'JPG, PNG or WebP. Max 2MB' : 'Optional · shown only in dark mode'}</p>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Hidden file inputs kept always-mounted so the refs never detach */}
+                            <input ref={heroImageInputRef} type="file" accept="image/*" onChange={handleHeroImageUpload} style={{ display: 'none' }} />
+                            <input ref={heroImageInputRefDark} type="file" accept="image/*" onChange={handleHeroImageUploadDark} style={{ display: 'none' }} />
                         </div>
 
                         <div className="md:col-span-8 flex flex-col gap-6">
@@ -1436,11 +1721,11 @@ export default function DSettings() {
                                 </h3>
                                 <div className="flex flex-col md:flex-row items-center gap-6">
                                     <div className="group relative flex-shrink-0">
-                                        <div className="w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-blue-400 p-0.5 flex-shrink-0 mx-auto sm:mx-0 bg-zinc-900/50 flex items-center justify-center">
+                                        <div className="w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 rounded-full overflow-hidden border-2 border-blue-400 p-0.5 flex-shrink-0 mx-auto sm:mx-0 bg-[var(--input-bg)] flex items-center justify-center">
                                             {profileImagePreview ? (
                                                 <img src={profileImagePreview} alt="Profile Preview" className="w-full h-full object-cover rounded-full" />
                                             ) : (
-                                                <User size={40} className="text-white/20" />
+                                                <User size={40} className="text-muted opacity-40" />
                                             )}
                                         </div>
 
@@ -1683,6 +1968,12 @@ export default function DSettings() {
                     if (firebaseSelectTarget === 'hero') {
                         setHeroImagePreview(url);
                         setHeroImageFile(null);
+                        setHeroImageDirty(true);
+                        setHasUnsavedChanges(true);
+                    } else if (firebaseSelectTarget === 'heroDark') {
+                        setHeroImagePreviewDark(url);
+                        setHeroImageFileDark(null);
+                        setHeroImageDirtyDark(true);
                         setHasUnsavedChanges(true);
                     } else if (firebaseSelectTarget === 'profile') {
                         // Backup current profile if not already backed up
@@ -1697,7 +1988,12 @@ export default function DSettings() {
                     setFirebaseBrowserOpen(false);
                 }}
                 fileTypes={['svg', 'png', 'jpg', 'jpeg', 'webp']}
-                title={firebaseSelectTarget === 'hero' ? 'Select Hero Image' : firebaseSelectTarget === 'profile' ? 'Select Profile Image' : 'Select File'}
+                title={
+                    firebaseSelectTarget === 'hero' ? 'Select Light Hero Image' :
+                    firebaseSelectTarget === 'heroDark' ? 'Select Dark Hero Image' :
+                    firebaseSelectTarget === 'profile' ? 'Select Profile Image' :
+                    'Select File'
+                }
             />
 
             <MConfirmModal

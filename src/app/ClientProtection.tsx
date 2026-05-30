@@ -46,6 +46,7 @@ const MALICIOUS_BODY_PATTERNS = [
 const TRUSTED_SCRIPT_DOMAINS = [
   'apis.google.com',
   'accounts.google.com',
+  'www.google.com',
   'www.gstatic.com',
   'firebaseapp.com',
   'googleapis.com',
@@ -111,27 +112,18 @@ export default function ClientProtection() {
 
     wipeMaliciousStyles();
 
-    const observer = new MutationObserver((mutations) => {
-      let needsCheck = false;
+    // Handle injected <style> / <script> tags. Most XSS injection lands in <head>,
+    // and React-rendered styled-jsx / next/font also live there — so we observe
+    // head only (not the whole document subtree), which dramatically reduces work.
+    const injectObserver = new MutationObserver((mutations) => {
+      let needsStyleCheck = false;
 
       for (const mutation of mutations) {
-        // Check style attribute changes on body/html
-        if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
-          needsCheck = true;
-          break;
-        }
-
-        // Check for added nodes
         for (const node of Array.from(mutation.addedNodes)) {
           const nodeName = node.nodeName?.toLowerCase();
-          
           if (nodeName === 'style') {
-            needsCheck = true;
-            break;
-          }
-
-          // Only block untrusted injected script tags
-          if (nodeName === 'script') {
+            needsStyleCheck = true;
+          } else if (nodeName === 'script') {
             if (!isScriptTrusted(node) && !(node as Element).hasAttribute('data-next')) {
               node.parentNode?.removeChild(node);
               console.warn('[ClientProtection] Blocked untrusted injected script tag!');
@@ -140,19 +132,43 @@ export default function ClientProtection() {
         }
       }
 
-      if (needsCheck) {
-        wipeMaliciousStyles();
+      if (needsStyleCheck) wipeMaliciousStyles();
+    });
+
+    // Head: catches injected <script>/<style> tags (the main XSS vector)
+    injectObserver.observe(document.head, { childList: true, subtree: false });
+    // Body root only (not subtree): catches scripts injected at the top of body
+    if (document.body) {
+      injectObserver.observe(document.body, { childList: true, subtree: false });
+    }
+
+    // Separate observer for inline-style attribute changes on the root elements
+    // (html and body). Doesn't traverse the React tree, so it's cheap.
+    const styleAttrObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+          wipeMaliciousStyles();
+          break;
+        }
       }
     });
-
-    observer.observe(document.documentElement, { 
-      attributes: true, 
-      attributeFilter: ['style'], 
-      childList: true, 
-      subtree: true 
+    styleAttrObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['style'],
+      subtree: false,
     });
+    if (document.body) {
+      styleAttrObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['style'],
+        subtree: false,
+      });
+    }
 
-    return () => observer.disconnect();
+    return () => {
+      injectObserver.disconnect();
+      styleAttrObserver.disconnect();
+    };
   }, []);
 
   return null;

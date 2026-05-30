@@ -1,6 +1,7 @@
 import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { motion } from 'motion/react';
 
 type NavigateSection = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
@@ -15,27 +16,102 @@ interface NavbarProps {
     isCVOpen?: boolean;
 }
 
-const Tooltip = ({ text, show, isDark }: { text: string; show: boolean; isDark: boolean }) => (
-    <div className={`nav-tooltip ${show ? 'show' : ''}`}>
-        <div className="nav-tooltip-inner">
-            {text}
-        </div>
-        <div
-            className="nav-tooltip-arrow"
-            style={{
-                marginLeft: '-6px',
-                bottom: '-6px',
-                zIndex: -1,
-                // Using exact colors from inner to ensure merge
-                backgroundColor: isDark ? 'rgba(10, 10, 12, 0.4)' : 'rgba(255, 255, 255, 0.25)',
-                borderBottom: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255, 255, 255, 0.5)',
-                borderRight: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(255, 255, 255, 0.5)',
-                backdropFilter: 'blur(32px) saturate(200%)',
-                WebkitBackdropFilter: 'blur(32px) saturate(200%)',
-            }}
-        />
-    </div>
-);
+/**
+ * Portaled navbar tooltip — renders into document.body so it escapes the
+ * `<nav>`'s `-translate-x-1/2` transform (which would otherwise nuke
+ * backdrop-filter blur on any descendant).
+ *
+ * Auto-positions against its parent element (the button it's a sibling of).
+ * Drop-in API-compatible with the previous Tooltip: same props, same call sites.
+ */
+const Tooltip = ({ text, show, isDark }: { text: string; show: boolean; isDark: boolean }) => {
+    // Invisible anchor — lets us find the parent button without prop-drilling refs
+    const anchorRef = useRef<HTMLSpanElement>(null);
+    const tooltipRef = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState<{ centerX: number; topY: number } | null>(null);
+    const [tooltipWidth, setTooltipWidth] = useState(0);
+
+    // Measure parent button position whenever shown / on scroll/resize
+    useLayoutEffect(() => {
+        if (!show) return;
+        const update = () => {
+            const parent = anchorRef.current?.parentElement;
+            if (!parent) return;
+            const rect = parent.getBoundingClientRect();
+            setPos({
+                centerX: rect.left + rect.width / 2,
+                topY: rect.top, // tooltip will sit above the button
+            });
+        };
+        update();
+        window.addEventListener('scroll', update, true);
+        window.addEventListener('resize', update);
+        return () => {
+            window.removeEventListener('scroll', update, true);
+            window.removeEventListener('resize', update);
+        };
+    }, [show]);
+
+    // Measure tooltip width AFTER paint so we can offset `left` for centering
+    // without using a `transform` (which would break backdrop-filter)
+    useLayoutEffect(() => {
+        if (!show || !tooltipRef.current) return;
+        const w = tooltipRef.current.offsetWidth;
+        if (w !== tooltipWidth) setTooltipWidth(w);
+    }, [show, text, tooltipWidth]);
+
+    if (typeof document === 'undefined') return null;
+
+    // Position using fixed + left + bottom (NO transform anywhere — backdrop-filter
+    // would break on the inner element otherwise). Center horizontally by computing
+    // `left` from the measured tooltip width.
+    const leftPx = pos ? pos.centerX - tooltipWidth / 2 : -9999;
+    const bottomPx = pos && typeof window !== 'undefined' ? window.innerHeight - pos.topY + 8 : -9999;
+
+    // Portal into document.body so the tooltip escapes the page-content stacking
+    // context entirely. At body level, z-60 sits ABOVE the whole #root subtree
+    // (page content, navbar z-50, sub-nav) yet BELOW modals (body-portaled at
+    // z-1400+). body has no transform ancestor, so backdrop-filter still works.
+    const portalTarget = document.body;
+
+    return (
+        <>
+            {/* Hidden anchor used only to find parent rect (kept in original DOM tree) */}
+            <span ref={anchorRef} aria-hidden style={{ display: 'none' }} />
+
+            {createPortal(
+                <div
+                    ref={tooltipRef}
+                    className={`nav-tooltip ${show ? 'show' : ''}`}
+                    style={{
+                        position: 'fixed',
+                        left: leftPx,
+                        bottom: bottomPx,
+                    }}
+                >
+                    <div className="nav-tooltip-inner">
+                        {text}
+                    </div>
+                    <div
+                        className="nav-tooltip-arrow"
+                        style={{
+                            marginLeft: '-6px',
+                            bottom: '-6px',
+                            zIndex: -1,
+                            // Match the tooltip body bg + blur exactly so the arrow reads
+                            // as a seamless extension. No borders — tooltip body covers
+                            // the top half of the arrow, only the bottom diamond tip shows.
+                            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.4)',
+                            backdropFilter: 'blur(32px) saturate(2)',
+                            WebkitBackdropFilter: 'blur(32px) saturate(2)',
+                        }}
+                    />
+                </div>,
+                portalTarget,
+            )}
+        </>
+    );
+};
 
 const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false, onOpenCV, isCVOpen = false }: NavbarProps) => {
     const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
@@ -53,6 +129,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
     const [hoveredTab, setHoveredTab] = useState<string | null>(null);
     const [autoTooltip, setAutoTooltip] = useState<string | null>(null);
     const [isHoveringNav, setIsHoveringNav] = useState(false);
+    const [isSubnavHovered, setIsSubnavHovered] = useState(false);
 
     // 0 = Projects, 1 = Mail
     // cycleStepRef is currently not used but kept as a comment for logic reference if needed later
@@ -84,12 +161,21 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    // Suppress tooltips when sub-nav is hovered (custom event from ProjectsHub)
+    useEffect(() => {
+        const handler = (e: Event) => {
+            setIsSubnavHovered((e as CustomEvent).detail as boolean);
+        };
+        window.addEventListener('revil:subnav_hover', handler);
+        return () => window.removeEventListener('revil:subnav_hover', handler);
+    }, []);
+
     // Auto-show tooltips logic: Projects (3s) -> Contact (3s) -> 10s wait
     useEffect(() => {
         let cycleTimeout: NodeJS.Timeout;
 
         const runCycle = () => {
-            if (isHoveringNav) {
+            if (isHoveringNav || isSubnavHovered) {
                 setAutoTooltip(null);
                 // If hovering, check again in 2s to see if we can resume
                 cycleTimeout = setTimeout(runCycle, 2000);
@@ -106,7 +192,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
 
                 // Gap between tooltips
                 cycleTimeout = setTimeout(() => {
-                    if (isHoveringNav) { runCycle(); return; }
+                    if (isHoveringNav || isSubnavHovered) { runCycle(); return; }
 
                     // Step 2: Show Contact (3s)
                     if (!isContactOpen) {
@@ -129,7 +215,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         return () => {
             clearTimeout(cycleTimeout);
         };
-    }, [currentSection, isContactOpen, isHoveringNav]);
+    }, [currentSection, isContactOpen, isHoveringNav, isSubnavHovered]);
 
     // Helper to get button class string based on state
     const getButtonClass = (tabName: string) => {
@@ -177,7 +263,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <Home size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="🏠 Home" show={hoveredTab === 'home'} isDark={isDark} />
+                        <Tooltip text="🏠 Home" show={hoveredTab === 'home' && !isSubnavHovered} isDark={isDark} />
                     </div>
 
                     <div className="relative">
@@ -189,7 +275,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <Layers size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="⚡ Stack" show={hoveredTab === 'stack'} isDark={isDark} />
+                        <Tooltip text="⚡ Stack" show={hoveredTab === 'stack' && !isSubnavHovered} isDark={isDark} />
                     </div>
 
                     <div className="relative">
@@ -201,7 +287,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <FolderKanban size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="🚀 Projects" show={hoveredTab === 'projects' || autoTooltip === 'projects'} isDark={isDark} />
+                        <Tooltip text="🚀 Projects" show={(hoveredTab === 'projects' || autoTooltip === 'projects') && !isSubnavHovered} isDark={isDark} />
                     </div>
 
                     <div
@@ -228,7 +314,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 <FileText size={20} strokeWidth={2.5} />
                             </motion.div>
                         </motion.button>
-                        <Tooltip text="📄 Digital CV" show={hoveredTab === 'cv'} isDark={isDark} />
+                        <Tooltip text="📄 Digital CV" show={hoveredTab === 'cv' && !isSubnavHovered} isDark={isDark} />
 
                         {isCVOpen && (
                             <div className={`
@@ -241,13 +327,13 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                     </div>
                 </div>
 
-                {/* Divider */}
+                {/* Divider — shorter on mobile to match the smaller icon buttons */}
                 <div
                     className={`
-                        w-[1px] h-6 
+                        w-[1px]
                         bg-[rgba(0,0,0,0.1)] dark:bg-[rgba(255,255,255,0.15)]
                         transition-colors duration-300
-                        ${isMobile ? 'mx-1' : 'mx-1.5'}
+                        ${isMobile ? 'h-5 mx-0.5' : 'h-6 mx-1.5'}
                     `}
                 />
 
@@ -277,7 +363,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 <Mail size={24} strokeWidth={2} />
                             </motion.div>
                         </motion.button>
-                        <Tooltip text="📩 Contact" show={hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)} isDark={isDark} />
+                        <Tooltip text="📩 Contact" show={(hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)) && !isSubnavHovered} isDark={isDark} />
 
                         {isContactOpen && (
                             <div className={`

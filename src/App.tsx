@@ -1,10 +1,10 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
-import { LayoutGroup, AnimatePresence, motion } from 'framer-motion';
+import { LayoutGroup, AnimatePresence, motion } from 'motion/react';
 import Hero from './components/Hero';
 import Navbar from './components/Navbar';
 import Stack from './components/Stack';
 import PageTransition from './components/PageTransition';
-import Projects from './components/Projects';
+import ProjectsHub, { type ProjectsHubHandle } from './components/ProjectsHub';
 import MContact from './components/M-Contact';
 import SecretPage from './components/SecretPage';
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -15,6 +15,7 @@ import MCV from './components/M-CV';
 import MProjectView from './components/M-ProjectView';
 import MContributorView, { Contributor as ContributorViewData } from './components/M-ContributorView';
 import { ProjectData as Project, ContributorData as Contributor } from './types';
+import { SettingsProvider } from './contexts/SettingsContext';
 
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
@@ -33,6 +34,11 @@ function App() {
   const [previousSection, setPreviousSection] = useState<Section>('home');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextSection, setNextSection] = useState<Section>('home');
+
+  // Always-current section, read inside delayed callbacks (e.g. hero anim complete)
+  // to avoid stale-closure races where the user navigated away before the timer fired.
+  const currentSectionRef = useRef<Section>(currentSection);
+  useEffect(() => { currentSectionRef.current = currentSection; }, [currentSection]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [forceHideLoading, setForceHideLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
@@ -45,19 +51,36 @@ function App() {
   const [hasAutoOpenedCV, setHasAutoOpenedCV] = useState(false);
 
   // Version Control & Forced Cache Invalidation
-  // Update APP_VERSION whenever you want to force all return users to clear their localStorage
+  // Update APP_VERSION whenever you want to force all return users to clear their app caches.
+  // We preserve user preferences (theme) and visitor-analytics dedupe keys so the user's
+  // setting doesn't reset and we don't double-count returning visitors on every version bump.
   useEffect(() => {
     const APP_VERSION = 'v1.0.1'; // Change this to force a wipe
-    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-      const currentVersion = localStorage.getItem('revil_app_version');
-      if (currentVersion !== APP_VERSION) {
-        console.warn('[Version Control] Mismatch detected. Purging heavy caches...');
-        localStorage.clear();
-        sessionStorage.clear();
-        localStorage.setItem('revil_app_version', APP_VERSION);
-        window.location.reload();
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    const currentVersion = localStorage.getItem('revil_app_version');
+    if (currentVersion === APP_VERSION) return;
+
+    console.warn('[Version Control] Mismatch detected. Purging app caches (keeping user prefs)...');
+
+    // Keys we want to KEEP through a version wipe
+    const PRESERVE_PREFIXES = ['theme', 'revil_visitor_', 'revil_app_version'];
+    const preserved: Record<string, string> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (PRESERVE_PREFIXES.some(p => key.startsWith(p) || key === p)) {
+        const v = localStorage.getItem(key);
+        if (v !== null) preserved[key] = v;
       }
     }
+
+    localStorage.clear();
+    sessionStorage.clear();
+    for (const [k, v] of Object.entries(preserved)) {
+      localStorage.setItem(k, v);
+    }
+    localStorage.setItem('revil_app_version', APP_VERSION);
+    window.location.reload();
   }, []);
 
   useEffect(() => {
@@ -85,11 +108,14 @@ function App() {
 
   const handleHeroAnimationComplete = useCallback(() => {
     const isInterviewerMode = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('revil_interviewer_mode') === 'true' : false;
-    if (isInterviewerMode && !hasAutoOpenedCV && (currentSection === 'home' || currentSection === 'view_link')) {
+    // Read the section from a ref at fire-time — the user may have navigated away
+    // during the ~3s hero entrance, and we must not pop the CV modal over another page.
+    const section = currentSectionRef.current;
+    if (isInterviewerMode && !hasAutoOpenedCV && (section === 'home' || section === 'view_link')) {
       setHasAutoOpenedCV(true);
       setIsCVModalOpen(true);
     }
-  }, [hasAutoOpenedCV, currentSection]);
+  }, [hasAutoOpenedCV]);
 
   const [direction, setDirection] = useState(0);
 
@@ -154,7 +180,7 @@ function App() {
       case 'stack':
         return <Stack />;
       case 'projects':
-        return <Projects />;
+        return <ProjectsHub ref={hubRef} isTransitioning={isTransitioning} />;
       case 'secret':
         return <SecretPage onNavigate={navigateTo} />;
       case 'dashboard':
@@ -165,6 +191,8 @@ function App() {
         return <Hero onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
     }
   };
+
+  const hubRef = useRef<ProjectsHubHandle>(null);
 
   // --- Touch Logic (Mobile) ---
   const touchStartX = useRef(0);
@@ -212,10 +240,22 @@ function App() {
     const scrolledToTop = container.scrollTop <= 5;
 
     if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      if (deltaX > SWIPE_THRESHOLD && currentSection !== 'secret') {
-        navigateTo('secret');
-      } else if (deltaX < -SWIPE_THRESHOLD && currentSection === 'secret') {
-        navigateTo(previousSection);
+      if (deltaX > SWIPE_THRESHOLD) {
+        // Right swipe: cycle through sub-tabs first, then secret
+        if (currentSection === 'projects') {
+          if (!hubRef.current?.trySwipeRight()) {
+            navigateTo('secret');
+          }
+        } else if (currentSection !== 'secret') {
+          navigateTo('secret');
+        }
+      } else if (deltaX < -SWIPE_THRESHOLD) {
+        // Left swipe: from secret go back, on projects cycle sub-tabs
+        if (currentSection === 'secret') {
+          navigateTo(previousSection);
+        } else if (currentSection === 'projects') {
+          hubRef.current?.trySwipeLeft();
+        }
       }
     } else {
       if (deltaY > SWIPE_THRESHOLD && scrolledToBottom) {
@@ -350,6 +390,7 @@ function App() {
   };
 
   return (
+    <SettingsProvider>
     <main
       ref={mainRef}
       className="relative w-full h-screen overflow-hidden"
@@ -387,6 +428,12 @@ function App() {
             opacity: { duration: 0.2 },
             scale: { duration: 0.3 }
           }}
+          // No explicit z-index: the page content must sit BELOW the chrome
+          // (navbar z-50, secret button z-40, PageTransition curtain z-50) and
+          // below the body-portaled tooltips (z-60) + modals (z-1400+).
+          // framer-motion's transform already creates a stacking context here,
+          // so the section's internal z-indexes (e.g. Hero's z-[5000]) stay
+          // trapped within this layer and don't leak above the chrome.
           className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar"
         >
           {renderSection()}
@@ -407,7 +454,9 @@ function App() {
             borderRight: 'none',
             borderTopLeftRadius: '12px',
             borderBottomLeftRadius: '12px',
-            padding: '12px 4px',
+            padding: '14px 8px',
+            minWidth: 44,
+            minHeight: 44,
             zIndex: 40,
             color: 'var(--text-muted)',
             transition: 'all 0.2s ease',
@@ -477,6 +526,7 @@ function App() {
         direction={direction}
       />
     </main>
+    </SettingsProvider>
   );
 }
 

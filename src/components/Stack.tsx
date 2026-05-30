@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Github, Instagram, Linkedin, Twitter, Facebook, Mail, Link as LinkIcon, Twitch, Youtube, Code } from 'lucide-react';
 import { useSocialTracker } from '../hooks/useSocialTracker';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface StackItemProps {
     icon: string;
@@ -100,8 +101,11 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
 
     const iconElement = createElement(getIcon(name), {
         size: 32,
-        className: `transition-colors duration-300 ${isHovered ? 'text-black' : 'text-gray-500'}`,
-        strokeWidth: 1.5
+        className: 'transition-colors duration-300',
+        strokeWidth: 1.5,
+        style: {
+            color: isHovered ? 'var(--accent)' : 'var(--text-muted)',
+        },
     });
 
     return (
@@ -113,7 +117,10 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
             onClick={() => trackClick(name)}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
-            className={`relative flex items-center justify-center p-3 rounded-xl transition-all duration-300 ${isHovered ? 'bg-zinc-100 scale-110' : ''}`}
+            className={`stack-icon-link relative flex items-center justify-center p-3 rounded-xl transition-all duration-300 ${isHovered ? 'scale-110' : ''}`}
+            style={{
+                background: isHovered ? 'rgba(51, 149, 255, 0.1)' : 'transparent',
+            }}
         >
             {iconElement}
 
@@ -146,6 +153,17 @@ const Stack = () => {
         { name: 'Instagram', url: 'https://instagram.com/temrevil' }
     ]);
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+    // Shared Settings/Account listener (single Firestore connection for all components)
+    const { account } = useSettings();
+    useEffect(() => {
+        if (account && account['Social Links']) {
+            const raw = account['Social Links'] as Record<string, string>;
+            const links = Object.entries(raw).map(([name, url]) => ({ name, url }));
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing derived list from the shared Firestore (Settings/Account) context
+            setSocialLinks(links);
+        }
+    }, [account]);
 
     // Track window width for responsive behavior
     useEffect(() => {
@@ -222,23 +240,8 @@ const Stack = () => {
             console.error('[Stack] Firestore error:', error);
         });
 
-        // Fetch Social Links
-        const unsubAccount = onSnapshot(doc(db, 'Settings', 'Account'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                if (data && data['Social Links']) {
-                    const links = Object.entries(data['Social Links']).map(([name, url]) => ({
-                        name,
-                        url: url as string
-                    }));
-                    setSocialLinks(links);
-                }
-            }
-        });
-
         return () => {
             unsubStack();
-            unsubAccount();
         };
     }, []);
 
@@ -285,7 +288,7 @@ const Stack = () => {
                         ref={handwritingRef}
                         className="text-4xl md:text-5xl opacity-0 mb-[-15px] ml-2"
                         style={{
-                            fontFamily: "'Caveat', cursive",
+                            fontFamily: "var(--font-caveat), cursive",
                             color: 'var(--accent)'
                         }}
                     >

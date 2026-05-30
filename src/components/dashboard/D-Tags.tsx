@@ -320,7 +320,7 @@ const DTags = () => {
                 const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                 const timeStr = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
                 const safeName = data.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
-                const fileName = `${safeName}-${dateStr}-${timeStr}.png`;
+                const fileName = `${safeName}-${dateStr}-${timeStr}.webp`;
                 const storageRef = ref(storage, `src/imgs/Contributors/${fileName}`);
                 await uploadBytes(storageRef, data.image);
                 imageUrl = await getDownloadURL(storageRef);

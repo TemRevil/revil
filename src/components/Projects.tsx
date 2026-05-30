@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import anime from 'animejs';
 import { X, Search } from 'lucide-react';
 import { db } from '../lib/firebase';
@@ -187,7 +187,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
             }}
             className={`
                 group flex flex-col h-full glass-panel cursor-pointer overflow-hidden
-                border border-[var(--navbar-border)] transition-shadow duration-300
+                border border-[var(--section-border)] transition-shadow duration-300
                 ${isHovered ? 'shadow-xl' : 'shadow-md'}
             `}
             style={{ willChange: 'transform, opacity' }}
@@ -313,7 +313,14 @@ const Projects = () => {
     const [selectedContributor, setSelectedContributor] = useState<Contributor | null>(null);
     const [showContributorModal, setShowContributorModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+    // Debounce search input — waits 250ms after user stops typing before filtering
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchQuery), 250);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
 
     useEffect(() => {
@@ -321,6 +328,7 @@ const Projects = () => {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+    // windowWidth is still used by filter tags responsive layout below
 
     // Fetch Data
     useEffect(() => {
@@ -497,7 +505,7 @@ const Projects = () => {
                 return selectedTags.every(tag => projectTags.includes(tag.toLowerCase()));
             });
         }
-        if (searchQuery.length < 2) {
+        if (debouncedSearch.length < 2) {
             return [...results].sort((a, b) => {
                 const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
                 const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
@@ -506,7 +514,7 @@ const Projects = () => {
             });
         }
 
-        const query = searchQuery.toLowerCase();
+        const query = debouncedSearch.toLowerCase();
         const scored = results.map(project => {
             let minDistance = Infinity;
             const checkTerm = (term: string) => {
@@ -536,7 +544,7 @@ const Projects = () => {
             .filter(item => item.minDistance <= 2)
             .sort((a, b) => a.minDistance - b.minDistance)
             .map(item => item.project);
-    }, [searchQuery, projectsData, selectedTags]);
+    }, [debouncedSearch, projectsData, selectedTags]);
 
     const toggleTag = (tagName: string) => {
         setSelectedTags(prev =>
@@ -580,23 +588,25 @@ const Projects = () => {
     }, [selectedProjectId, showContributorModal]);
 
     return (
-        <div className="min-h-screen bg-primary transition-colors duration-300 pt-32 pb-20">
+        <div className="min-h-screen bg-primary transition-colors duration-300 pt-32 pb-48">
             <div className="page-padding">
-                {/* Header - Reduced MB */}
-                <div className="mb-8 pl-0">
+                {/* Header */}
+                <div style={{ marginBottom: 32 }}>
                     <div
                         ref={handwritingRef}
-                        className="text-5xl opacity-0 mb-[-20px] ml-2.5"
+                        className="text-5xl opacity-0 ml-2.5"
                         style={{
-                            fontFamily: "'Caveat', cursive",
-                            color: 'var(--accent)'
+                            fontFamily: "var(--font-caveat), cursive",
+                            color: 'var(--accent)',
+                            marginBottom: -20
                         }}
                     >
                         Selected
                     </div>
                     <h1
                         ref={titleRef}
-                        className="text-5xl md:text-7xl lg:text-8xl font-black text-primary m-0 opacity-0 transition-colors duration-300 font-inter"
+                        className="text-5xl md:text-7xl lg:text-8xl font-black text-primary opacity-0 transition-colors duration-300 font-inter"
+                        style={{ margin: 0 }}
                     >
                         Projects
                     </h1>
@@ -604,7 +614,7 @@ const Projects = () => {
 
                 {/* Search Bar - Reduced MB */}
                 <div className="mb-6 max-w-[600px]">
-                    <div className="glass-surface flex items-center p-3 px-5 border border-[var(--navbar-border)] shadow-md transition-shadow duration-300">
+                    <div className="glass-surface flex items-center p-3 px-5 border border-[var(--section-border)] shadow-md transition-shadow duration-300">
                         <Search size={20} className="text-sec mr-3" />
                         <input
                             type="text"
@@ -646,7 +656,7 @@ const Projects = () => {
                                         ${windowWidth < 460 ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'}
                                         ${isActive
                                             ? 'border-accent bg-[rgba(59,130,246,0.12)] text-accent scale-105 z-10 shadow-[0_8px_16px_-4px_rgba(59,130,246,0.25)]'
-                                            : 'border-[var(--navbar-border)] bg-[var(--card-bg)] text-sec'}
+                                            : 'border-[var(--section-border)] bg-[var(--card-bg)] text-sec'}
                                     `}
                                 >
                                     {tag.iconSvg && (

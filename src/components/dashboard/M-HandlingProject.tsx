@@ -8,6 +8,10 @@ export interface HandlingProject {
     name: string;
     description?: string;
     status: 'active' | 'pending' | 'completed';
+    /** Display order (ascending). Persisted so manual drag-sort survives the
+        Firestore map round-trip, whose numeric-string keys would otherwise be
+        re-sorted numerically on reload. */
+    order?: number;
 }
 
 interface MHandlingProjectProps {

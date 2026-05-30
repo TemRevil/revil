@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { X, Folder, FileImage, ChevronRight, ChevronLeft, Search } from 'lucide-react';
 import { ref, listAll, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../lib/firebase';

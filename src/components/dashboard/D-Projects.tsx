@@ -15,6 +15,7 @@ import { getTechColor, getStackIcon } from '../../utils/projectUtils';
 import MContributorView, { Contributor } from '../M-ContributorView';
 import Loader from '../reactbits/Loader';
 import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
+import FileImage from '../FileImage';
 
 interface RawFirestoreTag {
     Name?: string;
@@ -114,11 +115,7 @@ const ProjectRow = ({
             <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
                     {project.icon ? (
-                        typeof project.icon === 'string' ? (
-                            <img src={project.icon} alt={project.name} className="w-full h-full object-cover" />
-                        ) : (
-                            <img src={URL.createObjectURL(project.icon)} alt={project.name} className="w-full h-full object-cover" />
-                        )
+                        <FileImage src={project.icon} alt={project.name} className="w-full h-full object-cover" />
                     ) : project.images.length > 0 ? (
                         <div className="w-full h-full bg-blue-500 text-white flex items-center justify-center font-bold">{project.name.charAt(0)}</div>
                     ) : (
@@ -197,11 +194,7 @@ const ProjectRow = ({
                                 }}
                             >
                                 {c.image ? (
-                                    typeof c.image === 'string' ? (
-                                        <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <img src={URL.createObjectURL(c.image)} alt={c.name} className="w-full h-full object-cover" />
-                                    )
+                                    <FileImage src={c.image} alt={c.name} className="w-full h-full object-cover" />
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center text-xs font-bold bg-accent/10 text-accent">{c.name.charAt(0)}</div>
                                 )}
@@ -257,6 +250,22 @@ const DProjects = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [viewingProject, setViewingProject] = useState<ProjectData | null>(null);
     const [viewingContributor, setViewingContributor] = useState<ContributorData | null>(null);
+
+    // Stable, cleanup-able blob URLs for viewingProject.images (revoked on close/change)
+    const viewingProjectImageUrls = useMemo(() => {
+        if (!viewingProject) return [] as string[];
+        return viewingProject.images.map((img: string | File) =>
+            typeof img === 'string' ? img : URL.createObjectURL(img),
+        );
+    }, [viewingProject]);
+
+    useEffect(() => {
+        return () => {
+            viewingProjectImageUrls.forEach(u => {
+                if (u.startsWith('blob:')) URL.revokeObjectURL(u);
+            });
+        };
+    }, [viewingProjectImageUrls]);
 
     // Confirmation Modal State
     const [confirmConfig, setConfirmConfig] = useState<{
@@ -968,7 +977,7 @@ const DProjects = () => {
                     project={{
                         ...viewingProject,
                         title: viewingProject.name,
-                        images: viewingProject.images.map((img: string | File) => typeof img === 'string' ? img : URL.createObjectURL(img))
+                        images: viewingProjectImageUrls,
                     }}
                     onClose={() => setViewingProject(null)}
                     onContributorClick={(c) => setViewingContributor(c)}

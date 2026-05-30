@@ -2,9 +2,32 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Function to check if the user is the admin
+    // Function to check if the user is the admin (uses Firebase Custom Claims)
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'temrevil@gmail.com';
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Rate-limit helper: ensures at least `cooldownSecs` seconds have elapsed
+    // since the document's last `lastWrite` server timestamp.
+    // The client MUST include `lastWrite: serverTimestamp()` in every write.
+    // Usage: isRateLimited(resource, request, 30) -> true if too soon
+    function notRateLimited(cooldownSecs) {
+      // New document: no prior timestamp - allow (first write)
+      let lastWrite = resource == null
+        ? request.time - duration.value(cooldownSecs + 1, 's')
+        : resource.data.get('lastWrite', request.time - duration.value(cooldownSecs + 1, 's'));
+      // Incoming write must declare lastWrite == request.time (server-verified)
+      return request.resource.data.lastWrite == request.time
+        && request.time >= lastWrite + duration.value(cooldownSecs, 's');
+    }
+
+    // Rate-limit helper for a named timestamp field (Canary uses separate fields)
+    function notRateLimitedField(fieldName, cooldownSecs) {
+      let lastWrite = resource == null
+        ? request.time - duration.value(cooldownSecs + 1, 's')
+        : resource.data.get(fieldName, request.time - duration.value(cooldownSecs + 1, 's'));
+      return request.resource.data[fieldName] == request.time
+        && request.time >= lastWrite + duration.value(cooldownSecs, 's');
     }
 
     // Allow public read access to core portfolio data
@@ -31,26 +54,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Settings/Views parent document — read-only for public, admin-writable.
+    // All public analytics writes go to subcollections (Analysis/, Links/, Socials/).
     match /Settings/Views {
       allow read: if true;
-      allow update: if (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'totalViews', 'totalProjectViews', 'totalSocialClicks', 
-          'visitorCount', 'dailyViews', 'projectViews'
-        ]) &&
-        request.resource.data.totalViews is number &&
-        request.resource.data.totalProjectViews is number &&
-        request.resource.data.totalSocialClicks is number &&
-        // Prevent arbitrary value manipulation — values must only increase
-        request.resource.data.totalViews >= resource.data.totalViews &&
-        request.resource.data.totalProjectViews >= resource.data.totalProjectViews &&
-        request.resource.data.totalSocialClicks >= resource.data.totalSocialClicks &&
-        // Cap maximum single-session increment to prevent abuse
-        request.resource.data.totalViews <= resource.data.totalViews + 10 &&
-        request.resource.data.totalProjectViews <= resource.data.totalProjectViews + 100 &&
-        request.resource.data.totalSocialClicks <= resource.data.totalSocialClicks + 100
-      );
-      allow create, delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
     match /Settings/Canary {
@@ -58,37 +66,114 @@ service cloud.firestore {
       // Admin has full write access
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (
-        // Only allow modifications to Emails or Meetings maps
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['Emails', 'Meetings'])
-        // Rate-limit: cap total entries to prevent spam flooding
-        && request.resource.data.Emails.size() <= 50
-        && request.resource.data.Meetings.size() <= 100
+        // Only allow modifications to Emails, Meetings, and their rate-limit timestamps
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['Emails', 'Meetings', 'lastEmailWrite', 'lastMeetingWrite'])
+        // --- Email rate-limiting: max 2 per minute (30s cooldown) ---
+        && (
+          // If Emails didn't change, skip email rate-limit check
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['Emails'])
+          || (
+            request.resource.data.Emails.size() <= 50
+            && notRateLimitedField('lastEmailWrite', 30)
+          )
+        )
+        // --- Meeting rate-limiting: max 1 per 5 minutes (300s cooldown) ---
+        && (
+          // If Meetings didn't change, skip meeting rate-limit check
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['Meetings'])
+          || (
+            request.resource.data.Meetings.size() <= 100
+            && notRateLimitedField('lastMeetingWrite', 300)
+          )
+        )
         // Ensure document doesn't grow unbounded (Firestore 1MB limit safety)
         && request.resource.size() < 500 * 1024
       );
     }
 
-    // Settings/Views subcollections — analytics written by public visitors
+    // Settings/Views subcollections - analytics written by public visitors
     // Daily & Main analytics (Algorithm.tsx uses setDoc with merge)
     match /Settings/Views/Analysis/{docId} {
       allow read: if true;
-      allow write: if true;
+      allow delete: if isAdmin();
+
+      // Admin can always write
+      allow create, update: if isAdmin();
+
+      // Public create: allowed so setDoc(merge:true) works on first-ever write.
+      // Restricted to the two known doc IDs to prevent bots from spamming garbage docs.
+      allow create: if
+        docId in ['Main', 'Daily']
+        && request.resource.data.lastWrite == request.time
+        && request.resource.size() < 64 * 1024;
+
+      // Public update on Main: strict field allowlist + rate-limit
+      allow update: if docId == 'Main' && (
+        notRateLimited(30)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['Total Reach', "Today's Viewers", 'Reach (Per Device)',
+                        'Total Project Views', 'Total Social Clicks', 'lastWrite'])
+        && request.resource.size() < 64 * 1024
+      );
+
+      // Public update on Daily: dynamic date keys (e.g. "2026-05-04") can't
+      // be enumerated in an allowlist, so we enforce rate-limit + size cap only.
+      allow update: if docId == 'Daily' && (
+        notRateLimited(5)
+        && request.resource.size() < 64 * 1024
+        // Ensure no keys are deleted to prevent wiping
+        && request.resource.data.keys().hasAll(resource.data.keys())
+        // Allow updating only lastWrite and at most one date key
+        && request.resource.data.diff(resource.data).affectedKeys().size() <= 2
+      );
     }
 
     // Link tracking (Algorithm.tsx increments Views + patches Rec_CLI)
     match /Settings/Views/Links/{linkId} {
       allow read: if true;
-      allow update: if true;
       allow create, delete: if isAdmin();
+      // Public update: rate-limited to 1 write per 60s per link,
+      // and only the Views counter or Rec_CLI string may change.
+      allow update: if isAdmin() || (
+        notRateLimited(60)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['Views', 'Rec_CLI', 'lastWrite'])
+        // Views must only increase
+        && (!('Views' in request.resource.data.diff(resource.data).affectedKeys())
+            || request.resource.data.Views >= resource.data.Views)
+        // Rec_CLI must be a string if present
+        && (!('Rec_CLI' in request.resource.data.diff(resource.data).affectedKeys())
+            || request.resource.data.Rec_CLI is string)
+        && request.resource.size() < 100 * 1024
+      );
     }
 
     // Social click tracking (useSocialTracker.ts uses setDoc merge + updateDoc)
     match /Settings/Views/Socials/{socialName} {
       allow read: if true;
-      allow write: if true;
+      allow delete: if isAdmin();
+      // Admin can always write
+      allow create, update: if isAdmin();
+      // Public create: first click on a new social link.
+      // socialName is constrained to safe chars + length so bots can't spam garbage / Unicode bombs.
+      allow create: if
+        socialName.matches('^[a-zA-Z0-9_-]{1,40}$')
+        && request.resource.data.lastWrite == request.time
+        && request.resource.size() < 100 * 1024;
+      // Public update: rate-limited to 1 write per 30s per social document,
+      // document capped at 100KB to prevent unbounded growth.
+      allow update: if (
+        notRateLimited(30)
+        && request.resource.size() < 100 * 1024
+        // Ensure no keys are deleted to prevent wiping
+        && request.resource.data.keys().hasAll(resource.data.keys())
+        // Allow updating only lastWrite and at most one click key
+        && request.resource.data.diff(resource.data).affectedKeys().size() <= 2
+      );
     }
 
-    // All other Settings docs — admin only
+    // All other Settings docs - admin only
     match /Settings/{document=**} {
       allow read: if true;
       allow write: if isAdmin();

@@ -4,6 +4,7 @@ import anime from 'animejs';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Plus, Briefcase } from 'lucide-react';
+import { useSettings } from '../contexts/SettingsContext';
 
 // 1x1 transparent GIF to prevent empty src errors and allow onLoad to trigger properly
 const DEFAULT_HERO_URL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
@@ -103,7 +104,7 @@ const HandwritingText = ({
                             className="letter-path"
                             x={positions[index]}
                             y={fontSize}
-                            fontFamily="'Permanent Marker', cursive"
+                            fontFamily="var(--font-permanent-marker), cursive"
                             fontSize={fontSize}
                             fill="transparent"
                             stroke={color}
@@ -128,6 +129,7 @@ interface HeroProject {
     name?: string;
     status?: string;
     description?: string;
+    order?: number;
 }
 
 interface AvailabilityData {
@@ -278,10 +280,14 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
     }, []);
 
     const availabilityStr = availData?.['Current Availability'] || '100%';
-    const availabilityPercent = parseInt(availabilityStr);
+    // Guard against non-numeric / legacy values (e.g. "Available", "%") — parseInt → NaN
+    // would otherwise fall through every comparison and falsely render "Busy"/red.
+    const parsedAvailability = parseInt(availabilityStr);
+    const availabilityPercent = Number.isNaN(parsedAvailability) ? 100 : parsedAvailability;
     const currentTime = availData?.['Current Time'] || 'UTC+02:00';
     const projectsMap = availData?.['Projects Being Handled'] || {};
-    const projects = Object.values(projectsMap);
+    // Respect the admin's manual drag-sort order (falls back to map order for legacy data)
+    const projects = Object.values(projectsMap).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     const displayedProjects = projects.slice(0, 3);
     const restCount = projects.length - 3;
@@ -303,6 +309,10 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
     const dotColor = getDotColor(availabilityPercent);
 
     // Portal tooltip with proper enter/exit animation
+    // Slide offset for the show/hide animation (px). Animated via top/bottom inset,
+    // NOT transform — backdrop-filter blur breaks on transformed elements in Chrome.
+    const slideOffset = tooltipVisible ? 0 : (tooltipPos.flipBelow ? -10 : 10);
+
     const tooltipElement = tooltipMounted && projects.length > 0
         ? createPortal(
             <div
@@ -311,17 +321,21 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
                 onMouseLeave={handleTooltipLeave}
                 style={{
                     position: 'fixed',
-                    top: tooltipPos.top,
-                    bottom: tooltipPos.bottom,
+                    // Apply slide offset via top/bottom (no transform → backdrop-filter works)
+                    top: typeof tooltipPos.top === 'number' ? tooltipPos.top + slideOffset : tooltipPos.top,
+                    bottom: typeof tooltipPos.bottom === 'number' ? tooltipPos.bottom - slideOffset : tooltipPos.bottom,
                     left: tooltipPos.left,
                     width: tooltipPos.width,
-                    zIndex: 99999,
-                    transformOrigin: tooltipPos.flipBelow ? 'top center' : 'bottom center',
+                    // Above navbar + sub-nav (both z-50), below modals (1400+)
+                    zIndex: 60,
                     opacity: tooltipVisible ? 1 : 0,
-                    transform: tooltipVisible
-                        ? 'scale(1) translateY(0)'
-                        : `scale(0.92) translateY(${tooltipPos.flipBelow ? '-12px' : '12px'})`,
-                    transition: 'opacity 0.35s cubic-bezier(0.32, 0.72, 0, 1), transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)',
+                    // On SHOW: opacity snaps to 1 instantly so backdrop blur is fully
+                    // visible from the first frame (no perceived "blur fade-in").
+                    // On HIDE: keep smooth 0.3s fade. Slide animation via top/bottom
+                    // stays smooth in both directions.
+                    transition: tooltipVisible
+                        ? 'opacity 0s, top 0.3s cubic-bezier(0.32, 0.72, 0, 1), bottom 0.3s cubic-bezier(0.32, 0.72, 0, 1)'
+                        : 'opacity 0.3s cubic-bezier(0.32, 0.72, 0, 1), top 0.3s cubic-bezier(0.32, 0.72, 0, 1), bottom 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
                     pointerEvents: tooltipVisible ? 'auto' : 'none',
                     borderRadius: 28,
                     padding: window.innerWidth <= 380 ? 16 : 24,
@@ -404,6 +418,9 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
                     )}
                 </div>
             </div>,
+            // Portal into document.body so the tooltip escapes the hero/page stacking
+            // context (incl. the hero title's z-[5000]). At body level z-60 sits above
+            // the whole #root subtree but below modals (z-1400+).
             document.body
         )
         : null;
@@ -433,10 +450,11 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
             </div>
 
             {/* iOS Time Lockup Style */}
-            <div className="px-6 py-3 rounded-full font-semibold text-[15px] border border-white/10 shadow-lg transition-all" style={{
+            <div className="px-6 py-3 rounded-full font-semibold text-[15px] shadow-lg transition-all" style={{
                 background: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.5)',
                 backdropFilter: 'blur(20px)',
                 WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid var(--section-border)',
                 color: 'var(--text-primary)'
             }}>
                 {currentTime.split(' ')[0]}
@@ -457,43 +475,38 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
     const box2Ref = useRef<HTMLDivElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const [isDark, setIsDark] = useState(false);
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-    const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null);
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
     const [isImageLoaded, setIsImageLoaded] = useState(false);
     const [imageError, setImageError] = useState(false);
-    const [profileName, setProfileName] = useState<string>('Tem Revil');
-    const [profileTitle, setProfileTitle] = useState<string>('a Front-End');
     const hasNotifiedLoaded = useRef(false);
 
+    // Shared Settings/Account listener (single Firestore connection for all components)
+    const { account, accountLoading } = useSettings();
+    // Pick hero image based on theme — fall back to the other variant if one isn't set
+    const heroImageUrl = (isDark
+        ? (account?.heroImageUrlDark || account?.heroImageUrl)
+        : (account?.heroImageUrl || account?.heroImageUrlDark)) || null;
+    const profileName = account?.name || 'Tem Revil';
+    const profileTitle = account?.title || 'a Front-End';
+
+    // Reset the error flag when the hero URL changes (theme swap / live settings update),
+    // using the render-phase "adjust state on dependency change" pattern (React-endorsed,
+    // avoids set-state-in-effect). Without this, a previously-failed URL leaves
+    // imageError=true and the <img> stays stuck on the transparent-GIF fallback.
+    // NOTE: isImageLoaded is intentionally NOT reset — keeps the instant theme-swap.
+    const [prevHeroUrl, setPrevHeroUrl] = useState(heroImageUrl);
+    if (heroImageUrl !== prevHeroUrl) {
+        setPrevHeroUrl(heroImageUrl);
+        setImageError(false);
+    }
+
+    // Notify parent that initial data is ready
     useEffect(() => {
-        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'),
-            (docSnapshot) => {
-                if (docSnapshot.exists()) {
-                    const data = docSnapshot.data();
-                    if (data.heroImageUrl) setHeroImageUrl(data.heroImageUrl);
-                    if (data.name && data.name !== profileName) setProfileName(data.name);
-                    if (data.title && data.title !== profileTitle) setProfileTitle(data.title);
-                }
-
-                // Notify parent that initial data is ready
-                if (onLoaded && !hasNotifiedLoaded.current) {
-                    hasNotifiedLoaded.current = true;
-                    onLoaded();
-                }
-            },
-            (error) => {
-                const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
-                console.warn(`[Connection] Hero sync: ${status}. Check diagnostic in lib/firebase.ts`, error);
-
-                // Even on error, we should probably allow the app to show something
-                if (onLoaded && !hasNotifiedLoaded.current) {
-                    hasNotifiedLoaded.current = true;
-                    onLoaded();
-                }
-            }
-        );
-        return () => unsubscribe();
-    }, [profileName, profileTitle, onLoaded]);
+        if (!accountLoading && onLoaded && !hasNotifiedLoaded.current) {
+            hasNotifiedLoaded.current = true;
+            onLoaded();
+        }
+    }, [accountLoading, onLoaded]);
 
     useEffect(() => {
         const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
@@ -608,7 +621,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
 
                     <div ref={titleRef} className="z-10 transition-slow uppercase flex flex-col gap-0 w-full max-w-[500px]" style={{
                         fontWeight: 900,
-                        fontFamily: "'Archivo Black', sans-serif",
+                        fontFamily: "var(--font-archivo-black), sans-serif",
                         lineHeight: '0.8'
                     }}>
                         <span className="text-6xl sm:text-7xl md:text-8xl lg:text-[7rem] tracking-tighter self-start ml-[-5px] md:ml-[-15px] flex">
