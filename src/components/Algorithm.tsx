@@ -17,6 +17,18 @@ interface ProjectStats {
     duration: number; // seconds
 }
 
+// Analytics writes hit rate-limited Firestore docs. A `permission-denied` (rule
+// rejected the write because the cooldown hasn't elapsed) or an offline failure is
+// expected and harmless — analytics are best-effort. Treat those as benign so they
+// don't show up as scary console errors; real bugs still surface.
+const isBenignAnalyticsError = (error: unknown): boolean => {
+    const code = (error as { code?: string } | null)?.code ?? '';
+    const msg = error instanceof Error ? error.message : String(error ?? '');
+    return code === 'permission-denied'
+        || code === 'unavailable'
+        || /permission|insufficient|offline|unavailable/i.test(msg);
+};
+
 export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: AlgorithmProps) => {
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
 
@@ -133,7 +145,13 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             }, { merge: true });
 
         } catch (error) {
-            console.error(`Error incrementing daily ${field}:`, error);
+            // permission-denied here is benign: the analytics docs are rate-limited by
+            // Firestore rules (1 write / cooldown). When the app writes again inside that
+            // window (e.g. visit + a quick project click), the rule rejects it. Analytics
+            // are best-effort, so swallow that case quietly and only surface real errors.
+            if (!isBenignAnalyticsError(error)) {
+                console.error(`Error incrementing daily ${field}:`, error);
+            }
         }
     }, []);
 
@@ -244,7 +262,11 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                     lastWrite: serverTimestamp()
                 }, { merge: true });
             } catch (error) {
-                console.error("Global Analytics Error:", error);
+                // Benign rate-limit rejection (see incrementDailyStat note) — analytics
+                // are best-effort, so don't spam the console with permission-denied.
+                if (!isBenignAnalyticsError(error)) {
+                    console.error("Global Analytics Error:", error);
+                }
             }
         };
 
