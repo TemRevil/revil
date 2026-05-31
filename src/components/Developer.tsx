@@ -7,7 +7,7 @@ import FeaturedRepos from './FeaturedRepos';
 import GitHubStats from './GitHubStats';
 
 /* ──────────────────────────────────────────────────────────────
-   Eyebrow section label — a small, consistent header used above
+   Eyebrow section label: a small, consistent header used above
    every block so the whole section reads with one clear rhythm.
    Light by design (no heavy cards) to keep the layout simple.
    ────────────────────────────────────────────────────────────── */
@@ -69,7 +69,7 @@ const Developer = () => {
         setStreakLoading(false);
     }, []);
 
-    // Staggered entrance — instances captured + paused on unmount (no detached-DOM churn)
+    // Staggered entrance: instances captured + paused on unmount (no detached-DOM churn)
     useEffect(() => {
         const base = { easing: 'easeOutExpo' as const };
         const instances = [
@@ -119,7 +119,7 @@ const Developer = () => {
                             fontWeight: 500,
                         }}
                     >
-                        Building, breaking, and shipping in public — a live snapshot of my
+                        Building, breaking, and shipping in public. A live snapshot of my
                         contributions, momentum, and favourite projects on GitHub.
                     </p>
                 </header>
@@ -141,7 +141,7 @@ const Developer = () => {
 
                 {/* ── Streak + Featured projects ── */}
                 <div ref={bottomRef} className="opacity-0 dev-bottom-row">
-                    {/* Streak — label + bare fire (StreakCircle kept exactly as-is) */}
+                    {/* Streak: label + bare fire (StreakCircle kept exactly as-is) */}
                     <div className="dev-streak-col" style={{ flexShrink: 0 }}>
                         <SectionLabel
                             icon={<Flame size={14} strokeWidth={2.5} />}
@@ -151,7 +151,7 @@ const Developer = () => {
                         <StreakCircle streak={streak} isLoading={streakLoading} />
                     </div>
 
-                    {/* Featured projects — label + repo grid (no outer card; each repo is already carded) */}
+                    {/* Featured projects: label + repo grid (no outer card; each repo is already carded) */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <SectionLabel
                             icon={<FolderGit2 size={14} strokeWidth={2.5} />}
