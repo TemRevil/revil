@@ -6,3 +6,20 @@ RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
 RewriteRule ^ index.html [L]
+
+# ── Security headers (delivered as real HTTP headers, not <meta>) ──
+# frame-ancestors / X-Frame-Options must be HTTP headers to take effect —
+# browsers ignore frame-ancestors when set via a <meta> tag.
+<IfModule mod_headers.c>
+  # Block this site from being embedded in any <iframe> (clickjacking defense).
+  # 'none' = no site may frame us. X-Frame-Options is the legacy fallback for
+  # older browsers that don't support CSP frame-ancestors.
+  Header always set Content-Security-Policy "frame-ancestors 'none';"
+  Header always set X-Frame-Options "DENY"
+
+  # Don't leak full referrer URLs to third parties.
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+  # Stop browsers from MIME-sniffing a response away from the declared content-type.
+  Header always set X-Content-Type-Options "nosniff"
+</IfModule>

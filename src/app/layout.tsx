@@ -288,7 +288,7 @@ export default function RootLayout({
     process.env.NODE_ENV === 'development'
       ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://*.gstatic.com https://www.google.com"
       : "script-src 'self' 'unsafe-inline' https://apis.google.com https://*.gstatic.com https://www.google.com";
-  const csp = `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com https://firebasestorage.googleapis.com https://www.gstatic.com https://images.unsplash.com https://avatars.githubusercontent.com; media-src 'self' https://firebasestorage.googleapis.com https://*.firebasestorage.app; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com https://www.google.com https://images.unsplash.com https://github-contributions-api.jogruber.de https://github.com https://api.github.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://www.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self';`;
+  const csp = `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com https://firebasestorage.googleapis.com https://www.gstatic.com https://images.unsplash.com https://avatars.githubusercontent.com; media-src 'self' https://firebasestorage.googleapis.com https://*.firebasestorage.app; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com https://www.google.com https://images.unsplash.com https://github-contributions-api.jogruber.de https://github.com https://api.github.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://www.google.com; base-uri 'self'; form-action 'self';`;
 
   return (
     <html lang="en" className={`dark ${fontVariables}`}>
@@ -307,8 +307,10 @@ export default function RootLayout({
         <meta name="google-site-verification" content="uQR0p6nF_uFGSNYBtO-_tKpQ6W-Qu_LrwF77SLoEprc" />
         {/* Content Security Policy — defense-in-depth against XSS.
             'unsafe-eval' is dev-only (see scriptSrc above); production omits it.
-            'frame-ancestors none' blocks clickjacking (note: only enforced when CSP is
-            delivered as an HTTP header — keep the .htaccess header as the authoritative copy). */}
+            NOTE: 'frame-ancestors' is intentionally NOT here — browsers ignore it in a
+            <meta> tag (and log a warning). Clickjacking protection is delivered as a real
+            HTTP header (Content-Security-Policy: frame-ancestors + X-Frame-Options) from
+            deploy/hostinger/.htaccess instead. */}
         <meta
           httpEquiv="Content-Security-Policy"
           content={csp}
