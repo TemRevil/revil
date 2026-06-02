@@ -62,7 +62,11 @@ service cloud.firestore {
     }
 
     match /Settings/Canary {
-      allow read: if true;
+      // PII-bearing doc: holds visitor names, emails, phone numbers, messages,
+      // attachment URLs and live Meet links. Admin-read ONLY. Public booking
+      // availability is exposed via the sanitized Settings/BookedSlots doc
+      // (Date + Time only), which a Cloud Function mirrors from Meetings here.
+      allow read: if isAdmin();
       // Admin has full write access
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (
@@ -173,10 +177,20 @@ service cloud.firestore {
       );
     }
 
-    // All other Settings docs - admin only
-    match /Settings/{document=**} {
-      allow read: if true;
+    // Public-readable Settings content docs (Account bio, Availability, Developer,
+    // Tech Stack, BookedSlots, etc.). Canary is EXCLUDED here — Firestore rules are
+    // additive, so a blanket `read: if true` on this wildcard would re-grant public
+    // read to Canary and defeat its admin-only block above. Listing the one
+    // exception keeps every other Settings doc public while Canary stays private.
+    match /Settings/{settingsDoc} {
+      allow read: if settingsDoc != 'Canary';
       allow write: if isAdmin();
+    }
+
+    // Any deeper Settings subcollection docs without an explicit rule default to
+    // admin-only (the named analytics subcollections above grant their own public read).
+    match /Settings/{document=**} {
+      allow read, write: if isAdmin();
     }
 
     // Secure everything else (require admin access)

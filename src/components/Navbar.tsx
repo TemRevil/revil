@@ -256,6 +256,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                 <div className={`flex items-center ${isMobile ? 'gap-1' : 'gap-1.5'}`}>
                     <div className="relative">
                         <button
+                            aria-label="Home"
                             className={getButtonClass('home')}
                             onClick={() => onNavigate?.('home')}
                             onMouseEnter={() => setHoveredTab('home')}
@@ -268,6 +269,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
 
                     <div className="relative">
                         <button
+                            aria-label="Tech stack"
                             className={getButtonClass('stack')}
                             onClick={() => onNavigate?.('stack')}
                             onMouseEnter={() => setHoveredTab('stack')}
@@ -280,6 +282,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
 
                     <div className="relative">
                         <button
+                            aria-label="Projects"
                             className={getButtonClass('projects')}
                             onClick={() => onNavigate?.('projects')}
                             onMouseEnter={() => setHoveredTab('projects')}
@@ -307,6 +310,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 pointerEvents: isCVOpen ? 'none' : 'auto',
                             }}
                             onClick={onOpenCV}
+                            aria-label="Open digital CV"
                             onMouseEnter={() => setHoveredTab('cv')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
@@ -356,6 +360,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 pointerEvents: isContactOpen ? 'none' : 'auto',
                             }}
                             onClick={onOpenContact}
+                            aria-label="Open contact form"
                             onMouseEnter={() => setHoveredTab('mail')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
@@ -377,6 +382,8 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
 
                     <button
                         onClick={toggleTheme}
+                        aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+                        aria-pressed={isDark}
                         onMouseEnter={() => setHoveredTab('theme')}
                         onMouseLeave={() => setHoveredTab(null)}
                         className={`

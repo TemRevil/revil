@@ -22,4 +22,8 @@ RewriteRule ^ index.html [L]
 
   # Stop browsers from MIME-sniffing a response away from the declared content-type.
   Header always set X-Content-Type-Options "nosniff"
+
+  # Force HTTPS for two years incl. subdomains; opt into browser preload lists.
+  # Defends an admin-dashboard site against SSL-strip / protocol-downgrade attacks.
+  Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 </IfModule>

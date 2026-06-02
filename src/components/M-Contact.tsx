@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe } from 'lucide-react';
-import { doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 import { db, storage, functions } from '../lib/firebase';
@@ -169,24 +169,26 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       }
     });
 
-    const unsubscribeMeetings = onSnapshot(doc(db, 'Settings', 'Canary'), (docSnap) => {
+    // Read busy slots from the sanitized public mirror (Settings/BookedSlots),
+    // NOT Settings/Canary — Canary holds visitor PII and is admin-read-only.
+    // BookedSlots carries only { Date, Time } per booking, which is all the public
+    // calendar needs to grey out taken slots. A Cloud Function keeps it in sync.
+    const unsubscribeMeetings = onSnapshot(doc(db, 'Settings', 'BookedSlots'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const meetingsMap = (data.Meetings || {}) as Record<string, Partial<Meeting>>;
-        const meetingsList = Object.values(meetingsMap).map((m): Meeting => ({
-          Date: m.Date || '',
-          Time: m.Time || '',
-          Name: m.Name || '',
-          Email: m.Email || '',
-          Reason: m.Reason || m["What For"] || '',
-          dateObj: new Date(m.Date || Date.now()),
-          MeetingLink: m.MeetingLink,
-          GoogleEventId: m.GoogleEventId,
-          UserLocalTime: m.UserLocalTime,
-          UserTimezone: m.UserTimezone,
-          timestamp: m.timestamp
-        }));
+        const slots = (data.Slots || []) as Array<{ Date?: string; Time?: string }>;
+        const meetingsList = slots
+          .filter((s) => s && s.Date && s.Time)
+          .map((s): Meeting => ({
+            Date: s.Date || '',
+            Time: s.Time || '',
+            Name: '',
+            Email: '',
+            dateObj: new Date(s.Date || Date.now()),
+          }));
         setExistingMeetings(meetingsList);
+      } else {
+        setExistingMeetings([]);
       }
     });
 
@@ -397,38 +399,33 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       const meetLink = result.link;
       const googleEventId = result.id;
 
-      // 4. Save to Firebase
+      // 4. Save to Firebase.
+      // Canary is now admin-read-only, so the public client can no longer read it
+      // to compute a sequential ID. We use a collision-resistant client-generated
+      // ID and a blind updateDoc (matches the rate-limited public-update rule) — no
+      // read of Canary required. IDs are opaque map keys; nothing depends on them
+      // being numeric or sequential.
       const docRef = doc(db, 'Settings', 'Canary');
       const dateStr = formatDateDDMMYYYY(selectedDate);
-      // Use a transaction to safely generate the next meeting ID without race conditions
-      await runTransaction(db, async (transaction) => {
-        const docSnap = await transaction.get(docRef);
-        let nextId = "1";
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const meetings = data.Meetings || {};
-          const keys = Object.keys(meetings).map(k => parseInt(k, 10)).filter(k => !isNaN(k));
-          if (keys.length > 0) nextId = (Math.max(...keys) + 1).toString();
-        }
+      const meetingId = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-        // Save it in the host's perspective so they see it in their local time in their dashboard
-        const hostPerspecTime = convertTimeToHost(selectedTime);
+      // Save it in the host's perspective so they see it in their local time in their dashboard
+      const hostPerspecTime = convertTimeToHost(selectedTime);
 
-        const payload = {
-          Date: dateStr,
-          Time: hostPerspecTime,
-          UserLocalTime: selectedTime,
-          UserTimezone: userTimezone,
-          Email: meetingData.email.trim(),
-          "What For": meetingData.reason,
-          Name: meetingData.name,
-          timestamp: Date.now(),
-          MeetingLink: meetLink,
-          GoogleEventId: googleEventId // Store the ID for reliable deletion/updates
-        };
+      const payload = {
+        Date: dateStr,
+        Time: hostPerspecTime,
+        UserLocalTime: selectedTime,
+        UserTimezone: userTimezone,
+        Email: meetingData.email.trim(),
+        "What For": meetingData.reason,
+        Name: meetingData.name,
+        timestamp: Date.now(),
+        MeetingLink: meetLink,
+        GoogleEventId: googleEventId // Store the ID for reliable deletion/updates
+      };
 
-        transaction.update(docRef, { [`Meetings.${nextId}`]: payload, lastMeetingWrite: serverTimestamp() });
-      });
+      await updateDoc(docRef, { [`Meetings.${meetingId}`]: payload, lastMeetingWrite: serverTimestamp() });
 
       setBookingSuccess({ date: dateStr, time: selectedTime || '', link: meetLink || '' });
       setMeetingData({ name: '', email: '', reason: '' });
@@ -535,30 +532,23 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         }
       }
 
-      // 2. Transaction to safely generate the next email ID and save data
+      // 2. Save the message. Canary is admin-read-only, so (like the booking path)
+      // we use a collision-resistant client ID + blind updateDoc instead of a
+      // read-modify-write transaction. The email key is an opaque map key.
       const docRef = doc(db, 'Settings', 'Canary');
-      await runTransaction(db, async (transaction) => {
-        const docSnap = await transaction.get(docRef);
-        let nextId = "1";
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const emails = data.Emails || {};
-          const keys = Object.keys(emails).map(k => parseInt(k, 10)).filter(k => !isNaN(k));
-          if (keys.length > 0) nextId = (Math.max(...keys) + 1).toString();
-        }
+      const emailId = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-        const payload = {
-          Name: formData.name,
-          Email: formData.email,
-          "Files Attached": uploadedFiles,
-          Message: formData.message,
-          Number: formData.number,
-          Whatsapp: formData.hasWhatsapp,
-          Timestamp: Date.now()
-        };
+      const payload = {
+        Name: formData.name,
+        Email: formData.email,
+        "Files Attached": uploadedFiles,
+        Message: formData.message,
+        Number: formData.number,
+        Whatsapp: formData.hasWhatsapp,
+        Timestamp: Date.now()
+      };
 
-        transaction.update(docRef, { [`Emails.${nextId}`]: payload, lastEmailWrite: serverTimestamp() });
-      });
+      await updateDoc(docRef, { [`Emails.${emailId}`]: payload, lastEmailWrite: serverTimestamp() });
 
       showAlert({ type: 'success', message: "Message sent! I'll get back to you soon." });
       setFormData({
@@ -827,9 +817,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   {hasMeetings && !isSelected && (
                                     <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginTop: '4px' }}>
                                       {meetingsForDay.slice(0, 3).map((m: Meeting, idx) => (
-                                        <div key={idx} title={`${m.Time} - ${m.Name}`} style={{
+                                        <div key={idx} title={`${convertTimeToUser(m.Time)} - Booked`} style={{
                                           width: '4px', height: '4px', borderRadius: '50%',
-                                          background: m.Name === meetingData.name ? '#f59e0b' : '#10b981', // Owner meetings orange, others green
+                                          background: '#10b981', // Slot taken (guest identity is private)
                                           position: 'relative', zIndex: 1
                                         }} />
                                       ))}
@@ -890,7 +880,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                       <div key={i} className="flex items-center gap-3 py-1" style={{ borderBottom: i === getMeetingsForDate(selectedDate).length - 1 ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)') }}>
                                         <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'rgb(59, 130, 246)', boxShadow: '0 0 8px rgba(59, 130, 246, 0.5)' }} />
                                         <div className="flex-1">
-                                          <div className="text-sm font-semibold text-primary">{convertTimeToUser(m.Time)} - <span style={{ opacity: 0.7 }}>{m.Name}</span></div>
+                                          <div className="text-sm font-semibold text-primary">{convertTimeToUser(m.Time)} - <span style={{ opacity: 0.7 }}>Booked</span></div>
                                         </div>
                                       </div>
                                     ))

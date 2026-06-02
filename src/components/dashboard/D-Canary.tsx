@@ -72,6 +72,17 @@ const MONTHS = [
     "July", "August", "September", "October", "November", "December"
 ];
 
+// Parse the host's UTC offset (in hours) from the "Current Time" string stored in
+// Settings/Availability (e.g. "... UTC+03:00"). Mirrors the parser in M-Contact so
+// the dashboard and the public booking modal agree on the host's timezone.
+const getOffsetFromUTCString = (tzStr: string) => {
+    const match = (tzStr || '').match(/UTC([+-]\d{2}):(\d{2})/);
+    if (!match) return 0;
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    return hours + (minutes / 60) * (hours < 0 ? -1 : 1);
+};
+
 const DCanary = () => {
     const [isDark, setIsDark] = useState(false);
     const [viewDate, setViewDate] = useState(new Date());
@@ -85,6 +96,7 @@ const DCanary = () => {
     const [modalViewDate, setModalViewDate] = useState(new Date());
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
     const [meetings, setMeetings] = useState<Meeting[]>([]);
+    const [hostTimezoneString, setHostTimezoneString] = useState('');
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
@@ -162,6 +174,22 @@ const DCanary = () => {
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         return () => observer.disconnect();
     }, []);
+
+    // Track the host's timezone so reschedules reconstruct the correct UTC instant.
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'Settings', 'Availability'), (snap) => {
+            const ct = snap.exists() ? snap.data()['Current Time'] : undefined;
+            if (ct) setHostTimezoneString(ct);
+        });
+        return () => unsub();
+    }, []);
+
+    // Meeting Time fields are stored in the HOST's wall clock, so the UTC instant is
+    // (host wall clock − host offset). Falls back to the dashboard machine's own
+    // offset if Availability hasn't loaded yet.
+    const hostOffset = hostTimezoneString
+        ? getOffsetFromUTCString(hostTimezoneString)
+        : -(new Date().getTimezoneOffset() / 60);
 
     const handleTabChange = (newTab: 'bookings' | 'mails') => {
         if (newTab === activeSection || isTransitioning) return;
@@ -256,9 +284,10 @@ const DCanary = () => {
         try {
             // 1. Sync with Google Calendar FIRST (before deleting from DB)
             if (meeting?.email && meeting?.date && meeting?.time) {
-                const tz = meeting.userTimezone ?? -(new Date().getTimezoneOffset() / 60);
-
-                // Calculate time for legacy search (Crucial for fallback deletion)
+                // Calculate time for legacy search (Crucial for fallback deletion).
+                // meeting.time is host wall clock → UTC = wall clock − host offset.
+                // (Previously used the guest offset, which made the fallback search
+                // target the wrong instant and could miss the event to cancel.)
                 const timeParts = meeting.time.split(' ');
                 const [hStr, mStr] = timeParts[0].split(':');
                 let h = parseInt(hStr);
@@ -266,7 +295,7 @@ const DCanary = () => {
                 if (timeParts[1] === 'AM' && h === 12) h = 0;
 
                 // Construct the UTC date object
-                const start = new Date(Date.UTC(meeting.date.getFullYear(), meeting.date.getMonth(), meeting.date.getDate(), h, parseInt(mStr)) - (tz * 3600000));
+                const start = new Date(Date.UTC(meeting.date.getFullYear(), meeting.date.getMonth(), meeting.date.getDate(), h, parseInt(mStr)) - (hostOffset * 3600000));
 
                 try {
                     const syncMeeting = httpsCallable(functions, 'syncMeeting');
@@ -332,14 +361,16 @@ const DCanary = () => {
 
         setIsLoading(true);
         try {
-            const tz = editingMeeting.userTimezone ?? -(new Date().getTimezoneOffset() / 60);
+            // editingMeeting.time is in the HOST's wall clock, so the UTC instant is
+            // (host wall clock − host offset). Using the guest's offset here was the
+            // reschedule bug: it shifted invites by (hostOffset − guestOffset) hours.
             const timeParts = editingMeeting.time.split(' ');
             const [hStr, mStr] = timeParts[0].split(':');
             let h = parseInt(hStr);
             if (timeParts[1] === 'PM' && h !== 12) h += 12;
             if (timeParts[1] === 'AM' && h === 12) h = 0;
 
-            const start = new Date(Date.UTC(editingMeeting.date.getFullYear(), editingMeeting.date.getMonth(), editingMeeting.date.getDate(), h, parseInt(mStr)) - (tz * 3600000));
+            const start = new Date(Date.UTC(editingMeeting.date.getFullYear(), editingMeeting.date.getMonth(), editingMeeting.date.getDate(), h, parseInt(mStr)) - (hostOffset * 3600000));
             const end = new Date(start.getTime() + 3600000);
 
             let newGoogleId = editingMeeting.googleEventId; // --- GOOGLE CALENDAR SYNC ---
@@ -362,7 +393,7 @@ const DCanary = () => {
                     if (oldTimeParts[1] === 'PM' && oldH !== 12) oldH += 12;
                     if (oldTimeParts[1] === 'AM' && oldH === 12) oldH = 0;
 
-                    const oldStart = new Date(Date.UTC(originalMeeting.date.getFullYear(), originalMeeting.date.getMonth(), originalMeeting.date.getDate(), oldH, parseInt(oldMStr)) - (tz * 3600000));
+                    const oldStart = new Date(Date.UTC(originalMeeting.date.getFullYear(), originalMeeting.date.getMonth(), originalMeeting.date.getDate(), oldH, parseInt(oldMStr)) - (hostOffset * 3600000));
 
                     await syncMeeting({
                         action: 'cancel',

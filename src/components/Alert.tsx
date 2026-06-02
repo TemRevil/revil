@@ -79,6 +79,8 @@ export default function Alert({ type, message, onClose, duration = 3000 }: Alert
     return (
         <div
             ref={alertRef}
+            role={type === 'error' || type === 'warning' ? 'alert' : 'status'}
+            aria-live={type === 'error' || type === 'warning' ? 'assertive' : 'polite'}
             className="custom-alert fixed top-6 right-6 z-[9999] flex items-center gap-3 p-4 rounded-md shadow-lg backdrop-blur-md min-w-[300px] max-w-[400px]"
             style={{ backgroundColor: 'var(--card-bg, #ffffff)', borderLeft: `4px solid ${currentStyle.border}` }}
         >
