@@ -7,8 +7,10 @@ const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8b
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
 import { doc, onSnapshot, setDoc, updateDoc, deleteField, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, getMetadata } from 'firebase/storage';
-import { db, storage } from '../../lib/firebase';
+import { ref, uploadBytes, getDownloadURL, getMetadata, getStorage } from 'firebase/storage';
+import app, { db } from '../../lib/firebase';
+// Local Storage handle (lazy Dashboard chunk) — keeps firebase/storage out of eager.
+const storage = getStorage(app);
 import Alert, { AlertType } from '../Alert';
 import MHandlingProject, { HandlingProject } from './M-HandlingProject';
 import MStackItem, { StackItemData } from './M-StackItem';

@@ -4,8 +4,10 @@ import anime from 'animejs';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../../lib/firebase';
+import { httpsCallable, getFunctions } from 'firebase/functions';
+import app, { db } from '../../lib/firebase';
+// Local Functions handle (lazy Dashboard chunk) — keeps firebase/functions out of eager.
+const functions = getFunctions(app);
 
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';

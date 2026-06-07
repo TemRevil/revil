@@ -630,6 +630,7 @@ const Projects = () => {
                         {searchQuery && (
                             <button
                                 onClick={() => setSearchQuery('')}
+                                aria-label="Clear search"
                                 className="bg-none border-none text-sec cursor-pointer flex items-center"
                             >
                                 <X size={16} />

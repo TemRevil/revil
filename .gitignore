@@ -53,3 +53,6 @@ cors.json
 *.bak
 AUDIT.md
 AUDIT.ar.md
+
+# Playwright MCP session artifacts
+.playwright-mcp/

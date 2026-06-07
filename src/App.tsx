@@ -6,7 +6,10 @@ import Stack from './components/Stack';
 import PageTransition from './components/PageTransition';
 import ProjectsHub, { type ProjectsHubHandle } from './components/ProjectsHub';
 import MContact from './components/M-Contact';
-import SecretPage from './components/SecretPage';
+// Lazy: SecretPage pulls firebase/auth + firebase/functions, and Dashboard pulls
+// recharts + react-easy-crop. Code-splitting them keeps those heavy SDKs out of
+// the eager first-paint bundle (they're only reached after explicit navigation).
+const SecretPage = lazy(() => import('./components/SecretPage'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 import { ChevronRight } from 'lucide-react';
 import Loader from './components/reactbits/Loader';
@@ -16,6 +19,29 @@ import MProjectView from './components/M-ProjectView';
 import MContributorView, { Contributor as ContributorViewData } from './components/M-ContributorView';
 import { ProjectData as Project, ContributorData as Contributor } from './types';
 import { SettingsProvider } from './contexts/SettingsContext';
+import ErrorBoundary from './components/ErrorBoundary';
+
+// Fallback for the section-level error boundary. A failed lazy-chunk fetch (e.g.
+// a returning user on a stale index.html after a redeploy) would otherwise blank
+// the whole SPA; this keeps it recoverable with a one-tap reload.
+const sectionErrorFallback = (
+  <div style={{
+    position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24, textAlign: 'center',
+    color: 'var(--text-primary)', zIndex: 1,
+  }}>
+    <p style={{ margin: 0, fontWeight: 600 }}>Something went wrong loading this section.</p>
+    <button
+      onClick={() => window.location.reload()}
+      style={{
+        padding: '10px 20px', borderRadius: 12, border: '1px solid var(--section-border)',
+        background: 'var(--card-bg)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 600,
+      }}
+    >
+      Reload
+    </button>
+  </div>
+);
 
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
@@ -60,7 +86,18 @@ function App() {
     const currentVersion = localStorage.getItem('revil_app_version');
     if (currentVersion === APP_VERSION) return;
 
-    console.warn('[Version Control] Mismatch detected. Purging app caches (keeping user prefs)...');
+    // First visit (no stored version): there is nothing to purge — record the version
+    // silently and bail. This avoids a console warning + full page reload on every
+    // fresh visitor (Lighthouse/PSI always run with empty localStorage, which would
+    // otherwise trip the "no browser errors logged" audit and double the initial load).
+    if (currentVersion === null) {
+      localStorage.setItem('revil_app_version', APP_VERSION);
+      return;
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[Version Control] Mismatch detected. Purging app caches (keeping user prefs)...');
+    }
 
     // Keys we want to KEEP through a version wipe
     const PRESERVE_PREFIXES = ['theme', 'revil_visitor_', 'revil_app_version'];
@@ -182,7 +219,7 @@ function App() {
       case 'projects':
         return <ProjectsHub ref={hubRef} isTransitioning={isTransitioning} />;
       case 'secret':
-        return <SecretPage onNavigate={navigateTo} />;
+        return <Suspense fallback={<Loader isOpen={true} isFullScreen={true} />}><SecretPage onNavigate={navigateTo} /></Suspense>;
       case 'dashboard':
         return <Suspense fallback={<Loader isOpen={true} isFullScreen={true} />}><Dashboard onNavigate={navigateTo} /></Suspense>;
       case 'view_link':
@@ -436,7 +473,9 @@ function App() {
           // trapped within this layer and don't leak above the chrome.
           className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar"
         >
-          {renderSection()}
+          <ErrorBoundary fallback={sectionErrorFallback}>
+            {renderSection()}
+          </ErrorBoundary>
         </motion.div>
       </AnimatePresence>
       {currentSection !== 'secret' && (

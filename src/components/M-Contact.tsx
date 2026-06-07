@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { httpsCallable } from 'firebase/functions';
-import { db, storage, functions } from '../lib/firebase';
+// firebase/storage + firebase/functions are dynamic-imported inside the submit
+// handlers below (not statically) so they stay OUT of the eager first-paint
+// bundle — M-Contact is imported eagerly by App.tsx, so a static import here
+// would pull both SDKs into the critical chunk.
+import app, { db } from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
 import useTheme from '../hooks/useTheme';
@@ -379,8 +381,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       const startDateUTC = new Date(Date.UTC(y, m, d, hours, minutes) - (userTimezone * 3600000));
       const endDateUTC = new Date(startDateUTC.getTime() + 3600000); // 1 hour later
 
-      // 2. Call Firebase Function
-      const syncMeeting = httpsCallable(functions, 'syncMeeting');
+      // 2. Call Firebase Function (firebase/functions loaded on demand)
+      const { httpsCallable, getFunctions } = await import('firebase/functions');
+      const syncMeeting = httpsCallable(getFunctions(app), 'syncMeeting');
       const response = await syncMeeting({
         name: meetingData.name,
         email: meetingData.email.trim(), // Trim whitespace!
@@ -523,6 +526,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       // 1. Handle File Uploads (outside transaction to prevent duplicate uploads on retry)
       const uploadedFiles: { name: string, url: string }[] = [];
       if (formData.attachments.length > 0) {
+        // firebase/storage loaded on demand (kept out of the eager bundle)
+        const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+        const storage = getStorage(app);
         const uniqueFolderId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         for (const file of formData.attachments) {
           const fileRef = ref(storage, `emails/${uniqueFolderId}/${file.name}`);
@@ -599,6 +605,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1400, padding: '1rem',
         }} onClick={onClose}>
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="contact-modal-title"
           initial={{ opacity: 0, scale: 0.3, y: 400 }}
           animate={{
             opacity: 1,
@@ -652,12 +661,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                   >
                     <Mail size={24} strokeWidth={2} />
                   </motion.div>
-                  <h2 className="heading-md m-0 font-bold" style={{ fontSize: '1.5rem' }}>
+                  <h2 id="contact-modal-title" className="heading-md m-0 font-bold" style={{ fontSize: '1.5rem' }}>
                     Contact Me
                   </h2>
                 </div>
                 <button
                   onClick={onClose}
+                  aria-label="Close contact form"
                   className="btn-icon rounded-full"
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)';
@@ -723,6 +733,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         </h3>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
+                            aria-label="Previous month"
                             onClick={() => {
                               setDirection(-1);
                               setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
@@ -731,6 +742,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                             <ChevronLeft size={16} />
                           </button>
                           <button
+                            aria-label="Next month"
                             onClick={() => {
                               setDirection(1);
                               setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
@@ -786,12 +798,18 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               return (
                                 <div
                                   key={day}
-                                  onClick={() => setSelectedDate(date)}
+                                  role="button"
+                                  tabIndex={isBookable ? 0 : -1}
+                                  aria-disabled={!isBookable}
+                                  aria-pressed={isSelected}
+                                  aria-label={date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                                  onClick={() => { if (isBookable) setSelectedDate(date); }}
+                                  onKeyDown={(e) => { if (isBookable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSelectedDate(date); } }}
                                   style={{
                                     aspectRatio: '1',
                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                     borderRadius: '14px',
-                                    cursor: 'pointer',
+                                    cursor: isBookable ? 'pointer' : 'default',
                                     position: 'relative',
                                     opacity: isBookable ? 1 : 0.4,
                                   }}
@@ -1070,7 +1088,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                             )}
                                           </AnimatePresence>
                                         </div>
-                                        <input className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
+                                        <input aria-label="Name" className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
                                       </div>
                                       <div>
                                         <div style={{ position: 'relative' }}>
@@ -1106,11 +1124,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                             )}
                                           </AnimatePresence>
                                         </div>
-                                        <input type="email" className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
+                                        <input type="email" aria-label="Email" className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
                                       </div>
                                       <div>
                                         <label className="input-label font-semibold">Reason *</label>
-                                        <textarea className="dashboard-textarea" style={{ minHeight: '80px', borderRadius: '12px' }} placeholder="What's this meeting for?" rows={2} value={meetingData.reason} onChange={e => setMeetingData({ ...meetingData, reason: e.target.value })} />
+                                        <textarea aria-label="Reason for meeting" className="dashboard-textarea" style={{ minHeight: '80px', borderRadius: '12px' }} placeholder="What's this meeting for?" rows={2} value={meetingData.reason} onChange={e => setMeetingData({ ...meetingData, reason: e.target.value })} />
                                       </div>
                                     </div>
                                     <button onClick={handleMeetingSubmit} disabled={isSubmitting || !selectedDate || !selectedTime || !meetingData.email} className="btn-primary btn w-full" style={{ padding: '14px', borderRadius: '14px', opacity: (isSubmitting || !selectedDate || !selectedTime || !meetingData.email) ? 0.5 : 1 }}>
@@ -1154,7 +1172,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         <label className="input-label font-semibold">Name *</label>
                         <div className="input-container">
                           <User size={18} className="input-icon" />
-                          <input name="name" value={formData.name} onChange={handleInputChange} required className="input-with-icon" placeholder="Full Name" />
+                          <input name="name" aria-label="Name" value={formData.name} onChange={handleInputChange} required className="input-with-icon" placeholder="Full Name" />
                         </div>
                       </div>
 
@@ -1162,7 +1180,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         <label className="input-label font-semibold">Email *</label>
                         <div className="input-container">
                           <Mail size={18} className="input-icon" />
-                          <input type="email" name="email" value={formData.email} onChange={handleInputChange} required className="input-with-icon" placeholder="name@example.com" />
+                          <input type="email" name="email" aria-label="Email" value={formData.email} onChange={handleInputChange} required className="input-with-icon" placeholder="name@example.com" />
                         </div>
                       </div>
 
@@ -1170,7 +1188,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         <label className="input-label font-semibold">Phone Number *</label>
                         <div className="input-container">
                           <Phone size={18} className="input-icon" />
-                          <input type="tel" name="number" value={formData.number} onChange={handleInputChange} required className="input-with-icon" placeholder="+1 (555) 123-4567" />
+                          <input type="tel" name="number" aria-label="Phone number" value={formData.number} onChange={handleInputChange} required className="input-with-icon" placeholder="+1 (555) 123-4567" />
                         </div>
                       </div>
 
@@ -1191,7 +1209,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
                       <div>
                         <label className="input-label font-semibold">Message *</label>
-                        <textarea name="message" value={formData.message} onChange={handleInputChange} required rows={4} className="dashboard-textarea" placeholder="How can I help you?" />
+                        <textarea name="message" aria-label="Message" value={formData.message} onChange={handleInputChange} required rows={4} className="dashboard-textarea" placeholder="How can I help you?" />
                       </div>
 
                       {/* Attachments */}
@@ -1208,7 +1226,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                             {formData.attachments.map((file, i) => (
                               <div key={i} className="attachment-item">
                                 <span className="max-w-[150px] overflow-hidden truncate">{file.name}</span>
-                                <button type="button" onClick={() => removeFile(i)} className="btn-icon p-0 h-auto w-auto opacity-70 hover:opacity-100">
+                                <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeFile(i)} className="btn-icon p-0 h-auto w-auto opacity-70 hover:opacity-100">
                                   <X size={14} />
                                 </button>
                               </div>

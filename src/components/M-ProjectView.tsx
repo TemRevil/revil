@@ -354,7 +354,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
                                         width: '60px', // Fixed width for consistent hit area
                                         overflow: 'hidden'
                                     }}>
-                                        <button onClick={togglePlay} style={{ width: '100%', height: '100%', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <button onClick={togglePlay} aria-label={(userInteracted && playing) ? 'Pause video' : 'Play video'} style={{ width: '100%', height: '100%', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                             {(userInteracted && playing) ? <Pause size={18} fill="white" style={{ pointerEvents: 'none' }} /> : <Play size={18} fill="white" style={{ pointerEvents: 'none' }} />}
                                         </button>
                                     </div>
@@ -378,15 +378,15 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
                                     onClick={e => e.stopPropagation()}
                                 >
                                     {isMobile && (
-                                        <button onClick={togglePlay} style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <button onClick={togglePlay} aria-label={(userInteracted && playing) ? 'Pause video' : 'Play video'} style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                             {(userInteracted && playing) ? <Pause size={16} fill="white" style={{ pointerEvents: 'none' }} /> : <Play size={16} fill="white" style={{ pointerEvents: 'none' }} />}
                                         </button>
                                     )}
                                     <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-                                        <button onClick={toggleMute} style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <button onClick={toggleMute} aria-label={muted ? 'Unmute video' : 'Mute video'} style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                             {muted ? <VolumeX size={16} style={{ pointerEvents: 'none' }} /> : <Volume2 size={16} style={{ pointerEvents: 'none' }} />}
                                         </button>
-                                        <button onClick={toggleFullscreen} style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <button onClick={toggleFullscreen} aria-label="Toggle fullscreen" style={{ height: '100%', padding: '0 12px', background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                             <Maximize size={16} style={{ pointerEvents: 'none' }} />
                                         </button>
                                     </div>
@@ -693,7 +693,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
             }} />
 
             {/* Close Button - Ultra Minimal */}
-            <button onClick={handleClose} style={{
+            <button onClick={handleClose} aria-label="Close project view" style={{
                 position: 'absolute', top: isMobile ? '20px' : '40px', right: isMobile ? '20px' : '40px', zIndex: 2200,
                 width: isMobile ? '44px' : '56px', height: isMobile ? '44px' : '56px', borderRadius: '50%',
                 background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.15)',
@@ -796,7 +796,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                 {/* Manual Nav Controls */}
                                 {sortedMedia.length > 1 && (
                                     <>
-                                        <button onClick={handlePrev} style={{
+                                        <button onClick={handlePrev} aria-label="Previous image" style={{
                                             position: 'absolute', left: isMobile ? '4px' : '30px', top: '50%', transform: 'translateY(-50%)',
                                             width: isMobile ? '32px' : '60px', height: isMobile ? '32px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
                                             backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
@@ -805,7 +805,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                         }}>
                                             <ChevronLeft size={isMobile ? 16 : 28} />
                                         </button>
-                                        <button onClick={handleNext} style={{
+                                        <button onClick={handleNext} aria-label="Next image" style={{
                                             position: 'absolute', right: isMobile ? '4px' : '30px', top: '50%', transform: 'translateY(-50%)',
                                             width: isMobile ? '32px' : '60px', height: isMobile ? '32px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
                                             backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',

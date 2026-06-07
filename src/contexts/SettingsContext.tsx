@@ -44,7 +44,9 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
             },
             (error) => {
                 const status = navigator.onLine ? 'Service Blocked (ISP/Firewall)' : 'Offline';
-                console.warn(`[SettingsContext] Account sync: ${status}`, error);
+                // info (not warn): this is a benign connectivity/ISP condition, not an app
+                // error. Keeps the Lighthouse "no browser errors" audit clean on flaky networks.
+                console.info(`[SettingsContext] Account sync: ${status}`, error);
                 setAccountLoading(false);
             }
         );

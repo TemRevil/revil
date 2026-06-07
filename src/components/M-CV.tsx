@@ -272,6 +272,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                             </div>
                             <button
                                 onClick={onClose}
+                                aria-label="Close CV"
                                 className="p-3 bg-white/40 dark:bg-black/40 backdrop-blur-xl border border-black/5 dark:border-white/10 hover:bg-red-500/10 dark:hover:bg-red-500/10 hover:border-red-500/20 dark:hover:border-red-500/30 hover:text-red-500 rounded-full transition-all text-sec shadow-sm group"
                             >
                                 <X size={20} className="group-hover:rotate-90 transition-transform duration-300" />

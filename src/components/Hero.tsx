@@ -619,22 +619,23 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
                         />
                     </div>
 
-                    <div ref={titleRef} className="z-10 transition-slow uppercase flex flex-col gap-0 w-full max-w-[500px]" style={{
+                    <h1 ref={titleRef} className="z-10 transition-slow uppercase flex flex-col gap-0 w-full max-w-[500px] m-0" style={{
                         fontWeight: 900,
                         fontFamily: "var(--font-archivo-black), sans-serif",
                         lineHeight: '0.8'
                     }}>
-                        <span className="text-6xl sm:text-7xl md:text-8xl lg:text-[7rem] tracking-tighter self-start ml-[-5px] md:ml-[-15px] flex">
+                        <span className="sr-only">{firstName} {lastName}{profileTitle ? ` - ${profileTitle}` : ''}</span>
+                        <span aria-hidden="true" className="text-6xl sm:text-7xl md:text-8xl lg:text-[7rem] tracking-tighter self-start ml-[-5px] md:ml-[-15px] flex">
                             {firstName.split('').map((char, i) => (
                                 <span key={i} className="name-char opacity-0 inline-block">{char}</span>
                             ))}
                         </span>
-                        <span className="text-6xl sm:text-7xl md:text-8xl lg:text-[7rem] tracking-tighter self-end mr-[-5px] md:mr-[-15px] mt-[-25px] sm:mt-[-35px] md:mt-[-50px] flex">
+                        <span aria-hidden="true" className="text-6xl sm:text-7xl md:text-8xl lg:text-[7rem] tracking-tighter self-end mr-[-5px] md:mr-[-15px] mt-[-25px] sm:mt-[-35px] md:mt-[-50px] flex">
                             {lastName.split('').map((char, i) => (
                                 <span key={i} className="name-char opacity-0 inline-block">{char === ' ' ? '\u00A0' : char}</span>
                             ))}
                         </span>
-                    </div>
+                    </h1>
 
                     <div className="mt-[-10px] md:mt-[-50px] md:self-end md:mr-[-10px] lg:mr-[-20px] origin-center md:origin-right z-20">
                         <HandwritingText

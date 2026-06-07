@@ -26,11 +26,16 @@ const permanentMarker = Permanent_Marker({
   display: 'swap',
 })
 
+// Caveat + Kalam are used only below the fold (Developer/Projects/Stack/PageTransition),
+// never in the above-the-fold Hero. preload:false stops them from emitting render-blocking
+// <link rel=preload as=font> in <head> (~100KB) that would compete with the LCP element.
+// display:'swap' still renders them gracefully when their sections appear.
 const caveat = Caveat({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   variable: '--font-caveat',
   display: 'swap',
+  preload: false,
 })
 
 const kalam = Kalam({
@@ -38,6 +43,7 @@ const kalam = Kalam({
   weight: ['400', '700'],
   variable: '--font-kalam',
   display: 'swap',
+  preload: false,
 })
 
 const fontVariables = [

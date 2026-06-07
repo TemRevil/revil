@@ -4,8 +4,12 @@ import { createPortal } from 'react-dom';
 import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, Github, GripVertical } from 'lucide-react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { Reorder, useDragControls } from 'motion/react';
-import { ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'firebase/storage';
-import { db, storage } from '../../lib/firebase';
+import { ref, uploadBytes, getDownloadURL, listAll, deleteObject, getStorage } from 'firebase/storage';
+import app, { db } from '../../lib/firebase';
+// Local Storage handle: this module is in the lazy Dashboard chunk, so calling
+// getStorage here keeps firebase/storage out of the eager bundle while leaving
+// every existing `ref(storage, ...)` call site unchanged.
+const storage = getStorage(app);
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MProjectForm from './M-ProjectForm';

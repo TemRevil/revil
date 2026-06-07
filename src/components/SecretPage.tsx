@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'lucide-react';
 import { getAuth, GoogleAuthProvider, signInWithPopup as authSignInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../lib/firebase';
+import { httpsCallable, getFunctions } from 'firebase/functions';
+import app from '../lib/firebase';
 import { useSettings } from '../contexts/SettingsContext';
 
 type SecretNavigate = (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
@@ -66,7 +66,7 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
             try { await result.user.getIdToken(true); } catch { /* non-fatal */ }
 
             // Fire-and-forget login alert email
-            const notifyLogin = httpsCallable(functions, 'notifyLogin');
+            const notifyLogin = httpsCallable(getFunctions(app), 'notifyLogin');
             notifyLogin({
                 userAgent: navigator.userAgent,
                 provider: result.user.providerData?.[0]?.providerId || 'google.com',

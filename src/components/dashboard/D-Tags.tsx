@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { sanitizeSvg } from '../../lib/sanitize';
 import { Search, Plus, Tag, Edit2, Trash2, Users, UserPlus } from 'lucide-react';
 import { doc, collection, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '../../lib/firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject, getStorage } from 'firebase/storage';
+import app, { db } from '../../lib/firebase';
+// Local Storage handle (lazy Dashboard chunk) — keeps firebase/storage out of eager.
+const storage = getStorage(app);
 import anime from 'animejs';
 import { TagData, ContributorData, TagFormData } from '../../types';
 import MTagForm from './M-TagForm';

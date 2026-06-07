@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Folder, FileImage, ChevronRight, ChevronLeft, Search } from 'lucide-react';
-import { ref, listAll, getDownloadURL } from 'firebase/storage';
-import { storage } from '../../lib/firebase';
+import { ref, listAll, getDownloadURL, getStorage } from 'firebase/storage';
+import app from '../../lib/firebase';
+// Local Storage handle (lazy Dashboard chunk) — keeps firebase/storage out of eager.
+const storage = getStorage(app);
 
 const Spinner = () => (
     <div className="flex flex-col items-center gap-3">

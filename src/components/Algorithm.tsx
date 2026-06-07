@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { doc, getDoc, updateDoc, increment, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
-import { getToken } from 'firebase/app-check';
-import { db, appCheck } from '../lib/firebase';
+import { db, ensureAppCheck } from '../lib/firebase';
 import Alert from './Alert';
 import useSafeAlert from '../hooks/useSafeAlert';
 
@@ -63,19 +62,31 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     }, []);
 
     // Warm + refresh the App Check token for the syncSession HTTP call.
+    // App Check (reCAPTCHA Enterprise) is deferred off the critical first-paint
+    // path: we lazily init it ~1.5s after mount via ensureAppCheck() and
+    // dynamic-import getToken, so the heavy provider never blocks initial load.
+    // The token is warmed well before any unload/syncSession beacon; a missing
+    // token is benign (the fetch just omits the X-Firebase-AppCheck header).
     useEffect(() => {
-        const ac = appCheck;
-        if (!ac) return;
         let active = true;
-        const refresh = async () => {
+        let intervalId: ReturnType<typeof setInterval> | undefined;
+        const warm = async () => {
             try {
-                const { token } = await getToken(ac, false);
-                if (active) appCheckToken.current = token;
-            } catch { /* offline / reCAPTCHA hiccup — fetch just omits the header */ }
+                const ac = await ensureAppCheck();
+                if (!ac || !active) return;
+                const { getToken } = await import('firebase/app-check');
+                const refresh = async () => {
+                    try {
+                        const { token } = await getToken(ac, false);
+                        if (active) appCheckToken.current = token;
+                    } catch { /* offline / reCAPTCHA hiccup — fetch just omits the header */ }
+                };
+                await refresh();
+                intervalId = setInterval(refresh, 20 * 60 * 1000);
+            } catch { /* App Check unavailable — visitor tracking still works without it */ }
         };
-        refresh();
-        const id = setInterval(refresh, 20 * 60 * 1000);
-        return () => { active = false; clearInterval(id); };
+        const timer = setTimeout(warm, 1500);
+        return () => { active = false; clearTimeout(timer); if (intervalId) clearInterval(intervalId); };
     }, []);
 
     // Contact Open Tracking
