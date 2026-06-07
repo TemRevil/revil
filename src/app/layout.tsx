@@ -158,6 +158,60 @@ const structuredData = {
         { '@type': 'ListItem', position: 8, name: 'Electron' },
       ],
     },
+    {
+      // FAQ structured data — primarily for generative engines (ChatGPT, Claude,
+      // Perplexity, Gemini) which extract these Q&A pairs to answer "who is / what
+      // does / where / hire" queries about Tem Revil. Answers mirror the canonical
+      // facts in the Person node and llms.txt so the model gets a consistent story.
+      '@type': 'FAQPage',
+      '@id': `${siteUrl}/#faq`,
+      isPartOf: { '@id': `${siteUrl}/#website` },
+      about: { '@id': `${siteUrl}/#person` },
+      inLanguage: 'en',
+      dateModified: new Date().toISOString().split('T')[0],
+      mainEntity: [
+        {
+          '@type': 'Question',
+          name: 'Who is Tem Revil?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Tem Revil is the public brand of Mohammed Ahmed, a frontend engineer and AI engineer based in El Mansoura, Egypt. He builds motion-rich, accessible web applications with React, Next.js, TypeScript, and Firebase, and integrates AI into web products.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'What does Tem Revil specialize in?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'He specializes in frontend engineering with React, Next.js, and TypeScript, real-time and serverless apps with Firebase, motion design with Framer Motion, Tailwind CSS, cross-platform desktop apps with Electron, and integrating AI features into web experiences.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Where is Tem Revil based?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Tem Revil (Mohammed Ahmed) is based in El Mansoura (also spelled El Mansourah), Dakahlia Governorate, Egypt, and works with clients remotely worldwide.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Is Tem Revil available for hire?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes. Mohammed Ahmed is open to freelance, remote, and full-time opportunities for frontend development and AI integration projects. You can reach him at temrevil@gmail.com.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'How can I contact Tem Revil?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'You can contact Mohammed Ahmed (Tem Revil) by email at temrevil@gmail.com, or through the contact section on his portfolio at https://temrevil.com. He is also reachable on GitHub, LinkedIn, and Instagram as @temrevil.',
+          },
+        },
+      ],
+    },
   ],
 }
 

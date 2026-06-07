@@ -52,6 +52,54 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: 'cohere-ai',
         allow: '/',
       },
+      // Apple Intelligence / Siri training + search
+      {
+        userAgent: 'Applebot',
+        allow: '/',
+      },
+      {
+        userAgent: 'Applebot-Extended',
+        allow: '/',
+      },
+      // Amazon (Alexa / Rufus / Nova)
+      {
+        userAgent: 'Amazonbot',
+        allow: '/',
+      },
+      // Meta AI (Llama)
+      {
+        userAgent: 'Meta-ExternalAgent',
+        allow: '/',
+      },
+      {
+        userAgent: 'FacebookBot',
+        allow: '/',
+      },
+      // Common Crawl — feeds many LLM training corpora
+      {
+        userAgent: 'CCBot',
+        allow: '/',
+      },
+      // ByteDance (TikTok / Doubao)
+      {
+        userAgent: 'Bytespider',
+        allow: '/',
+      },
+      // Mistral
+      {
+        userAgent: 'MistralAI-User',
+        allow: '/',
+      },
+      // DuckDuckGo
+      {
+        userAgent: 'DuckDuckBot',
+        allow: '/',
+      },
+      // Yandex
+      {
+        userAgent: 'YandexBot',
+        allow: '/',
+      },
     ],
     sitemap: `${siteUrl}/sitemap.xml`,
     host: siteUrl,

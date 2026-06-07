@@ -27,3 +27,27 @@ RewriteRule ^ index.html [L]
   # Defends an admin-dashboard site against SSL-strip / protocol-downgrade attacks.
   Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 </IfModule>
+
+# ── Compression (smaller payloads -> faster load -> better Core Web Vitals/SEO) ──
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml
+  AddOutputFilterByType DEFLATE application/javascript application/x-javascript
+  AddOutputFilterByType DEFLATE application/json application/manifest+json
+  AddOutputFilterByType DEFLATE application/xml application/rss+xml
+  AddOutputFilterByType DEFLATE image/svg+xml font/ttf font/otf font/woff font/woff2
+</IfModule>
+
+# ── Caching strategy ──
+# Hashed build assets are immutable (their name changes when content changes), so
+# cache them for a year. HTML and SEO files stay fresh so deploys/edits show up
+# immediately and crawlers always read the current version.
+<IfModule mod_headers.c>
+  # Immutable, content-hashed assets from the Next.js export.
+  <FilesMatch "\.(js|css|woff2|woff|ttf|otf|webp|png|jpg|jpeg|gif|svg|ico)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  # Always-fresh: app shell + SEO/crawler files (no version hash in the name).
+  <FilesMatch "\.(html|xml|txt|json)$">
+    Header set Cache-Control "public, max-age=0, must-revalidate"
+  </FilesMatch>
+</IfModule>
