@@ -1,0 +1,51 @@
+name: Redirect GitHub Pages to temrevil.com
+
+# Publishes a tiny static redirect site to GitHub Pages (temrevil.github.io/revil)
+# so every visitor is forwarded to the canonical domain (temrevil.com), preserving
+# the path / link code + query + hash. Replaces the old stale Next.js build that was
+# being served there. Matches the repo's Pages build_type: "workflow".
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "pages/**"
+      - ".github/workflows/pages-redirect.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent Pages deployment; don't cancel an in-progress run.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Assemble redirect site
+        run: |
+          mkdir -p _site
+          cp pages/index.html _site/index.html
+          # 404.html catches every unknown sub-path under /revil so deep links
+          # (e.g. tracked link codes) also redirect instead of 404-ing.
+          cp pages/index.html _site/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
