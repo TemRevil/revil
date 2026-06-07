@@ -56,3 +56,6 @@ AUDIT.ar.md
 
 # Playwright MCP session artifacts
 .playwright-mcp/
+
+# Dev screenshots (root-level)
+/*.png
