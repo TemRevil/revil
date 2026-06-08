@@ -50,7 +50,6 @@ AUDIT.md
 
 # Misc project config not needed in container
 .antigravity
-.jules
 cors.json
 .hostinger-openapi.json
 .hostinger-zone.json
