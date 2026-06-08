@@ -9,7 +9,7 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "pages/**"
+      - ".github/pages-redirect/**"
       - ".github/workflows/pages-redirect.yml"
   workflow_dispatch:
 
@@ -36,10 +36,10 @@ jobs:
       - name: Assemble redirect site
         run: |
           mkdir -p _site
-          cp pages/index.html _site/index.html
+          cp .github/pages-redirect/index.html _site/index.html
           # 404.html catches every unknown sub-path under /revil so deep links
           # (e.g. tracked link codes) also redirect instead of 404-ing.
-          cp pages/index.html _site/404.html
+          cp .github/pages-redirect/index.html _site/404.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
