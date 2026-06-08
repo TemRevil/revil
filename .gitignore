@@ -59,3 +59,6 @@ AUDIT.ar.md
 
 # Dev screenshots (root-level)
 /*.png
+
+# Internal docs (playbooks, setup notes — not for the public repo)
+docs/

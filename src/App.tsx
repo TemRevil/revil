@@ -2,24 +2,30 @@ import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
 import { LayoutGroup, AnimatePresence, motion } from 'motion/react';
 import Hero from './components/Hero';
 import Navbar from './components/Navbar';
-import Stack from './components/Stack';
 import PageTransition from './components/PageTransition';
-import ProjectsHub, { type ProjectsHubHandle } from './components/ProjectsHub';
-import MContact from './components/M-Contact';
-// Lazy: SecretPage pulls firebase/auth + firebase/functions, and Dashboard pulls
-// recharts + react-easy-crop. Code-splitting them keeps those heavy SDKs out of
-// the eager first-paint bundle (they're only reached after explicit navigation).
-const SecretPage = lazy(() => import('./components/SecretPage'));
-const Dashboard = lazy(() => import('./components/Dashboard'));
 import { ChevronRight } from 'lucide-react';
 import Loader from './components/reactbits/Loader';
 import { Algorithm } from './components/Algorithm';
-import MCV from './components/M-CV';
-import MProjectView from './components/M-ProjectView';
-import MContributorView, { Contributor as ContributorViewData } from './components/M-ContributorView';
+import type { ProjectsHubHandle } from './components/ProjectsHub';
+import type { Contributor as ContributorViewData } from './components/M-ContributorView';
 import { ProjectData as Project, ContributorData as Contributor } from './types';
 import { SettingsProvider } from './contexts/SettingsContext';
 import ErrorBoundary from './components/ErrorBoundary';
+
+// Code-split everything that isn't part of the first paint (home = Hero + Navbar).
+// Each chunk loads on demand: section views load on navigation (hidden behind the
+// page-transition curtain), modals load when first opened, and SecretPage/Dashboard
+// load after explicit navigation. This keeps the eager bundle small for fast TBT.
+// SecretPage pulls firebase/auth + firebase/functions; Dashboard pulls recharts +
+// react-easy-crop + anime.js — none of which belong in the first-paint bundle.
+const Stack = lazy(() => import('./components/Stack'));
+const ProjectsHub = lazy(() => import('./components/ProjectsHub'));
+const MContact = lazy(() => import('./components/M-Contact'));
+const MCV = lazy(() => import('./components/M-CV'));
+const MProjectView = lazy(() => import('./components/M-ProjectView'));
+const MContributorView = lazy(() => import('./components/M-ContributorView'));
+const SecretPage = lazy(() => import('./components/SecretPage'));
+const Dashboard = lazy(() => import('./components/Dashboard'));
 
 // Fallback for the section-level error boundary. A failed lazy-chunk fetch (e.g.
 // a returning user on a stale index.html after a redeploy) would otherwise blank
@@ -215,9 +221,9 @@ function App() {
       case 'home':
         return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
       case 'stack':
-        return <Stack />;
+        return <Suspense fallback={null}><Stack /></Suspense>;
       case 'projects':
-        return <ProjectsHub ref={hubRef} isTransitioning={isTransitioning} />;
+        return <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={isTransitioning} /></Suspense>;
       case 'secret':
         return <Suspense fallback={<Loader isOpen={true} isFullScreen={true} />}><SecretPage onNavigate={navigateTo} /></Suspense>;
       case 'dashboard':
@@ -527,35 +533,43 @@ function App() {
             isCVOpen={isCVModalOpen}
           />
         )}
-        <AnimatePresence>
-          {isContactModalOpen && (
-            <MContact onClose={closeContactModal} />
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {isCVModalOpen && (
-            <MCV onClose={closeCVModal} onProjectClick={handleProjectClick} />
-          )}
-        </AnimatePresence>
+        <Suspense fallback={null}>
+          <AnimatePresence>
+            {isContactModalOpen && (
+              <MContact onClose={closeContactModal} />
+            )}
+          </AnimatePresence>
+        </Suspense>
+        <Suspense fallback={null}>
+          <AnimatePresence>
+            {isCVModalOpen && (
+              <MCV onClose={closeCVModal} onProjectClick={handleProjectClick} />
+            )}
+          </AnimatePresence>
+        </Suspense>
 
-        <AnimatePresence>
-          {showProjectModal && selectedProject && (
-            <MProjectView
-              project={selectedProject}
-              onClose={() => setShowProjectModal(false)}
-              onContributorClick={handleContributorClick}
-            />
-          )}
-        </AnimatePresence>
+        <Suspense fallback={null}>
+          <AnimatePresence>
+            {showProjectModal && selectedProject && (
+              <MProjectView
+                project={selectedProject}
+                onClose={() => setShowProjectModal(false)}
+                onContributorClick={handleContributorClick}
+              />
+            )}
+          </AnimatePresence>
+        </Suspense>
 
-        <AnimatePresence>
-          {showContributorModal && selectedContributor && (
-            <MContributorView
-              contributor={selectedContributor}
-              onClose={() => setShowContributorModal(false)}
-            />
-          )}
-        </AnimatePresence>
+        <Suspense fallback={null}>
+          <AnimatePresence>
+            {showContributorModal && selectedContributor && (
+              <MContributorView
+                contributor={selectedContributor}
+                onClose={() => setShowContributorModal(false)}
+              />
+            )}
+          </AnimatePresence>
+        </Suspense>
       </LayoutGroup>
       <PageTransition
         isTransitioning={isTransitioning}
