@@ -18,7 +18,7 @@
     "minimatch@3.1.2": "3.1.4",
     "minimatch@9.0.5": "9.0.7",
     "picomatch@4.0.3": "4.0.4",
-    "protobufjs@7.5.4": "7.5.5"
+    "protobufjs": "^7.5.8"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.2",
@@ -31,7 +31,7 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-easy-crop": "^5.5.6",
-    "recharts": "^2.5.0"
+    "recharts": "^2.15.4"
   },
   "browserslist": [
     "Chrome >= 111",

@@ -28,6 +28,13 @@ RewriteRule ^ index.html [L]
   Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 </IfModule>
 
+# ── MIME types ──
+<IfModule mod_mime.c>
+  # Serve the PWA manifest with the correct type (Apache defaults it to text/plain,
+  # which some browsers reject for <link rel="manifest">).
+  AddType application/manifest+json .webmanifest
+</IfModule>
+
 # ── Compression (smaller payloads -> faster load -> better Core Web Vitals/SEO) ──
 <IfModule mod_deflate.c>
   AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml
@@ -38,16 +45,23 @@ RewriteRule ^ index.html [L]
 </IfModule>
 
 # ── Caching strategy ──
-# Hashed build assets are immutable (their name changes when content changes), so
-# cache them for a year. HTML and SEO files stay fresh so deploys/edits show up
-# immediately and crawlers always read the current version.
+# Only content-hashed assets get the 1-year immutable cache. Code/fonts (js, css,
+# woff2…) live under /_next/ with a content hash in the filename, so a year is safe.
+# Images are NOT hashed in a static export — the PWA icons (icon-192/512.webp) are
+# copied verbatim from public/ under stable names, so an immutable year would pin a
+# stale icon for returning visitors after a re-encode. Give images a short TTL, and
+# keep the app shell + SEO/manifest files always-fresh.
 <IfModule mod_headers.c>
-  # Immutable, content-hashed assets from the Next.js export.
-  <FilesMatch "\.(js|css|woff2|woff|ttf|otf|webp|png|jpg|jpeg|gif|svg|ico)$">
+  # Immutable, content-hashed code + fonts from the Next.js export (/_next/static).
+  <FilesMatch "\.(js|css|woff2|woff|ttf|otf)$">
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
-  # Always-fresh: app shell + SEO/crawler files (no version hash in the name).
-  <FilesMatch "\.(html|xml|txt|json)$">
+  # Non-hashed images (stable filenames) — short cache so replacements propagate.
+  <FilesMatch "\.(webp|png|jpg|jpeg|gif|svg|ico)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+  # Always-fresh: app shell + SEO/crawler + manifest files (no version hash).
+  <FilesMatch "\.(html|xml|txt|json|webmanifest)$">
     Header set Cache-Control "public, max-age=0, must-revalidate"
   </FilesMatch>
 </IfModule>
