@@ -49,13 +49,42 @@ export function sanitizeSvg(svgString: string): string {
             return '';
         }
 
-        // Recursively sanitize all elements
+        // Sanitize the root <svg> element's OWN attributes first (e.g. a root
+        // `onload=` / `style:url()` survives otherwise — sanitizeNode only walks
+        // descendants), then recurse into its children.
+        sanitizeElementAttributes(doc.documentElement);
         sanitizeNode(doc.documentElement);
 
         return new XMLSerializer().serializeToString(doc.documentElement);
     } catch {
         console.warn('[Sanitize] Failed to sanitize SVG, returning empty');
         return '';
+    }
+}
+
+// Strip dangerous attributes (event handlers, javascript: URLs, url()/expression()
+// styles) from a single element. Used for both the root <svg> and every descendant.
+function sanitizeElementAttributes(el: Element): void {
+    const attrs = Array.from(el.attributes);
+    for (const attr of attrs) {
+        const name = attr.name.toLowerCase();
+
+        // Remove event handlers and dangerous attributes
+        if (DANGEROUS_ATTRS.test(name)) {
+            el.removeAttribute(attr.name);
+            continue;
+        }
+
+        // Check for dangerous URL protocols in href-like attributes
+        if ((name === 'xlink:href' || name === 'href') && DANGEROUS_PROTOCOLS.test(attr.value)) {
+            el.removeAttribute(attr.name);
+            continue;
+        }
+
+        // Remove style attributes that contain url() or expression()
+        if (name === 'style' && (/url\s*\(/i.test(attr.value) || /expression\s*\(/i.test(attr.value))) {
+            el.removeAttribute(attr.name);
+        }
     }
 }
 
@@ -70,28 +99,7 @@ function sanitizeNode(node: Element): void {
             continue;
         }
 
-        // Remove dangerous attributes
-        const attrs = Array.from(child.attributes);
-        for (const attr of attrs) {
-            const name = attr.name.toLowerCase();
-
-            // Remove event handlers and dangerous attributes
-            if (DANGEROUS_ATTRS.test(name)) {
-                child.removeAttribute(attr.name);
-                continue;
-            }
-
-            // Check for dangerous URL protocols in href-like attributes
-            if ((name === 'xlink:href' || name === 'href') && DANGEROUS_PROTOCOLS.test(attr.value)) {
-                child.removeAttribute(attr.name);
-                continue;
-            }
-
-            // Remove style attributes that contain url() or expression()
-            if (name === 'style' && (/url\s*\(/i.test(attr.value) || /expression\s*\(/i.test(attr.value))) {
-                child.removeAttribute(attr.name);
-            }
-        }
+        sanitizeElementAttributes(child);
 
         // Recurse into children
         sanitizeNode(child);

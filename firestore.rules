@@ -40,6 +40,13 @@ service cloud.firestore {
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['Views'])
          // Views must remain a map
          && request.resource.data.Views is map
+         // Anti-wipe: existing view sub-counters (Project/Github/Live/Download) must
+         // all survive the write. A public caller can add/raise counters but never
+         // drop them — blocks overwriting the whole map with {} to zero the counts.
+         && request.resource.data.Views.keys().hasAll(resource.data.get('Views', {}).keys())
+         // Bound document growth (Firestore per-doc cap is 1MB; a views map is tiny).
+         // Stops a caller padding the doc with a huge map as a write-cost vector.
+         && request.resource.size() < 64 * 1024
       );
     }
     
@@ -80,6 +87,11 @@ service cloud.firestore {
           || (
             request.resource.data.Emails.size() <= 50
             && notRateLimitedField('lastEmailWrite', 30)
+            // Anti-wipe: every existing submission must survive the write. A public
+            // caller can only ADD a new email entry, never shrink/replace the map —
+            // blocks `updateDoc(Canary,{Emails:{}})` from erasing the whole inbox
+            // (size()==0 would otherwise pass the <=50 cap).
+            && request.resource.data.Emails.keys().hasAll(resource.data.get('Emails', {}).keys())
           )
         )
         // --- Meeting rate-limiting: max 1 per 5 minutes (300s cooldown) ---
@@ -89,6 +101,11 @@ service cloud.firestore {
           || (
             request.resource.data.Meetings.size() <= 100
             && notRateLimitedField('lastMeetingWrite', 300)
+            // Anti-wipe: existing bookings must survive (public callers only ADD).
+            // Erasing Meetings would also clear the public BookedSlots mirror that a
+            // Cloud Function derives from it, freeing genuinely-taken slots for
+            // double-booking while the real Calendar events still exist.
+            && request.resource.data.Meetings.keys().hasAll(resource.data.get('Meetings', {}).keys())
           )
         )
         // Ensure document doesn't grow unbounded (Firestore 1MB limit safety)

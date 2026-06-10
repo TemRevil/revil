@@ -14,10 +14,16 @@
   <script>
     (function () {
       try {
-        // Strip the /revil project-page prefix, then carry the remaining path
-        // (e.g. a tracked link code), query string, and hash to the canonical domain.
-        var p = location.pathname.replace(/^\/revil/, '');
-        if (!p) p = '/';
+        // Strip the /revil project-page prefix on a path BOUNDARY, then carry the
+        // remaining path (e.g. a tracked link code), query string, and hash to the
+        // canonical domain. A bare regex replace(/^\/revil/, '') would turn
+        // "/revilXYZ" into "XYZ" → "https://temrevil.comXYZ" (a different host) —
+        // mirror the boundary-safe checks the layout.tsx inline redirect uses.
+        var path = location.pathname;
+        var p;
+        if (path === '/revil') { p = '/'; }
+        else if (path.indexOf('/revil/') === 0) { p = path.slice(6); }
+        else { p = '/'; }
         location.replace('https://temrevil.com' + p + location.search + location.hash);
       } catch (e) {
         location.replace('https://temrevil.com/');
