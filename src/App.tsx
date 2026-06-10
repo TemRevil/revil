@@ -49,6 +49,36 @@ const sectionErrorFallback = (
   </div>
 );
 
+// Fallback for the modal-level error boundaries. The modal chunks are lazy-loaded
+// the first time each modal opens; on a tab left open across a redeploy the old
+// hashed chunk is gone (the release swap deletes it) and the import() rejects.
+// Without a boundary that throw unmounts the entire SPA — so each modal Suspense
+// gets this recoverable reload prompt instead.
+const modalErrorFallback = (
+  <div style={{
+    position: 'fixed', inset: 0, zIndex: 1400, display: 'flex',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+    background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+  }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+      padding: 28, borderRadius: 20, textAlign: 'center', maxWidth: 360,
+      background: 'var(--card-bg)', border: '1px solid var(--section-border)', color: 'var(--text-primary)',
+    }}>
+      <p style={{ margin: 0, fontWeight: 600 }}>Couldn&apos;t open this — the app was just updated.</p>
+      <button
+        onClick={() => window.location.reload()}
+        style={{
+          padding: '10px 20px', borderRadius: 12, border: '1px solid var(--section-border)',
+          background: 'var(--card-bg)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 600,
+        }}
+      >
+        Reload
+      </button>
+    </div>
+  </div>
+);
+
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
 function App() {
@@ -147,6 +177,28 @@ function App() {
   // Derived loading state (avoid setting state synchronously inside effects)
   const appLoading = forceHideLoading ? false : !(isDataReady && isWindowReady);
 
+  // Warm the on-demand public chunks once the first paint is done, so the first
+  // navigation/modal-open doesn't pay a network roundtrip behind a blank Suspense
+  // fallback. Runs in idle time → keeps the eager bundle as small as today.
+  // SecretPage/Dashboard are intentionally left cold (admin-only).
+  useEffect(() => {
+    if (appLoading) return;
+    let cancelled = false;
+    const warm = () => {
+      if (cancelled) return;
+      import('./components/Stack');
+      import('./components/ProjectsHub');
+      import('./components/M-Contact');
+      import('./components/M-CV');
+    };
+    const hasRIC = typeof window.requestIdleCallback === 'function';
+    const handle = hasRIC ? window.requestIdleCallback(warm) : window.setTimeout(warm, 2000);
+    return () => {
+      cancelled = true;
+      if (hasRIC) window.cancelIdleCallback(handle); else clearTimeout(handle);
+    };
+  }, [appLoading]);
+
 
 
   const handleHeroAnimationComplete = useCallback(() => {
@@ -219,7 +271,7 @@ function App() {
   const renderSection = () => {
     switch (currentSection) {
       case 'home':
-        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
+        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} onOpenContact={openContactModal} />;
       case 'stack':
         return <Suspense fallback={null}><Stack /></Suspense>;
       case 'projects':
@@ -229,7 +281,7 @@ function App() {
       case 'dashboard':
         return <Suspense fallback={<Loader isOpen={true} isFullScreen={true} />}><Dashboard onNavigate={navigateTo} /></Suspense>;
       case 'view_link':
-        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
+        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} onOpenContact={openContactModal} />;
       default:
         return <Hero onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
     }
@@ -533,43 +585,51 @@ function App() {
             isCVOpen={isCVModalOpen}
           />
         )}
-        <Suspense fallback={null}>
-          <AnimatePresence>
-            {isContactModalOpen && (
-              <MContact onClose={closeContactModal} />
-            )}
-          </AnimatePresence>
-        </Suspense>
-        <Suspense fallback={null}>
-          <AnimatePresence>
-            {isCVModalOpen && (
-              <MCV onClose={closeCVModal} onProjectClick={handleProjectClick} />
-            )}
-          </AnimatePresence>
-        </Suspense>
+        <ErrorBoundary fallback={modalErrorFallback}>
+          <Suspense fallback={null}>
+            <AnimatePresence>
+              {isContactModalOpen && (
+                <MContact onClose={closeContactModal} />
+              )}
+            </AnimatePresence>
+          </Suspense>
+        </ErrorBoundary>
+        <ErrorBoundary fallback={modalErrorFallback}>
+          <Suspense fallback={null}>
+            <AnimatePresence>
+              {isCVModalOpen && (
+                <MCV onClose={closeCVModal} onProjectClick={handleProjectClick} />
+              )}
+            </AnimatePresence>
+          </Suspense>
+        </ErrorBoundary>
 
-        <Suspense fallback={null}>
-          <AnimatePresence>
-            {showProjectModal && selectedProject && (
-              <MProjectView
-                project={selectedProject}
-                onClose={() => setShowProjectModal(false)}
-                onContributorClick={handleContributorClick}
-              />
-            )}
-          </AnimatePresence>
-        </Suspense>
+        <ErrorBoundary fallback={modalErrorFallback}>
+          <Suspense fallback={null}>
+            <AnimatePresence>
+              {showProjectModal && selectedProject && (
+                <MProjectView
+                  project={selectedProject}
+                  onClose={() => setShowProjectModal(false)}
+                  onContributorClick={handleContributorClick}
+                />
+              )}
+            </AnimatePresence>
+          </Suspense>
+        </ErrorBoundary>
 
-        <Suspense fallback={null}>
-          <AnimatePresence>
-            {showContributorModal && selectedContributor && (
-              <MContributorView
-                contributor={selectedContributor}
-                onClose={() => setShowContributorModal(false)}
-              />
-            )}
-          </AnimatePresence>
-        </Suspense>
+        <ErrorBoundary fallback={modalErrorFallback}>
+          <Suspense fallback={null}>
+            <AnimatePresence>
+              {showContributorModal && selectedContributor && (
+                <MContributorView
+                  contributor={selectedContributor}
+                  onClose={() => setShowContributorModal(false)}
+                />
+              )}
+            </AnimatePresence>
+          </Suspense>
+        </ErrorBoundary>
       </LayoutGroup>
       <PageTransition
         isTransitioning={isTransitioning}

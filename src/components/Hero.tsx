@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Plus, Briefcase } from 'lucide-react';
+import { Plus, Briefcase, Calendar } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 
 // 1x1 transparent GIF to prevent empty src errors and allow onLoad to trigger properly
@@ -139,7 +139,7 @@ interface AvailabilityData {
 }
 
 // Available Status Badge Component
-const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark: boolean; entryDelay?: number; isReady?: boolean }) => {
+const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: { isDark: boolean; entryDelay?: number; isReady?: boolean; onBook?: () => void }) => {
     const badgeRef = useRef<HTMLDivElement>(null);
     const pulseRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLDivElement>(null);
@@ -460,6 +460,26 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
                 {currentTime.split(' ')[0]}
             </div>
 
+            {/* Book a call — primary CTA right next to the time/availability lockup so
+                the site's strongest conversion path (the Google Meet booking modal,
+                opened on its meeting tab) is visible without hunting the navbar. */}
+            {onBook && (
+                <button
+                    type="button"
+                    onClick={onBook}
+                    aria-label="Book a call"
+                    className="group flex items-center gap-2 px-6 py-3 rounded-full font-bold text-[15px] shadow-lg transition-all active:scale-[0.98] hover:brightness-110"
+                    style={{
+                        background: 'rgb(59, 130, 246)',
+                        color: 'white',
+                        border: '1px solid rgba(59, 130, 246, 0.5)',
+                        boxShadow: '0 8px 24px rgba(59, 130, 246, 0.35)'
+                    }}
+                >
+                    <Calendar size={16} strokeWidth={2.5} /> Book a call
+                </button>
+            )}
+
             {/* Portal tooltip */}
             {tooltipElement}
         </div>
@@ -467,7 +487,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true }: { isDark:
 };
 
 
-const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: () => void; onAnimationComplete?: () => void; isReady?: boolean }) => {
+const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: { onLoaded?: () => void; onAnimationComplete?: () => void; isReady?: boolean; onOpenContact?: () => void }) => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const imageRef = useRef<HTMLDivElement>(null);
     const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -544,14 +564,25 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
     const topSloganSize = isSmallMobile ? 45 : (isMobile ? 55 : 75);
     const bottomSloganSize = isSmallMobile ? 35 : (isMobile ? 45 : 65);
 
+    // Read onAnimationComplete from a ref so its identity changing (it depends on
+    // hasAutoOpenedCV in the parent) can't re-run the entrance effect — replaying it
+    // mid-mount would start a SECOND infinite float loop on the same node.
+    const onAnimationCompleteRef = useRef(onAnimationComplete);
+    useEffect(() => { onAnimationCompleteRef.current = onAnimationComplete; }, [onAnimationComplete]);
+
     useEffect(() => {
         if (!isReady) return;
 
         // Small delay to let loader fade out completely
         const startDelay = 500;
 
+        // Capture the animated nodes now so the cleanup removes the SAME elements
+        // these instances target (refs may point elsewhere by cleanup time).
+        const wrapperEl = wrapperRef.current;
+        const imageEl = imageRef.current;
+
         // Step 2: Animate name (typing effect)
-        anime({
+        const nameAnim = anime({
             targets: '.name-char',
             opacity: [0, 1],
             translateY: [20, 0],
@@ -561,8 +592,8 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
         });
 
         // Step 4: Animate Image entrance
-        anime({
-            targets: imageRef.current,
+        const imageAnim = anime({
+            targets: imageEl,
             opacity: [0, 1],
             scale: [0.98, 1],
             duration: 1200, // Elegant transition
@@ -570,9 +601,12 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
             delay: timing.rest + startDelay
         });
 
-        // Step 4: Floating animation for the entire wrapper (image + boxes)
-        anime({
-            targets: wrapperRef.current,
+        // Step 4: Floating animation for the entire wrapper (image + boxes).
+        // loop:true runs forever — it MUST be paused on unmount or it keeps ticking
+        // on a detached node (per-frame style writes + retained subtree) every time
+        // the user navigates away from and back to home.
+        const floatAnim = anime({
+            targets: wrapperEl,
             translateY: [-10, 10],
             rotate: [-1, 1],
             duration: 4000,
@@ -582,13 +616,19 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
         });
         // Notify parent when entrance animations are finished
         const revealTimeout = setTimeout(() => {
-            if (onAnimationComplete) onAnimationComplete();
+            onAnimationCompleteRef.current?.();
         }, timing.rest + 1700); // 1200 duration + 500 startDelay
 
         return () => {
             clearTimeout(revealTimeout);
+            nameAnim.pause();
+            imageAnim.pause();
+            floatAnim.pause();
+            anime.remove(wrapperEl);
+            anime.remove(imageEl);
+            anime.remove('.name-char');
         };
-    }, [isReady, timing.name, timing.rest, onAnimationComplete]);
+    }, [isReady, timing.name, timing.rest]);
 
     return (
         <div className="min-h-screen w-full flex items-center justify-center overflow-hidden relative pt-20 pb-32 transition-slow">
@@ -657,7 +697,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true }: { onLoaded?: ()
 
                     {/* Available Badge */}
                     <div className="mt-12 md:mt-20 md:ml-4 md:pl-4 relative z-[5000]">
-                        <AvailableBadge isDark={isDark} entryDelay={timing.rest} isReady={isReady} />
+                        <AvailableBadge isDark={isDark} entryDelay={timing.rest} isReady={isReady} onBook={onOpenContact} />
                     </div>
 
                 </div>

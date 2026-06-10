@@ -923,9 +923,14 @@ export default function DSettings() {
                 } else {
                     const timezoneString = data['Current Time'] as string;
                     if (timezoneString) {
-                        const offsetMatch = timezoneString.match(/UTC([+-]\d{2}):\d{2}/);
-                        if (offsetMatch && offsetMatch[1]) {
-                            setSelectedTimezone(parseInt(offsetMatch[1]));
+                        // Capture the minutes too so half-hour zones (e.g. UTC+05:30)
+                        // round-trip as 5.5 instead of being truncated to 5 by parseInt.
+                        const offsetMatch = timezoneString.match(/UTC([+-])(\d{2}):(\d{2})/);
+                        if (offsetMatch) {
+                            const sign = offsetMatch[1] === '-' ? -1 : 1;
+                            const hours = parseInt(offsetMatch[2], 10);
+                            const minutes = parseInt(offsetMatch[3], 10);
+                            setSelectedTimezone(sign * (hours + minutes / 60));
                         }
                     }
                 }

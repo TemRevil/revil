@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { doc, getDoc, updateDoc, increment, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, increment, collection, getDocs, setDoc, serverTimestamp, query, where, limit, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { getToken } from 'firebase/app-check';
 import { db, appCheck } from '../lib/firebase';
 import Alert from './Alert';
@@ -221,18 +221,15 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
                 const hasVisitedToday = localStorage.getItem(`revil_visitor_today_${today}`);
 
-                // Get Main analytics
-                const mainSnap = await getDoc(mainRef);
-                const mainData = mainSnap.exists() ? mainSnap.data() : {};
-
-                // Get Daily analytics
+                // Only the per-day denormalized fields need today's running totals, so
+                // read just the Daily doc (not Main). Main's lifetime "Total Reach" uses
+                // increment() — no read — and merge:true leaves the project/social totals
+                // we don't write untouched, so the second Firestore read AND the
+                // read-modify-write race on "Total Reach" are both eliminated.
                 const dailySnap = await getDoc(dailyRef);
                 const dailyData = dailySnap.exists() ? dailySnap.data() : {};
 
                 const todayData = dailyData[today] || { total: 0, unique: 0 };
-
-                // Update counters for Main
-                const currentTotal = typeof mainData["Total Reach"] === 'number' ? mainData["Total Reach"] : parseInt(mainData["Total Reach"] || '0');
                 const newTodayTotal = (todayData.total || 0) + 1;
 
                 // Calculate Daily Unique
@@ -244,11 +241,9 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
                 // Update Main document (lastWrite satisfies rate-limit rule)
                 await setDoc(mainRef, {
-                    "Total Reach": currentTotal + 1,
+                    "Total Reach": increment(1),
                     "Today's Viewers": newTodayTotal,
                     "Reach (Per Device)": newUniqueToday,
-                    "Total Project Views": mainData["Total Project Views"] || 0,
-                    "Total Social Clicks": mainData["Total Social Clicks"] || 0,
                     lastWrite: serverTimestamp()
                 }, { merge: true });
 
@@ -290,46 +285,51 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             hasRecordedRef.current = true;
 
             try {
-                // Get all links from Settings/Views/Links collection
-                const linksSnap = await getDocs(collection(db, 'Settings', 'Views', 'Links'));
-                let foundId: string | null = null;
-                let existingRec = '';
-                for (const linkDoc of linksSnap.docs) {
-                    const item = linkDoc.data() as Record<string, unknown>;
-                    const itemCode = typeof item['Code'] === 'string' ? String(item['Code']) : '';
-                    const itemRec = typeof item['Rec_CLI'] === 'string' ? String(item['Rec_CLI']) : '';
-                    if (itemCode === code || itemRec === code) {
-                        foundId = linkDoc.id;
-                        existingRec = itemRec || '';
-                        break;
-                    }
+                // Resolve the short code with an INDEXED equality query instead of
+                // downloading the whole Links collection (which also shipped every
+                // link's multi-KB Rec_CLI session blob to every visitor). The common
+                // path is a single 1-doc read on the indexed `Code` field. Rec_CLI can
+                // hold a ~60KB blob (often index-exempt), so its legacy fallback still
+                // scans — but only when the Code lookup misses.
+                const linksCol = collection(db, 'Settings', 'Views', 'Links');
+                let linkDoc: QueryDocumentSnapshot | null = null;
+
+                const byCode = await getDocs(query(linksCol, where('Code', '==', code), limit(1)));
+                if (!byCode.empty) {
+                    linkDoc = byCode.docs[0];
+                } else {
+                    const allLinks = await getDocs(linksCol);
+                    linkDoc = allLinks.docs.find(d => {
+                        const rec = (d.data() as Record<string, unknown>)['Rec_CLI'];
+                        return typeof rec === 'string' && rec === code;
+                    }) || null;
                 }
 
-                if (!foundId) {
+                if (!linkDoc) {
                     return;
                 }
+
+                const foundId = linkDoc.id;
+                const linkData = linkDoc.data() as Record<string, unknown>;
+                const existingRec = typeof linkData['Rec_CLI'] === 'string' ? String(linkData['Rec_CLI']) : '';
 
                 sessionStorage.setItem('revil_link_id', foundId);
                 metrics.current.baseMetrics = existingRec;
 
                 // Check for Interviewer Mode
-                const linkDoc = linksSnap.docs.find(d => d.id === foundId);
-                if (linkDoc) {
-                    const linkData = linkDoc.data() as Record<string, unknown>;
-                    const isInterviewer = !!linkData && (linkData['Interviewer'] === true);
-                    if (isInterviewer) {
-                        sessionStorage.setItem('revil_interviewer_mode', 'true');
-                    } else {
-                        sessionStorage.removeItem('revil_interviewer_mode');
-                    }
-
-                    // Increment view count in Settings/Views/Links/{foundId}
-                    const docRef = doc(db, 'Settings', 'Views', 'Links', foundId);
-                    await updateDoc(docRef, {
-                        Views: increment(1),
-                        lastWrite: serverTimestamp()
-                    });
+                const isInterviewer = linkData['Interviewer'] === true;
+                if (isInterviewer) {
+                    sessionStorage.setItem('revil_interviewer_mode', 'true');
+                } else {
+                    sessionStorage.removeItem('revil_interviewer_mode');
                 }
+
+                // Increment view count in Settings/Views/Links/{foundId}
+                const docRef = doc(db, 'Settings', 'Views', 'Links', foundId);
+                await updateDoc(docRef, {
+                    Views: increment(1),
+                    lastWrite: serverTimestamp()
+                });
 
                 // Always redirect home after processing code
                 if (onNavigate) {
