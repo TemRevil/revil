@@ -35,8 +35,10 @@ lerna-debug.log*
 # Firebase
 .firebase/
 .firebaserc
+# Track the Cloud Functions SOURCE (firebase.json points at it; it holds the whole
+# backend + every audited security fix). Only its build output + deps are ignored —
+# functions/node_modules is covered by the global node_modules/ rule above.
 functions/lib/
-functions/
 *-firebase-adminsdk-*.json
 
 # Project configuration
