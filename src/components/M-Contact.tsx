@@ -345,10 +345,14 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
     // Basic Validation
     if (!selectedDate || !selectedTime) return;
-    // Guard: the selected slot must still be a currently-offered, non-passed slot
-    // (defends against a slot that became unavailable after selection).
-    // isTimePassed takes (date, host-perspective time) — convert the user-time first.
-    if (!convertedSlots.includes(selectedTime) || isTimePassed(selectedDate, convertTimeToHost(selectedTime))) {
+    // Guard: the selected slot must still be a currently-offered, non-passed, and
+    // still-free slot (defends against a slot that became unavailable after
+    // selection — e.g. another visitor booked it while this modal was open, in
+    // which case the button greys out but selectedTime persists).
+    // isTimePassed/busy checks take the host-perspective time — convert first.
+    const selectedHostTime = convertTimeToHost(selectedTime);
+    const slotNowBusy = getMeetingsForDate(selectedDate).some(m => m.Time === selectedHostTime);
+    if (!convertedSlots.includes(selectedTime) || isTimePassed(selectedDate, selectedHostTime) || slotNowBusy) {
       setSelectedTime(null);
       showAlert({ type: 'warning', message: 'That time slot is no longer available. Please pick another.' });
       return;
@@ -409,11 +413,26 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       // read of Canary required. IDs are opaque map keys; nothing depends on them
       // being numeric or sequential.
       const docRef = doc(db, 'Settings', 'Canary');
-      const dateStr = formatDateDDMMYYYY(selectedDate);
       const meetingId = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-      // Save it in the host's perspective so they see it in their local time in their dashboard
-      const hostPerspecTime = convertTimeToHost(selectedTime);
+      // Derive the stored host-perspective Date + Time from the SAME UTC instant the
+      // calendar event was created at (startDateUTC), shifted into the host's zone.
+      // Computing them independently from selectedDate/selectedTime drops the day on a
+      // cross-midnight timezone wrap (a guest far west of the host booking a slot that
+      // renders as late evening on their side), which would store the meeting on the
+      // wrong day and free the genuinely-taken slot in the public BookedSlots mirror.
+      // Reading both off one instant keeps the record, the mirror, and the calendar
+      // event in agreement.
+      const hostInstant = new Date(startDateUTC.getTime() + hostOffset * 3600000);
+      const hY = hostInstant.getUTCFullYear();
+      const hMo = hostInstant.getUTCMonth();
+      const hD = hostInstant.getUTCDate();
+      const hH = hostInstant.getUTCHours();
+      const hMin = hostInstant.getUTCMinutes();
+      const dateStr = `${hD.toString().padStart(2, '0')}/${(hMo + 1).toString().padStart(2, '0')}/${hY}`;
+      const hostPeriod = hH >= 12 ? 'PM' : 'AM';
+      const hostDisplayH = hH % 12 || 12;
+      const hostPerspecTime = `${hostDisplayH.toString().padStart(2, '0')}:${hMin.toString().padStart(2, '0')} ${hostPeriod}`;
 
       const payload = {
         Date: dateStr,
@@ -428,9 +447,33 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         GoogleEventId: googleEventId // Store the ID for reliable deletion/updates
       };
 
-      await updateDoc(docRef, { [`Meetings.${meetingId}`]: payload, lastMeetingWrite: serverTimestamp() });
+      try {
+        await updateDoc(docRef, { [`Meetings.${meetingId}`]: payload, lastMeetingWrite: serverTimestamp() });
+      } catch (writeErr) {
+        // The calendar event + guest invite already exist, but persisting the meeting
+        // to Firestore failed — most commonly the rules' 300s global booking cooldown
+        // rejecting a second booking made site-wide within 5 minutes. Roll the event
+        // back so we don't leave an orphaned invite for a slot the public mirror never
+        // marks busy (which a later visitor could then double-book).
+        if (googleEventId) {
+          try {
+            await syncMeeting({
+              action: 'cancel',
+              eventId: googleEventId,
+              email: meetingData.email.trim(),
+              name: meetingData.name,
+              startTime: startDateUTC.toISOString(),
+            });
+          } catch { /* best-effort rollback; the host can still cancel from the dashboard */ }
+        }
+        if ((writeErr as { code?: string })?.code === 'permission-denied') {
+          throw new Error('Another booking just came in — please wait a few minutes and try again.');
+        }
+        throw writeErr;
+      }
 
-      setBookingSuccess({ date: dateStr, time: selectedTime || '', link: meetLink || '' });
+      // Confirm to the GUEST in their own perspective (their picked day + local time).
+      setBookingSuccess({ date: formatDateDDMMYYYY(selectedDate), time: selectedTime || '', link: meetLink || '' });
       setMeetingData({ name: '', email: '', reason: '' });
 
     } catch (error: unknown) {
@@ -455,8 +498,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   // File upload constraints
   const MAX_FILES = 5;
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  // Must stay an exact subset of the storage.rules contentType allowlist for
+  // emails/** — SVG is deliberately excluded there (executes JS as image/svg+xml),
+  // so accepting it here only to have the upload hard-rejected would silently fail
+  // the whole message with a generic error.
   const ALLOWED_TYPES = [
-    'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp',
     'application/pdf',
     'text/plain',
     'application/msword',
