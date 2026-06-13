@@ -314,6 +314,8 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
+      // SVG first: modern browsers use it as a crisp, scalable favicon.
+      { url: '/icon.svg', type: 'image/svg+xml' },
       { url: '/icon-192.webp', sizes: '192x192', type: 'image/webp' },
       { url: '/icon-512.webp', sizes: '512x512', type: 'image/webp' },
     ],
