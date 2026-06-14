@@ -84,6 +84,12 @@ type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_li
 function App() {
   const [currentSection, setCurrentSection] = useState<Section>(() => {
     if (typeof window === 'undefined') return 'home';
+    // Persisted return: if the admin was on the dashboard, a refresh keeps them
+    // there (dashboard is reached via in-app nav, not the URL, so it'd otherwise
+    // reset to home). Only 'dashboard' is restored — public sections follow the URL.
+    try {
+      if (localStorage.getItem('revil_section') === 'dashboard') return 'dashboard';
+    } catch { /* ignore */ }
     const path = window.location.pathname;
     const base = "";
     const normPath = path.replace(/\/$/, '');
@@ -100,7 +106,15 @@ function App() {
   // Always-current section, read inside delayed callbacks (e.g. hero anim complete)
   // to avoid stale-closure races where the user navigated away before the timer fired.
   const currentSectionRef = useRef<Section>(currentSection);
-  useEffect(() => { currentSectionRef.current = currentSection; }, [currentSection]);
+  useEffect(() => {
+    currentSectionRef.current = currentSection;
+    // Remember the dashboard across refreshes; clear it for any public section so
+    // leaving the dashboard doesn't strand the user there on next load.
+    try {
+      if (currentSection === 'dashboard') localStorage.setItem('revil_section', 'dashboard');
+      else localStorage.removeItem('revil_section');
+    } catch { /* ignore */ }
+  }, [currentSection]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [forceHideLoading, setForceHideLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
@@ -277,9 +291,9 @@ function App() {
       case 'projects':
         return <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={isTransitioning} /></Suspense>;
       case 'secret':
-        return <Suspense fallback={<Loader isOpen={true} isFullScreen={true} />}><SecretPage onNavigate={navigateTo} /></Suspense>;
+        return <Suspense fallback={null}><SecretPage onNavigate={navigateTo} /></Suspense>;
       case 'dashboard':
-        return <Suspense fallback={<Loader isOpen={true} isFullScreen={true} />}><Dashboard onNavigate={navigateTo} /></Suspense>;
+        return <Suspense fallback={null}><Dashboard onNavigate={navigateTo} /></Suspense>;
       case 'view_link':
         return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} onOpenContact={openContactModal} />;
       default:

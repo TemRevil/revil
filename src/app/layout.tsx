@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, Archivo_Black, Permanent_Marker, Caveat, Kalam } from 'next/font/google'
+import Script from 'next/script'
 import './globals.css'
 import '../lib/firebase'
 import ClientProtection from './ClientProtection'
@@ -350,21 +351,26 @@ export default function RootLayout({
     process.env.NODE_ENV === 'development'
       ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://*.gstatic.com https://www.google.com"
       : "script-src 'self' 'unsafe-inline' https://apis.google.com https://*.gstatic.com https://www.google.com";
-  const csp = `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com https://firebasestorage.googleapis.com https://www.gstatic.com https://images.unsplash.com https://avatars.githubusercontent.com; media-src 'self' https://firebasestorage.googleapis.com https://*.firebasestorage.app; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com https://www.google.com https://images.unsplash.com https://github-contributions-api.jogruber.de https://github.com https://api.github.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://www.google.com; base-uri 'self'; form-action 'self';`;
+  const csp = `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com https://firebasestorage.googleapis.com https://www.gstatic.com https://images.unsplash.com https://avatars.githubusercontent.com; media-src 'self' https://firebasestorage.googleapis.com https://*.firebasestorage.app; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com https://www.google.com https://images.unsplash.com https://github-contributions-api.jogruber.de https://github.com https://api.github.com https://open.er-api.com https://api.anthropic.com https://api.openai.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://www.google.com; base-uri 'self'; form-action 'self';`;
 
   return (
-    <html lang="en" className={`dark ${fontVariables}`}>
+    <html lang="en" className={`dark ${fontVariables}`} suppressHydrationWarning>
       <head>
+        {/* Theme — applied BEFORE first paint so the whole app (incl. the dashboard,
+            which doesn't mount the Navbar) reflects the saved/system preference on
+            every refresh with no flash. The Navbar's toggle keeps writing
+            localStorage('theme'); this just reads it (or the OS preference) early.
+            next/script beforeInteractive → injected into the initial HTML head
+            (no React "script won't execute on client" warning). */}
+        <Script id="theme-init" strategy="beforeInteractive">
+          {"(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;if(d){c.add('dark');}else{c.remove('dark');}}catch(e){}})();"}
+        </Script>
         {/* Canonical-domain redirect: forward GitHub Pages (temrevil.github.io/revil)
-            visitors to temrevil.com. Runs first in <head> so it fires before any other
-            resource loads. Path after /revil (e.g. a link code) and query/hash are kept.
-            No-op on temrevil.com itself (hostname check fails). */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "(function(){try{if(location.hostname==='temrevil.github.io'){var p=location.pathname;if(p==='/revil'){p='/';}else if(p.indexOf('/revil/')===0){p=p.slice(6);}location.replace('https://temrevil.com'+p+location.search+location.hash);}}catch(e){}})();",
-          }}
-        />
+            visitors to temrevil.com. Path after /revil (e.g. a link code) and query/hash
+            are kept. No-op on temrevil.com itself (hostname check fails). */}
+        <Script id="canonical-redirect" strategy="beforeInteractive">
+          {"(function(){try{if(location.hostname==='temrevil.github.io'){var p=location.pathname;if(p==='/revil'){p='/';}else if(p.indexOf('/revil/')===0){p=p.slice(6);}location.replace('https://temrevil.com'+p+location.search+location.hash);}}catch(e){}})();"}
+        </Script>
         {/* Google Search Console verification */}
         <meta name="google-site-verification" content="uQR0p6nF_uFGSNYBtO-_tKpQ6W-Qu_LrwF77SLoEprc" />
         {/* Content Security Policy — defense-in-depth against XSS.
