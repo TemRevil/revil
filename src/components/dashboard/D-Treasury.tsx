@@ -1,0 +1,805 @@
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { Reorder, motion, AnimatePresence } from 'motion/react';
+import anime from 'animejs';
+import {
+    Plus, Download, CheckCircle2, Pencil, Receipt, Briefcase, LayoutDashboard,
+    TrendingUp, TrendingDown, Wallet, Sparkles, Clock, Lightbulb, SlidersHorizontal,
+    ChevronLeft, ChevronRight, RefreshCcw, Percent, Repeat, Hourglass, Tag, Banknote,
+} from 'lucide-react';
+import {
+    ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps,
+} from 'recharts';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import app, { db } from '../../lib/firebase';
+import {
+    Currency, CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense,
+    DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
+    projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome,
+} from '../../lib/treasury';
+import MTreasuryEntry from './M-TreasuryEntry';
+import SaveBar from './SaveBar';
+import Alert, { AlertType } from '../Alert';
+import useSafeAlert from '../../hooks/useSafeAlert';
+
+// Treasury is its own admin-only collection, sorted into one document per
+// concern: the projects I handle, spendings (expenses), and settings (currency
+// + FX). The homepage's sanitized name/status list is mirrored to the PUBLIC
+// Settings/HandledProjects doc (prices/earnings never leave Treasury).
+const PROJECTS_DOC = doc(db, 'Treasury', 'projects');
+const SPENDINGS_DOC = doc(db, 'Treasury', 'spendings');
+const INCOME_DOC = doc(db, 'Treasury', 'income');
+const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
+const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
+
+// Cache the config locally so the saved currency shows INSTANTLY on remount
+// (switching dashboard pages unmounts this) instead of flashing the USD default
+// while the Firestore settings doc reloads async.
+const CONFIG_CACHE = 'treasury_config_v1';
+function loadCachedConfig(): TreasuryData['config'] {
+    if (typeof window === 'undefined') return { ...DEFAULT_CONFIG };
+    try {
+        const raw = localStorage.getItem(CONFIG_CACHE);
+        if (raw) { const c = JSON.parse(raw); return { ...DEFAULT_CONFIG, ...c, rates: { ...DEFAULT_CONFIG.rates, ...(c?.rates || {}) } }; }
+    } catch { /* ignore */ }
+    return { ...DEFAULT_CONFIG };
+}
+function cacheConfig(c: TreasuryData['config']) {
+    try { localStorage.setItem(CONFIG_CACHE, JSON.stringify(c)); } catch { /* ignore */ }
+}
+
+type Tab = 'overview' | 'projects' | 'money' | 'settings';
+type ChartFilter = 'daily' | 'weekly' | 'monthly';
+interface ChartPoint { label: string; fullDate: string; earned: number; spent: number; type: ChartFilter; }
+
+// Per-insight Lucide icon + severity colour (icon + label carry meaning beyond
+// colour alone, for accessibility).
+const INSIGHT_ICONS: Record<InsightIcon, typeof Wallet> = {
+    outstanding: Clock, invoice: Receipt, ratio: Percent, profit: TrendingUp,
+    loss: TrendingDown, noprice: Tag, running: Hourglass, recurring: Repeat, empty: Lightbulb,
+};
+const TONE_COLOR: Record<InsightTone, string> = { warn: '#f59e0b', good: '#22c55e', info: '#3b82f6' };
+
+// ── D-Views-style frosted tooltip ──────────────────────────────────────────
+const ChartTooltip = ({ active, payload, isDark, cur }: TooltipProps<number, string> & { isDark?: boolean; cur: Currency }) => {
+    if (!active || !payload || !payload.length) return null;
+    const p = payload[0].payload as ChartPoint;
+    const d = new Date(p.fullDate);
+    let header = p.label;
+    if (p.type === 'weekly' && !isNaN(d.getTime())) { const e = new Date(d); e.setDate(e.getDate() + 6); header = `${d.getDate()}/${d.getMonth() + 1} — ${e.getDate()}/${e.getMonth() + 1}`; }
+    else if (p.type === 'monthly' && !isNaN(d.getTime())) header = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    else if (!isNaN(d.getTime())) header = `${d.toLocaleDateString('en-US', { weekday: 'short' })}, ${d.getDate()}/${d.getMonth() + 1}`;
+    const net = (p.earned || 0) - (p.spent || 0);
+    const rows = [
+        { c: '#10B981', label: 'Earned', v: p.earned || 0 },
+        { c: '#F43F5E', label: 'Spent', v: p.spent || 0 },
+        { c: '#3B82F6', label: 'Net', v: net },
+    ];
+    return (
+        <div className={`p-4 rounded-3xl border shadow-2xl backdrop-blur-3xl ${isDark ? 'bg-black/80 border-white/10' : 'bg-white/70 border-black/5 shadow-[0_20px_40px_rgba(0,0,0,0.1)]'}`}>
+            <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${isDark ? 'text-white/40' : 'text-slate-500'}`}>{header}</div>
+            <div className="flex flex-col gap-2">
+                {rows.map(r => (
+                    <div key={r.label} className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: r.c, boxShadow: `0 0 10px ${r.c}` }} />
+                        <span className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                            {formatMoney(r.v, cur)}
+                            <span className={`font-normal text-[10px] uppercase tracking-tight ml-1.5 ${isDark ? 'text-white/40' : 'text-slate-400'}`}>{r.label}</span>
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// ── Paginated day/week/month chart (mirrors D-Views/D-Links) ───────────────
+const TreasuryChart = ({ data, filter, setFilter, isDark, cur }: {
+    data: ChartPoint[]; filter: ChartFilter; setFilter: (f: ChartFilter) => void; isDark: boolean; cur: Currency;
+}) => {
+    const [pageIndex, setPageIndex] = useState(0);
+    const [direction, setDirection] = useState(0);
+    const chartRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+    const isSwipingRef = useRef(false);
+    const wheelCooldownRef = useRef(false);
+    const [cw, setCw] = useState(800);
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(entries => { const w = entries[0]?.contentRect.width; if (w) setCw(w); });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    const pointsPerPage = useMemo(() => {
+        if (filter === 'daily') { if (cw < 380) return 7; if (cw < 560) return 10; if (cw < 760) return 14; if (cw < 1000) return 18; return 24; }
+        if (filter === 'weekly') return cw < 480 ? 5 : cw < 800 ? 8 : 12;
+        return 999;
+    }, [filter, cw]);
+
+    const pages = useMemo(() => {
+        if (data.length === 0) return [[]];
+        if (filter === 'monthly') return [data];
+        const chunks: ChartPoint[][] = [];
+        for (let i = 0; i < data.length; i += pointsPerPage) chunks.push(data.slice(i, i + pointsPerPage));
+        return chunks.length ? chunks : [[]];
+    }, [data, filter, pointsPerPage]);
+
+    const totalPages = pages.length;
+    const safePageIndex = Math.min(pageIndex, totalPages - 1);
+    const currentPageData = useMemo(() => pages[safePageIndex] || [], [pages, safePageIndex]);
+
+    const pageEarned = useMemo(() => currentPageData.reduce((s, d) => s + (d.earned || 0), 0), [currentPageData]);
+    const pageSpent = useMemo(() => currentPageData.reduce((s, d) => s + (d.spent || 0), 0), [currentPageData]);
+
+    // Land on the latest page whenever the filter (and thus paging) changes.
+    useEffect(() => {
+        const target = Math.max(0, totalPages - 1);
+        if (pageIndex !== target) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setPageIndex(target);
+            setDirection(0);
+        }
+    }, [totalPages, filter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const changePage = useCallback((next: number) => {
+        if (next >= 0 && next < totalPages && next !== safePageIndex) { setDirection(next > safePageIndex ? 1 : -1); setPageIndex(next); }
+    }, [totalPages, safePageIndex]);
+
+    // Touch + trackpad paging (native listeners for passive:false)
+    useEffect(() => {
+        const el = chartRef.current;
+        if (!el || totalPages <= 1) return;
+        const onStart = (e: TouchEvent) => { const t = e.touches[0]; touchStartRef.current = { x: t.clientX, y: t.clientY, time: Date.now() }; isSwipingRef.current = false; };
+        const onMove = (e: TouchEvent) => { if (!touchStartRef.current) return; const t = e.touches[0]; const dx = t.clientX - touchStartRef.current.x, dy = t.clientY - touchStartRef.current.y; if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) { isSwipingRef.current = true; e.preventDefault(); } };
+        const onEnd = (e: TouchEvent) => { if (!touchStartRef.current || !isSwipingRef.current) { touchStartRef.current = null; return; } const dx = e.changedTouches[0].clientX - touchStartRef.current.x; if (Math.abs(dx) > 30) changePage(dx < 0 ? safePageIndex + 1 : safePageIndex - 1); touchStartRef.current = null; isSwipingRef.current = false; };
+        const onWheel = (e: WheelEvent) => { if (wheelCooldownRef.current) return; const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0; if (Math.abs(d) < 20) return; e.preventDefault(); wheelCooldownRef.current = true; changePage(d > 0 ? safePageIndex + 1 : safePageIndex - 1); setTimeout(() => { wheelCooldownRef.current = false; }, 300); };
+        el.addEventListener('touchstart', onStart, { passive: true });
+        el.addEventListener('touchmove', onMove, { passive: false });
+        el.addEventListener('touchend', onEnd, { passive: true });
+        el.addEventListener('wheel', onWheel, { passive: false });
+        return () => { el.removeEventListener('touchstart', onStart); el.removeEventListener('touchmove', onMove); el.removeEventListener('touchend', onEnd); el.removeEventListener('wheel', onWheel); };
+    }, [totalPages, safePageIndex, changePage]);
+
+    const pageTitle = useMemo(() => {
+        if (!currentPageData.length) return '';
+        const first = new Date(currentPageData[0].fullDate), last = new Date(currentPageData[currentPageData.length - 1].fullDate);
+        if (filter === 'monthly') return 'All time';
+        if (first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear()) return first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        return `${first.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${last.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    }, [currentPageData, filter]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pageVariants: any = {
+        enter: (dir: number) => ({ x: dir > 0 ? '80%' : '-80%', opacity: 0 }),
+        center: { x: 0, opacity: 1, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } },
+        exit: (dir: number) => ({ x: dir > 0 ? '-30%' : '30%', opacity: 0, transition: { duration: 0.2 } }),
+    };
+
+    return (
+        <div ref={containerRef} className="glass-panel p-5 sm:p-6 relative overflow-hidden">
+            {/* Row 1: stats + filter */}
+            <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
+                <div className="flex items-end gap-6 sm:gap-10">
+                    <div>
+                        <p className="text-sec text-[9px] font-bold uppercase tracking-[0.25em] mb-1.5">Earned · {cur}</p>
+                        <h3 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] leading-none tnum" style={{ color: '#10B981' }}>{formatMoney(pageEarned, cur)}</h3>
+                    </div>
+                    <div>
+                        <p className="text-sec text-[9px] font-bold uppercase tracking-[0.25em] mb-1.5">Spent</p>
+                        <h3 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] leading-none tnum" style={{ color: '#F43F5E' }}>{formatMoney(pageSpent, cur)}</h3>
+                    </div>
+                </div>
+                <div className={`flex p-0.5 rounded-xl border ${isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-black/5'}`}>
+                    {(['daily', 'weekly', 'monthly'] as ChartFilter[]).map(f => (
+                        <button key={f} onClick={() => setFilter(f)}
+                            className={`px-4 sm:px-5 py-2 rounded-[10px] text-[10px] font-bold uppercase tracking-[0.15em] transition-all ${filter === f ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25' : isDark ? 'text-[#666] hover:text-[#999]' : 'text-slate-400 hover:text-slate-700'}`}>
+                            {f === 'daily' ? 'Day' : f === 'weekly' ? 'Week' : 'Month'}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Row 2: period label (always shown) + pager (only when multiple pages) */}
+            <div className="flex items-center gap-2 mb-4">
+                {totalPages > 1 && (
+                    <button onClick={() => changePage(safePageIndex - 1)} disabled={safePageIndex === 0} className={`p-1 rounded-md transition-colors ${isDark ? 'text-white/30 hover:text-white disabled:opacity-15' : 'text-slate-300 hover:text-slate-800 disabled:opacity-15'} disabled:cursor-not-allowed`}><ChevronLeft size={16} /></button>
+                )}
+                <span className={`text-sm font-bold tracking-tight select-none ${isDark ? 'text-white/80' : 'text-slate-700'}`}>{pageTitle || '—'}</span>
+                {totalPages > 1 && (
+                    <>
+                        <button onClick={() => changePage(safePageIndex + 1)} disabled={safePageIndex === totalPages - 1} className={`p-1 rounded-md transition-colors ${isDark ? 'text-white/30 hover:text-white disabled:opacity-15' : 'text-slate-300 hover:text-slate-800 disabled:opacity-15'} disabled:cursor-not-allowed`}><ChevronRight size={16} /></button>
+                        <div className="flex items-center gap-1 ml-1">
+                            {pages.map((_, i) => (
+                                <button key={i} onClick={() => changePage(i)} className={`rounded-full transition-all duration-300 ${i === safePageIndex ? 'w-4 h-1.5 bg-blue-500' : `w-1.5 h-1.5 ${isDark ? 'bg-white/15 hover:bg-white/30' : 'bg-black/10 hover:bg-black/20'}`}`} />
+                            ))}
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* Chart */}
+            <div ref={chartRef} className="relative h-[240px] sm:h-[300px]" style={{ touchAction: totalPages > 1 ? 'pan-y' : 'auto' }}>
+                <AnimatePresence initial={false} custom={direction}>
+                    <motion.div key={`${filter}-${safePageIndex}`} custom={direction} variants={pageVariants} initial={direction === 0 ? false : 'enter'} animate="center" exit="exit" className="absolute inset-0 w-full h-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={currentPageData} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}>
+                                <defs>
+                                    <filter id="treasuryGlow" x="-20%" y="-20%" width="140%" height="140%">
+                                        <feGaussianBlur stdDeviation="4" result="blur" />
+                                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                    </filter>
+                                    <linearGradient id="earnedFill" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#10B981" stopOpacity={isDark ? 0.25 : 0.35} />
+                                        <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="spentFill" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#F43F5E" stopOpacity={isDark ? 0.18 : 0.25} />
+                                        <stop offset="100%" stopColor="#F43F5E" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="0 0" vertical={false} stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)'} />
+                                <XAxis
+                                    dataKey="label"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    interval="preserveStartEnd"
+                                    minTickGap={cw < 480 ? 22 : 30}
+                                    padding={{ left: 16, right: 16 }}
+                                    tickMargin={10}
+                                    height={26}
+                                    tick={{ fontSize: cw < 480 ? 10 : 11, fontWeight: 700, fill: isDark ? '#6b7280' : '#94a3b8' }}
+                                />
+                                <YAxis hide domain={[0, 'auto']} />
+                                <Tooltip content={<ChartTooltip isDark={isDark} cur={cur} />} cursor={{ stroke: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.12)', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                                <Area type="monotone" dataKey="spent" stroke="#F43F5E" fill="url(#spentFill)" fillOpacity={1} strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#F43F5E', strokeWidth: 2, stroke: isDark ? '#0C0C0C' : '#fff' }} animationDuration={500} />
+                                <Area type="monotone" dataKey="earned" stroke="#10B981" fill="url(#earnedFill)" fillOpacity={1} strokeWidth={3} filter="url(#treasuryGlow)" dot={{ r: 2.5, fill: isDark ? '#0C0C0C' : '#fff', strokeWidth: 2, stroke: '#10B981' }} activeDot={{ r: 6, fill: '#10B981', strokeWidth: 2, stroke: isDark ? '#0C0C0C' : '#fff' }} animationDuration={400} />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </motion.div>
+                </AnimatePresence>
+            </div>
+            <div className="flex items-center gap-5 mt-3 pl-1">
+                <span className="flex items-center gap-2 text-xs text-sec font-semibold"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Earned</span>
+                <span className="flex items-center gap-2 text-xs text-sec font-semibold"><span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Spent</span>
+            </div>
+        </div>
+    );
+};
+
+const DTreasury = () => {
+    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+    const [isDark, setIsDark] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState<TreasuryData>(() => ({ config: loadCachedConfig(), projects: [], expenses: [], income: [] }));
+    const [tab, setTab] = useState<Tab>('overview');
+    const [chartFilter, setChartFilter] = useState<ChartFilter>('daily');
+    const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null } | null>(null);
+    const [ratesLoading, setRatesLoading] = useState(false);
+    const ratesChecked = useRef(false);
+    const { alert, showAlert, hideAlert } = useSafeAlert();
+
+    // Settings are STAGED in a draft and committed via Save / Discard (like
+    // D-Settings) — currency choices + FX rates don't persist until you save.
+    const [draft, setDraft] = useState<TreasuryData['config']>(() => loadCachedConfig());
+    const [settingsDirty, setSettingsDirty] = useState(false);
+
+    const isExtraSmall = windowWidth < 400;
+
+    useEffect(() => {
+        const onResize = () => setWindowWidth(window.innerWidth);
+        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
+        checkTheme();
+        window.addEventListener('resize', onResize);
+        const obs = new MutationObserver(checkTheme);
+        obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => { window.removeEventListener('resize', onResize); obs.disconnect(); };
+    }, []);
+
+    useEffect(() => {
+        anime({ targets: '.treasury-section', opacity: [0, 1], translateY: [14, 0], duration: 450, easing: 'easeOutQuint' });
+    }, [tab]);
+
+    useEffect(() => {
+        // Treasury docs are admin-only — attach the listeners ONLY once a user is
+        // signed in, so we never fire an unauthenticated read (which Firestore
+        // rejects with permission-denied). onAuthStateChanged also re-attaches if
+        // the session restores after this mounts (e.g. dashboard kept on refresh).
+        let unsubs: Array<() => void> = [];
+        const detach = () => { unsubs.forEach(u => u()); unsubs = []; };
+        // Caught error handler → never an "uncaught snapshot listener" console error.
+        const onErr = (e: { code?: string }) => { if (e?.code !== 'permission-denied') console.warn('[Treasury] listener error', e); setLoading(false); };
+
+        const attach = () => {
+            unsubs.push(onSnapshot(PROJECTS_DOC, snap => {
+                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryProject, 'id'>>;
+                const projects = Object.entries(entries)
+                    .map(([id, p], i) => ({ id, ...p, order: p.order ?? i } as TreasuryProject))
+                    .sort((a, b) => a.order - b.order);
+                setData(prev => ({ ...prev, projects }));
+                setLoading(false);
+            }, onErr));
+            unsubs.push(onSnapshot(SPENDINGS_DOC, snap => {
+                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryExpense, 'id'>>;
+                const expenses = Object.entries(entries)
+                    .map(([id, e]) => ({ id, ...e } as TreasuryExpense))
+                    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                setData(prev => ({ ...prev, expenses }));
+            }, onErr));
+            unsubs.push(onSnapshot(INCOME_DOC, snap => {
+                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryIncome, 'id'>>;
+                const income = Object.entries(entries)
+                    .map(([id, i]) => ({ id, ...i } as TreasuryIncome))
+                    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                setData(prev => ({ ...prev, income }));
+            }, onErr));
+            unsubs.push(onSnapshot(SETTINGS_DOC, snap => {
+                if (!snap.exists()) return; // keep cached config rather than reverting to USD defaults
+                const c = snap.data() as Partial<TreasuryData['config']>;
+                const config: TreasuryData['config'] = {
+                    defaultCurrency: c.defaultCurrency ?? DEFAULT_CONFIG.defaultCurrency,
+                    displayCurrency: c.displayCurrency ?? DEFAULT_CONFIG.displayCurrency,
+                    rates: { ...DEFAULT_CONFIG.rates, ...(c.rates || {}) },
+                    ratesUpdatedAt: c.ratesUpdatedAt,
+                };
+                setData(prev => ({ ...prev, config }));
+                cacheConfig(config);
+            }, onErr));
+        };
+
+        const offAuth = onAuthStateChanged(getAuth(app), user => {
+            detach();
+            if (user) attach(); else setLoading(false);
+        });
+        return () => { offAuth(); detach(); };
+    }, []);
+
+    const showToast = useCallback((text: string, tone: 'good' | 'warn' | 'info') => {
+        const type: AlertType = tone === 'good' ? 'success' : tone === 'warn' ? 'warning' : 'info';
+        showAlert({ type, message: text });
+    }, [showAlert]);
+
+    // Mirror only the public subset (name/status/notes/order) of the still-handled
+    // projects to the PUBLIC Settings/HandledProjects doc the homepage Hero reads.
+    // Prices/earnings stay in the admin-only Treasury collection.
+    const mirrorPublic = useCallback((projects: TreasuryProject[]) => {
+        const handled = projects.filter(p => !p.done).sort((a, b) => a.order - b.order);
+        const map: Record<string, { name: string; status: string; description: string; order: number }> = {};
+        handled.forEach((p, i) => { map[p.id] = { name: p.name, status: p.status, description: p.notes || '', order: i }; });
+        setDoc(HANDLED_PUBLIC_DOC, { projects: map, lastWrite: serverTimestamp() }).catch(() => { });
+    }, []);
+
+    const writeProjects = useCallback((projects: TreasuryProject[]) => {
+        setData(prev => ({ ...prev, projects }));
+        const entries: Record<string, Omit<TreasuryProject, 'id'>> = {};
+        projects.forEach(p => { const { id, ...rest } = p; entries[id] = rest; });
+        setDoc(PROJECTS_DOC, { entries, lastWrite: serverTimestamp() })
+            .catch(err => { console.warn('[Treasury] projects save failed', err); showToast('Save failed — check connection', 'warn'); });
+        mirrorPublic(projects);
+    }, [mirrorPublic, showToast]);
+
+    const writeExpenses = useCallback((expenses: TreasuryExpense[]) => {
+        setData(prev => ({ ...prev, expenses }));
+        const entries: Record<string, Omit<TreasuryExpense, 'id'>> = {};
+        expenses.forEach(e => { const { id, ...rest } = e; entries[id] = rest; });
+        setDoc(SPENDINGS_DOC, { entries, lastWrite: serverTimestamp() })
+            .catch(err => { console.warn('[Treasury] spendings save failed', err); showToast('Save failed — check connection', 'warn'); });
+    }, [showToast]);
+
+    const writeConfig = useCallback((config: TreasuryData['config']) => {
+        setData(prev => ({ ...prev, config }));
+        cacheConfig(config);
+        return setDoc(SETTINGS_DOC, { ...config, lastWrite: serverTimestamp() });
+    }, []);
+
+    const saveProject = (p: TreasuryProject) => {
+        const exists = data.projects.some(x => x.id === p.id);
+        writeProjects(exists ? data.projects.map(x => x.id === p.id ? p : x) : [...data.projects, p]);
+    };
+    const deleteProject = (id: string) => writeProjects(data.projects.filter(p => p.id !== id));
+    const saveExpense = (e: TreasuryExpense) => {
+        const exists = data.expenses.some(x => x.id === e.id);
+        writeExpenses(exists ? data.expenses.map(x => x.id === e.id ? e : x) : [...data.expenses, e]);
+    };
+    const deleteExpense = (id: string) => writeExpenses(data.expenses.filter(e => e.id !== id));
+
+    const writeIncome = useCallback((income: TreasuryIncome[]) => {
+        setData(prev => ({ ...prev, income }));
+        const entries: Record<string, Omit<TreasuryIncome, 'id'>> = {};
+        income.forEach(i => { const { id, ...rest } = i; entries[id] = rest; });
+        setDoc(INCOME_DOC, { entries, lastWrite: serverTimestamp() })
+            .catch(err => { console.warn('[Treasury] income save failed', err); showToast('Save failed — check connection', 'warn'); });
+    }, [showToast]);
+
+    const saveIncome = (i: TreasuryIncome) => {
+        const exists = data.income.some(x => x.id === i.id);
+        writeIncome(exists ? data.income.map(x => x.id === i.id ? i : x) : [...data.income, i]);
+    };
+    const deleteIncome = (id: string) => writeIncome(data.income.filter(i => i.id !== id));
+
+    const markDone = (p: TreasuryProject) => {
+        const today = new Date().toISOString().slice(0, 10);
+        saveProject({ ...p, done: !p.done, status: (!p.done ? 'completed' : p.status) as TreasuryProject['status'], endDate: !p.done ? (p.endDate || today) : p.endDate });
+        showToast(!p.done ? `"${p.name}" marked done` : `"${p.name}" reopened`, !p.done ? 'good' : 'info');
+    };
+
+    // -- staged settings (Save / Discard) -------------------------------------
+    // Keep the draft in sync with the committed config UNLESS the user is editing.
+    useEffect(() => {
+        if (!settingsDirty) setDraft(data.config);
+    }, [data.config, settingsDirty]);
+
+    const stageConfig = (patch: Partial<TreasuryData['config']>) => { setDraft(d => ({ ...d, ...patch })); setSettingsDirty(true); };
+    const saveSettings = async () => {
+        try {
+            await writeConfig(draft);
+            setSettingsDirty(false);
+            showToast('Settings saved', 'good');
+        } catch (e) {
+            console.warn('[Treasury] settings save failed', e);
+            showToast("Couldn't save — make sure you're signed in as admin.", 'warn');
+        }
+    };
+    const discardSettings = () => { setDraft(data.config); setSettingsDirty(false); };
+
+    // -- live exchange rates --------------------------------------------------
+    const refreshRates = useCallback(async (silent = false) => {
+        if (!silent) setRatesLoading(true);
+        const r = await fetchLiveRates();
+        if (!silent) setRatesLoading(false);
+        if (r) {
+            if (silent) {
+                writeConfig({ ...data.config, rates: r.rates, ratesUpdatedAt: r.updatedAt }).catch(() => { });
+            } else {
+                setDraft(d => ({ ...d, rates: r.rates, ratesUpdatedAt: r.updatedAt }));
+                setSettingsDirty(true);
+                showToast('Rates fetched — Save to apply', 'info');
+            }
+        } else if (!silent) {
+            showToast("Couldn't reach FX source — kept current rates", 'warn');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data, writeConfig]);
+
+    // Auto-refresh once per session if rates are missing or older than 6h.
+    useEffect(() => {
+        if (loading || ratesChecked.current) return;
+        ratesChecked.current = true;
+        const age = Date.now() - (data.config.ratesUpdatedAt || 0);
+        if (age > 6 * 3600 * 1000) refreshRates(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading]);
+
+    const onReorder = (next: TreasuryProject[]) => setData(d => ({ ...d, projects: next }));
+    const persistOrder = () => writeProjects(data.projects.map((p, i) => ({ ...p, order: i })));
+
+    const exportHtml = () => {
+        const html = buildHtmlReport(data, new Date());
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `treasury-${new Date().toISOString().slice(0, 10)}.html`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast('Report downloaded', 'good');
+    };
+
+    // -- derived --------------------------------------------------------------
+    const totals = useMemo(() => computeTotals(data), [data]);
+    const insights = useMemo(() => buildInsights(data), [data]);
+    const cur = data.config.displayCurrency;
+    const dailySeries = useMemo(() => buildDailySeries(data), [data]);
+
+    // Unified money ledger (income + expenses), newest first, for the Money tab.
+    const moneyRows = useMemo(() => [
+        ...data.income.map(i => ({ t: 'income' as const, date: i.date, raw: i })),
+        ...data.expenses.map(e => ({ t: 'expense' as const, date: e.date, raw: e })),
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || '')), [data.income, data.expenses]);
+
+    // Aggregate the continuous daily series for the active filter (D-Views style).
+    const chartData = useMemo<ChartPoint[]>(() => {
+        if (!dailySeries.length) return [];
+        if (chartFilter === 'daily') {
+            return dailySeries.map(s => { const d = new Date(`${s.date}T00:00:00`); return { label: `${d.getDate()}/${d.getMonth() + 1}`, fullDate: s.date, earned: s.earned, spent: s.spent, type: 'daily' as const }; });
+        }
+        if (chartFilter === 'weekly') {
+            const weeks: Record<string, { e: number; s: number }> = {};
+            dailySeries.forEach(s => {
+                const d = new Date(`${s.date}T00:00:00`);
+                const day = d.getDay();
+                const monday = new Date(d); monday.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+                const key = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+                (weeks[key] ||= { e: 0, s: 0 }); weeks[key].e += s.earned; weeks[key].s += s.spent;
+            });
+            return Object.entries(weeks).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => { const d = new Date(`${key}T00:00:00`); return { label: `${d.getDate()}/${d.getMonth() + 1}`, fullDate: key, earned: v.e, spent: v.s, type: 'weekly' as const }; });
+        }
+        const months: Record<string, { e: number; s: number }> = {};
+        dailySeries.forEach(s => { const key = s.date.slice(0, 7); (months[key] ||= { e: 0, s: 0 }); months[key].e += s.earned; months[key].s += s.spent; });
+        return Object.entries(months).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => { const d = new Date(`${key}-01T00:00:00`); return { label: d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(), fullDate: `${key}-01`, earned: v.e, spent: v.s, type: 'monthly' as const }; });
+    }, [dailySeries, chartFilter]);
+
+    const cards = [
+        { label: 'Received', value: totals.earned, icon: TrendingUp, color: '#22c55e' },
+        { label: 'Outstanding', value: totals.outstanding, icon: Clock, color: '#f59e0b' },
+        { label: 'Spent', value: totals.spent, icon: TrendingDown, color: '#f43f5e' },
+        { label: 'Net profit', value: totals.net, icon: Wallet, color: totals.net >= 0 ? '#22c55e' : '#f43f5e' },
+    ];
+
+    const statusColor = (s: string) => s === 'completed' ? '#22c55e' : s === 'pending' ? '#f59e0b' : '#3b82f6';
+    const payColor: Record<string, string> = { paid: '#22c55e', partial: '#f59e0b', unpaid: '#f43f5e' };
+
+    const TABS: { id: Tab; label: string; icon: typeof Wallet }[] = [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+        { id: 'projects', label: 'Projects', icon: Briefcase },
+        { id: 'money', label: 'Money', icon: Wallet },
+        { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
+    ];
+
+    if (loading) {
+        return <div className="w-full h-full flex items-center justify-center text-sec"><Sparkles className="animate-pulse mr-2" size={20} /> Loading treasury…</div>;
+    }
+
+    const sectionTitle = (icon: React.ReactNode, text: string, action?: React.ReactNode) => (
+        <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">{icon}<span className="text-sm font-bold text-primary">{text}</span></div>
+            {action}
+        </div>
+    );
+
+    const kpiCards = (
+        <div className={`grid gap-3 ${isExtraSmall ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
+            {cards.map(c => {
+                const Icon = c.icon;
+                return (
+                    <div key={c.label} className="glass-panel p-4 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-sec uppercase tracking-wider">{c.label}</span>
+                            <Icon size={16} style={{ color: c.color }} />
+                        </div>
+                        <span className="text-2xl font-extrabold font-inter tnum" style={{ color: c.color }}>{formatMoney(c.value, cur)}</span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+
+    return (
+        <div className="h-[85vh] flex flex-col gap-5 relative">
+            {/* Navbar */}
+            <div className="glass-surface p-1.5 rounded-xl flex gap-2 overflow-x-auto shrink-0">
+                {TABS.map(t => {
+                    const Icon = t.icon;
+                    const active = tab === t.id;
+                    return (
+                        <button key={t.id} onClick={() => setTab(t.id)}
+                            className={`flex items-center gap-2 px-5 py-3 rounded-lg border-none cursor-pointer font-sans font-semibold text-sm whitespace-nowrap transition-all
+                                ${active ? 'bg-blue-500/15 text-blue-500' : 'bg-transparent text-gray-500 hover:bg-blue-500/10 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400'}`}>
+                            <Icon size={18} />
+                            <span className={isExtraSmall ? 'hidden' : ''}>{t.label}</span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pr-1 pb-6">
+                <div key={tab} className="treasury-section flex flex-col gap-5">
+
+                    {tab === 'overview' && (
+                        <>
+                            {kpiCards}
+                            <div className="glass-panel p-4 sm:p-5">
+                                <div className="flex items-center justify-between mb-3.5">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-400/15 text-amber-500"><Lightbulb size={15} /></span>
+                                        <span className="text-sm font-bold text-primary">Suggestions</span>
+                                    </div>
+                                    <span className="text-[11px] font-bold text-sec tnum px-2 py-0.5 rounded-full bg-black/[0.05] dark:bg-white/[0.07]">{insights.length}</span>
+                                </div>
+                                <div className="flex flex-col gap-1 tnum">
+                                    {insights.map((ins, i) => {
+                                        const Icon = INSIGHT_ICONS[ins.icon] || Lightbulb;
+                                        const c = TONE_COLOR[ins.tone];
+                                        return (
+                                            <div key={i} className="group flex items-center gap-3 p-2.5 rounded-2xl transition-colors duration-200 hover:bg-black/[0.025] dark:hover:bg-white/[0.04]">
+                                                <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${c}24`, color: c }}><Icon size={17} /></span>
+                                                <div className="min-w-0">
+                                                    <div className="text-[10.5px] font-bold uppercase tracking-[0.08em] leading-tight" style={{ color: c }}>{ins.label}</div>
+                                                    <p className={`text-sm leading-snug ${ins.tone === 'warn' ? 'text-primary font-medium' : 'text-sec'}`}>{ins.text}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            {chartData.length === 0 ? (
+                                <div className="glass-panel p-8 text-center text-sec text-sm">No dated activity yet — add a project payment or an expense and the graph fills in from that day.</div>
+                            ) : (
+                                <TreasuryChart data={chartData} filter={chartFilter} setFilter={setChartFilter} isDark={isDark} cur={cur} />
+                            )}
+                        </>
+                    )}
+
+                    {tab === 'projects' && (
+                        <div className="glass-panel p-5">
+                            {sectionTitle(
+                                <Briefcase size={16} className="text-blue-400" />,
+                                'Projects I handle',
+                                <button onClick={() => setModal({ mode: 'project', project: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Project</button>
+                            )}
+                            <p className="text-xs text-sec -mt-1 mb-4">{data.projects.length > 1 ? 'Drag cards to reorder — public order on your homepage follows this.' : 'These mirror to your homepage availability list.'}</p>
+                            {data.projects.length === 0 ? (
+                                <div className="border-2 border-dashed border-input-border rounded-2xl p-8 text-center text-sec text-sm">No projects yet. Click "+ Project" to add one.</div>
+                            ) : (
+                                <Reorder.Group as="div" axis="x" values={data.projects} onReorder={onReorder} className="flex gap-3 overflow-x-auto pb-3 custom-scrollbar snap-x">
+                                    {data.projects.map(p => {
+                                        const pay = projectPaymentStatus(p, data.income, data.config.rates);
+                                        const bal = projectBalance(p, data.income, data.config.rates);
+                                        const received = projectReceived(p, data.income, data.config.rates);
+                                        return (
+                                            <Reorder.Item as="div" key={p.id} value={p} onDragEnd={persistOrder}
+                                                className="group snap-start flex-shrink-0 w-[250px] glass-surface p-4 flex flex-col gap-3 cursor-grab active:cursor-grabbing relative !rounded-2xl">
+                                                <div className="absolute top-0 left-4 right-4 h-0.5 rounded-full" style={{ background: statusColor(p.status) }} />
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <h4 className="text-[15px] font-bold text-primary truncate" title={p.name}>{p.name}</h4>
+                                                        {p.client && <p className="text-xs text-sec truncate">{p.client}</p>}
+                                                    </div>
+                                                    <button onClick={() => setModal({ mode: 'project', project: p })} className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><Pencil size={14} /></button>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${statusColor(p.status)}22`, color: statusColor(p.status) }}>{p.status}</span>
+                                                    {p.monthly
+                                                        ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#10b98122', color: '#10b981' }}>monthly</span>
+                                                        : <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${payColor[pay]}22`, color: payColor[pay] }}>{pay}</span>}
+                                                </div>
+                                                <div>
+                                                    <span className="text-lg font-extrabold text-primary tnum">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '—'}{p.monthly ? <span className="text-xs font-bold text-sec">/mo</span> : ''}</span>
+                                                    {received > 0 && <p className="text-[11px] text-emerald-500 font-semibold">{formatMoney(received, p.priceCurrency)} received</p>}
+                                                    {!p.monthly && bal > 0 && <p className="text-[11px] text-amber-500 font-semibold">{formatMoney(bal, p.priceCurrency)} to collect</p>}
+                                                </div>
+                                                <div className="text-[11px] text-sec flex items-center gap-1"><Clock size={12} /><span>{p.startDate || '—'}{p.endDate ? ` → ${p.endDate}` : p.done ? '' : ' → ongoing'}</span></div>
+                                                {p.notes && <p className="text-xs text-sec line-clamp-2 italic">{p.notes}</p>}
+                                                <button onClick={() => markDone(p)} className={`mt-auto flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${p.done ? 'bg-green-500/15 text-green-500' : 'bg-black/5 dark:bg-white/5 text-sec hover:bg-green-500/10 hover:text-green-500'}`}><CheckCircle2 size={14} /> {p.done ? 'Done' : 'Mark done'}</button>
+                                            </Reorder.Item>
+                                        );
+                                    })}
+                                </Reorder.Group>
+                            )}
+                        </div>
+                    )}
+
+                    {tab === 'money' && (
+                        <div className="glass-panel p-5">
+                            {sectionTitle(
+                                <Wallet size={16} className="text-blue-400" />,
+                                'Money',
+                                <button onClick={() => setModal({ mode: 'income', income: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add money</button>
+                            )}
+                            <p className="text-xs text-sec -mt-1 mb-2">Income (money in) and spendings (money out) in one ledger — pick the type when adding. Link income to a project to count toward what you&apos;ve received.</p>
+                            <div className="glass-surface divide-y divide-[var(--input-border)] overflow-hidden mt-2">
+                                {moneyRows.length === 0 ? (
+                                    <div className="p-6 text-center text-sec text-sm">Nothing yet. Click "+ Add money" to log income or an expense.</div>
+                                ) : moneyRows.map(r => r.t === 'income' ? (() => {
+                                    const i = r.raw;
+                                    const proj = i.projectId ? data.projects.find(p => p.id === i.projectId) : null;
+                                    return (
+                                        <div key={`i-${i.id}`} onClick={() => setModal({ mode: 'income', income: i })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
+                                            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500 flex-shrink-0"><Banknote size={16} /></div>
+                                            <div className="min-w-0 flex-1">
+                                                <span className="text-sm font-semibold text-primary truncate block">{proj ? proj.name : (i.note || 'Payment')}</span>
+                                                <span className="text-xs text-sec">{i.date}{proj && i.note ? ` · ${i.note}` : ''}</span>
+                                            </div>
+                                            <span className="text-sm font-bold text-emerald-500 tnum flex-shrink-0">+{formatMoney(i.amount, i.currency)}</span>
+                                            <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                                        </div>
+                                    );
+                                })() : (() => {
+                                    const e = r.raw;
+                                    const eproj = e.projectId ? data.projects.find(p => p.id === e.projectId) : null;
+                                    return (
+                                        <div key={`e-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
+                                            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-rose-500/10 text-rose-400 flex-shrink-0"><Receipt size={16} /></div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-semibold text-primary truncate">{e.label}</span>
+                                                    {e.recurring && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">monthly</span>}
+                                                </div>
+                                                <span className="text-xs text-sec">{e.category ? `${e.category} · ` : ''}{eproj ? `${eproj.name} · ` : ''}{e.date}</span>
+                                            </div>
+                                            <span className="text-sm font-bold text-rose-500 tnum flex-shrink-0">−{formatMoney(e.amount, e.currency)}</span>
+                                            <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                                        </div>
+                                    );
+                                })())}
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'settings' && (
+                        <>
+                            <div className="glass-panel p-5 flex flex-col gap-5">
+                                <h3 className="heading-sm m-0">Currency</h3>
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-xs font-semibold text-sec uppercase tracking-wider">Show totals in</label>
+                                    <div className={`flex rounded-xl border ${isDark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/[0.03]'} p-1 gap-1 w-fit`}>
+                                        {CURRENCIES.map(c => (
+                                            <button key={c} onClick={() => stageConfig({ displayCurrency: c })} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${draft.displayCurrency === c ? 'bg-blue-500 text-white shadow' : 'text-sec hover:text-primary'}`}>{CURRENCY_SYMBOL[c]} {c}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-xs font-semibold text-sec uppercase tracking-wider">Default for new entries</label>
+                                    <p className="text-xs text-sec -mt-1">Used when you don't name a currency — e.g. "add 100" vs "add 100$". New projects & expenses are added in this currency.</p>
+                                    <div className={`flex rounded-xl border ${isDark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/[0.03]'} p-1 gap-1 w-fit`}>
+                                        {CURRENCIES.map(c => (
+                                            <button key={c} onClick={() => stageConfig({ defaultCurrency: c })} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${draft.defaultCurrency === c ? 'bg-emerald-500 text-white shadow' : 'text-sec hover:text-primary'}`}>{c}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="glass-panel p-5 flex flex-col gap-4">
+                                <div className="flex items-start justify-between gap-3 flex-wrap">
+                                    <div>
+                                        <h3 className="heading-sm m-0">Exchange rates</h3>
+                                        <p className="text-xs text-sec mt-1">
+                                            Live mid-market rates (units per $1), pulled from the internet.
+                                            {draft.ratesUpdatedAt ? ` Updated ${new Date(draft.ratesUpdatedAt).toLocaleString()}.` : ' Not fetched yet.'}
+                                        </p>
+                                    </div>
+                                    <button onClick={() => refreshRates(false)} disabled={ratesLoading} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-blue-500 border border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-all disabled:opacity-50">
+                                        <RefreshCcw size={15} className={ratesLoading ? 'animate-spin' : ''} /> {ratesLoading ? 'Updating…' : 'Update now'}
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    {CURRENCIES.map(c => (
+                                        <div key={c} className="glass-surface p-4 flex flex-col gap-1">
+                                            <span className="text-xs font-semibold text-sec uppercase tracking-wider">{CURRENCY_SYMBOL[c]} {c} per $1</span>
+                                            <span className="text-2xl font-extrabold text-primary tnum">{c === 'USD' ? '1.00' : (draft.rates[c] || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="glass-panel p-5 flex items-center justify-between gap-4 flex-wrap">
+                                <div>
+                                    <h3 className="heading-sm m-0">Export</h3>
+                                    <p className="text-xs text-sec mt-1">Download a styled, self-contained HTML report of all projects & spendings.</p>
+                                </div>
+                                <button onClick={exportHtml} className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Download size={16} /> Export report</button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Staged-settings bar (shared component) */}
+            <SaveBar show={tab === 'settings' && settingsDirty} onApply={saveSettings} onCancel={discardSettings} isDark={isDark} />
+
+            {/* Alerts (shared app component) */}
+            {alert?.show && <Alert type={alert.type} message={alert.message} onClose={hideAlert} duration={alert.duration} />}
+
+            {modal && (
+                <MTreasuryEntry
+                    mode={modal.mode}
+                    config={data.config}
+                    project={modal.project}
+                    expense={modal.expense}
+                    income={modal.income}
+                    projects={data.projects.map(p => ({ id: p.id, name: p.name }))}
+                    nextOrder={data.projects.length}
+                    onSaveProject={saveProject}
+                    onSaveExpense={saveExpense}
+                    onSaveIncome={saveIncome}
+                    onDelete={modal.project ? () => deleteProject(modal.project!.id) : modal.expense ? () => deleteExpense(modal.expense!.id) : modal.income ? () => deleteIncome(modal.income!.id) : undefined}
+                    onClose={() => setModal(null)}
+                />
+            )}
+        </div>
+    );
+};
+
+export default DTreasury;
