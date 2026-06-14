@@ -194,11 +194,26 @@ service cloud.firestore {
       );
     }
 
-    // Public-readable Settings content docs (Account bio, Availability, Developer,
-    // Tech Stack, BookedSlots, etc.). Canary is EXCLUDED here — Firestore rules are
-    // additive, so a blanket `read: if true` on this wildcard would re-grant public
-    // read to Canary and defeat its admin-only block above. Listing the one
-    // exception keeps every other Settings doc public while Canary stays private.
+    // Treasury — private finances, split into documents:
+    //   Treasury/projects   the projects I handle (with prices/earnings)
+    //   Treasury/spendings  expenses
+    //   Treasury/settings   currency + FX config
+    // Admin read+write ONLY; never public. The homepage's sanitized list lives
+    // separately in the public Settings/HandledProjects doc.
+    match /Treasury/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Spark (the dashboard AI) private memory — user's name, her editable
+    // standing instructions, saved facts. Admin read+write ONLY.
+    match /Spark/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Public-readable Settings content docs (Account bio, Availability,
+    // HandledProjects, Developer, Tech Stack, BookedSlots, etc.). Canary is the
+    // one private exception (its admin-only block is above; rules are additive, so
+    // it must be excluded here or a blanket public read would re-grant access).
     match /Settings/{settingsDoc} {
       allow read: if settingsDoc != 'Canary';
       allow write: if isAdmin();

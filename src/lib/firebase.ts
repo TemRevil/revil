@@ -51,7 +51,11 @@ export { appCheck };
 export const db = initializeFirestore(app, {
     localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager()
-    })
+    }),
+    // Drop `undefined` fields instead of throwing — optional fields (e.g. a
+    // project's notes/client/endDate) are commonly undefined and Firestore would
+    // otherwise reject the whole write ("Unsupported field value: undefined").
+    ignoreUndefinedProperties: true,
 });
 
 // NOTE: Auth / Storage / Functions are intentionally NOT instantiated here (they
