@@ -17,18 +17,21 @@
   <rect x="32" y="32" width="448" height="448" rx="104" fill="#FFFFFF"/>
   <rect x="33" y="33" width="446" height="446" rx="103" fill="none" stroke="#E4E7EC" stroke-width="2"/>
 
-  <!-- Soft glow underlayer (the blurred red/blue split) -->
-  <g filter="url(#glow)" opacity="0.6">
-    <use href="#r" stroke="#FF3B3B" transform="translate(-17 -6)"/>
-    <use href="#r" stroke="#3A86FF" transform="translate(17 6)"/>
-  </g>
+  <!-- Scale the whole monogram up ~1.35x, centred in the tile -->
+  <g transform="translate(256 256) scale(1.35) translate(-263 -263)">
+    <!-- Soft glow underlayer (the blurred red/blue split) -->
+    <g filter="url(#glow)" opacity="0.6">
+      <use href="#r" stroke="#FF3B3B" transform="translate(-17 -6)"/>
+      <use href="#r" stroke="#3A86FF" transform="translate(17 6)"/>
+    </g>
 
-  <!-- Softly blurred RGB split: red ghost left, blue ghost right -->
-  <g filter="url(#softBlur)">
-    <use href="#r" stroke="#FF3B3B" transform="translate(-11 -4)"/>
-    <use href="#r" stroke="#3A86FF" transform="translate(11 4)"/>
-  </g>
+    <!-- Softly blurred RGB split: red ghost left, blue ghost right -->
+    <g filter="url(#softBlur)">
+      <use href="#r" stroke="#FF3B3B" transform="translate(-11 -4)"/>
+      <use href="#r" stroke="#3A86FF" transform="translate(11 4)"/>
+    </g>
 
-  <!-- Crisp dark core on top -->
-  <use href="#r" stroke="#16181D" transform="translate(0 0)"/>
+    <!-- Crisp dark core on top -->
+    <use href="#r" stroke="#16181D" transform="translate(0 0)"/>
+  </g>
 </svg>
