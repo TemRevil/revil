@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import anime from 'animejs';
-import { Layout, Eye, Settings, Bird, LogOut, Tag, User, GitBranch } from 'lucide-react';
+import { Layout, Eye, Settings, Bird, LogOut, Tag, User, GitBranch, PiggyBank } from 'lucide-react';
 import DProjects from './dashboard/D-Projects';
 import DTags from './dashboard/D-Tags';
 import DLinks from './dashboard/D-Links';
 import DSettings from './dashboard/D-Settings';
 import DCanary from './dashboard/D-Canary';
 import DDeveloper from './dashboard/D-Developer';
+import DTreasury from './dashboard/D-Treasury';
+import Assistant from './dashboard/Assistant';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import app, { db } from '../lib/firebase';
 
 // The parameter name in the function type would trigger `no-unused-vars` in some
 // ESLint configurations, so we suppress that rule for the following type alias.
@@ -28,6 +31,16 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const isExtraSmall = windowWidth < 400;  // 320px - 399px
     const isSmall = windowWidth < 640;        // 400px - 639px
     const isMobile = windowWidth < 768;       // 640px - 767px
+
+    // Auth gate: the dashboard is admin-only. If there's no signed-in user (e.g.
+    // it was restored on refresh without a session), bounce home so we never fire
+    // admin-only reads/writes that Firestore would reject with permission-denied.
+    useEffect(() => {
+        const off = onAuthStateChanged(getAuth(app), (user) => {
+            if (!user) onNavigate?.('home');
+        });
+        return () => off();
+    }, [onNavigate]);
 
     useEffect(() => {
         const unsub = onSnapshot(doc(db, 'Settings', 'Account'), (docSnap) => {
@@ -93,6 +106,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
         { id: 'tags', label: 'Tags', icon: Tag },
         { id: 'views', label: 'Views', icon: Eye },
         { id: 'developer', label: 'Developer', icon: GitBranch },
+        { id: 'treasury', label: 'Treasury', icon: PiggyBank },
         { id: 'settings', label: 'Settings', icon: Settings },
         { id: 'canary', label: 'Canary', icon: Bird },
     ];
@@ -262,6 +276,8 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                             <DLinks />
                         ) : activeTab === 'developer' ? (
                             <DDeveloper />
+                        ) : activeTab === 'treasury' ? (
+                            <DTreasury />
                         ) : activeTab === 'settings' ? (
                             <DSettings />
                         ) : activeTab === 'canary' ? (
@@ -278,6 +294,9 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                     </div>
                 </div>
             </main>
+
+            {/* AI co-pilot — floating orb, can navigate, click, and read/write data */}
+            <Assistant onNavigate={(page) => setActiveTab(page)} currentPage={activeTab} />
         </div >
     );
 };
