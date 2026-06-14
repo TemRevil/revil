@@ -135,7 +135,12 @@ interface HeroProject {
 interface AvailabilityData {
     'Current Availability'?: string;
     'Current Time'?: string;
-    'Projects Being Handled'?: Record<string, HeroProject>;
+}
+
+// Public sanitized handled-projects mirror (Settings/HandledProjects), written
+// by the admin Treasury page. Holds name/status only — never prices.
+interface HandledData {
+    projects?: Record<string, HeroProject>;
 }
 
 // Available Status Badge Component
@@ -145,6 +150,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
     const triggerRef = useRef<HTMLDivElement>(null);
     const tooltipRef = useRef<HTMLDivElement>(null);
     const [availData, setAvailData] = useState<AvailabilityData | null>(null);
+    const [handledData, setHandledData] = useState<HandledData | null>(null);
     const [tooltipVisible, setTooltipVisible] = useState(false);
     const [tooltipMounted, setTooltipMounted] = useState(false);
     const [tooltipPos, setTooltipPos] = useState<{ top: number | 'auto'; bottom: number | 'auto'; left: number; width: number; arrowLeft: number; flipBelow: boolean }>({ top: 0, bottom: 'auto', left: 0, width: 320, arrowLeft: 160, flipBelow: false });
@@ -228,12 +234,16 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
     };
 
     useEffect(() => {
-        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Availability'), (snap) => {
-            if (snap.exists()) {
-                setAvailData(snap.data());
-            }
+        // Availability % + timezone live in Settings/Availability …
+        const unsubAvail = onSnapshot(doc(db, 'Settings', 'Availability'), (snap) => {
+            if (snap.exists()) setAvailData(snap.data());
         });
-        return () => unsubscribe();
+        // … while the handled-projects list now comes from the public, sanitized
+        // Settings/HandledProjects doc (mirrored from the admin Treasury page).
+        const unsubHandled = onSnapshot(doc(db, 'Settings', 'HandledProjects'), (snap) => {
+            if (snap.exists()) setHandledData(snap.data());
+        });
+        return () => { unsubAvail(); unsubHandled(); };
     }, []);
 
     useEffect(() => {
@@ -285,7 +295,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
     const parsedAvailability = parseInt(availabilityStr);
     const availabilityPercent = Number.isNaN(parsedAvailability) ? 100 : parsedAvailability;
     const currentTime = availData?.['Current Time'] || 'UTC+02:00';
-    const projectsMap = availData?.['Projects Being Handled'] || {};
+    const projectsMap = handledData?.projects || {};
     // Respect the admin's manual drag-sort order (falls back to map order for legacy data)
     const projects = Object.values(projectsMap).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
@@ -711,34 +721,36 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
 
                         {/* Image Container - with floating animation */}
                         <div ref={imageContainerRef} className="relative p-4 border border-white/10 z-10 rounded-lg max-w-full glass-panel" style={{ borderRadius: '16px' }}>
-                            <div className="relative w-full max-w-[320px] aspect-[4/5] overflow-hidden bg-white/5 rounded-sm">
-                                {/* shimmer-fast keyframes are in globals.css */}
-                                {/* Skeleton Loader Container */}
-                                <div
-                                    className={`absolute inset-0 z-10 bg-white/5 overflow-hidden transition-opacity duration-1000 ease-out ${isImageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-                                >
-                                    {/* Moving Light effect - only rendered when loading */}
-                                    {!isImageLoaded && (
-                                        <div
-                                            className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                                            style={{ animation: 'shimmer-fast 1.2s infinite ease-in-out' }}
-                                        />
-                                    )}
-                                </div>
+                            <div className="relative w-full max-w-[320px]">
+                                <div className="relative w-full aspect-[4/5] overflow-hidden bg-white/5 rounded-sm">
+                                    {/* shimmer-fast keyframes are in globals.css */}
+                                    {/* Skeleton Loader Container */}
+                                    <div
+                                        className={`absolute inset-0 z-10 bg-white/5 overflow-hidden transition-opacity duration-1000 ease-out ${isImageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                                    >
+                                        {/* Moving Light effect - only rendered when loading */}
+                                        {!isImageLoaded && (
+                                            <div
+                                                className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                                                style={{ animation: 'shimmer-fast 1.2s infinite ease-in-out' }}
+                                            />
+                                        )}
+                                    </div>
 
-                                <img
-                                    src={imageError ? DEFAULT_HERO_URL : (heroImageUrl || DEFAULT_HERO_URL)}
-                                    alt={`${profileName} portrait`}
-                                    onLoad={() => setIsImageLoaded(true)}
-                                    onError={() => setImageError(true)}
-                                    className="w-full h-full object-cover transition-all duration-[1500ms] ease-out"
-                                    style={{
-                                        filter: isImageLoaded ? 'blur(0px)' : 'blur(20px)',
-                                        opacity: isImageLoaded ? 1 : 0,
-                                        transform: isImageLoaded ? 'scale(1)' : 'scale(1.05)'
-                                    }}
-                                    fetchPriority="high"
-                                />
+                                    <img
+                                        src={imageError ? DEFAULT_HERO_URL : (heroImageUrl || DEFAULT_HERO_URL)}
+                                        alt={`${profileName} portrait`}
+                                        onLoad={() => setIsImageLoaded(true)}
+                                        onError={() => setImageError(true)}
+                                        className="w-full h-full object-cover transition-all duration-[1500ms] ease-out"
+                                        style={{
+                                            filter: isImageLoaded ? 'blur(0px)' : 'blur(20px)',
+                                            opacity: isImageLoaded ? 1 : 0,
+                                            transform: isImageLoaded ? 'scale(1)' : 'scale(1.05)'
+                                        }}
+                                        fetchPriority="high"
+                                    />
+                                </div>
                             </div>
 
                             {/* Numbers */}
