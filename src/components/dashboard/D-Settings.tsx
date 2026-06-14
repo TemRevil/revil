@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
-import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Briefcase, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link, Sun, Moon, GripVertical } from 'lucide-react';
-import { Reorder, useDragControls } from 'motion/react';
+import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link, Sun, Moon } from 'lucide-react';
 const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
@@ -12,8 +11,8 @@ import app, { db } from '../../lib/firebase';
 // Local Storage handle (lazy Dashboard chunk) — keeps firebase/storage out of eager.
 const storage = getStorage(app);
 import Alert, { AlertType } from '../Alert';
-import MHandlingProject, { HandlingProject } from './M-HandlingProject';
 import MStackItem, { StackItemData } from './M-StackItem';
+import SaveBar from './SaveBar';
 import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
 // Replaced failing ui-avatars.com with a local icon-based placeholder logic
@@ -121,53 +120,8 @@ const getCroppedImg = (imageSrc: string, pixelCrop: unknown): Promise<File> => {
     });
 };
 
-/* ──────────────────────────────────────────────────────────────
-   Sortable "Projects Being Handled" row. Drag is bound only to the
-   grip handle (dragListener=false + dragControls) so the Edit/Delete
-   buttons stay clickable without triggering an accidental reorder.
-   ────────────────────────────────────────────────────────────── */
-const SortableProjectRow = ({ project, onEdit, onDelete }: {
-    project: HandlingProject;
-    onEdit: (p: HandlingProject) => void;
-    onDelete: (p: HandlingProject) => void;
-}) => {
-    const dragControls = useDragControls();
-    return (
-        <Reorder.Item
-            value={project}
-            dragListener={false}
-            dragControls={dragControls}
-            className="p-4 rounded-xl bg-gray-500/5 border border-gray-500/5 flex justify-between items-center gap-3 stack-on-small min-w-0"
-        >
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-                <button
-                    type="button"
-                    onPointerDown={(e) => dragControls.start(e)}
-                    className="btn-icon shrink-0 text-muted cursor-grab active:cursor-grabbing"
-                    style={{ touchAction: 'none' }}
-                    aria-label={`Drag ${project.name} to reorder`}
-                >
-                    <GripVertical size={16} />
-                </button>
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h4 className="heading-sm truncate max-w-full">{project.name}</h4>
-                        <span className={`badge ${project.status === 'active' ? 'badge-active' : project.status === 'pending' ? 'badge-pending' : 'badge-blue'}`}>
-                            {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-                        </span>
-                    </div>
-                    {project.description ? (
-                        <p className="text-muted project-desc" title={project.description}>{project.description}</p>
-                    ) : null}
-                </div>
-            </div>
-            <div className="flex gap-1 mt-3 sm:mt-0">
-                <button onClick={() => onEdit(project)} className="btn-icon" aria-label={`Edit ${project.name}`}><Edit2 size={16} /></button>
-                <button onClick={() => onDelete(project)} className="btn-icon text-red-500 hover:bg-red-500/10" aria-label={`Delete ${project.name}`}><Trash2 size={16} /></button>
-            </div>
-        </Reorder.Item>
-    );
-};
+/* "Projects Being Handled" is now managed in the Treasury page (D-Treasury),
+   which mirrors the public subset into Settings/Availability. */
 
 
 export default function DSettings() {
@@ -178,9 +132,6 @@ export default function DSettings() {
     const [selectedTimezone, setSelectedTimezone] = useState(2);
     const [currentTime, setCurrentTime] = useState('');
     const [timezoneDropdownOpen, setTimezoneDropdownOpen] = useState(false);
-    const [handlingProjects, setHandlingProjects] = useState<HandlingProject[]>([]);
-    const [projectModalOpen, setProjectModalOpen] = useState(false);
-    const [editingProject, setEditingProject] = useState<HandlingProject | null>(null);
     const timezoneRef = useRef<HTMLDivElement>(null);
 
     // Stack state
@@ -646,14 +597,6 @@ export default function DSettings() {
 
     const handleSaveAvailability = async () => {
         try {
-            // Stamp each project's array index as its `order` so the manual
-            // drag-sort order is what reloads (map keys alone don't preserve it).
-            const projectsMap = handlingProjects.reduce((acc, project, index) => {
-                const { id, ...projectData } = project;
-                acc[id] = { ...projectData, order: index };
-                return acc;
-            }, {} as { [key: string]: Omit<HandlingProject, 'id'> });
-
             const selectedTz = timezones.find(tz => tz.value === selectedTimezone);
 
             // Calculate timezone offset string correctly (handling .5 offsets)
@@ -665,15 +608,14 @@ export default function DSettings() {
             const payload = {
                 'Current Availability': `${availability}%`,
                 'Current Time': selectedTz ? selectedTz.label : fallbackTzStr,
-                'Projects Being Handled': projectsMap,
                 // Add raw values for easier parsing and consistency
                 'availabilityPercent': availability,
                 'timezoneOffset': selectedTimezone
             };
 
-            // Use setDoc WITHOUT merge: true to ensure the 'Projects Being Handled' map is fully replaced
-            // This ensures that deleted projects are actually removed from Firestore
-            await setDoc(doc(db, 'Settings', 'Availability'), payload);
+            // merge:true so the 'Projects Being Handled' map — now owned and
+            // mirrored by the Treasury page — survives an availability save.
+            await setDoc(doc(db, 'Settings', 'Availability'), payload, { merge: true });
         } catch (error) {
             console.error("Error saving availability:", error);
             safeSetAlert({ show: true, type: 'error', message: 'Failed to save availability settings' });
@@ -842,14 +784,6 @@ export default function DSettings() {
                 if (availData.timezoneOffset !== undefined) {
                     setSelectedTimezone(availData.timezoneOffset);
                 }
-
-                const projectsMap = availData['Projects Being Handled'] as { [key: string]: Omit<HandlingProject, 'id'> };
-                if (projectsMap) {
-                    const projectsArray: HandlingProject[] = Object.entries(projectsMap)
-                        .map(([id, projectData], i) => ({ id, ...projectData, order: projectData.order ?? i }))
-                        .sort((a, b) => a.order - b.order);
-                    setHandlingProjects(projectsArray);
-                }
             }
 
             setHasUnsavedChanges(false);
@@ -934,18 +868,6 @@ export default function DSettings() {
                         }
                     }
                 }
-
-                // Parse and set handling projects (sorted by persisted order;
-                // legacy projects without `order` fall back to their map position)
-                const projectsMap = data['Projects Being Handled'] as { [key: string]: Omit<HandlingProject, 'id'> };
-                if (projectsMap) {
-                    const projectsArray: HandlingProject[] = Object.entries(projectsMap)
-                        .map(([id, projectData], i) => ({ id, ...projectData, order: projectData.order ?? i }))
-                        .sort((a, b) => a.order - b.order);
-                    setHandlingProjects(projectsArray);
-                } else {
-                    setHandlingProjects([]);
-                }
             }
         }, (err) => {
             const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
@@ -984,40 +906,6 @@ export default function DSettings() {
         const green = Math.round(255 * (value / 100));
         return `rgb(${red}, ${green}, 50)`;
     };
-
-    // Description truncation is handled via CSS (.project-desc) so it adapts to screen size.
-
-
-    // Project handlers
-    const handleSaveProjectLocal = (name: string, description: string, status: 'active' | 'pending' | 'completed') => {
-        if (!name.trim()) return;
-        if (editingProject) {
-            setHandlingProjects(prev => prev.map(p =>
-                p.id === editingProject.id
-                    ? { ...p, name: name, description: description, status: status }
-                    : p
-            ));
-        } else {
-            const ids = handlingProjects.map(p => parseInt(p.id)).filter(n => !isNaN(n));
-            const nextId = ids.length > 0 ? Math.max(...ids) + 1 : 1;
-            setHandlingProjects(prev => [...prev, {
-                id: nextId.toString(),
-                name: name,
-                description: description,
-                status: status,
-                order: prev.length
-            }]);
-        }
-        setProjectModalOpen(false);
-        setEditingProject(null);
-        setHasUnsavedChanges(true);
-    };
-
-    const closeProjectModal = () => {
-        setProjectModalOpen(false);
-        setEditingProject(null);
-    };
-
 
     const handleSaveStack = async (data: StackItemData) => {
         if (!data.name.trim() || !data.icon) return;
@@ -1523,55 +1411,6 @@ export default function DSettings() {
                             </div>
                         </div>
 
-                        {/* Projects Being Handled */}
-                        <div className="settings-panel glass-panel p-6 flex flex-col gap-6" style={{ opacity: revealedTabs.availability ? 1 : 0 }}>
-                            <div className="flex-row-between stack-on-small">
-                                <div>
-                                    <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-1">
-                                        <Briefcase size={22} className="mr-2" />
-                                        Projects Being Handled
-                                    </h3>
-                                    <p className="text-muted text-xs">
-                                        {handlingProjects.length} projects
-                                        {handlingProjects.length > 1 && ' · drag to reorder'}
-                                    </p>
-                                </div>
-                                <button onClick={() => { setEditingProject(null); setProjectModalOpen(true); }} className="btn btn-primary sm:w-auto flex justify-center items-center mt-3 sm:mt-0" aria-label="Add project">
-                                    <Plus size={18} /> <span className="hidden sm:inline">Add</span>
-                                </button>
-                            </div>
-
-                            {handlingProjects.length === 0 ? (
-                                <div className="p-8 text-center text-sec border-2 border-dashed border-gray-500/10 rounded-xl">
-                                    No projects. Click "Add" to add one.
-                                </div>
-                            ) : (
-                                <Reorder.Group
-                                    axis="y"
-                                    values={handlingProjects}
-                                    onReorder={(next) => { setHandlingProjects(next); setHasUnsavedChanges(true); }}
-                                    className="flex flex-col gap-3 list-none p-0 m-0"
-                                >
-                                    {handlingProjects.map(project => (
-                                        <SortableProjectRow
-                                            key={project.id}
-                                            project={project}
-                                            onEdit={(p) => { setEditingProject(p); setProjectModalOpen(true); }}
-                                            onDelete={(p) => setConfirmConfig({
-                                                isOpen: true,
-                                                title: 'Remove Project',
-                                                message: `Are you sure you want to remove "${p.name}" from your currently handled projects list?`,
-                                                type: 'danger',
-                                                onConfirm: () => {
-                                                    setHandlingProjects(prev => prev.filter(x => x.id !== p.id));
-                                                    setHasUnsavedChanges(true);
-                                                },
-                                            })}
-                                        />
-                                    ))}
-                                </Reorder.Group>
-                            )}
-                        </div>
                     </div>
                 )}
 
@@ -1913,14 +1752,6 @@ export default function DSettings() {
                 )}
             </div>
 
-            {/* Project Modal */}
-            <MHandlingProject
-                isOpen={projectModalOpen}
-                onClose={closeProjectModal}
-                onSave={handleSaveProjectLocal}
-                initialData={editingProject}
-            />
-
             {/* Stack Modal */}
             <MStackItem
                 isOpen={stackModalOpen}
@@ -1929,43 +1760,8 @@ export default function DSettings() {
                 initialData={editingStack}
             />
 
-            {/* Sticky Action Bar */}
-            {
-                hasUnsavedChanges && (
-                    <div
-                        className="fixed bottom-10 z-[5000] flex animate-slide-up pointer-events-none"
-                        style={{
-                            left: '50%',
-                            transform: 'translateX(calc(-50% + (var(--sidebar-width, 0px) / 2)))'
-                        }}
-                    >
-                        <div className="flex items-center gap-3 sm:gap-4 p-2.5 sm:p-4 rounded-full shadow-2xl border pointer-events-auto" style={{
-                            background: isDark ? 'rgba(10, 10, 12, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-                            backdropFilter: 'blur(32px)',
-                            WebkitBackdropFilter: 'blur(32px)',
-                            borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
-                        }}>
-                            <button
-                                id="apply-all-btn"
-                                onClick={handleApplyAll}
-                                className="btn-primary px-5 sm:px-8 py-2.5 sm:py-3 rounded-full shadow-2xl shadow-blue-500/20 text-[13px] sm:text-[15px] font-bold flex items-center gap-2 hover:scale-105 transition-all whitespace-nowrap"
-                            >
-                                <Save size={18} className="sm:w-5 sm:h-5" /> Apply Settings
-                            </button>
-
-                            <button
-                                onClick={handleCancelAll}
-                                className={`px-5 sm:px-6 py-2.5 sm:py-3 rounded-full border transition-all font-semibold text-[13px] sm:text-[14px] whitespace-nowrap ${isDark
-                                    ? 'bg-white/5 hover:bg-white/10 text-white border-white/10'
-                                    : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
-                                    }`}
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-                )
-            }
+            {/* Sticky Action Bar (shared component) */}
+            <SaveBar show={hasUnsavedChanges} onApply={handleApplyAll} onCancel={handleCancelAll} isDark={isDark} />
 
             {/* Firebase Browser */}
             <MFirebaseStorage
