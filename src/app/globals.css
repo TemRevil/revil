@@ -18,6 +18,7 @@
   --accent-hover: #1e88ff;
   --secondary: rgb(99, 102, 241);
   --danger: rgb(239, 68, 68);
+  --danger-rgb: 239, 68, 68;
   --success: rgb(16, 185, 129);
   --warning: rgb(245, 158, 11);
   --info: rgb(59, 130, 246);

@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Trash2, GripVertical, Github, Save, X, Search, Star, GitFork, Loader2, ListChecks } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Trash2, GripVertical, Github, Save, X, Search, Star, GitFork, Loader2, ListChecks, Check, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { Reorder, motion } from 'motion/react';
+import { Reorder, motion, useReducedMotion } from 'motion/react';
 import { db } from '../../lib/firebase';
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
@@ -29,7 +29,9 @@ const DDeveloper = () => {
     const [search, setSearch] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
     const { alert, showAlert, hideAlert } = useSafeAlert();
+    const reduceMotion = useReducedMotion();
 
     // Real-time Firestore sync (selected repos)
     useEffect(() => {
@@ -78,7 +80,7 @@ const DDeveloper = () => {
         };
         fetchAll();
         return () => { ignore = true; controller.abort(); };
-    }, []);
+    }, [reloadKey]);
 
     useEffect(() => {
         setHasChanges(JSON.stringify(repos) !== JSON.stringify(firestoreRepos));
@@ -97,6 +99,18 @@ const DDeveloper = () => {
     };
 
     const removeRepo = (name: string) => setRepos(prev => prev.filter(r => r !== name));
+
+    // Keyboard-accessible reordering (drag is mouse/touch only).
+    const moveRepo = useCallback((name: string, dir: -1 | 1) => {
+        setRepos(prev => {
+            const from = prev.indexOf(name);
+            const to = from + dir;
+            if (from < 0 || to < 0 || to >= prev.length) return prev;
+            const next = [...prev];
+            [next[from], next[to]] = [next[to], next[from]];
+            return next;
+        });
+    }, []);
 
     const save = async () => {
         setIsSaving(true);
@@ -122,9 +136,9 @@ const DDeveloper = () => {
 
     return (
         <motion.div
-            initial={{ opacity: 0, y: 12 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start"
         >
             {alert?.show && <Alert message={alert.message} type={alert.type} onClose={hideAlert} />}
@@ -155,13 +169,20 @@ const DDeveloper = () => {
                                 <Reorder.Item
                                     key={name}
                                     value={name}
+                                    tabIndex={0}
+                                    role="listitem"
+                                    aria-label={`${name}, position ${i + 1} of ${repos.length}. Use arrow up or down to reorder.`}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'ArrowUp') { e.preventDefault(); moveRepo(name, -1); }
+                                        else if (e.key === 'ArrowDown') { e.preventDefault(); moveRepo(name, 1); }
+                                    }}
                                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-grab active:cursor-grabbing"
                                     style={{
                                         background: 'rgba(51,149,255,0.06)',
                                         border: '1px solid rgba(51,149,255,0.22)',
                                     }}
                                 >
-                                    <GripVertical size={15} className="text-muted shrink-0" />
+                                    <GripVertical size={15} className="text-muted shrink-0" aria-hidden />
                                     <span
                                         className="grid place-items-center shrink-0 text-[0.65rem] font-black"
                                         style={{
@@ -174,12 +195,31 @@ const DDeveloper = () => {
                                         {i + 1}
                                     </span>
                                     <span className="flex-1 text-sm font-bold text-primary truncate">{name}</span>
+                                    {/* Keyboard-accessible reorder controls (drag is pointer-only) */}
+                                    <button
+                                        onClick={() => moveRepo(name, -1)}
+                                        disabled={i === 0}
+                                        aria-label={`Move ${name} up`}
+                                        className="grid place-items-center shrink-0 rounded-lg text-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:text-primary"
+                                        style={{ width: 44, height: 44 }}
+                                    >
+                                        <ArrowUp size={15} />
+                                    </button>
+                                    <button
+                                        onClick={() => moveRepo(name, 1)}
+                                        disabled={i === repos.length - 1}
+                                        aria-label={`Move ${name} down`}
+                                        className="grid place-items-center shrink-0 rounded-lg text-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:text-primary"
+                                        style={{ width: 44, height: 44 }}
+                                    >
+                                        <ArrowDown size={15} />
+                                    </button>
                                     <button
                                         onClick={() => removeRepo(name)}
                                         aria-label={`Remove ${name}`}
                                         className="grid place-items-center shrink-0 rounded-lg text-muted transition-colors"
-                                        style={{ width: 32, height: 32 }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
+                                        style={{ width: 44, height: 44 }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--danger)'; e.currentTarget.style.background = 'rgba(var(--danger-rgb),0.1)'; }}
                                         onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
                                     >
                                         <Trash2 size={15} />
@@ -255,10 +295,19 @@ const DDeveloper = () => {
                     </div>
                 ) : reposError ? (
                     <div
-                        className="py-5 px-4 rounded-xl text-center text-sm"
-                        style={{ border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', color: '#ef4444' }}
+                        role="alert"
+                        className="flex flex-col items-center gap-3 py-5 px-4 rounded-xl text-center text-sm"
+                        style={{ border: '1px solid rgba(var(--danger-rgb),0.3)', background: 'rgba(var(--danger-rgb),0.05)', color: 'var(--danger)' }}
                     >
-                        {reposError}
+                        <span>{reposError}</span>
+                        <button
+                            onClick={() => setReloadKey(k => k + 1)}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                            style={{ border: '1px solid rgba(var(--danger-rgb),0.4)', color: 'var(--danger)' }}
+                        >
+                            <RefreshCw size={14} />
+                            Retry
+                        </button>
                     </div>
                 ) : filteredRepos.length === 0 ? (
                     <div
@@ -279,13 +328,15 @@ const DDeveloper = () => {
                                 <button
                                     key={repo.name}
                                     onClick={() => toggleRepo(repo.name)}
+                                    aria-pressed={selected}
+                                    aria-label={selected ? `${repo.name}, featured at position ${rank + 1}. Activate to remove.` : `${repo.name}. Activate to feature.`}
                                     className="flex items-start gap-3 p-3 rounded-xl cursor-pointer text-left transition-colors"
                                     style={{
                                         background: selected ? 'rgba(51,149,255,0.06)' : 'rgba(128,128,128,0.03)',
                                         border: `1px solid ${selected ? 'rgba(51,149,255,0.35)' : 'var(--section-border)'}`,
                                     }}
                                 >
-                                    {/* Selection indicator */}
+                                    {/* Selection indicator — shows a check + rank when featured (not color-only) */}
                                     <span
                                         className="grid place-items-center shrink-0 mt-0.5 text-[0.6rem] font-black"
                                         style={{
@@ -295,8 +346,11 @@ const DDeveloper = () => {
                                             color: 'var(--accent)',
                                         }}
                                     >
-                                        {selected ? rank + 1 : ''}
+                                        {selected ? <Check size={12} strokeWidth={3.5} /> : ''}
                                     </span>
+                                    {selected && (
+                                        <span className="sr-only">Featured, position {rank + 1}</span>
+                                    )}
 
                                     {/* Info */}
                                     <div className="flex-1 min-w-0">
