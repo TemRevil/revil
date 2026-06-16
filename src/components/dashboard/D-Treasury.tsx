@@ -10,14 +10,16 @@ import {
 import {
     ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps,
 } from 'recharts';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import app, { db } from '../../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { db } from '../../lib/firebase';
+import { appAuth } from '../../lib/appAuth';
 import {
     Currency, CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense,
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
-    projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome,
+    projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome, convert,
 } from '../../lib/treasury';
 import MTreasuryEntry from './M-TreasuryEntry';
+import DatePicker from './DatePicker';
 import SaveBar from './SaveBar';
 import Alert, { AlertType } from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
@@ -31,22 +33,6 @@ const SPENDINGS_DOC = doc(db, 'Treasury', 'spendings');
 const INCOME_DOC = doc(db, 'Treasury', 'income');
 const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
 const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
-
-// Cache the config locally so the saved currency shows INSTANTLY on remount
-// (switching dashboard pages unmounts this) instead of flashing the USD default
-// while the Firestore settings doc reloads async.
-const CONFIG_CACHE = 'treasury_config_v1';
-function loadCachedConfig(): TreasuryData['config'] {
-    if (typeof window === 'undefined') return { ...DEFAULT_CONFIG };
-    try {
-        const raw = localStorage.getItem(CONFIG_CACHE);
-        if (raw) { const c = JSON.parse(raw); return { ...DEFAULT_CONFIG, ...c, rates: { ...DEFAULT_CONFIG.rates, ...(c?.rates || {}) } }; }
-    } catch { /* ignore */ }
-    return { ...DEFAULT_CONFIG };
-}
-function cacheConfig(c: TreasuryData['config']) {
-    try { localStorage.setItem(CONFIG_CACHE, JSON.stringify(c)); } catch { /* ignore */ }
-}
 
 type Tab = 'overview' | 'projects' | 'money' | 'settings';
 type ChartFilter = 'daily' | 'weekly' | 'monthly';
@@ -274,9 +260,12 @@ const DTreasury = () => {
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
     const [isDark, setIsDark] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [data, setData] = useState<TreasuryData>(() => ({ config: loadCachedConfig(), projects: [], expenses: [], income: [] }));
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const [data, setData] = useState<TreasuryData>({ config: { ...DEFAULT_CONFIG }, projects: [], expenses: [], income: [] });
     const [tab, setTab] = useState<Tab>('overview');
     const [chartFilter, setChartFilter] = useState<ChartFilter>('daily');
+    const [moneyView, setMoneyView] = useState<'all' | 'day'>('all');
+    const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
     const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null } | null>(null);
     const [ratesLoading, setRatesLoading] = useState(false);
     const ratesChecked = useRef(false);
@@ -284,7 +273,7 @@ const DTreasury = () => {
 
     // Settings are STAGED in a draft and committed via Save / Discard (like
     // D-Settings) — currency choices + FX rates don't persist until you save.
-    const [draft, setDraft] = useState<TreasuryData['config']>(() => loadCachedConfig());
+    const [draft, setDraft] = useState<TreasuryData['config']>({ ...DEFAULT_CONFIG });
     const [settingsDirty, setSettingsDirty] = useState(false);
 
     const isExtraSmall = windowWidth < 400;
@@ -337,8 +326,7 @@ const DTreasury = () => {
                 setData(prev => ({ ...prev, income }));
             }, onErr));
             unsubs.push(onSnapshot(SETTINGS_DOC, snap => {
-                if (!snap.exists()) return; // keep cached config rather than reverting to USD defaults
-                const c = snap.data() as Partial<TreasuryData['config']>;
+                const c = (snap.exists() ? snap.data() : {}) as Partial<TreasuryData['config']>;
                 const config: TreasuryData['config'] = {
                     defaultCurrency: c.defaultCurrency ?? DEFAULT_CONFIG.defaultCurrency,
                     displayCurrency: c.displayCurrency ?? DEFAULT_CONFIG.displayCurrency,
@@ -346,13 +334,13 @@ const DTreasury = () => {
                     ratesUpdatedAt: c.ratesUpdatedAt,
                 };
                 setData(prev => ({ ...prev, config }));
-                cacheConfig(config);
-            }, onErr));
+                setSettingsLoaded(true);
+            }, e => { onErr(e); setSettingsLoaded(true); }));
         };
 
-        const offAuth = onAuthStateChanged(getAuth(app), user => {
+        const offAuth = onAuthStateChanged(appAuth(), user => {
             detach();
-            if (user) attach(); else setLoading(false);
+            if (user) attach(); else { setLoading(false); setSettingsLoaded(true); }
         });
         return () => { offAuth(); detach(); };
     }, []);
@@ -391,9 +379,14 @@ const DTreasury = () => {
 
     const writeConfig = useCallback((config: TreasuryData['config']) => {
         setData(prev => ({ ...prev, config }));
-        cacheConfig(config);
-        return setDoc(SETTINGS_DOC, { ...config, lastWrite: serverTimestamp() });
+        return setDoc(SETTINGS_DOC, { ...config, lastWrite: serverTimestamp() }, { merge: true });
     }, []);
+
+    // Always-current snapshot of the committed config, so the async silent rate
+    // refresh never writes against a stale closure (which used to clobber the
+    // saved currency back to USD when it fired before the settings doc loaded).
+    const configRef = useRef(data.config);
+    useEffect(() => { configRef.current = data.config; }, [data.config]);
 
     const saveProject = (p: TreasuryProject) => {
         const exists = data.projects.some(x => x.id === p.id);
@@ -452,7 +445,9 @@ const DTreasury = () => {
         if (!silent) setRatesLoading(false);
         if (r) {
             if (silent) {
-                writeConfig({ ...data.config, rates: r.rates, ratesUpdatedAt: r.updatedAt }).catch(() => { });
+                // Read the latest committed config (NOT a captured closure) so we only
+                // touch the rate fields and never overwrite the saved currency.
+                writeConfig({ ...configRef.current, rates: r.rates, ratesUpdatedAt: r.updatedAt }).catch(() => { });
             } else {
                 setDraft(d => ({ ...d, rates: r.rates, ratesUpdatedAt: r.updatedAt }));
                 setSettingsDirty(true);
@@ -461,17 +456,18 @@ const DTreasury = () => {
         } else if (!silent) {
             showToast("Couldn't reach FX source — kept current rates", 'warn');
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [data, writeConfig]);
+    }, [writeConfig, showToast]);
 
-    // Auto-refresh once per session if rates are missing or older than 6h.
+    // Auto-refresh once per session if rates are missing or older than 6h. MUST wait
+    // for the settings doc to load first — otherwise it would compute "age" from the
+    // default config and write defaults (USD) over the real saved currency.
     useEffect(() => {
-        if (loading || ratesChecked.current) return;
+        if (loading || !settingsLoaded || ratesChecked.current) return;
         ratesChecked.current = true;
-        const age = Date.now() - (data.config.ratesUpdatedAt || 0);
+        const age = Date.now() - (configRef.current.ratesUpdatedAt || 0);
         if (age > 6 * 3600 * 1000) refreshRates(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loading]);
+    }, [loading, settingsLoaded]);
 
     const onReorder = (next: TreasuryProject[]) => setData(d => ({ ...d, projects: next }));
     const persistOrder = () => writeProjects(data.projects.map((p, i) => ({ ...p, order: i })));
@@ -498,6 +494,13 @@ const DTreasury = () => {
         ...data.income.map(i => ({ t: 'income' as const, date: i.date, raw: i })),
         ...data.expenses.map(e => ({ t: 'expense' as const, date: e.date, raw: e })),
     ].sort((a, b) => (b.date || '').localeCompare(a.date || '')), [data.income, data.expenses]);
+
+    // Same rows grouped by day (newest day first) for the "By day" view.
+    const moneyByDay = useMemo(() => {
+        const map = new Map<string, typeof moneyRows>();
+        for (const r of moneyRows) { const k = r.date || '—'; (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
+        return Array.from(map.entries());
+    }, [moneyRows]);
 
     // Aggregate the continuous daily series for the active filter (D-Views style).
     const chartData = useMemo<ChartPoint[]>(() => {
@@ -538,16 +541,71 @@ const DTreasury = () => {
         { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
     ];
 
-    if (loading) {
+    if (loading || !settingsLoaded) {
         return <div className="w-full h-full flex items-center justify-center text-sec"><Sparkles className="animate-pulse mr-2" size={20} /> Loading treasury…</div>;
     }
 
     const sectionTitle = (icon: React.ReactNode, text: string, action?: React.ReactNode) => (
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
             <div className="flex items-center gap-2">{icon}<span className="text-sm font-bold text-primary">{text}</span></div>
             {action}
         </div>
     );
+
+    // One money-ledger row (income or expense), tappable to edit.
+    const renderMoneyRow = (r: typeof moneyRows[number]) => {
+        if (r.t === 'income') {
+            const i = r.raw;
+            const proj = i.projectId ? data.projects.find(p => p.id === i.projectId) : null;
+            return (
+                <div key={`i-${i.id}`} onClick={() => setModal({ mode: 'income', income: i })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500 flex-shrink-0"><Banknote size={16} /></div>
+                    <div className="min-w-0 flex-1">
+                        <span className="text-sm font-semibold text-primary truncate block">{proj ? proj.name : (i.note || 'Payment')}</span>
+                        <span className="text-xs text-sec">{i.date}{proj && i.note ? ` · ${i.note}` : ''}</span>
+                    </div>
+                    <span className="text-sm font-bold text-emerald-500 tnum flex-shrink-0">+{formatMoney(i.amount, i.currency)}</span>
+                    <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                </div>
+            );
+        }
+        const e = r.raw;
+        const eproj = e.projectId ? data.projects.find(p => p.id === e.projectId) : null;
+        return (
+            <div key={`e-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-rose-500/10 text-rose-400 flex-shrink-0"><Receipt size={16} /></div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-primary truncate">{e.label}</span>
+                        {e.recurring && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">monthly</span>}
+                    </div>
+                    <span className="text-xs text-sec">{e.category ? `${e.category} · ` : ''}{eproj ? `${eproj.name} · ` : ''}{e.date}</span>
+                </div>
+                <span className="text-sm font-bold text-rose-500 tnum flex-shrink-0">−{formatMoney(e.amount, e.currency)}</span>
+                <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+            </div>
+        );
+    };
+
+    // Net of a day's rows in the display currency, + a friendly header label.
+    const dayNet = (rows: typeof moneyRows) => rows.reduce((s, r) => s + (r.t === 'income' ? 1 : -1) * convert(r.raw.amount || 0, r.raw.currency, cur, data.config.rates), 0);
+    const fmtDayHeader = (day: string) => {
+        if (day === '—') return 'Undated';
+        const d = new Date(`${day}T00:00:00`);
+        if (Number.isNaN(d.getTime())) return day;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const diff = Math.round((today.getTime() - d.getTime()) / 86400000);
+        if (diff === 0) return 'Today';
+        if (diff === 1) return 'Yesterday';
+        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+    };
+    // Move the day filter by ±1 day (starts from today when none is set).
+    const stepDay = (delta: number) => {
+        const base = selectedDay ? new Date(`${selectedDay}T00:00:00`) : new Date();
+        base.setDate(base.getDate() + delta);
+        setSelectedDay(`${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`);
+    };
+    const dayRows = selectedDay ? moneyRows.filter(r => r.date === selectedDay) : [];
 
     const kpiCards = (
         <div className={`grid gap-3 ${isExtraSmall ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
@@ -672,48 +730,69 @@ const DTreasury = () => {
                     )}
 
                     {tab === 'money' && (
-                        <div className="glass-panel p-5">
-                            {sectionTitle(
-                                <Wallet size={16} className="text-blue-400" />,
-                                'Money',
-                                <button onClick={() => setModal({ mode: 'income', income: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add money</button>
-                            )}
-                            <p className="text-xs text-sec -mt-1 mb-2">Income (money in) and spendings (money out) in one ledger — pick the type when adding. Link income to a project to count toward what you&apos;ve received.</p>
-                            <div className="glass-surface divide-y divide-[var(--input-border)] overflow-hidden mt-2">
+                        <div className="glass-panel overflow-hidden">
+                            {/* Sticky header */}
+                            <div className="sticky top-0 z-10 px-5 pt-5 pb-3 border-b border-[var(--section-border)]" style={{ background: isDark ? 'rgba(15,15,20,0.92)' : 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }}>
+                                {sectionTitle(
+                                    <Wallet size={16} className="text-blue-400" />,
+                                    'Money',
+                                    <div className="flex items-center gap-2">
+                                        <div className={`flex p-0.5 rounded-xl border ${isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-black/5'}`}>
+                                            {(['all', 'day'] as const).map(v => (
+                                                <button key={v} onClick={() => setMoneyView(v)}
+                                                    className={`px-3 py-1.5 rounded-[10px] text-[11px] font-bold uppercase tracking-wider transition-all ${moneyView === v ? 'bg-blue-600 text-white shadow' : isDark ? 'text-[#666] hover:text-[#999]' : 'text-slate-400 hover:text-slate-700'}`}>
+                                                    {v === 'all' ? 'All' : 'By day'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <button onClick={() => setModal({ mode: 'income', income: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add money</button>
+                                    </div>
+                                )}
+                                {/* Day navigator: ‹  date  › */}
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => stepDay(-1)} title="Previous day" className="p-2 rounded-xl text-sec hover:text-primary border border-[var(--input-border)] hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><ChevronLeft size={16} /></button>
+                                    <div className="w-44"><DatePicker value={selectedDay} onChange={setSelectedDay} isDark={isDark} placeholder="Jump to a day" allowClear /></div>
+                                    <button onClick={() => stepDay(1)} title="Next day" className="p-2 rounded-xl text-sec hover:text-primary border border-[var(--input-border)] hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><ChevronRight size={16} /></button>
+                                    {selectedDay && <button onClick={() => setSelectedDay('')} className="text-xs font-semibold text-blue-500 hover:text-blue-600 px-1">Clear</button>}
+                                </div>
+                            </div>
+
+                            {/* Body */}
+                            <div className="p-5">
                                 {moneyRows.length === 0 ? (
-                                    <div className="p-6 text-center text-sec text-sm">Nothing yet. Click "+ Add money" to log income or an expense.</div>
-                                ) : moneyRows.map(r => r.t === 'income' ? (() => {
-                                    const i = r.raw;
-                                    const proj = i.projectId ? data.projects.find(p => p.id === i.projectId) : null;
-                                    return (
-                                        <div key={`i-${i.id}`} onClick={() => setModal({ mode: 'income', income: i })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
-                                            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500 flex-shrink-0"><Banknote size={16} /></div>
-                                            <div className="min-w-0 flex-1">
-                                                <span className="text-sm font-semibold text-primary truncate block">{proj ? proj.name : (i.note || 'Payment')}</span>
-                                                <span className="text-xs text-sec">{i.date}{proj && i.note ? ` · ${i.note}` : ''}</span>
-                                            </div>
-                                            <span className="text-sm font-bold text-emerald-500 tnum flex-shrink-0">+{formatMoney(i.amount, i.currency)}</span>
-                                            <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                                    <div className="glass-surface p-6 text-center text-sec text-sm">Nothing yet. Click "+ Add money" to log income or an expense.</div>
+                                ) : selectedDay ? (
+                                    <div className="glass-surface overflow-hidden">
+                                        <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
+                                            <span className="text-[11px] font-bold text-sec uppercase tracking-wider">{fmtDayHeader(selectedDay)}</span>
+                                            {dayRows.length > 0 && (() => { const net = dayNet(dayRows); return <span className="text-xs font-bold tnum" style={{ color: net >= 0 ? '#10b981' : '#f43f5e' }}>{net >= 0 ? '+' : '−'}{formatMoney(Math.abs(net), cur)}</span>; })()}
                                         </div>
-                                    );
-                                })() : (() => {
-                                    const e = r.raw;
-                                    const eproj = e.projectId ? data.projects.find(p => p.id === e.projectId) : null;
-                                    return (
-                                        <div key={`e-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
-                                            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-rose-500/10 text-rose-400 flex-shrink-0"><Receipt size={16} /></div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-semibold text-primary truncate">{e.label}</span>
-                                                    {e.recurring && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">monthly</span>}
+                                        {dayRows.length > 0
+                                            ? <div className="divide-y divide-[var(--input-border)]">{dayRows.map(renderMoneyRow)}</div>
+                                            : <div className="p-6 text-center text-sec text-sm">No entries on this day.</div>}
+                                    </div>
+                                ) : moneyView === 'all' ? (
+                                    <div className="glass-surface divide-y divide-[var(--input-border)] overflow-hidden">
+                                        {moneyRows.map(renderMoneyRow)}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-3">
+                                        {moneyByDay.map(([day, rows]) => {
+                                            const net = dayNet(rows);
+                                            return (
+                                                <div key={day} className="glass-surface overflow-hidden">
+                                                    <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
+                                                        <span className="text-[11px] font-bold text-sec uppercase tracking-wider">{fmtDayHeader(day)}</span>
+                                                        <span className="text-xs font-bold tnum" style={{ color: net >= 0 ? '#10b981' : '#f43f5e' }}>{net >= 0 ? '+' : '−'}{formatMoney(Math.abs(net), cur)}</span>
+                                                    </div>
+                                                    <div className="divide-y divide-[var(--input-border)]">
+                                                        {rows.map(renderMoneyRow)}
+                                                    </div>
                                                 </div>
-                                                <span className="text-xs text-sec">{e.category ? `${e.category} · ` : ''}{eproj ? `${eproj.name} · ` : ''}{e.date}</span>
-                                            </div>
-                                            <span className="text-sm font-bold text-rose-500 tnum flex-shrink-0">−{formatMoney(e.amount, e.currency)}</span>
-                                            <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                                        </div>
-                                    );
-                                })())}
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
