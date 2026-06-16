@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'lucide-react';
-import { getAuth, GoogleAuthProvider, signInWithPopup as authSignInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup as authSignInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app from '../lib/firebase';
+import { appAuth } from '../lib/appAuth';
 import { useSettings } from '../contexts/SettingsContext';
 
 type SecretNavigate = (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
@@ -15,7 +16,7 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
     const [isDark, setIsDark] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const auth = getAuth();
+    const auth = appAuth();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
 

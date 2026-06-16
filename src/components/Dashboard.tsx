@@ -10,8 +10,9 @@ import DDeveloper from './dashboard/D-Developer';
 import DTreasury from './dashboard/D-Treasury';
 import Assistant from './dashboard/Assistant';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import app, { db } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { db } from '../lib/firebase';
+import { appAuth } from '../lib/appAuth';
 
 // The parameter name in the function type would trigger `no-unused-vars` in some
 // ESLint configurations, so we suppress that rule for the following type alias.
@@ -36,7 +37,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     // it was restored on refresh without a session), bounce home so we never fire
     // admin-only reads/writes that Firestore would reject with permission-denied.
     useEffect(() => {
-        const off = onAuthStateChanged(getAuth(app), (user) => {
+        const off = onAuthStateChanged(appAuth(), (user) => {
             if (!user) onNavigate?.('home');
         });
         return () => off();

@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { Sparkles, X, Send, Settings2, Loader2, MousePointer2, Check, Database, ArrowRight, Zap, HelpCircle, Mic, Volume2, VolumeX, Brain } from 'lucide-react';
 import { doc, collection, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
-import app, { db } from '../../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { db } from '../../lib/firebase';
+import { appAuth } from '../../lib/appAuth';
 import {
     chat, getApiKey, setKeyOverride, getModel, setModel, detectProvider, listModels,
     userMessage, toolResultMessage, PROVIDER_LABEL, ToolCall, ToolResult,
@@ -216,7 +217,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
     const memoryRef = useRef<SparkMemory>(memory);
     useEffect(() => { memoryRef.current = memory; }, [memory]);
     useEffect(() => {
-        const off = onAuthStateChanged(getAuth(app), user => {
+        const off = onAuthStateChanged(appAuth(), user => {
             if (!user) return;
             getDoc(MEMORY_DOC).then(s => { if (s.exists()) setMemory(s.data() as SparkMemory); }).catch(() => { });
         });
