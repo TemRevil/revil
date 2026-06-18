@@ -1,5 +1,5 @@
 /**
- * Treasury — pure logic layer (no React).
+ * Treasury - pure logic layer (no React).
  *
  * Holds the data model, multi-currency math, the natural-language command
  * parser that powers the dictate/type "agent" box, the insight generator that
@@ -54,12 +54,12 @@ export interface TreasuryExpense {
 }
 
 // A dated payment received. Optionally tied to a project (money earned FROM it),
-// logged whenever it actually arrives — not necessarily at the project's start.
+// logged whenever it actually arrives - not necessarily at the project's start.
 export interface TreasuryIncome {
     id: string;
     amount: number;
     currency: Currency;
-    date: string;                 // 'YYYY-MM-DD' — when the money came in
+    date: string;                 // 'YYYY-MM-DD' - when the money came in
     projectId?: string;           // optional link to the project it's from
     note?: string;
     createdAt: number;
@@ -171,7 +171,7 @@ export function computeTotals(data: TreasuryData): TreasuryTotals {
     let earned = 0, outstanding = 0, contracted = 0, spent = 0;
 
     for (const p of data.projects) {
-        // Monthly retainers have no fixed total — priceAmount is a per-month rate,
+        // Monthly retainers have no fixed total - priceAmount is a per-month rate,
         // so they don't contribute to contracted/outstanding.
         if (p.monthly) continue;
         const price = convert(p.priceAmount || 0, p.priceCurrency, cur, rates);
@@ -180,7 +180,7 @@ export function computeTotals(data: TreasuryData): TreasuryTotals {
         outstanding += Math.max(0, price - received);
     }
     // Earned = every payment actually received: legacy per-project paidAmount +
-    // all logged income (linked or standalone). No double counting — income is
+    // all logged income (linked or standalone). No double counting - income is
     // never folded into paidAmount.
     for (const p of data.projects) earned += convert(p.monthly ? (p.paidAmount || 0) : Math.min(p.paidAmount || 0, p.priceAmount || p.paidAmount || 0), p.priceCurrency, cur, rates);
     for (const i of (data.income || [])) earned += convert(i.amount || 0, i.currency, cur, rates);
@@ -306,7 +306,7 @@ export function buildDailySeries(data: TreasuryData): DaySeriesPoint[] {
 }
 
 // ---------------------------------------------------------------------------
-// Insights — money suggestions surfaced on the page
+// Insights - money suggestions surfaced on the page
 // ---------------------------------------------------------------------------
 
 export type InsightTone = 'good' | 'warn' | 'info';
@@ -332,14 +332,14 @@ export function buildInsights(data: TreasuryData): Insight[] {
     if (t.outstanding > 0) {
         out.push({
             tone: 'warn', icon: 'outstanding', label: 'Outstanding',
-            text: `${formatMoney(t.outstanding, cur)} owed across ${owing.length} project${owing.length === 1 ? '' : 's'} — consider following up.`,
+            text: `${formatMoney(t.outstanding, cur)} owed across ${owing.length} project${owing.length === 1 ? '' : 's'} - consider following up.`,
         });
     }
 
     // Done but not fully paid → invoice it
     const doneUnpaid = data.projects.filter(p => p.done && projectPaymentStatus(p, data.income, rates) !== 'paid' && p.priceAmount > 0);
     for (const p of doneUnpaid.slice(0, 2)) {
-        out.push({ tone: 'warn', icon: 'invoice', label: 'Invoice due', text: `"${p.name}" is finished but still ${projectPaymentStatus(p, data.income, rates)} — time to invoice the rest.` });
+        out.push({ tone: 'warn', icon: 'invoice', label: 'Invoice due', text: `"${p.name}" is finished but still ${projectPaymentStatus(p, data.income, rates)} - time to invoice the rest.` });
     }
 
     // Spend ratio
@@ -347,11 +347,11 @@ export function buildInsights(data: TreasuryData): Insight[] {
         const pct = Math.round((t.spent / t.earned) * 100);
         out.push({
             tone: pct > 60 ? 'warn' : 'info', icon: 'ratio', label: 'Spend ratio',
-            text: `Spendings are ${pct}% of what you've earned${pct > 60 ? ' — margins are thin.' : '.'}`,
+            text: `Spendings are ${pct}% of what you've earned${pct > 60 ? ' - margins are thin.' : '.'}`,
         });
     }
     if (t.net < 0) {
-        out.push({ tone: 'warn', icon: 'loss', label: 'Net negative', text: `You're down ${formatMoney(Math.abs(t.net), cur)} — spendings exceed received income.` });
+        out.push({ tone: 'warn', icon: 'loss', label: 'Net negative', text: `You're down ${formatMoney(Math.abs(t.net), cur)} - spendings exceed received income.` });
     } else if (t.earned > 0) {
         out.push({ tone: 'good', icon: 'profit', label: 'Net profit', text: `You're up ${formatMoney(t.net, cur)} after spendings.` });
     }
@@ -366,7 +366,7 @@ export function buildInsights(data: TreasuryData): Insight[] {
     // Missing prices
     const noPrice = data.projects.filter(p => !p.priceAmount);
     if (noPrice.length) {
-        out.push({ tone: 'info', icon: 'noprice', label: 'Missing price', text: `${noPrice.length} project${noPrice.length === 1 ? ' has' : 's have'} no price set — add one to track earnings.` });
+        out.push({ tone: 'info', icon: 'noprice', label: 'Missing price', text: `${noPrice.length} project${noPrice.length === 1 ? ' has' : 's have'} no price set - add one to track earnings.` });
     }
 
     // Long-running active projects
@@ -418,10 +418,10 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
         <tr>
           <td><b>${esc(p.name)}</b>${p.client ? `<div class="sub">${esc(p.client)}</div>` : ''}</td>
           <td><span class="pill ${p.status}">${esc(p.status)}</span></td>
-          <td>${p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '—'}${p.monthly ? '/mo' : ''}</td>
+          <td>${p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}${p.monthly ? '/mo' : ''}</td>
           <td><span class="pay ${status}">${p.monthly ? 'monthly' : status}</span></td>
           <td>${formatMoney(received, p.priceCurrency)}</td>
-          <td>${esc(p.startDate || '—')} → ${esc(p.endDate || (p.done ? '—' : 'ongoing'))}</td>
+          <td>${esc(p.startDate || '-')} → ${esc(p.endDate || (p.done ? '-' : 'ongoing'))}</td>
           <td class="notes">${esc(p.notes || '')}</td>
         </tr>`;
     }).join('');
@@ -432,8 +432,8 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
         .map(i => `
         <tr>
           <td><b>${formatMoney(i.amount, i.currency)}</b></td>
-          <td>${esc(i.projectId ? (projById.get(i.projectId) || '—') : '—')}</td>
-          <td>${esc(i.date || '—')}</td>
+          <td>${esc(i.projectId ? (projById.get(i.projectId) || '-') : '-')}</td>
+          <td>${esc(i.date || '-')}</td>
           <td class="notes">${esc(i.note || '')}</td>
         </tr>`).join('');
 
@@ -442,14 +442,14 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
         .map(e => `
         <tr>
           <td><b>${esc(e.label)}</b>${e.recurring ? ' <span class="pill recurring">recurring</span>' : ''}${e.projectId ? `<div class="sub">${esc(projById.get(e.projectId) || '')}</div>` : ''}</td>
-          <td>${esc(e.category || '—')}</td>
+          <td>${esc(e.category || '-')}</td>
           <td>${formatMoney(e.amount, e.currency)}</td>
-          <td>${esc(e.date || '—')}</td>
+          <td>${esc(e.date || '-')}</td>
         </tr>`).join('');
 
     return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Treasury Report — ${date}</title>
+<title>Treasury Report - ${date}</title>
 <style>
   :root{--bg:#0b0b0f;--panel:#15151c;--line:#26262f;--text:#e9e9f0;--muted:#9b9bab;--green:#22c55e;--red:#f87171;--amber:#f59e0b;}
   *{box-sizing:border-box} body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;background:var(--bg);color:var(--text);padding:32px}
@@ -489,6 +489,6 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
   <h2>Expenses (${data.expenses.length})</h2>
   <table><thead><tr><th>Item</th><th>Category</th><th>Amount</th><th>Date</th></tr></thead>
   <tbody>${expenseRows || '<tr><td colspan="4" style="color:var(--muted)">No expenses yet.</td></tr>'}</tbody></table>
-  <footer>The State of Revil — Treasury · ${date}</footer>
+  <footer>The State of Revil - Treasury · ${date}</footer>
 </div></body></html>`;
 }

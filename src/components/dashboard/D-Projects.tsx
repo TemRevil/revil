@@ -123,7 +123,7 @@ const ProjectRow = ({
                     ) : project.images.length > 0 ? (
                         <div className="w-full h-full bg-blue-500 text-white flex items-center justify-center font-bold">{project.name.charAt(0)}</div>
                     ) : (
-                        <span className="text-xl">📁</span>
+                        <span className="text-xl"></span>
                     )}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -175,7 +175,7 @@ const ProjectRow = ({
                         )}
                     </div>
                 ) : (
-                    <div className="text-xs text-sec">—</div>
+                    <div className="text-xs text-sec">-</div>
                 )}
             </div>
 
@@ -211,7 +211,7 @@ const ProjectRow = ({
                         )}
                     </div>
                 ) : (
-                    <div className="text-xs text-sec">—</div>
+                    <div className="text-xs text-sec">-</div>
                 )}
             </div>
 
@@ -645,7 +645,7 @@ const DProjects = () => {
                     const keptUrls = new Set([...imageUrls, iconUrl].filter(Boolean));
 
                     for (const item of listResult.items) {
-                        // Skip the icon file — it's managed separately
+                        // Skip the icon file - it's managed separately
                         if (item.name === 'icon') continue;
 
                         try {
