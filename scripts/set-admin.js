@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * set-admin.js — mint the `admin: true` custom claim for the portfolio owner.
+ * set-admin.js - mint the `admin: true` custom claim for the portfolio owner.
  *
  * WHY THIS EXISTS
  * ---------------
  * The entire Firestore/Storage write-security model (firestore.rules / storage.rules)
  * gates admin writes on `request.auth.token.admin == true`. That claim is NOT set by
- * the app at runtime — it must be minted once with the Admin SDK. Without it, EVERY
+ * the app at runtime - it must be minted once with the Admin SDK. Without it, EVERY
  * dashboard write (settings, projects, tags, meeting cancel/reschedule, image uploads)
  * is silently rejected by the security rules.
  *
@@ -14,11 +14,11 @@
  * -----
  * 1. Download a service-account key for the `temrevil1` project:
  *      Firebase Console → Project Settings → Service accounts → Generate new private key
- *    Save it OUTSIDE the repo (it must NEVER be committed — see .gitignore).
+ *    Save it OUTSIDE the repo (it must NEVER be committed - see .gitignore).
  * 2. Run:
  *      GOOGLE_APPLICATION_CREDENTIALS="/abs/path/serviceAccountKey.json" \
  *        node scripts/set-admin.js <admin-uid-or-email>
- *    e.g.  node scripts/set-admin.js temrevil@gmail.com
+ *    e.g.  node scripts/set-admin.js hello@temrevil.com
  * 3. Sign out and back in on the site (SecretPage already calls getIdToken(true),
  *    so the new claim takes effect on next sign-in).
  *

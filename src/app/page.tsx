@@ -8,7 +8,7 @@ const App = dynamic(() => import('../App'), { ssr: false })
 export default function Page() {
   return (
     <>
-      {/* GEO fallback — the visible app is a client-rendered SPA (ssr:false), so AI
+      {/* GEO fallback - the visible app is a client-rendered SPA (ssr:false), so AI
           crawlers that do NOT execute JavaScript (GPTBot, ClaudeBot, PerplexityBot,
           CCBot, etc.) only ever see this static HTML plus the JSON-LD in <head>.
           Googlebot renders JS and sees the full app. We mirror the canonical facts
@@ -86,8 +86,8 @@ export default function Page() {
             </p>
             <h3>Is he available for hire?</h3>
             <p>
-              Yes — freelance, remote, and full-time. Contact{' '}
-              <a href="mailto:temrevil@gmail.com">temrevil@gmail.com</a>.
+              Yes - freelance, remote, and full-time. Contact{' '}
+              <a href="mailto:hello@temrevil.com">hello@temrevil.com</a>.
             </p>
           </section>
 
@@ -95,7 +95,7 @@ export default function Page() {
             <h2>Contact &amp; profiles</h2>
             <ul>
               <li>Website: <a href="https://temrevil.com">temrevil.com</a></li>
-              <li>Email: <a href="mailto:temrevil@gmail.com">temrevil@gmail.com</a></li>
+              <li>Email: <a href="mailto:hello@temrevil.com">hello@temrevil.com</a></li>
               <li>GitHub: <a href="https://github.com/TemRevil">github.com/TemRevil</a></li>
               <li>LinkedIn: <a href="https://linkedin.com/in/temrevil">linkedin.com/in/temrevil</a></li>
               <li>Instagram: <a href="https://instagram.com/temrevil">instagram.com/temrevil</a></li>

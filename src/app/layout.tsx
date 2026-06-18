@@ -78,7 +78,7 @@ const structuredData = {
       description: siteDescription,
       url: siteUrl,
       image: `${siteUrl}/icon-512.webp`,
-      email: 'mailto:temrevil@gmail.com',
+      email: 'mailto:hello@temrevil.com',
       jobTitle: 'Frontend Engineer & AI Engineer',
       worksFor: {
         '@type': 'Organization',
@@ -166,7 +166,7 @@ const structuredData = {
       ],
     },
     {
-      // FAQ structured data — primarily for generative engines (ChatGPT, Claude,
+      // FAQ structured data - primarily for generative engines (ChatGPT, Claude,
       // Perplexity, Gemini) which extract these Q&A pairs to answer "who is / what
       // does / where / hire" queries about Tem Revil. Answers mirror the canonical
       // facts in the Person node and llms.txt so the model gets a consistent story.
@@ -206,7 +206,7 @@ const structuredData = {
           name: 'Is Tem Revil available for hire?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'Yes. Mohammed Ahmed is open to freelance, remote, and full-time opportunities for frontend development and AI integration projects. You can reach him at temrevil@gmail.com.',
+            text: 'Yes. Mohammed Ahmed is open to freelance, remote, and full-time opportunities for frontend development and AI integration projects. You can reach him at hello@temrevil.com.',
           },
         },
         {
@@ -214,7 +214,7 @@ const structuredData = {
           name: 'How can I contact Tem Revil?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'You can contact Mohammed Ahmed (Tem Revil) by email at temrevil@gmail.com, or through the contact section on his portfolio at https://temrevil.com. He is also reachable on GitHub, LinkedIn, and Instagram as @temrevil.',
+            text: 'You can contact Mohammed Ahmed (Tem Revil) by email at hello@temrevil.com, or through the contact section on his portfolio at https://temrevil.com. He is also reachable on GitHub, LinkedIn, and Instagram as @temrevil.',
           },
         },
       ],
@@ -235,7 +235,7 @@ export const metadata: Metadata = {
   description: siteDescription,
   applicationName: siteName,
   keywords: [
-    // Navigational — brand searches
+    // Navigational - brand searches
     'Tem Revil',
     'Temrevil',
     'Mohammed Ahmed',
@@ -243,7 +243,7 @@ export const metadata: Metadata = {
     'Tem Revil portfolio',
     'Mohammed Ahmed portfolio',
     'temrevil.com',
-    // Informational — "who is" / discovery
+    // Informational - "who is" / discovery
     'frontend engineer Egypt',
     'frontend engineer El Mansoura',
     'frontend developer El Mansourah',
@@ -255,14 +255,14 @@ export const metadata: Metadata = {
     'software engineer Dakahlia',
     'frontend developer portfolio examples',
     'React portfolio website',
-    // Commercial — hiring intent
+    // Commercial - hiring intent
     'hire React developer Egypt',
     'hire frontend developer Egypt',
     'freelance frontend developer Egypt',
     'freelance React developer remote',
     'frontend engineer for hire',
     'best frontend developer Egypt',
-    // Transactional — direct engagement
+    // Transactional - direct engagement
     'contact frontend developer Egypt',
     'book frontend developer consultation',
     // Technical / skill-based
@@ -345,7 +345,7 @@ export default function RootLayout({
 }) {
   // React's DEV mode requires eval() for HMR / debugging (it never uses eval in production).
   // So allow 'unsafe-eval' ONLY in development; production stays locked down (no eval).
-  // This is a build-time conditional — `next build` sets NODE_ENV=production, so the
+  // This is a build-time conditional - `next build` sets NODE_ENV=production, so the
   // shipped static export NEVER includes 'unsafe-eval'.
   const scriptSrc =
     process.env.NODE_ENV === 'development'
@@ -356,7 +356,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`dark ${fontVariables}`} suppressHydrationWarning>
       <head>
-        {/* Theme — applied BEFORE first paint so the whole app (incl. the dashboard,
+        {/* Theme - applied BEFORE first paint so the whole app (incl. the dashboard,
             which doesn't mount the Navbar) reflects the saved/system preference on
             every refresh with no flash. The Navbar's toggle keeps writing
             localStorage('theme'); this just reads it (or the OS preference) early.
@@ -373,9 +373,9 @@ export default function RootLayout({
         </Script>
         {/* Google Search Console verification */}
         <meta name="google-site-verification" content="uQR0p6nF_uFGSNYBtO-_tKpQ6W-Qu_LrwF77SLoEprc" />
-        {/* Content Security Policy — defense-in-depth against XSS.
+        {/* Content Security Policy - defense-in-depth against XSS.
             'unsafe-eval' is dev-only (see scriptSrc above); production omits it.
-            NOTE: 'frame-ancestors' is intentionally NOT here — browsers ignore it in a
+            NOTE: 'frame-ancestors' is intentionally NOT here - browsers ignore it in a
             <meta> tag (and log a warning). Clickjacking protection is delivered as a real
             HTTP header (Content-Security-Policy: frame-ancestors + X-Frame-Options) from
             deploy/hostinger/.htaccess instead. */}

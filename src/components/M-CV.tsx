@@ -29,7 +29,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
     const [projects, setProjects] = useState<CVProject[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
     const [contactInfo, setContactInfo] = useState({
-        email: 'temrevil@gmail.com',
+        email: 'hello@temrevil.com',
         phone: '+20 100 130 8280',
         location: 'El Mansoura, Egypt'
     });
@@ -361,7 +361,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                                             <div className="space-y-4">
                                                 <div className="flex justify-between items-start">
                                                     <h3 className="text-xl font-bold text-primary">Systems Information & Comp. Eng.</h3>
-                                                    <span className="text-[10px] font-black text-blue-500 bg-blue-500/10 px-2 py-1 rounded">2025 — 2030</span>
+                                                    <span className="text-[10px] font-black text-blue-500 bg-blue-500/10 px-2 py-1 rounded">2025 - 2030</span>
                                                 </div>
                                                 <p className="text-sec text-sm">MISR Engineering & Technology (MET) • First Year</p>
                                             </div>

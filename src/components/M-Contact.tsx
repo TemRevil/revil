@@ -5,7 +5,7 @@ import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, 
 import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 // firebase/storage + firebase/functions are dynamic-imported inside the submit
 // handlers below (not statically) so they stay OUT of the eager first-paint
-// bundle — M-Contact is imported eagerly by App.tsx, so a static import here
+// bundle - M-Contact is imported eagerly by App.tsx, so a static import here
 // would pull both SDKs into the critical chunk.
 import app, { db } from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
@@ -172,7 +172,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     });
 
     // Read busy slots from the sanitized public mirror (Settings/BookedSlots),
-    // NOT Settings/Canary — Canary holds visitor PII and is admin-read-only.
+    // NOT Settings/Canary - Canary holds visitor PII and is admin-read-only.
     // BookedSlots carries only { Date, Time } per booking, which is all the public
     // calendar needs to grey out taken slots. A Cloud Function keeps it in sync.
     const unsubscribeMeetings = onSnapshot(doc(db, 'Settings', 'BookedSlots'), (docSnap) => {
@@ -347,9 +347,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     if (!selectedDate || !selectedTime) return;
     // Guard: the selected slot must still be a currently-offered, non-passed, and
     // still-free slot (defends against a slot that became unavailable after
-    // selection — e.g. another visitor booked it while this modal was open, in
+    // selection - e.g. another visitor booked it while this modal was open, in
     // which case the button greys out but selectedTime persists).
-    // isTimePassed/busy checks take the host-perspective time — convert first.
+    // isTimePassed/busy checks take the host-perspective time - convert first.
     const selectedHostTime = convertTimeToHost(selectedTime);
     const slotNowBusy = getMeetingsForDate(selectedDate).some(m => m.Time === selectedHostTime);
     if (!convertedSlots.includes(selectedTime) || isTimePassed(selectedDate, selectedHostTime) || slotNowBusy) {
@@ -409,7 +409,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       // 4. Save to Firebase.
       // Canary is now admin-read-only, so the public client can no longer read it
       // to compute a sequential ID. We use a collision-resistant client-generated
-      // ID and a blind updateDoc (matches the rate-limited public-update rule) — no
+      // ID and a blind updateDoc (matches the rate-limited public-update rule) - no
       // read of Canary required. IDs are opaque map keys; nothing depends on them
       // being numeric or sequential.
       const docRef = doc(db, 'Settings', 'Canary');
@@ -451,7 +451,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         await updateDoc(docRef, { [`Meetings.${meetingId}`]: payload, lastMeetingWrite: serverTimestamp() });
       } catch (writeErr) {
         // The calendar event + guest invite already exist, but persisting the meeting
-        // to Firestore failed — most commonly the rules' 300s global booking cooldown
+        // to Firestore failed - most commonly the rules' 300s global booking cooldown
         // rejecting a second booking made site-wide within 5 minutes. Roll the event
         // back so we don't leave an orphaned invite for a slot the public mirror never
         // marks busy (which a later visitor could then double-book).
@@ -467,7 +467,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           } catch { /* best-effort rollback; the host can still cancel from the dashboard */ }
         }
         if ((writeErr as { code?: string })?.code === 'permission-denied') {
-          throw new Error('Another booking just came in — please wait a few minutes and try again.');
+          throw new Error('Another booking just came in - please wait a few minutes and try again.');
         }
         throw writeErr;
       }
@@ -499,7 +499,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const MAX_FILES = 5;
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
   // Must stay an exact subset of the storage.rules contentType allowlist for
-  // emails/** — SVG is deliberately excluded there (executes JS as image/svg+xml),
+  // emails/** - SVG is deliberately excluded there (executes JS as image/svg+xml),
   // so accepting it here only to have the upload hard-rejected would silently fail
   // the whole message with a generic error.
   const ALLOWED_TYPES = [
@@ -531,7 +531,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           continue;
         }
         if (!ALLOWED_TYPES.includes(file.type)) {
-          showAlert({ type: 'warning', message: `"${file.name}" — file type not allowed. Use images, PDFs, or documents.` });
+          showAlert({ type: 'warning', message: `"${file.name}" - file type not allowed. Use images, PDFs, or documents.` });
           continue;
         }
         validFiles.push(file);
