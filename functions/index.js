@@ -27,11 +27,16 @@ function escHtml(v) {
 
 /**
  * Escape user-supplied strings used inside an HTML attribute (mailto:, href, etc).
- * URL-encodes characters that would break out of the attribute.
+ * Prevents attribute breakout without breaking URL protocols.
  */
 function escAttr(v) {
   if (v === null || v === undefined) return "";
-  return encodeURIComponent(String(v)).replace(/'/g, "%27");
+  return String(v)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /**
@@ -41,6 +46,23 @@ function escAttr(v) {
 function escSubject(v) {
   if (v === null || v === undefined) return "";
   return String(v).replace(/[\r\n]+/g, " ").trim().slice(0, 200);
+}
+
+/**
+ * Extract the storage path from a Firebase Storage download URL.
+ * E.g. https://firebasestorage.googleapis.com/v0/b/.../o/emails%2F1781817458723_zmn0zb6%2Ffilename.jpg?alt=media...
+ * returns "emails/1781817458723_zmn0zb6/filename.jpg".
+ */
+function getStoragePathFromUrl(url) {
+  try {
+    const parts = url.split("/o/");
+    if (parts.length < 2) return null;
+    const pathPart = parts[1].split("?")[0];
+    return decodeURIComponent(pathPart);
+  } catch (err) {
+    console.error("Failed to parse storage URL:", url, err);
+    return null;
+  }
 }
 
 /** Helper: create a reusable SMTP transporter */
@@ -198,11 +220,37 @@ exports.notifyCanary = onDocumentWritten(
     const before = event.data?.before?.data() || {};
     const after = event.data?.after?.data() || {};
 
+    // ── Detect deleted email messages & clean up storage ──────────
+    const oldEmails = before.Emails || {};
+    const newEmails = after.Emails || {};
+    const deletedEmailKeys = Object.keys(oldEmails).filter(
+      (k) => !newEmails[k]
+    );
+
+    for (const key of deletedEmailKeys) {
+      const e = oldEmails[key];
+      if (!e) continue;
+
+      const files = e["Files Attached"] || [];
+      for (const f of files) {
+        if (!f || !f.url) continue;
+        const storagePath = getStoragePathFromUrl(f.url);
+        if (storagePath) {
+          try {
+            console.log(`Deleting storage file: ${storagePath}`);
+            const bucket = admin.storage().bucket();
+            await bucket.file(storagePath).delete();
+            console.log(`Successfully deleted storage file: ${storagePath}`);
+          } catch (err) {
+            console.error(`Failed to delete storage file ${storagePath}:`, err);
+          }
+        }
+      }
+    }
+
     const adminEmail = smtpUser.value(); // Send to self
 
     // ── Detect new email messages ──────────────────────────────
-    const oldEmails = before.Emails || {};
-    const newEmails = after.Emails || {};
     const addedEmailKeys = Object.keys(newEmails).filter(
       (k) => !oldEmails[k]
     );
