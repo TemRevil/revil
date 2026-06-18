@@ -4,8 +4,8 @@ import { createPortal } from 'react-dom';
 import { X, HardDrive } from 'lucide-react';
 import MFirebaseStorage from './M-FirebaseStorage';
 import firebaseIcon from '../../assets/svgs/firebase.svg';
-
 import { TagFormData } from '../../types';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface MTagFormProps {
     isOpen: boolean;
@@ -63,11 +63,24 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
         onClose();
     };
 
-    if (!isOpen) return null;
-
     return createPortal(
-        <div className="modal-backdrop open">
-            <div className="modal-content animate-scale-in">
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="modal-backdrop open"
+                    style={{ zIndex: 1100 }}
+                >
+                    <motion.div
+                        initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                        className="modal-content"
+                    >
                 {/* Header */}
                 <div className="modal-header">
                     <h2 className="heading-sm m-0">
@@ -237,8 +250,10 @@ const MTagForm = ({ isOpen, onClose, onSave, initialData }: MTagFormProps) => {
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>,
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>,
         document.body
     );
 };

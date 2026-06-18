@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Folder, FileImage, ChevronRight, ChevronLeft, Search } from 'lucide-react';
 import { ref, listAll, getDownloadURL, getStorage } from 'firebase/storage';
 import app from '../../lib/firebase';
-// Local Storage handle (lazy Dashboard chunk) — keeps firebase/storage out of eager.
+// Local Storage handle (lazy Dashboard chunk) - keeps firebase/storage out of eager.
 const storage = getStorage(app);
 
 const Spinner = () => (
@@ -147,22 +147,34 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
         ? files.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
         : files;
 
-    if (!isOpen) return null;
-
     const pathParts = currentPath.split('/').filter(Boolean);
 
     return createPortal(
-        <div className="modal-backdrop open animate-fade-in" style={{ zIndex: 1300 }}>
-            <div
-                className="modal-content glass-panel animate-scale-in transition-all duration-300 ease-in-out"
-                style={{
-                    maxWidth: '700px',
-                    maxHeight: '80vh',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    height: selectedFile && !selectedFile.isFolder ? 'auto' : '600px' // Dynamic height with transition
-                }}
-            >
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="modal-backdrop open"
+                    style={{ zIndex: 1300 }}
+                >
+                    <motion.div
+                        initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                        className="modal-content glass-panel"
+                        style={{
+                            maxWidth: '700px',
+                            maxHeight: '80vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            height: selectedFile && !selectedFile.isFolder ? 'auto' : '600px',
+                            transformOrigin: 'center'
+                        }}
+                    >
                 {/* Header */}
                 <div className="modal-header" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
                     <div className="flex items-center gap-3">
@@ -314,8 +326,10 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
                         </button>
                     </div>
                 )}
-            </div>
-        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
         , document.body);
 };
 

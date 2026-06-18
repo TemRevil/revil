@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { X, Upload, Plus, Image as ImageIcon, Github, ExternalLink, Trash2, Eye, Edit } from 'lucide-react';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import anime from 'animejs';
+import { motion, AnimatePresence } from 'motion/react';
 
 import { ProjectData, TagData, ContributorData } from '../../types';
 import FileImage from '../FileImage';
@@ -176,44 +176,6 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
         };
     }, []);
 
-
-    useEffect(() => {
-        if (isOpen) {
-            // Animate Modal Entrance
-            anime({
-                targets: '.project-modal-container',
-                scale: [0.9, 1],
-                opacity: [0, 1],
-                easing: 'easeOutElastic(1, .6)',
-                duration: 600,
-                delay: 100
-            });
-
-            // Animate Form Cards Staggered
-            anime({
-                targets: '.dashboard-card',
-                translateY: [20, 0],
-                opacity: [0, 1],
-                delay: anime.stagger(100, { start: 300 }),
-                easing: 'easeOutQuad',
-                duration: 500
-            });
-        }
-    }, [isOpen]);
-
-    // Animate Selection Modals
-    useEffect(() => {
-        if (selectTagOpen || selectContribOpen) {
-            anime({
-                targets: '.select-modal-content',
-                scale: [0.95, 1],
-                opacity: [0, 1],
-                easing: 'easeOutCubic',
-                duration: 300
-            });
-        }
-    }, [selectTagOpen, selectContribOpen]);
-
     // --- HANDLERS ---
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target as HTMLInputElement;
@@ -287,8 +249,6 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
         onClose();
     };
 
-    if (!isOpen) return null;
-
     // Calculate completion percentage
     const completionFields = [
         !!formData.name,
@@ -301,12 +261,24 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
     const completionPercentage = Math.round((completionFields.filter(Boolean).length / completionFields.length) * 100);
 
     return createPortal(
-        <div className={`fixed inset-0 z-[1000] flex items-center justify-center p-4 animate-fade-in ${isDark ? 'bg-black/80' : 'bg-black/60'} backdrop-blur-sm`}>
-            {/* Main Modal Container */}
-            <div
-                className={`project-modal-container w-full max-w-[95vw] lg:max-w-[1200px] h-[95vh] rounded-xl overflow-hidden flex flex-row shadow-2xl ${isDark ? 'bg-[#0a0a0a]' : 'bg-white'} border ${isDark ? 'border-white/10' : 'border-gray-200'}`}
-                style={{ animation: 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
-            >
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className={`fixed inset-0 z-[1000] flex items-center justify-center p-4 ${isDark ? 'bg-black/80' : 'bg-black/60'} backdrop-blur-sm`}
+                >
+                    {/* Main Modal Container */}
+                    <motion.div
+                        initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                        transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+                        className={`project-modal-container w-full max-w-[95vw] lg:max-w-[1200px] h-[95vh] rounded-xl overflow-hidden flex flex-row shadow-2xl ${isDark ? 'bg-[#0a0a0a]' : 'bg-white'} border ${isDark ? 'border-white/10' : 'border-gray-200'}`}
+                        style={{ transformOrigin: 'center' }}
+                    >
                 {/* LEFT PANEL - Form (Hidden on mobile when preview is active) */}
                 <div className={`project-form-left ${activeView === 'preview' ? 'hidden-mobile' : ''} min-w-0 flex-1 flex flex-col overflow-hidden ${isDark ? 'bg-[#0a0a0a]' : 'bg-gray-50'}`}>
                     {/* Header */}
@@ -696,79 +668,105 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                         </div>
                     </div>
                 </div>
-            </div>
+            </motion.div>
 
             {/* Selection Modals */}
-            {selectTagOpen && (
-                <div className="fixed inset-0 z-[2100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectTagOpen(false)}>
-                    <div
-                        className={`select-modal-content w-full max-w-2xl rounded-lg p-6 ${isDark ? 'bg-[#0a0a0a] border border-white/10' : 'bg-white border border-gray-200'} shadow-2xl`}
-                        onClick={(e) => e.stopPropagation()}
+            <AnimatePresence>
+                {selectTagOpen && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="fixed inset-0 z-[2100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                        onClick={() => setSelectTagOpen(false)}
                     >
-                        <div className="flex items-center justify-between mb-2">
-                            <h3 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Select Tech Stack</h3>
-                            <button onClick={() => setSelectTagOpen(false)} className={`p-2 rounded-lg ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}>
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto">
-                            {availableTags.map((tag) => (
-                                <button
-                                    key={tag.id}
-                                    type="button"
-                                    onClick={() => selectTag(tag)}
-                                    className={`p-4 rounded-lg border text-left transition-all hover:border-[#3395ff]`}
-                                    style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        {tag.iconSvg && (
-                                            tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image') ? (
-                                                <img src={tag.iconSvg} className="w-8 h-8 object-contain" alt={tag.name} />
-                                            ) : (
-                                                <span className="w-8 h-8 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.iconSvg) }} />
-                                            )
-                                        )}
-                                        <span className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{tag.name}</span>
-                                    </div>
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                            className={`w-full max-w-2xl rounded-lg p-6 ${isDark ? 'bg-[#0a0a0a] border border-white/10' : 'bg-white border border-gray-200'} shadow-2xl`}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Select Tech Stack</h3>
+                                <button type="button" onClick={() => setSelectTagOpen(false)} className={`p-2 rounded-lg ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}>
+                                    <X size={20} />
                                 </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto">
+                                {availableTags.map((tag) => (
+                                    <button
+                                        key={tag.id}
+                                        type="button"
+                                        onClick={() => selectTag(tag)}
+                                        className={`p-4 rounded-lg border text-left transition-all hover:border-[#3395ff]`}
+                                        style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            {tag.iconSvg && (
+                                                tag.iconSvg.startsWith('http') || tag.iconSvg.startsWith('data:image') ? (
+                                                    <img src={tag.iconSvg} className="w-8 h-8 object-contain" alt={tag.name} />
+                                                ) : (
+                                                    <span className="w-8 h-8 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.iconSvg) }} />
+                                                )
+                                            )}
+                                            <span className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{tag.name}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            {selectContribOpen && (
-                <div className="fixed inset-0 z-[2100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectContribOpen(false)}>
-                    <div
-                        className={`select-modal-content w-full max-w-2xl rounded-lg p-6 ${isDark ? 'bg-[#0a0a0a] border border-white/10' : 'bg-white border border-gray-200'} shadow-2xl`}
-                        onClick={(e) => e.stopPropagation()}
+            <AnimatePresence>
+                {selectContribOpen && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="fixed inset-0 z-[2100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                        onClick={() => setSelectContribOpen(false)}
                     >
-                        <div className="flex items-center justify-between mb-2">
-                            <h3 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Select Contributors</h3>
-                            <button onClick={() => setSelectContribOpen(false)} className={`p-2 rounded-lg ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}>
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div className="grid gap-3 max-h-[60vh] overflow-y-auto">
-                            {availableContributors.map((contrib) => (
-                                <button
-                                    key={contrib.id}
-                                    type="button"
-                                    onClick={() => selectContributor(contrib)}
-                                    className={`flex items-center gap-4 p-4 rounded-lg border text-left transition-all hover:border-[#3395ff]`}
-                                    style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
-                                >
-                                    <img src={contrib.image as string} className="w-12 h-12 rounded-lg object-cover" alt="" />
-                                    <div>
-                                        <p className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{contrib.name}</p>
-                                        <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{contrib.role}</p>
-                                    </div>
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                            className={`w-full max-w-2xl rounded-lg p-6 ${isDark ? 'bg-[#0a0a0a] border border-white/10' : 'bg-white border border-gray-200'} shadow-2xl`}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Select Contributors</h3>
+                                <button type="button" onClick={() => setSelectContribOpen(false)} className={`p-2 rounded-lg ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}>
+                                    <X size={20} />
                                 </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            )}
+                            </div>
+                            <div className="grid gap-3 max-h-[60vh] overflow-y-auto">
+                                {availableContributors.map((contrib) => (
+                                    <button
+                                        key={contrib.id}
+                                        type="button"
+                                        onClick={() => selectContributor(contrib)}
+                                        className={`flex items-center gap-4 p-4 rounded-lg border text-left transition-all hover:border-[#3395ff]`}
+                                        style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
+                                    >
+                                        <img src={contrib.image as string} className="w-12 h-12 rounded-lg object-cover" alt="" />
+                                        <div>
+                                            <p className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{contrib.name}</p>
+                                            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{contrib.role}</p>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <style>{`
                 @keyframes scaleIn {
@@ -782,7 +780,9 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                     border-radius: 20px;
                 }
             `}</style>
-        </div>,
+                </motion.div>
+            )}
+        </AnimatePresence>,
         document.body
     );
 };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, X, Info, AlertCircle } from 'lucide-react';
-import anime from 'animejs';
+import { motion, AnimatePresence } from 'motion/react';
 
 export type ConfirmType = 'danger' | 'warning' | 'info' | 'success';
 
@@ -35,27 +35,6 @@ const MConfirmModal = ({
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         return () => observer.disconnect();
     }, []);
-
-    useEffect(() => {
-        if (isOpen) {
-            anime({
-                targets: '.confirm-modal-overlay',
-                opacity: [0, 1],
-                duration: 300,
-                easing: 'easeOutQuad'
-            });
-            anime({
-                targets: '.confirm-modal-content',
-                scale: [0.9, 1],
-                opacity: [0, 1],
-                translateY: [20, 0],
-                duration: 450,
-                easing: 'easeOutElastic(1, 0.8)'
-            });
-        }
-    }, [isOpen]);
-
-    if (!isOpen) return null;
 
     const getTypeStyles = () => {
         switch (type) {
@@ -93,58 +72,72 @@ const MConfirmModal = ({
     const styles = getTypeStyles();
 
     return createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 confirm-modal-overlay bg-black/60 backdrop-blur-sm">
-            <div
-                className={`confirm-modal-content w-full max-w-md overflow-hidden rounded-2xl shadow-2xl border ${isDark ? 'bg-[#0f0f0f] border-white/10' : 'bg-white border-gray-200'}`}
-                style={{ transformOrigin: 'center' }}
-            >
-                {/* Header/Banner Area */}
-                <div
-                    className="p-6 flex flex-col items-center text-center gap-4"
-                    style={{ background: `linear-gradient(to bottom, ${styles.bg}, transparent)` }}
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
                 >
-                    <div
-                        className="w-16 h-16 rounded-2xl flex items-center justify-center border-2 mb-2"
-                        style={{ backgroundColor: styles.bg, borderColor: styles.border }}
+                    <motion.div
+                        initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                        className={`w-full max-w-md overflow-hidden rounded-2xl shadow-2xl border relative ${isDark ? 'bg-[#0f0f0f] border-white/10' : 'bg-white border-gray-200'}`}
+                        style={{ transformOrigin: 'center' }}
                     >
-                        {styles.icon}
-                    </div>
-                    <div>
-                        <h3 className={`text-xl font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
-                        <p className={`text-sm leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                            {message}
-                        </p>
-                    </div>
-                </div>
+                        {/* Header/Banner Area */}
+                        <div
+                            className="p-6 flex flex-col items-center text-center gap-4"
+                            style={{ background: `linear-gradient(to bottom, ${styles.bg}, transparent)` }}
+                        >
+                            <div
+                                className="w-16 h-16 rounded-2xl flex items-center justify-center border-2 mb-2"
+                                style={{ backgroundColor: styles.bg, borderColor: styles.border }}
+                            >
+                                {styles.icon}
+                            </div>
+                            <div>
+                                <h3 className={`text-xl font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
+                                <p className={`text-sm leading-relaxed ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                                    {message}
+                                </p>
+                            </div>
+                        </div>
 
-                {/* Footer Buttons */}
-                <div className={`p-4 flex gap-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
-                    <button
-                        onClick={onClose}
-                        className={`flex-1 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-200 text-gray-700'}`}
-                    >
-                        {cancelText}
-                    </button>
-                    <button
-                        onClick={() => {
-                            onConfirm();
-                            onClose();
-                        }}
-                        className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm text-white transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98] ${styles.btn}`}
-                    >
-                        {confirmText}
-                    </button>
-                </div>
+                        {/* Footer Buttons */}
+                        <div className={`p-4 flex gap-3 ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
+                            <button
+                                onClick={onClose}
+                                className={`flex-1 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-200 text-gray-700'}`}
+                            >
+                                {cancelText}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    onConfirm();
+                                    onClose();
+                                }}
+                                className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-sm text-white transition-all shadow-lg hover:scale-[1.02] active:scale-[0.98] ${styles.btn}`}
+                            >
+                                {confirmText}
+                            </button>
+                        </div>
 
-                {/* Close Button Top Right */}
-                <button
-                    onClick={onClose}
-                    className={`absolute top-4 right-4 p-2 rounded-lg transition-all ${isDark ? 'hover:bg-white/10 text-gray-500 hover:text-gray-300' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'}`}
-                >
-                    <X size={18} />
-                </button>
-            </div>
-        </div>,
+                        {/* Close Button Top Right */}
+                        <button
+                            onClick={onClose}
+                            className={`absolute top-4 right-4 p-2 rounded-lg transition-all ${isDark ? 'hover:bg-white/10 text-gray-500 hover:text-gray-300' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'}`}
+                        >
+                            <X size={18} />
+                        </button>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>,
         document.body
     );
 };

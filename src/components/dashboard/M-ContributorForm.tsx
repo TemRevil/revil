@@ -4,6 +4,7 @@ import { X, Upload, Github, Linkedin, Facebook, Instagram, Globe, ZoomIn, HardDr
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
 import firebaseIcon from '../../assets/svgs/firebase.svg';
+import { motion, AnimatePresence } from 'motion/react';
 
 import { ContributorData } from '../../types';
 
@@ -181,12 +182,26 @@ const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributor
         onClose();
     };
 
-    if (!isOpen) return null;
-
     return createPortal(
-        <div className="modal-backdrop open animate-fade-in" style={{ zIndex: 1100 }}>
-            <div className="modal-content glass-panel animate-scale-in" style={{ maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
-                <div className="modal-header">
+        <AnimatePresence>
+            {isOpen && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="modal-backdrop open"
+                    style={{ zIndex: 1100 }}
+                >
+                    <motion.div
+                        initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                        className="modal-content glass-panel"
+                        style={{ maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}
+                    >
+                        <div className="modal-header">
                     <h2 className="heading-md">{initialData ? 'Edit Contributor' : 'New Contributor'}</h2>
                     <button onClick={onClose} className="btn-icon">
                         <X size={24} />
@@ -270,16 +285,18 @@ const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributor
                         </div>
                     </form>
                 )}
-            </div>
+                    </motion.div>
 
-            <MFirebaseStorage
-                isOpen={firebaseBrowserOpen}
-                onClose={() => setFirebaseBrowserOpen(false)}
-                onSelect={(url) => { setOriginalImageSrc(url); setIsCropping(true); }}
-                fileTypes={['png', 'jpg', 'jpeg', 'webp']}
-                title="Select Profile Image"
-            />
-        </div>,
+                    <MFirebaseStorage
+                        isOpen={firebaseBrowserOpen}
+                        onClose={() => setFirebaseBrowserOpen(false)}
+                        onSelect={(url) => { setOriginalImageSrc(url); setIsCropping(true); }}
+                        fileTypes={['png', 'jpg', 'jpeg', 'webp']}
+                        title="Select Profile Image"
+                    />
+                </motion.div>
+            )}
+        </AnimatePresence>,
         document.body
     );
 };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Trash2, Briefcase, Receipt, Banknote } from 'lucide-react';
-import anime from 'animejs';
+import { motion } from 'motion/react';
 import {
     CURRENCIES, CURRENCY_SYMBOL, Currency, ProjectStatus,
     TreasuryProject, TreasuryExpense, TreasuryIncome, TreasuryConfig, uid, derivePaymentStatus,
@@ -27,7 +27,7 @@ interface Props {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
-const NO_PROJECT = '— No project —';
+const NO_PROJECT = '- No project -';
 
 const MTreasuryEntry = ({ mode, config, project, expense, income, projects, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
     const [isDark, setIsDark] = useState(false);
@@ -80,8 +80,6 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
     }, []);
 
     useEffect(() => {
-        anime({ targets: '.te-overlay', opacity: [0, 1], duration: 250, easing: 'easeOutQuad' });
-        anime({ targets: '.te-content', scale: [0.94, 1], opacity: [0, 1], translateY: [16, 0], duration: 400, easing: 'easeOutExpo' });
         const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
@@ -91,7 +89,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
         if (mode === 'project') {
             if (!name.trim()) return;
             const price = parseFloat(priceAmount) || 0;
-            // Received is no longer entered here — it's the sum of logged income.
+            // Received is no longer entered here - it's the sum of logged income.
             // Preserve any legacy paidAmount that pre-dates the income log.
             const paid = project?.paidAmount ?? 0;
             const p: TreasuryProject = {
@@ -163,8 +161,19 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
     );
 
     return createPortal(
-        <div className="te-overlay fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <div
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="te-overlay fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 350 }}
                 onClick={e => e.stopPropagation()}
                 className={`te-content w-full max-w-lg max-h-[92vh] overflow-y-auto custom-scrollbar rounded-3xl border shadow-2xl ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
             >
@@ -189,7 +198,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
                             </div>
                             <div>
                                 <label className={labelCls}>Client</label>
-                                <input className={inputCls} value={client} onChange={e => setClient(e.target.value)} placeholder="Optional — company or person" />
+                                <input className={inputCls} value={client} onChange={e => setClient(e.target.value)} placeholder="Optional - company or person" />
                             </div>
                             <div>
                                 <label className={labelCls}>Status</label>
@@ -214,9 +223,9 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
                             </div>
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={monthly} onChange={e => setMonthly(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
-                                <span className="text-sm text-primary font-medium">Pays monthly (retainer) — the amount above is per month</span>
+                                <span className="text-sm text-primary font-medium">Pays monthly (retainer) - the amount above is per month</span>
                             </label>
-                            <p className="text-[11px] text-sec -mt-1">Money received is logged separately in <span className="font-semibold">Income</span> — so payments can come in over time.</p>
+                            <p className="text-[11px] text-sec -mt-1">Money received is logged separately in <span className="font-semibold">Income</span> - so payments can come in over time.</p>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className={labelCls}>Started</label>
@@ -270,7 +279,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
                             </div>
                             <div>
                                 <label className={labelCls}>Category</label>
-                                <input className={inputCls} value={category} onChange={e => setCategory(e.target.value)} placeholder="Optional — tools, ads, hosting…" />
+                                <input className={inputCls} value={category} onChange={e => setCategory(e.target.value)} placeholder="Optional - tools, ads, hosting…" />
                             </div>
                             <div>
                                 <label className={labelCls}>For project (optional)</label>
@@ -326,8 +335,8 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
                         {isEdit ? 'Save' : 'Add'}
                     </button>
                 </div>
-            </div>
-        </div>,
+            </motion.div>
+        </motion.div>,
         document.body
     );
 };
