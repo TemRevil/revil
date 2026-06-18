@@ -12,7 +12,7 @@ interface Props {
 }
 
 /**
- * Custom scrollable select (portaled popover) — same spirit as the timezone
+ * Custom scrollable select (portaled popover) - same spirit as the timezone
  * menu: no native <select>. Optional fuzzy filter for long lists (e.g. models).
  */
 const ScrollMenu = ({ value, options, onChange, isDark, placeholder = 'Select…', searchable = true }: Props) => {

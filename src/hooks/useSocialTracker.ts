@@ -32,7 +32,7 @@ export const useSocialTracker = () => {
             }));
 
             // The Socials/{name} create rule requires this exact charset; if the name
-            // doesn't match, the write would be rejected — skip the remote write but
+            // doesn't match, the write would be rejected - skip the remote write but
             // still fire the in-app event so the click is counted locally.
             if (!/^[a-zA-Z0-9_-]{1,40}$/.test(linkName)) {
                 notifyInApp();

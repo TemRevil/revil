@@ -17,7 +17,7 @@
         // Strip the /revil project-page prefix on a path BOUNDARY, then carry the
         // remaining path (e.g. a tracked link code), query string, and hash to the
         // canonical domain. A bare regex replace(/^\/revil/, '') would turn
-        // "/revilXYZ" into "XYZ" → "https://temrevil.comXYZ" (a different host) —
+        // "/revilXYZ" into "XYZ" → "https://temrevil.comXYZ" (a different host) -
         // mirror the boundary-safe checks the layout.tsx inline redirect uses.
         var path = location.pathname;
         var p;

@@ -21,7 +21,7 @@ function calculateStreak(yearlyData: Record<number, ContributionDay[]>): number 
         days.forEach(d => { if (d.count >= 0) countByDate.set(d.date, d.count); }),
     );
 
-    // UTC-based YYYY-MM-DD — matches what the API returns and what we render
+    // UTC-based YYYY-MM-DD - matches what the API returns and what we render
     const fmt = (d: Date) =>
         `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 
@@ -86,7 +86,7 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
     const [availableYears, setAvailableYears] = useState<number[]>([thisYear]);
     const [currentYear, setCurrentYear] = useState<number>(thisYear);
 
-    // Computed once per render — used inside the cell map below
+    // Computed once per render - used inside the cell map below
     // UTC to match the API's date format (avoids off-by-one near midnight in non-UTC zones)
     const todayStr = useMemo(() => {
         const today = new Date();
@@ -149,13 +149,13 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
             setCurrentYear(years[years.length - 1]);
             setIsLoading(false);
 
-            // Report streak (guarded — parent may have unmounted)
+            // Report streak (guarded - parent may have unmounted)
             if (!ignore) onStreakCalculated?.(calculateStreak(byYear));
             return true;
         };
 
         const fetchAll = async () => {
-            // 1) Try the API with a 10-second timeout (uses master controller — aborts on unmount)
+            // 1) Try the API with a 10-second timeout (uses master controller - aborts on unmount)
             const tid = setTimeout(() => controller.abort(), 10_000);
             try {
                 const res = await fetch(
@@ -173,7 +173,7 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
                         return;
                     }
                 }
-            } catch { clearTimeout(tid); /* timeout or network error — fall through */ }
+            } catch { clearTimeout(tid); /* timeout or network error - fall through */ }
 
             if (ignore) return;
 
@@ -294,7 +294,7 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
         };
 
         const onEnd = (e: TouchEvent) => {
-            if (!touchClaimed.current) return; // not our gesture — let page handle it
+            if (!touchClaimed.current) return; // not our gesture - let page handle it
 
             e.stopPropagation();
             const dx = e.changedTouches[0].clientX - touchStartX.current;
@@ -320,7 +320,7 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
         const result: ContributionDay[][] = [];
         let week: ContributionDay[] = [];
 
-        // UTC weekday — the API date strings are UTC midnight; using local getDay()
+        // UTC weekday - the API date strings are UTC midnight; using local getDay()
         // shifts the whole grid by one row for visitors west of UTC.
         const startDay = new Date(contributions[0].date).getUTCDay();
         for (let i = 0; i < startDay; i++) week.push({ date: '', count: -1, level: -1 });
@@ -412,7 +412,7 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
                     </div>
                     <div>
                         <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                            {isLoading ? '—' : totalContributions.toLocaleString()}
+                            {isLoading ? '-' : totalContributions.toLocaleString()}
                         </span>
                         <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-muted)', marginLeft: 5 }}>
                             contributions

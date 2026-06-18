@@ -13,9 +13,9 @@ interface State {
 /**
  * Minimal error boundary. Its primary job here is to contain failures from the
  * app's React.lazy() + Suspense boundaries (SecretPage, Dashboard, the lottie
- * StreakCircle). Without it, a single failed hashed-chunk fetch — common after a
+ * StreakCircle). Without it, a single failed hashed-chunk fetch - common after a
  * redeploy when a returning user still has a stale index.html referencing an old
- * chunk — would throw during render and unmount the WHOLE single-tree SPA to a
+ * chunk - would throw during render and unmount the WHOLE single-tree SPA to a
  * blank screen. With it, the failure is contained to the wrapped subtree.
  */
 class ErrorBoundary extends Component<Props, State> {

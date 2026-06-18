@@ -15,14 +15,14 @@ let cached: Auth | null = null;
 export function appAuth(): Auth {
     if (cached) return cached;
     try {
-        // popupRedirectResolver is REQUIRED here — initializeAuth (unlike getAuth)
+        // popupRedirectResolver is REQUIRED here - initializeAuth (unlike getAuth)
         // doesn't add the default one, so signInWithPopup would throw argument-error.
         cached = initializeAuth(app, {
             persistence: browserSessionPersistence,
             popupRedirectResolver: browserPopupRedirectResolver,
         });
     } catch {
-        // Auth was already initialized elsewhere this session — reuse it.
+        // Auth was already initialized elsewhere this session - reuse it.
         cached = getAuth(app);
     }
     return cached;

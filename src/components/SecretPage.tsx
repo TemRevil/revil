@@ -52,12 +52,12 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
                 try {
                     await deleteUser(result.user);
                 } catch {
-                    // delete can fail (needs-recent-login / token issues) — ensure we never
+                    // delete can fail (needs-recent-login / token issues) - ensure we never
                     // leave an unrecognized account signed in regardless.
                 } finally {
                     await auth.signOut();
                 }
-                setError('Access denied — account not recognized.');
+                setError('Access denied - account not recognized.');
                 return;
             }
 
@@ -71,7 +71,7 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
             notifyLogin({
                 userAgent: navigator.userAgent,
                 provider: result.user.providerData?.[0]?.providerId || 'google.com',
-            }).catch(() => {}); // Silent — don't block login
+            }).catch(() => {}); // Silent - don't block login
 
             if (onNavigate) {
                 onNavigate('dashboard');

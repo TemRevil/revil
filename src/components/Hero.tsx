@@ -138,7 +138,7 @@ interface AvailabilityData {
 }
 
 // Public sanitized handled-projects mirror (Settings/HandledProjects), written
-// by the admin Treasury page. Holds name/status only — never prices.
+// by the admin Treasury page. Holds name/status only - never prices.
 interface HandledData {
     projects?: Record<string, HeroProject>;
 }
@@ -290,7 +290,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
     }, []);
 
     const availabilityStr = availData?.['Current Availability'] || '100%';
-    // Guard against non-numeric / legacy values (e.g. "Available", "%") — parseInt → NaN
+    // Guard against non-numeric / legacy values (e.g. "Available", "%") - parseInt → NaN
     // would otherwise fall through every comparison and falsely render "Busy"/red.
     const parsedAvailability = parseInt(availabilityStr);
     const availabilityPercent = Number.isNaN(parsedAvailability) ? 100 : parsedAvailability;
@@ -320,7 +320,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
 
     // Portal tooltip with proper enter/exit animation
     // Slide offset for the show/hide animation (px). Animated via top/bottom inset,
-    // NOT transform — backdrop-filter blur breaks on transformed elements in Chrome.
+    // NOT transform - backdrop-filter blur breaks on transformed elements in Chrome.
     const slideOffset = tooltipVisible ? 0 : (tooltipPos.flipBelow ? -10 : 10);
 
     const tooltipElement = tooltipMounted && projects.length > 0
@@ -470,7 +470,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
                 {currentTime.split(' ')[0]}
             </div>
 
-            {/* Book a call — primary CTA right next to the time/availability lockup so
+            {/* Book a call - primary CTA right next to the time/availability lockup so
                 the site's strongest conversion path (the Google Meet booking modal,
                 opened on its meeting tab) is visible without hunting the navbar. */}
             {onBook && (
@@ -512,7 +512,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
 
     // Shared Settings/Account listener (single Firestore connection for all components)
     const { account, accountLoading } = useSettings();
-    // Pick hero image based on theme — fall back to the other variant if one isn't set
+    // Pick hero image based on theme - fall back to the other variant if one isn't set
     const heroImageUrl = (isDark
         ? (account?.heroImageUrlDark || account?.heroImageUrl)
         : (account?.heroImageUrl || account?.heroImageUrlDark)) || null;
@@ -523,7 +523,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     // using the render-phase "adjust state on dependency change" pattern (React-endorsed,
     // avoids set-state-in-effect). Without this, a previously-failed URL leaves
     // imageError=true and the <img> stays stuck on the transparent-GIF fallback.
-    // NOTE: isImageLoaded is intentionally NOT reset — keeps the instant theme-swap.
+    // NOTE: isImageLoaded is intentionally NOT reset - keeps the instant theme-swap.
     const [prevHeroUrl, setPrevHeroUrl] = useState(heroImageUrl);
     if (heroImageUrl !== prevHeroUrl) {
         setPrevHeroUrl(heroImageUrl);
@@ -575,7 +575,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     const bottomSloganSize = isSmallMobile ? 35 : (isMobile ? 45 : 65);
 
     // Read onAnimationComplete from a ref so its identity changing (it depends on
-    // hasAutoOpenedCV in the parent) can't re-run the entrance effect — replaying it
+    // hasAutoOpenedCV in the parent) can't re-run the entrance effect - replaying it
     // mid-mount would start a SECOND infinite float loop on the same node.
     const onAnimationCompleteRef = useRef(onAnimationComplete);
     useEffect(() => { onAnimationCompleteRef.current = onAnimationComplete; }, [onAnimationComplete]);
@@ -612,7 +612,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
         });
 
         // Step 4: Floating animation for the entire wrapper (image + boxes).
-        // loop:true runs forever — it MUST be paused on unmount or it keeps ticking
+        // loop:true runs forever - it MUST be paused on unmount or it keeps ticking
         // on a detached node (per-frame style writes + retained subtree) every time
         // the user navigates away from and back to home.
         const floatAnim = anime({

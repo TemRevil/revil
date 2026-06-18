@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 /**
- * Renders assistant replies as GitHub-flavored Markdown — headings, lists,
+ * Renders assistant replies as GitHub-flavored Markdown - headings, lists,
  * tables, inline code and fenced code blocks. Styling lives in the `.md` block
  * in globals.css so it's theme-aware. Links open in a new tab.
  */

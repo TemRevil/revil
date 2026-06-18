@@ -12,7 +12,7 @@ interface Props {
 
 /**
  * Shared floating "Apply / Cancel" pill for staged-changes screens (D-Settings,
- * Treasury Settings). One component, reused — centered above content and offset
+ * Treasury Settings). One component, reused - centered above content and offset
  * for the dashboard sidebar.
  */
 const SaveBar = ({ show, onApply, onCancel, isDark, applyLabel = 'Apply Settings', cancelLabel = 'Cancel', saving = false }: Props) => {

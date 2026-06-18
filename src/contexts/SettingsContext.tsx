@@ -14,7 +14,7 @@ interface AccountData {
 }
 
 interface SettingsContextValue {
-    /** Settings/Account — shared across Hero, Stack, SecretPage */
+    /** Settings/Account - shared across Hero, Stack, SecretPage */
     account: AccountData | null;
     /** True until the first snapshot resolves (for loading states) */
     accountLoading: boolean;

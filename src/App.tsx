@@ -17,7 +17,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 // page-transition curtain), modals load when first opened, and SecretPage/Dashboard
 // load after explicit navigation. This keeps the eager bundle small for fast TBT.
 // SecretPage pulls firebase/auth + firebase/functions; Dashboard pulls recharts +
-// react-easy-crop + anime.js — none of which belong in the first-paint bundle.
+// react-easy-crop + anime.js - none of which belong in the first-paint bundle.
 const Stack = lazy(() => import('./components/Stack'));
 const ProjectsHub = lazy(() => import('./components/ProjectsHub'));
 const MContact = lazy(() => import('./components/M-Contact'));
@@ -52,7 +52,7 @@ const sectionErrorFallback = (
 // Fallback for the modal-level error boundaries. The modal chunks are lazy-loaded
 // the first time each modal opens; on a tab left open across a redeploy the old
 // hashed chunk is gone (the release swap deletes it) and the import() rejects.
-// Without a boundary that throw unmounts the entire SPA — so each modal Suspense
+// Without a boundary that throw unmounts the entire SPA - so each modal Suspense
 // gets this recoverable reload prompt instead.
 const modalErrorFallback = (
   <div style={{
@@ -65,7 +65,7 @@ const modalErrorFallback = (
       padding: 28, borderRadius: 20, textAlign: 'center', maxWidth: 360,
       background: 'var(--card-bg)', border: '1px solid var(--section-border)', color: 'var(--text-primary)',
     }}>
-      <p style={{ margin: 0, fontWeight: 600 }}>Couldn&apos;t open this — the app was just updated.</p>
+      <p style={{ margin: 0, fontWeight: 600 }}>Couldn&apos;t open this - the app was just updated.</p>
       <button
         onClick={() => window.location.reload()}
         style={{
@@ -86,7 +86,7 @@ function App() {
     if (typeof window === 'undefined') return 'home';
     // Persisted return: if the admin was on the dashboard, a refresh keeps them
     // there (dashboard is reached via in-app nav, not the URL, so it'd otherwise
-    // reset to home). Only 'dashboard' is restored — public sections follow the URL.
+    // reset to home). Only 'dashboard' is restored - public sections follow the URL.
     try {
       if (localStorage.getItem('revil_section') === 'dashboard') return 'dashboard';
     } catch { /* ignore */ }
@@ -136,7 +136,7 @@ function App() {
     const currentVersion = localStorage.getItem('revil_app_version');
     if (currentVersion === APP_VERSION) return;
 
-    // First visit (no stored version): there is nothing to purge — record the version
+    // First visit (no stored version): there is nothing to purge - record the version
     // silently and bail. This avoids a console warning + full page reload on every
     // fresh visitor (Lighthouse/PSI always run with empty localStorage, which would
     // otherwise trip the "no browser errors logged" audit and double the initial load).
@@ -217,7 +217,7 @@ function App() {
 
   const handleHeroAnimationComplete = useCallback(() => {
     const isInterviewerMode = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('revil_interviewer_mode') === 'true' : false;
-    // Read the section from a ref at fire-time — the user may have navigated away
+    // Read the section from a ref at fire-time - the user may have navigated away
     // during the ~3s hero entrance, and we must not pop the CV modal over another page.
     const section = currentSectionRef.current;
     if (isInterviewerMode && !hasAutoOpenedCV && (section === 'home' || section === 'view_link')) {

@@ -2,8 +2,8 @@
  * LLM layer for the dashboard assistant ("Spark").
  *
  * Provider is auto-detected from the API key prefix. The key lives in an env
- * var (NEXT_PUBLIC_LLM_API_KEY) — set it in .env.local locally and as a
- * Hostinger secret in production — with an optional per-browser override saved
+ * var (NEXT_PUBLIC_LLM_API_KEY) - set it in .env.local locally and as a
+ * Hostinger secret in production - with an optional per-browser override saved
  * in localStorage for quick testing. The chosen model is saved in localStorage.
  *
  * No model names are hardcoded: the model list is pulled live from the
@@ -80,7 +80,7 @@ async function fetchWithTimeout(url: string, opts: RequestInit, ms: number): Pro
     try {
         return await fetch(url, { ...opts, signal: ctrl.signal });
     } catch (e) {
-        if ((e as Error).name === 'AbortError') throw new Error(`Timed out after ${Math.round(ms / 1000)}s — try again or pick a faster model.`);
+        if ((e as Error).name === 'AbortError') throw new Error(`Timed out after ${Math.round(ms / 1000)}s - try again or pick a faster model.`);
         throw e;
     } finally {
         clearTimeout(t);
@@ -123,7 +123,7 @@ export const TOOLS: ToolDef[] = [
     },
     {
         name: 'click',
-        description: 'Move the on-screen cursor to a visible button/link whose text EXACTLY matches and click it. Only use labels you know exist (from list_clickables or read_screen) — never invent one. If it misses, it returns the real available labels; pick one of those.',
+        description: 'Move the on-screen cursor to a visible button/link whose text EXACTLY matches and click it. Only use labels you know exist (from list_clickables or read_screen) - never invent one. If it misses, it returns the real available labels; pick one of those.',
         params: { type: 'object', properties: { text: { type: 'string', description: 'exact visible label of the button/link' } }, required: ['text'] },
     },
     {
@@ -148,7 +148,7 @@ export const TOOLS: ToolDef[] = [
     },
     {
         name: 'read_screen',
-        description: "Read the live data backing the page the user is CURRENTLY looking at (their current dashboard screen). Use this first whenever they say 'this page', 'here', 'on screen', 'these', or ask about whatever they're currently viewing — it returns exactly that page's data.",
+        description: "Read the live data backing the page the user is CURRENTLY looking at (their current dashboard screen). Use this first whenever they say 'this page', 'here', 'on screen', 'these', or ask about whatever they're currently viewing - it returns exactly that page's data.",
         params: { type: 'object', properties: {} },
     },
     {
@@ -179,47 +179,47 @@ export const TOOLS: ToolDef[] = [
 ];
 
 export const SYSTEM_PROMPT = `You are Spark, the admin co-pilot inside Tem Revil's portfolio dashboard.
-Style: SHORT, a little funny, straight to the point. Minimal words, no fluff, no preamble — you're saving tokens. One or two snappy sentences max unless data is requested.
+Style: SHORT, a little funny, straight to the point. Minimal words, no fluff, no preamble - you're saving tokens. One or two snappy sentences max unless data is requested.
 You can: navigate dashboard pages, click on-screen buttons (a cursor moves for the user to see), and read/write/delete Firestore. Writes and deletes pop a confirm for the user, so just call them.
 You're told the user's CURRENT SCREEN at the end of this prompt each message. When they say "this page", "here", "these", or ask about what they're looking at, call read_screen to pull that page's exact data before answering.
-The Treasury page has sub-tabs: Overview, Projects, Money (income + expenses together), Settings. To open one, navigate('treasury') then click the sub-tab by its exact name with the click tool (e.g. click "Money"). Don't ask which "money" — the Money tab holds both income and spendings. Only ask_user for genuinely ambiguous requests.
-NEVER invent a button label. Before clicking something whose exact text you're unsure of, call list_clickables (or read_screen) and click ONLY a label it returns. If a click misses it gives you the real labels — retry with one of those, don't keep guessing.
+The Treasury page has sub-tabs: Overview, Projects, Money (income + expenses together), Settings. To open one, navigate('treasury') then click the sub-tab by its exact name with the click tool (e.g. click "Money"). Don't ask which "money" - the Money tab holds both income and spendings. Only ask_user for genuinely ambiguous requests.
+NEVER invent a button label. Before clicking something whose exact text you're unsure of, call list_clickables (or read_screen) and click ONLY a label it returns. If a click misses it gives you the real labels - retry with one of those, don't keep guessing.
 FIRESTORE STRUCTURE (you are admin and can read everything; paths are case-sensitive):
-- Projects/{id} — portfolio projects: Name, description, tags, links, and a Views map of counters.
-- Tags/{id} — { Name, Color, Icon }.
-- Settings/Account — profile: name, title, bio, imageUrl, heroImageUrl, heroImageUrlDark.
-- Settings/Availability — ONLY { "Current Availability": "100%", "Current Time": "UTC+02:00", availabilityPercent, timezoneOffset }. (It no longer holds projects.)
-- Treasury/ — PRIVATE finances collection, one doc per concern:
-    • Treasury/projects  — { entries: { id: { name, client, status, priceAmount, priceCurrency, monthly?, paidAmount, paymentStatus, notes, startDate, endDate, done, order, createdAt } } }. THESE are "the projects I handle". A project's RECEIVED money = its paidAmount (legacy) PLUS all Treasury/income entries linked to it — payments arrive over time, not upfront. monthly:true means a retainer — priceAmount is the per-MONTH rate (no fixed total).
-    • Treasury/income    — { entries: { id: { amount, currency, date, projectId?, note?, createdAt } } }. Money received; date = when it arrived; projectId optionally links it to a project. To record a payment, add an income entry here (don't edit paidAmount).
-    • Treasury/spendings — { entries: { id: { label, amount, currency, category, date, recurring, projectId?, notes, createdAt } } }. Expenses; recurring:true = a monthly fee; projectId optionally ties the fee to a project.
-    • Treasury/settings  — { defaultCurrency, displayCurrency, rates, ratesUpdatedAt }.
-- Settings/HandledProjects — PUBLIC, sanitized mirror of Treasury/projects shown on the homepage: { projects: { id: { name, status, description, order } } }. It has NO money fields and is auto-written from Treasury — don't edit it directly; change Treasury/projects instead.
-- Settings/Developer, Settings/"Tech Stack" — developer info and tech-stack items.
-- Settings/Views (+ Settings/Views/Analysis/Main, Settings/Views/Analysis/Daily) and subcollections Settings/Views/Links/{id}, Settings/Views/Socials/{name} — site analytics.
-- Settings/Canary — PRIVATE visitor PII (emails, meetings).
+- Projects/{id} - portfolio projects: Name, description, tags, links, and a Views map of counters.
+- Tags/{id} - { Name, Color, Icon }.
+- Settings/Account - profile: name, title, bio, imageUrl, heroImageUrl, heroImageUrlDark.
+- Settings/Availability - ONLY { "Current Availability": "100%", "Current Time": "UTC+02:00", availabilityPercent, timezoneOffset }. (It no longer holds projects.)
+- Treasury/ - PRIVATE finances collection, one doc per concern:
+    • Treasury/projects  - { entries: { id: { name, client, status, priceAmount, priceCurrency, monthly?, paidAmount, paymentStatus, notes, startDate, endDate, done, order, createdAt } } }. THESE are "the projects I handle". A project's RECEIVED money = its paidAmount (legacy) PLUS all Treasury/income entries linked to it - payments arrive over time, not upfront. monthly:true means a retainer - priceAmount is the per-MONTH rate (no fixed total).
+    • Treasury/income    - { entries: { id: { amount, currency, date, projectId?, note?, createdAt } } }. Money received; date = when it arrived; projectId optionally links it to a project. To record a payment, add an income entry here (don't edit paidAmount).
+    • Treasury/spendings - { entries: { id: { label, amount, currency, category, date, recurring, projectId?, notes, createdAt } } }. Expenses; recurring:true = a monthly fee; projectId optionally ties the fee to a project.
+    • Treasury/settings  - { defaultCurrency, displayCurrency, rates, ratesUpdatedAt }.
+- Settings/HandledProjects - PUBLIC, sanitized mirror of Treasury/projects shown on the homepage: { projects: { id: { name, status, description, order } } }. It has NO money fields and is auto-written from Treasury - don't edit it directly; change Treasury/projects instead.
+- Settings/Developer, Settings/"Tech Stack" - developer info and tech-stack items.
+- Settings/Views (+ Settings/Views/Analysis/Main, Settings/Views/Analysis/Daily) and subcollections Settings/Views/Links/{id}, Settings/Views/Socials/{name} - site analytics.
+- Settings/Canary - PRIVATE visitor PII (emails, meetings).
 Note: the id-keyed maps live UNDER an "entries" field (Treasury) or "projects" field (HandledProjects), as objects-of-objects, NOT arrays. To change one entry: read_data the doc, edit that one key inside entries, then write_data with merge:true. The projects I handle = Treasury/projects (private, with prices); Settings/HandledProjects is just its public name/status shadow. Still read_data before assuming exact field names.
 STRICT DATA RULES (critical):
-- NEVER invent, assume, autofill, or hallucinate a field value. Only set fields the user explicitly gave you. Every value you write must come from the user's words or from read_data — never from imagination or "sensible defaults".
+- NEVER invent, assume, autofill, or hallucinate a field value. Only set fields the user explicitly gave you. Every value you write must come from the user's words or from read_data - never from imagination or "sensible defaults".
 - Before any write_data: read_data the target doc first and PRESERVE all existing fields you aren't changing (merge, don't blast). For a brand-new entry, omit any field the user didn't specify rather than guessing it.
-- If something needed is missing or ambiguous, STOP and ask via ask_user — ONE question at a time with 2-4 concrete choices (plus the user can type their own). Never bundle multiple questions into one message, and never proceed on a guess.
+- If something needed is missing or ambiguous, STOP and ask via ask_user - ONE question at a time with 2-4 concrete choices (plus the user can type their own). Never bundle multiple questions into one message, and never proceed on a guess.
 - You know the exact schema above; only touch fields that exist there.
-Drive the task to completion yourself: chain the tool calls you need and keep going until it's actually done — never stop midway to ask "should I continue?". Only pause (one ask_user at a time) when a value is genuinely missing/ambiguous. Be decisive and fast; don't overthink; keep tool calls to the minimum needed.
+Drive the task to completion yourself: chain the tool calls you need and keep going until it's actually done - never stop midway to ask "should I continue?". Only pause (one ask_user at a time) when a value is genuinely missing/ambiguous. Be decisive and fast; don't overthink; keep tool calls to the minimum needed.
 You have persistent MEMORY (shown each message): the user's name, your standing instructions, and saved facts. If you learn the user's name or they tell you to remember something or change how you behave, call set_memory. If you don't know their name, ask once and save it.
-Format with GitHub-flavored Markdown when it helps — fenced code blocks for code, tables for tabular data, bullet/numbered lists for steps. No emojis.
+Format with GitHub-flavored Markdown when it helps - fenced code blocks for code, tables for tabular data, bullet/numbered lists for steps. No emojis.
 Do the task with tools, then report what you did in one short, witty line.`;
 
 // Live context (a tiny RAG-style block) refreshed on every message so the model
-// always knows "now" — fixes relative dates like "14th of April" defaulting to a
+// always knows "now" - fixes relative dates like "14th of April" defaulting to a
 // wrong/old year. Appended to the system prompt at call time.
 function liveContext(): string {
     const now = new Date();
     let tz = 'local';
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local'; } catch { /* ignore */ }
     const human = now.toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    return `\n\nLIVE CONTEXT (refreshed each message — trust this over any prior assumption):
+    return `\n\nLIVE CONTEXT (refreshed each message - trust this over any prior assumption):
 - Right now it is ${human} (${tz}). ISO: ${now.toISOString()}. The current year is ${now.getFullYear()}.
-- Resolve every relative/partial date against THIS moment and output YYYY-MM-DD. A date with no year (e.g. "14th of April") means the CURRENT year ${now.getFullYear()} unless the user clearly means otherwise — never assume a past year.`;
+- Resolve every relative/partial date against THIS moment and output YYYY-MM-DD. A date with no year (e.g. "14th of April") means the CURRENT year ${now.getFullYear()} unless the user clearly means otherwise - never assume a past year.`;
 }
 
 export function buildSystem(context?: string): string {
@@ -237,7 +237,7 @@ export function toolResultMessage(provider: Provider, results: ToolResult[]): Na
         return { role: 'user', content: results.map(r => ({ type: 'tool_result', tool_use_id: r.id, content: r.output })) };
     }
     if (provider === 'openai') {
-        // OpenAI needs one tool message per call — caller spreads these.
+        // OpenAI needs one tool message per call - caller spreads these.
         return results.map(r => ({ role: 'tool', tool_call_id: r.id, content: r.output }));
     }
     return { role: 'user', parts: results.map(r => ({ functionResponse: { name: r.name, response: { result: r.output } } })) };

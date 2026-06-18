@@ -23,7 +23,7 @@ interface Props {
 }
 
 /**
- * Custom calendar date picker (portaled popover) — replaces the native
+ * Custom calendar date picker (portaled popover) - replaces the native
  * <input type="date"> so the look is consistent in light & dark and across
  * browsers. Closes on outside-click / Escape; Escape is captured + stopped so
  * it dismisses the calendar without also closing a surrounding modal.

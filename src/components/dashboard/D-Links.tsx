@@ -199,7 +199,7 @@ const CustomTooltip = ({ active, payload, isDark }: TooltipProps<number, string>
         if (item.type === 'weekly') {
             const end = new Date(d);
             end.setDate(end.getDate() + 6);
-            headerText = `${d.getDate()}/${d.getMonth() + 1} — ${end.getDate()}/${end.getMonth() + 1}`;
+            headerText = `${d.getDate()}/${d.getMonth() + 1} - ${end.getDate()}/${end.getMonth() + 1}`;
             subLabel = 'Weekly Total';
         } else if (item.type === 'monthly') {
             headerText = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -387,7 +387,7 @@ const AnalyticsChart = ({ data, filter, setFilter, isDark, windowWidth }: {
     }, [totalPages, safePageIndex]);
     const changePage = useCallback((newIndex: number) => changePageRef.current(newIndex), []);
 
-    // Touch gestures — use native listeners for { passive: false } support
+    // Touch gestures - use native listeners for { passive: false } support
     const handleTouchStart = useCallback((e: TouchEvent) => {
         const t = e.touches[0];
         touchStartRef.current = { x: t.clientX, y: t.clientY, time: Date.now() };
@@ -416,7 +416,7 @@ const AnalyticsChart = ({ data, filter, setFilter, isDark, windowWidth }: {
         isSwipingRef.current = false;
     }, [safePageIndex]);
 
-    // Trackpad horizontal scroll — native listener with { passive: false }
+    // Trackpad horizontal scroll - native listener with { passive: false }
     const handleWheel = useCallback((e: WheelEvent) => {
         if (wheelCooldownRef.current) return;
         const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0;
@@ -510,7 +510,7 @@ const AnalyticsChart = ({ data, filter, setFilter, isDark, windowWidth }: {
                 </div>
             </div>
 
-            {/* Row 2: Nav — arrows flanking the date, dots after */}
+            {/* Row 2: Nav - arrows flanking the date, dots after */}
             {totalPages > 1 && (
                 <div className="flex items-center gap-2 mb-4">
                     <button
@@ -826,7 +826,7 @@ const DLinks = () => {
         message: '',
         onConfirm: () => { }
     });
-    // hover state removed — using recharts tooltip instead
+    // hover state removed - using recharts tooltip instead
     const [activeSection, setActiveSection] = useState<'analysis' | 'campaigns'>('analysis');
     const [isTransitioning, setIsTransitioning] = useState(false);
     const directionRef = useRef<number>(1);

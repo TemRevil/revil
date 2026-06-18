@@ -2,7 +2,7 @@
 import { useEffect } from 'react'
 
 /**
- * ClientProtection — DOM integrity shield
+ * ClientProtection - DOM integrity shield
  * 
  * Monitors and neutralizes malicious style/attribute injections that could
  * alter the visual appearance of the application (e.g., via browser extensions,
@@ -113,7 +113,7 @@ export default function ClientProtection() {
     wipeMaliciousStyles();
 
     // Handle injected <style> / <script> tags. Most XSS injection lands in <head>,
-    // and React-rendered styled-jsx / next/font also live there — so we observe
+    // and React-rendered styled-jsx / next/font also live there - so we observe
     // head only (not the whole document subtree), which dramatically reduces work.
     const injectObserver = new MutationObserver((mutations) => {
       let needsStyleCheck = false;

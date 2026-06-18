@@ -320,7 +320,7 @@ const Projects = () => {
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
-    // Debounce search input — waits 250ms after user stops typing before filtering
+    // Debounce search input - waits 250ms after user stops typing before filtering
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedSearch(searchQuery), 250);
         return () => clearTimeout(timer);

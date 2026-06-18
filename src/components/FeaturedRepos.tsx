@@ -6,7 +6,7 @@ import { db } from '../lib/firebase';
 
 const GITHUB_USERNAME = 'TemRevil';
 
-// Rank watermark numbers only — kept monochrome (no gold/silver/bronze) so the
+// Rank watermark numbers only - kept monochrome (no gold/silver/bronze) so the
 // section stays neutral.
 const RANKS = ['01', '02', '03'];
 
@@ -47,7 +47,7 @@ const RepoCard = ({ repo, rank, delay }: { repo: RepoData; rank: string; delay: 
                 overflow: 'hidden',
             }}
         >
-            {/* Rank watermark — big faded number in corner (neutral) */}
+            {/* Rank watermark - big faded number in corner (neutral) */}
             <div
                 aria-hidden
                 className="repo-rank-watermark"
@@ -178,7 +178,7 @@ const RepoCard = ({ repo, rank, delay }: { repo: RepoData; rank: string; delay: 
                     )}
                 </div>
 
-                {/* Language label (neutral — no per-language colours) */}
+                {/* Language label (neutral - no per-language colours) */}
                 {repo.language && (
                     <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-muted)', flexShrink: 0 }}>
                         {repo.language}
@@ -212,7 +212,7 @@ const FeaturedRepos = () => {
         let isMounted = true;
         // Track latest fetch generation so stale Firestore updates don't clobber fresh data
         let fetchGen = 0;
-        // Top-level abort controller — fires on unmount to cancel all in-flight requests
+        // Top-level abort controller - fires on unmount to cancel all in-flight requests
         const masterController = new AbortController();
 
         // Per-request fetch with isolated 10s timeout (single slow repo won't kill siblings)
@@ -347,7 +347,7 @@ const FeaturedRepos = () => {
                     color: 'var(--text-muted)',
                 }}
             >
-                Couldn&apos;t load repositories right now — GitHub may be rate-limiting. Try again shortly.
+                Couldn&apos;t load repositories right now - GitHub may be rate-limiting. Try again shortly.
             </div>
         );
     }

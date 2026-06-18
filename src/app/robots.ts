@@ -11,7 +11,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: '*',
         allow: '/',
       },
-      // AI Search & Generative Engine bots — explicitly allowed for GEO
+      // AI Search & Generative Engine bots - explicitly allowed for GEO
       {
         userAgent: 'GPTBot',
         allow: '/',
@@ -75,7 +75,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: 'FacebookBot',
         allow: '/',
       },
-      // Common Crawl — feeds many LLM training corpora
+      // Common Crawl - feeds many LLM training corpora
       {
         userAgent: 'CCBot',
         allow: '/',

@@ -15,7 +15,7 @@ import Markdown from './Markdown';
 
 type Status = 'idle' | 'connecting' | 'thinking' | 'acting' | 'speaking' | 'error';
 
-// Each status animates the spark through its OWN set of colors — not one generic
+// Each status animates the spark through its OWN set of colors - not one generic
 // hue. e.g. thinking = violet→pink→indigo shimmer; acting = amber→green hustle.
 const PALETTES: Record<Status, string[]> = {
     idle: ['#94a3b8', '#cbd5e1', '#a5b4fc'],
@@ -52,7 +52,7 @@ const PAGES = ['projects', 'tags', 'views', 'developer', 'treasury', 'settings',
 const MEMORY_DOC = doc(db, 'Spark', 'Memory');
 interface SparkMemory { userName?: string; instructions?: string; facts?: string[]; }
 
-// Firestore paths backing each dashboard page — what read_screen pulls so Spark
+// Firestore paths backing each dashboard page - what read_screen pulls so Spark
 // can "see" whatever the user is currently looking at.
 const PAGE_SOURCES: Record<string, string[]> = {
     treasury: ['Treasury/projects', 'Treasury/income', 'Treasury/spendings', 'Treasury/settings'],
@@ -133,7 +133,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
         if (recRef.current || speakingRef.current) return;
         const SR = (window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec });
         const Ctor = SR.SpeechRecognition || SR.webkitSpeechRecognition;
-        if (!Ctor) { push({ role: 'assistant', text: "Voice isn't supported in this browser — try Chrome or Edge." }); setConvoMode(false); convoRef.current = false; return; }
+        if (!Ctor) { push({ role: 'assistant', text: "Voice isn't supported in this browser - try Chrome or Edge." }); setConvoMode(false); convoRef.current = false; return; }
         const rec = new Ctor();
         rec.lang = 'en-US'; rec.interimResults = false; rec.continuous = false;
         rec.onresult = (e) => { const t = e.results[0][0].transcript; if (t.trim()) onText(t.trim()); };
@@ -297,7 +297,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
     const elLabel = (e: HTMLElement) => (e.textContent || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
     const isVisible = (e: HTMLElement) => !!(e.offsetParent || e.getClientRects().length);
 
-    // Every visible button/link label currently on screen — the ground truth for
+    // Every visible button/link label currently on screen - the ground truth for
     // what Spark can actually click (so it never invents a target).
     const visibleClickables = (): string[] => {
         const seen = new Set<string>();
@@ -347,7 +347,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                     const el = findClickable(String(a.text || ''));
                     if (!el) {
                         const opts = visibleClickables();
-                        return `No clickable matching "${a.text}". Don't guess — click one of these EXACT on-screen labels: ${opts.map(o => `"${o}"`).join(', ') || '(none found)'}`;
+                        return `No clickable matching "${a.text}". Don't guess - click one of these EXACT on-screen labels: ${opts.map(o => `"${o}"`).join(', ') || '(none found)'}`;
                     }
                     const r = el.getBoundingClientRect();
                     await moveCursor(r.left + r.width / 2, r.top + r.height / 2);
@@ -432,14 +432,14 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
     const send = async (override?: string) => {
         const text = (override ?? input).trim();
         if (!text || busy) return;
-        if (!key || !provider) { setShowSettings(true); push({ role: 'assistant', text: 'Add an API key in settings first — the gear, top-right.' }); return; }
+        if (!key || !provider) { setShowSettings(true); push({ role: 'assistant', text: 'Add an API key in settings first - the gear, top-right.' }); return; }
         if (!model) { setShowSettings(true); push({ role: 'assistant', text: 'Pick a model in settings first.' }); return; }
 
         // ── rate limiting (anti-spam + rolling cap) ──────────────────────────
         const now = Date.now();
         if (now - lastSend.current < MIN_SEND_GAP_MS) { push({ role: 'assistant', text: 'Give it a second between messages.' }); return; }
         callWindow.current = callWindow.current.filter(t => now - t < 60_000);
-        if (callWindow.current.length >= MAX_MSGS_PER_MIN) { push({ role: 'assistant', text: `Rate limit — max ${MAX_MSGS_PER_MIN} messages/min. Take a breath.` }); return; }
+        if (callWindow.current.length >= MAX_MSGS_PER_MIN) { push({ role: 'assistant', text: `Rate limit - max ${MAX_MSGS_PER_MIN} messages/min. Take a breath.` }); return; }
         lastSend.current = now; callWindow.current.push(now);
 
         setInput('');
@@ -464,7 +464,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                 setStatus('thinking');
                 const mem = memoryRef.current;
                 const memCtx = `YOUR MEMORY (persists across sessions; update via set_memory): `
-                    + `${mem.userName ? `The user's name is ${mem.userName}. ` : "You don't know the user's name yet — ask once, then set_memory. "}`
+                    + `${mem.userName ? `The user's name is ${mem.userName}. ` : "You don't know the user's name yet - ask once, then set_memory. "}`
                     + `${mem.instructions ? `Standing instructions from the user: ${mem.instructions} ` : ''}`
                     + `${mem.facts?.length ? `Saved facts: ${mem.facts.join('; ')}. ` : ''}`;
                 const screenCtx = `${memCtx}\nCURRENT SCREEN: the user is viewing the "${PAGE_LABEL[pageRef.current] || pageRef.current}" page (id: ${pageRef.current}). Call read_screen to read what's on it.`;
@@ -472,7 +472,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                 nativeRef.current.push(res.assistant);
                 if (res.text) { push({ role: 'assistant', text: res.text }); finalText = res.text; }
                 if (!res.toolCalls.length) { setStatus('speaking'); break; }
-                if (guard === MAX_ROUNDS) { push({ role: 'assistant', text: 'Hit my step limit for one turn — ask me to continue if needed.' }); setStatus('error'); break; }
+                if (guard === MAX_ROUNDS) { push({ role: 'assistant', text: 'Hit my step limit for one turn - ask me to continue if needed.' }); setStatus('error'); break; }
 
                 setStatus('acting');
                 const results: ToolResult[] = [];
@@ -582,8 +582,8 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                             </div>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                            <button onClick={toggleVoiceOut} title={voiceOut ? 'Voice replies ON — Spark speaks answers' : 'Voice replies OFF'} className={`p-2 rounded-lg transition-colors ${voiceOut ? 'text-emerald-500 bg-emerald-500/15' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}>{voiceOut ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
-                            <button onClick={toggleAuto} title={autoMode ? 'Auto mode ON — acts without asking' : 'Auto mode OFF — confirms writes & deletes'} className={`p-2 rounded-lg transition-colors ${autoMode ? 'text-amber-500 bg-amber-500/15' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Zap size={17} className={autoMode ? 'fill-amber-500/40' : ''} /></button>
+                            <button onClick={toggleVoiceOut} title={voiceOut ? 'Voice replies ON - Spark speaks answers' : 'Voice replies OFF'} className={`p-2 rounded-lg transition-colors ${voiceOut ? 'text-emerald-500 bg-emerald-500/15' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}>{voiceOut ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
+                            <button onClick={toggleAuto} title={autoMode ? 'Auto mode ON - acts without asking' : 'Auto mode OFF - confirms writes & deletes'} className={`p-2 rounded-lg transition-colors ${autoMode ? 'text-amber-500 bg-amber-500/15' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Zap size={17} className={autoMode ? 'fill-amber-500/40' : ''} /></button>
                             <button onClick={() => setShowSettings(s => !s)} className={`p-2 rounded-lg transition-colors ${showSettings ? 'text-blue-500 bg-blue-500/10' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Settings2 size={17} /></button>
                             <button onClick={() => setOpen(false)} className="p-2 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-colors"><X size={17} /></button>
                         </div>
@@ -622,7 +622,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                             </div>
                             <p className="text-[10px] text-sec -mt-1">Tip: voices with “Natural”, “Google”, or “Online” in the name sound the most human. The mic button starts a hands-free voice chat.</p>
 
-                            {/* Memory — persists in Firestore (Spark/Memory); Spark can also edit this herself */}
+                            {/* Memory - persists in Firestore (Spark/Memory); Spark can also edit this herself */}
                             <div className="pt-2 border-t border-[var(--section-border)] flex flex-col gap-2">
                                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-sec uppercase tracking-wider"><Brain size={13} /> Memory</div>
                                 <input value={memory.userName || ''} onChange={e => setMemory(m => ({ ...m, userName: e.target.value }))} placeholder="Your name" className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/[0.03] border-black/10'} text-primary placeholder:text-sec`} />
@@ -679,7 +679,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                                 {quiz.multi && (
                                     <button onClick={() => answerQuiz(quizSel.join(', '))} disabled={!quizSel.length} className="self-end px-4 py-1.5 rounded-lg text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 flex items-center gap-1.5"><Check size={15} /> Submit</button>
                                 )}
-                                {/* Own answer — when none of the choices fit */}
+                                {/* Own answer - when none of the choices fit */}
                                 <div className="flex items-center gap-1.5 pt-1">
                                     <div className="flex-1 h-px bg-[var(--input-border)]" />
                                     <span className="text-[10px] uppercase tracking-wider text-sec font-semibold">or your own</span>

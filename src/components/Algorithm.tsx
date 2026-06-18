@@ -19,7 +19,7 @@ interface ProjectStats {
 
 // Analytics writes hit rate-limited Firestore docs. A `permission-denied` (rule
 // rejected the write because the cooldown hasn't elapsed) or an offline failure is
-// expected and harmless — analytics are best-effort. Treat those as benign so they
+// expected and harmless - analytics are best-effort. Treat those as benign so they
 // don't show up as scary console errors; real bugs still surface.
 const isBenignAnalyticsError = (error: unknown): boolean => {
     const code = (error as { code?: string } | null)?.code ?? '';
@@ -73,7 +73,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             try {
                 const { token } = await getToken(ac, false);
                 if (active) appCheckToken.current = token;
-            } catch { /* offline / reCAPTCHA hiccup — fetch just omits the header */ }
+            } catch { /* offline / reCAPTCHA hiccup - fetch just omits the header */ }
         };
         refresh();
         const id = setInterval(refresh, 20 * 60 * 1000);
@@ -223,7 +223,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
                 // Only the per-day denormalized fields need today's running totals, so
                 // read just the Daily doc (not Main). Main's lifetime "Total Reach" uses
-                // increment() — no read — and merge:true leaves the project/social totals
+                // increment() - no read - and merge:true leaves the project/social totals
                 // we don't write untouched, so the second Firestore read AND the
                 // read-modify-write race on "Total Reach" are both eliminated.
                 const dailySnap = await getDoc(dailyRef);
@@ -259,7 +259,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                     lastWrite: serverTimestamp()
                 }, { merge: true });
             } catch (error) {
-                // Benign rate-limit rejection (see incrementDailyStat note) — analytics
+                // Benign rate-limit rejection (see incrementDailyStat note) - analytics
                 // are best-effort, so don't spam the console with permission-denied.
                 if (!isBenignAnalyticsError(error)) {
                     console.error("Global Analytics Error:", error);
@@ -290,7 +290,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 // link's multi-KB Rec_CLI session blob to every visitor). The common
                 // path is a single 1-doc read on the indexed `Code` field. Rec_CLI can
                 // hold a ~60KB blob (often index-exempt), so its legacy fallback still
-                // scans — but only when the Code lookup misses.
+                // scans - but only when the Code lookup misses.
                 const linksCol = collection(db, 'Settings', 'Views', 'Links');
                 let linkDoc: QueryDocumentSnapshot | null = null;
 
@@ -346,7 +346,7 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         recordLink();
     }, [onNavigate, showAlert]);
 
-    // Only Sync at the very end — using keepalive fetch for reliability
+    // Only Sync at the very end - using keepalive fetch for reliability
     useEffect(() => {
         const handleFinalSync = () => {
             const linkId = sessionStorage.getItem('revil_link_id');
@@ -485,10 +485,10 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                 body,
                 keepalive: true
             }).catch(() => {
-                // Silent fail — page is already closing
+                // Silent fail - page is already closing
             });
 
-            // Do NOT reset isSyncing — this is a one-shot per page lifetime. Resetting it
+            // Do NOT reset isSyncing - this is a one-shot per page lifetime. Resetting it
             // synchronously let both `beforeunload` and `pagehide` (which commonly both fire
             // on close/navigation) send the session POST twice, double-counting the visit.
         };

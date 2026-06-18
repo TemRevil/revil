@@ -119,7 +119,7 @@ function emailTemplate({ title, preheader, bodyHtml, footerNote }) {
 }
 
 // =====================================================================
-// NOTE — `syncMeeting` Cloud Function is NOT defined here.
+// NOTE - `syncMeeting` Cloud Function is NOT defined here.
 // It is deployed to this Firebase project from a separate codebase and is called
 // from src/components/M-Contact.tsx (public meeting booking) and
 // src/components/dashboard/D-Canary.tsx (admin cancel). It wraps the Google
@@ -131,7 +131,7 @@ function emailTemplate({ title, preheader, bodyHtml, footerNote }) {
 // =====================================================================
 
 // =====================================================================
-//  1. syncSession — HTTP endpoint for Algorithm.tsx session recording
+//  1. syncSession - HTTP endpoint for Algorithm.tsx session recording
 // =====================================================================
 exports.syncSession = onRequest(
   {
@@ -185,7 +185,7 @@ exports.syncSession = onRequest(
 );
 
 // =====================================================================
-//  2. notifyCanary — Firestore trigger on Settings/Canary
+//  2. notifyCanary - Firestore trigger on Settings/Canary
 //     Detects new emails & meetings, sends notification to admin
 // =====================================================================
 exports.notifyCanary = onDocumentWritten(
@@ -304,7 +304,7 @@ exports.notifyCanary = onDocumentWritten(
       const m = newMeetings[key];
       if (!m || !m.Name) continue;
 
-      // Only allow safe meet links — must be https://meet.google.com
+      // Only allow safe meet links - must be https://meet.google.com
       const safeMeetLink =
         typeof m.MeetingLink === "string" && /^https:\/\/meet\.google\.com\//.test(m.MeetingLink)
           ? m.MeetingLink
@@ -375,7 +375,7 @@ exports.notifyCanary = onDocumentWritten(
     // ── Mirror busy slots to a sanitized public doc ─────────────
     // Settings/Canary is admin-read-only (it holds visitor PII + Meet links).
     // The public booking calendar only needs to know which {Date, Time} slots are
-    // taken, so we mirror exactly that — no names, emails, reasons, or links — to
+    // taken, so we mirror exactly that - no names, emails, reasons, or links - to
     // Settings/BookedSlots, which is publicly readable. Runs on every Canary write
     // (book / reschedule / cancel) so availability stays in sync. Writing a
     // different doc does not re-trigger this function, so there is no loop.
@@ -394,7 +394,7 @@ exports.notifyCanary = onDocumentWritten(
 );
 
 // =====================================================================
-//  3. notifyLogin — Callable function triggered by dashboard on sign-in
+//  3. notifyLogin - Callable function triggered by dashboard on sign-in
 //     Sends an email alert with date/time/device info
 // =====================================================================
 exports.notifyLogin = onCall(
@@ -404,7 +404,7 @@ exports.notifyLogin = onCall(
     enforceAppCheck: true,
   },
   async (request) => {
-    // Only authenticated users can call this — use HttpsError so client gets a typed rejection
+    // Only authenticated users can call this - use HttpsError so client gets a typed rejection
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Sign in required to call notifyLogin.");
     }

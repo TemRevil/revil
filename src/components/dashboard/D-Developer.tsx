@@ -336,7 +336,7 @@ const DDeveloper = () => {
                                         border: `1px solid ${selected ? 'rgba(51,149,255,0.35)' : 'var(--section-border)'}`,
                                     }}
                                 >
-                                    {/* Selection indicator — shows a check + rank when featured (not color-only) */}
+                                    {/* Selection indicator - shows a check + rank when featured (not color-only) */}
                                     <span
                                         className="grid place-items-center shrink-0 mt-0.5 text-[0.6rem] font-black"
                                         style={{

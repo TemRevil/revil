@@ -49,7 +49,7 @@ const StreakCircle = ({ streak, isLoading = false }: StreakCircleProps) => {
                 userSelect: 'none',
             }}
         >
-            {/* Fire — lazy-mounted; the 100x100 box is always reserved (no layout shift) */}
+            {/* Fire - lazy-mounted; the 100x100 box is always reserved (no layout shift) */}
             <div
                 style={{
                     width: 100,
@@ -80,7 +80,7 @@ const StreakCircle = ({ streak, isLoading = false }: StreakCircleProps) => {
                 )}
             </div>
 
-            {/* Number — uses page text color so it's always legible */}
+            {/* Number - uses page text color so it's always legible */}
             <div
                 style={{
                     fontSize: '3rem',
@@ -94,7 +94,7 @@ const StreakCircle = ({ streak, isLoading = false }: StreakCircleProps) => {
                     textAlign: 'center',
                 }}
             >
-                {isLoading ? '—' : streak}
+                {isLoading ? '-' : streak}
             </div>
 
             {/* Label */}

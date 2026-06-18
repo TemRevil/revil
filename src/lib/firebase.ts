@@ -19,20 +19,20 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize App Check with reCAPTCHA Enterprise — EAGERLY, before any Firestore
+// Initialize App Check with reCAPTCHA Enterprise - EAGERLY, before any Firestore
 // read. This ordering is REQUIRED: Firestore App Check enforcement is on, so a read
 // issued before App Check is registered goes out with no token and is rejected
 // (permission-denied) with no auto-retry. Hero/SettingsContext attach Firestore
 // listeners on mount, so App Check must already exist here. (Do NOT defer this.)
-// Runs only in the browser — SSR/build skips it. Exported so non-SDK callers (the
+// Runs only in the browser - SSR/build skips it. Exported so non-SDK callers (the
 // raw fetch() to syncSession) can grab a token for the X-Firebase-AppCheck header.
 let appCheck: AppCheck | undefined;
 if (typeof window !== 'undefined') {
     // Enable a FIXED debug token on localhost (see .env.local) so it persists across
-    // sessions — register it ONCE in the Firebase console. Falling back to `true`
+    // sessions - register it ONCE in the Firebase console. Falling back to `true`
     // makes Firebase mint a random token that must be re-registered each time.
     if (process.env.NODE_ENV === 'development') {
-        // @ts-expect-error — Firebase debug token flag
+        // @ts-expect-error - Firebase debug token flag
         self.FIREBASE_APPCHECK_DEBUG_TOKEN = process.env.NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN || true;
     }
 
@@ -44,7 +44,7 @@ if (typeof window !== 'undefined') {
 export { appCheck };
 
 // Initialize Firestore with modern multi-tab persistence settings. Firestore is the
-// only Firebase SDK (besides App Check) kept in the eager bundle — the public site
+// only Firebase SDK (besides App Check) kept in the eager bundle - the public site
 // reads data on first paint. Auth / Storage / Functions are split into on-demand
 // chunks (see the lazy accessors used by the contact form, SecretPage, and the
 // admin dashboard) so they never block initial load.
@@ -52,7 +52,7 @@ export const db = initializeFirestore(app, {
     localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager()
     }),
-    // Drop `undefined` fields instead of throwing — optional fields (e.g. a
+    // Drop `undefined` fields instead of throwing - optional fields (e.g. a
     // project's notes/client/endDate) are commonly undefined and Firestore would
     // otherwise reject the whole write ("Unsupported field value: undefined").
     ignoreUndefinedProperties: true,

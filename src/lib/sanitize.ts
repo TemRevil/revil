@@ -50,7 +50,7 @@ export function sanitizeSvg(svgString: string): string {
         }
 
         // Sanitize the root <svg> element's OWN attributes first (e.g. a root
-        // `onload=` / `style:url()` survives otherwise — sanitizeNode only walks
+        // `onload=` / `style:url()` survives otherwise - sanitizeNode only walks
         // descendants), then recurse into its children.
         sanitizeElementAttributes(doc.documentElement);
         sanitizeNode(doc.documentElement);

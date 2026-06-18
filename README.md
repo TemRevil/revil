@@ -10,29 +10,29 @@
 
 ---
 
-## ✨ Core Pillars
+##  Core Pillars
 
-### 🎨 High-Fidelity UI/UX
+###  High-Fidelity UI/UX
 Designed with a "Ceramic-Glass" aesthetic, Revil features:
 - **Liquid Navigation**: Ultra-smooth page transitions and scroll-aware animations powered by **Anime.js** and **Framer Motion**.
 - **Adaptive Precision**: A hand-crafted CSS design system providing a seamless experience from 320px mobile devices to 4K displays.
 - **Atmospheric Themes**: Intelligent Dark/Light mode system with deep glassmorphism and animated background blobs.
 
-### 🛡️ The Admin Dashboard (Canary)
+### ️ The Admin Dashboard (Canary)
 A private, real-time command center built for elite project management:
 - **Project Orchestrator**: Add, edit, and organize projects with dynamic image cropping and multi-tag filtering.
 - **Canary Engine**: A built-in mail inbox for direct client communication and a meeting calendar with **Google Calendar API** synchronization.
 - **The "Algorithm"**: Proprietary session tracking that monitors project engagement, stack time, and visitor intent.
 - **Link Architect**: Generate trackable custom URLs for specific clients to monitor when they view your portfolio.
 
-### ⚡ Technical Excellence
+###  Technical Excellence
 - **React 19 & Next.js 15**: Leveraging the latest in front-end performance, App Router, and server-side capabilities.
 - **Robust Security**: Hardened Firestore rules, environment variable isolation, CSP compliance, and secure sanitized SVG rendering.
 - **Cloud Infrastructure**: Scalable backend logic using Firebase Cloud Functions, Realtime live data synchronization, and secure file handling via Firebase Storage.
 
 ---
 
-## 🚀 Experience it Locally
+##  Experience it Locally
 
 ### Prerequisites
 - Node.js (v18+)
@@ -50,7 +50,7 @@ npm install
 npm run dev
 ```
 
-### 🐳 Run with Docker
+###  Run with Docker
 You can directly run the application inside an isolated Docker container without needing Node installed locally:
 ```bash
 # Build the Docker image
@@ -60,7 +60,7 @@ docker build -t revil-portfolio .
 docker run -p 3000:3000 revil-portfolio
 ```
 
-## 🤖 Continuous Integration & Security
+##  Continuous Integration & Security
 
 We maintain high-end reliability and stability across the entire project through automated defenses and strict security policies:
 - **Zero-Error Automation**: Every push to the protected `main` branch runs through aggressive GitHub Action workflows. It rigidly tests against `npm run lint`, `npm run build`, and enforces strict TypeScript standards.
@@ -70,7 +70,7 @@ We maintain high-end reliability and stability across the entire project through
 
 ---
 
-## 📂 Architecture Overview
+##  Architecture Overview
 
 
 ```text
@@ -88,7 +88,7 @@ src/
 
 ---
 
-## 🛠️ Tech Stack
+## ️ Tech Stack
 
 | Domain | Technology |
 | :--- | :--- |
@@ -102,7 +102,7 @@ src/
 
 ---
 
-## 📜 License
+##  License
 
 Distributed under the MIT License. See `LICENSE` for more information.
 

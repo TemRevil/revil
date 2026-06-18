@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, C
 import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app, { db } from '../../lib/firebase';
-// Local Functions handle (lazy Dashboard chunk) — keeps firebase/functions out of eager.
+// Local Functions handle (lazy Dashboard chunk) - keeps firebase/functions out of eager.
 const functions = getFunctions(app);
 
 import Alert from '../Alert';

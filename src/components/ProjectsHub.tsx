@@ -6,7 +6,7 @@ import Developer from './Developer';
 
 type SubTab = 'projects' | 'developer';
 
-// Ordered list of sub-tabs — extend this array to add more pages
+// Ordered list of sub-tabs - extend this array to add more pages
 const SUB_TABS: { key: SubTab; label: string; icon: typeof FolderKanban }[] = [
     { key: 'projects', label: 'Projects', icon: FolderKanban },
     { key: 'developer', label: 'Developer', icon: GitBranch },
@@ -52,13 +52,13 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
             if (activeIndex < SUB_TABS.length - 1) {
                 return switchTo(activeIndex + 1);
             }
-            return false; // Already on last tab — let App navigate to secret
+            return false; // Already on last tab - let App navigate to secret
         },
         trySwipeLeft: () => {
             if (activeIndex > 0) {
                 return switchTo(activeIndex - 1);
             }
-            return false; // Already on first tab — let App handle
+            return false; // Already on first tab - let App handle
         },
     }), [activeIndex, switchTo]);
 
@@ -86,7 +86,7 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
 
     return (
         <>
-            {/* Content area — overflow-x hidden kills horizontal scrollbar during slide transitions */}
+            {/* Content area - overflow-x hidden kills horizontal scrollbar during slide transitions */}
             <div style={{ overflowX: 'hidden', minHeight: '100vh' }}>
                 <AnimatePresence
                     mode="wait"
@@ -109,7 +109,7 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
                 </AnimatePresence>
             </div>
 
-            {/* Sub-navbar — delayed entrance until page transition settles */}
+            {/* Sub-navbar - delayed entrance until page transition settles */}
             <AnimatePresence>
                 {showSubnav && (
                     <div
