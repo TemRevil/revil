@@ -1,4 +1,4 @@
-import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText } from 'lucide-react';
+import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText, Zap, Rocket } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
@@ -16,16 +16,23 @@ interface NavbarProps {
     isCVOpen?: boolean;
 }
 
+interface TooltipProps {
+    text: string;
+    icon?: React.ReactNode;
+    show: boolean;
+    isDark: boolean;
+}
+
 /**
- * Portaled navbar tooltip — renders into document.body so it escapes the
+ * Portaled navbar tooltip - renders into document.body so it escapes the
  * `<nav>`'s `-translate-x-1/2` transform (which would otherwise nuke
  * backdrop-filter blur on any descendant).
  *
  * Auto-positions against its parent element (the button it's a sibling of).
  * Drop-in API-compatible with the previous Tooltip: same props, same call sites.
  */
-const Tooltip = ({ text, show, isDark }: { text: string; show: boolean; isDark: boolean }) => {
-    // Invisible anchor — lets us find the parent button without prop-drilling refs
+const Tooltip = ({ text, icon, show, isDark }: TooltipProps) => {
+    // Invisible anchor - lets us find the parent button without prop-drilling refs
     const anchorRef = useRef<HTMLSpanElement>(null);
     const tooltipRef = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState<{ centerX: number; topY: number } | null>(null);
@@ -62,7 +69,7 @@ const Tooltip = ({ text, show, isDark }: { text: string; show: boolean; isDark: 
 
     if (typeof document === 'undefined') return null;
 
-    // Position using fixed + left + bottom (NO transform anywhere — backdrop-filter
+    // Position using fixed + left + bottom (NO transform anywhere - backdrop-filter
     // would break on the inner element otherwise). Center horizontally by computing
     // `left` from the measured tooltip width.
     const leftPx = pos ? pos.centerX - tooltipWidth / 2 : -9999;
@@ -89,8 +96,9 @@ const Tooltip = ({ text, show, isDark }: { text: string; show: boolean; isDark: 
                         bottom: bottomPx,
                     }}
                 >
-                    <div className="nav-tooltip-inner">
-                        {text}
+                    <div className="nav-tooltip-inner flex items-center gap-1.5">
+                        {icon && <span className="flex items-center shrink-0 opacity-90">{icon}</span>}
+                        <span>{text}</span>
                     </div>
                     <div
                         className="nav-tooltip-arrow"
@@ -99,7 +107,7 @@ const Tooltip = ({ text, show, isDark }: { text: string; show: boolean; isDark: 
                             bottom: '-6px',
                             zIndex: -1,
                             // Match the tooltip body bg + blur exactly so the arrow reads
-                            // as a seamless extension. No borders — tooltip body covers
+                            // as a seamless extension. No borders - tooltip body covers
                             // the top half of the arrow, only the bottom diamond tip shows.
                             backgroundColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.4)',
                             backdropFilter: 'blur(32px) saturate(2)',
@@ -264,7 +272,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <Home size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="🏠 Home" show={hoveredTab === 'home' && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Home" icon={<Home size={14} strokeWidth={2} />} show={hoveredTab === 'home' && !isSubnavHovered} isDark={isDark} />
                     </div>
 
                     <div className="relative">
@@ -277,7 +285,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <Layers size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="⚡ Stack" show={hoveredTab === 'stack' && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Stack" icon={<Zap size={14} strokeWidth={2} />} show={hoveredTab === 'stack' && !isSubnavHovered} isDark={isDark} />
                     </div>
 
                     <div className="relative">
@@ -290,7 +298,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <FolderKanban size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="🚀 Projects" show={(hoveredTab === 'projects' || autoTooltip === 'projects') && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Projects" icon={<Rocket size={14} strokeWidth={2} />} show={(hoveredTab === 'projects' || autoTooltip === 'projects') && !isSubnavHovered} isDark={isDark} />
                     </div>
 
                     <div
@@ -318,7 +326,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 <FileText size={20} strokeWidth={2.5} />
                             </motion.div>
                         </motion.button>
-                        <Tooltip text="📄 Digital CV" show={hoveredTab === 'cv' && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Digital CV" icon={<FileText size={14} strokeWidth={2} />} show={hoveredTab === 'cv' && !isSubnavHovered} isDark={isDark} />
 
                         {isCVOpen && (
                             <div className={`
@@ -331,7 +339,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                     </div>
                 </div>
 
-                {/* Divider — shorter on mobile to match the smaller icon buttons */}
+                {/* Divider - shorter on mobile to match the smaller icon buttons */}
                 <div
                     className={`
                         w-[1px]
@@ -368,7 +376,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 <Mail size={24} strokeWidth={2} />
                             </motion.div>
                         </motion.button>
-                        <Tooltip text="📩 Contact" show={(hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)) && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Contact" icon={<Mail size={14} strokeWidth={2} />} show={(hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)) && !isSubnavHovered} isDark={isDark} />
 
                         {isContactOpen && (
                             <div className={`
