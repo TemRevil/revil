@@ -46,7 +46,7 @@ function escSubject(v) {
 /** Helper: create a reusable SMTP transporter */
 function createTransporter() {
   return nodemailer.createTransport({
-    host: "smtp.titan.email",
+    host: "smtp.hostinger.com",
     port: 465,
     secure: true,
     auth: {
