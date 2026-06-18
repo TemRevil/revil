@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import anime from 'animejs';
 import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link, Sun, Moon } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
 import { doc, onSnapshot, setDoc, updateDoc, deleteField, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, getMetadata, getStorage } from 'firebase/storage';
 import app, { db } from '../../lib/firebase';
-// Local Storage handle (lazy Dashboard chunk) — keeps firebase/storage out of eager.
+// Local Storage handle (lazy Dashboard chunk) - keeps firebase/storage out of eager.
 const storage = getStorage(app);
 import Alert, { AlertType } from '../Alert';
 import MStackItem, { StackItemData } from './M-StackItem';
@@ -209,104 +209,9 @@ export default function DSettings() {
     const [heroImageSizeDark, setHeroImageSizeDark] = useState<string>('');
     const [heroImageSizeLoadingDark, setHeroImageSizeLoadingDark] = useState(false);
 
-    const directionRef = useRef<number>(1);
-    const [isTransitioning, setIsTransitioning] = useState(false);
-    const hasAnimatedRef = useRef<string | null>(null);
-    const [revealedTabs, setRevealedTabs] = useState<Record<string, boolean>>({
-        availability: false,
-        stack: false,
-        account: false
-    });
-
     const handleTabChange = (newTab: 'availability' | 'stack' | 'account') => {
-        if (newTab === activeTab || isTransitioning) return;
-
-        hasAnimatedRef.current = null;
-        setRevealedTabs(prev => ({ ...prev, [newTab]: false })); // Force re-animation state
-
-        const indices: Record<string, number> = { availability: 0, stack: 1, account: 2 };
-        const direction = indices[newTab] > indices[activeTab] ? 1 : -1;
-        directionRef.current = direction;
-        setIsTransitioning(true);
-
-        // Instant Exit
-        anime({
-            targets: '.settings-section',
-            translateX: [0, -direction * 30],
-            opacity: [1, 0],
-            duration: 150,
-            easing: 'easeInQuad',
-            complete: () => {
-                setActiveTab(newTab);
-            }
-        });
+        setActiveTab(newTab);
     };
-
-    useEffect(() => {
-        const runAnimation = () => {
-            const targets = document.querySelectorAll('.settings-section');
-            if (targets.length === 0) return;
-            if (hasAnimatedRef.current === activeTab) return;
-
-            hasAnimatedRef.current = activeTab;
-
-            const timeline = anime.timeline({
-                easing: 'easeOutExpo',
-                complete: () => {
-                    setRevealedTabs(prev => ({ ...prev, [activeTab]: true }));
-                    setIsTransitioning(false);
-                }
-            });
-
-            // Ultra-Fast Entrance
-            timeline.add({
-                targets: '.settings-section',
-                opacity: [0, 1],
-                translateX: [directionRef.current * 50, 0],
-                duration: 300
-            }, 0);
-
-            timeline.add({
-                targets: '.settings-panel',
-                opacity: [0, 1],
-                translateY: [20, 0],
-                scale: [0.99, 1],
-                rotateY: [directionRef.current * 3, 0],
-                delay: anime.stagger(30, { start: 20 }),
-                duration: 450
-            }, 0);
-
-            timeline.add({
-                targets: '.settings-panel > *',
-                opacity: [0, 1],
-                translateY: [5, 0],
-                delay: anime.stagger(8, { start: 15 }),
-                duration: 200
-            }, 0);
-
-            timeline.add({
-                targets: '.settings-tab-btn.tab-active',
-                scale: [0.98, 1.01, 1],
-                duration: 250,
-                easing: 'easeOutBack'
-            }, 0);
-        };
-
-        runAnimation();
-        // Safety revealed state in case animation doesn't trigger
-        const safetyId = setTimeout(() => {
-            if (hasAnimatedRef.current !== activeTab) {
-                setRevealedTabs(prev => ({ ...prev, [activeTab]: true }));
-                setIsTransitioning(false);
-            }
-        }, 150);
-
-        const tid = setTimeout(runAnimation, 30);
-        return () => {
-            clearTimeout(tid);
-            clearTimeout(safetyId);
-        };
-    }, [activeTab]);
 
     const formatBytes = (bytes: number) => {
         if (bytes === 0) return '0 B';
@@ -514,7 +419,7 @@ export default function DSettings() {
 
     // Load profile and hero info from Firestore.
     // Dirty flags (heroImageDirty / heroImageDirtyDark) prevent the snapshot from
-    // clobbering unsaved local changes — including changes made via the Firebase browser
+    // clobbering unsaved local changes - including changes made via the Firebase browser
     // (where heroImageFile is null but a new URL was selected).
     useEffect(() => {
         const unsubscribe = onSnapshot(doc(db, 'Settings', 'Account'), (snap) => {
@@ -586,7 +491,7 @@ export default function DSettings() {
                 }, duration);
             }
         } else {
-            // explicit hide — clear ref and state
+            // explicit hide - clear ref and state
             lastAlertRef.current = null;
             setAlert({ show: false, type: next.type, message: next.message });
         }
@@ -613,8 +518,8 @@ export default function DSettings() {
                 'timezoneOffset': selectedTimezone
             };
 
-            // merge:true so the 'Projects Being Handled' map — now owned and
-            // mirrored by the Treasury page — survives an availability save.
+            // merge:true so the 'Projects Being Handled' map - now owned and
+            // mirrored by the Treasury page - survives an availability save.
             await setDoc(doc(db, 'Settings', 'Availability'), payload, { merge: true });
         } catch (error) {
             console.error("Error saving availability:", error);
@@ -663,7 +568,7 @@ export default function DSettings() {
         // Allow saving even if empty (user wants to clear the dark variant)
         if (!heroImageFileDark && !heroImagePreviewDark) {
             try {
-                // setDoc + merge is safer than updateDoc — works even if the field
+                // setDoc + merge is safer than updateDoc - works even if the field
                 // or doc didn't exist before. deleteField() removes the value.
                 await setDoc(
                     doc(db, 'Settings', 'Account'),
@@ -1317,10 +1222,18 @@ export default function DSettings() {
 
             {/* Content Container with overflow-x-hidden for clean transitions */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 p-4 custom-scrollbar">
-                {activeTab === 'availability' && (
-                    <div className="settings-section flex flex-col gap-6" style={{ opacity: revealedTabs.availability ? 1 : 0 }}>
-                        {/* Availability Settings */}
-                        <div className="settings-panel glass-panel p-6 flex flex-col gap-6 relative z-10" style={{ opacity: revealedTabs.availability ? 1 : 0 }}>
+                <AnimatePresence mode="wait">
+                    {activeTab === 'availability' && (
+                        <motion.div
+                            key="availability"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.15, ease: 'easeInOut' }}
+                            className="settings-section flex flex-col gap-6"
+                        >
+                            {/* Availability Settings */}
+                            <div className="settings-panel glass-panel p-6 flex flex-col gap-6 relative z-10">
                             <h3 className="heading-md text-base sm:text-lg md:text-xl">Availability Settings</h3>
                             <div className="flex flex-col gap-6">
                                 {/* Current Availability Slider */}
@@ -1411,12 +1324,19 @@ export default function DSettings() {
                             </div>
                         </div>
 
-                    </div>
+                    </motion.div>
                 )}
 
-                {activeTab === 'stack' && (
-                    <div className="settings-section flex flex-col gap-6" style={{ opacity: revealedTabs.stack ? 1 : 0 }}>
-                        <div className="settings-panel glass-panel p-3 sm:p-4 md:p-6 flex-1 flex flex-col gap-3 sm:gap-4 md:gap-6" style={{ opacity: revealedTabs.stack ? 1 : 0 }}>
+                    {activeTab === 'stack' && (
+                        <motion.div
+                            key="stack"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.15, ease: 'easeInOut' }}
+                            className="settings-section flex flex-col gap-6"
+                        >
+                            <div className="settings-panel glass-panel p-3 sm:p-4 md:p-6 flex-1 flex flex-col gap-3 sm:gap-4 md:gap-6">
                             <div className="flex-row-between">
                                 <h3 className="heading-md text-base sm:text-lg md:text-xl">Tech Stack</h3>
                                 <button onClick={() => setStackModalOpen(true)} className="btn btn-primary" aria-label="Add stack">
@@ -1439,12 +1359,19 @@ export default function DSettings() {
                                 ))}
                             </div>
                         </div>
-                    </div>
+                    </motion.div>
                 )}
 
-                {activeTab === 'account' && (
-                    <div className="settings-section grid grid-cols-1 md:grid-cols-12 gap-6 items-start" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
-                        <div className="settings-panel md:col-span-4 glass-panel p-6 flex flex-col gap-5" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
+                    {activeTab === 'account' && (
+                        <motion.div
+                            key="account"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.15, ease: 'easeInOut' }}
+                            className="settings-section grid grid-cols-1 md:grid-cols-12 gap-6 items-start"
+                        >
+                            <div className="settings-panel md:col-span-4 glass-panel p-6 flex flex-col gap-5">
                             <div className="flex items-center justify-between gap-3">
                                 <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-0">
                                     <User size={22} className="mr-3" />
@@ -1461,7 +1388,7 @@ export default function DSettings() {
                                 )}
                             </div>
 
-                            {/* Light / Dark toggle — one uploader, switch which image you're editing */}
+                            {/* Light / Dark toggle - one uploader, switch which image you're editing */}
                             <div
                                 role="tablist"
                                 aria-label="Hero image mode"
@@ -1560,7 +1487,7 @@ export default function DSettings() {
 
                         <div className="md:col-span-8 flex flex-col gap-6">
                             {/* Profile */}
-                            <div className="settings-panel glass-panel p-6 flex flex-col gap-4" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
+                            <div className="settings-panel glass-panel p-6 flex flex-col gap-4">
                                 <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
                                     <User size={22} className="mr-3" />
                                     Profile
@@ -1670,7 +1597,7 @@ export default function DSettings() {
                             </div>
 
                             {/* Social Links Editor */}
-                            <div className="settings-panel glass-panel p-6 flex flex-col gap-4" style={{ opacity: revealedTabs.account ? 1 : 0 }}>
+                            <div className="settings-panel glass-panel p-6 flex flex-col gap-4">
                                 <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
                                     <Link size={22} className="mr-3" />
                                     Social Links
@@ -1748,8 +1675,9 @@ export default function DSettings() {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </motion.div>
                 )}
+                </AnimatePresence>
             </div>
 
             {/* Stack Modal */}

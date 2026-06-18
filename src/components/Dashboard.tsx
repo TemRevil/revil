@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import anime from 'animejs';
 import { Layout, Eye, Settings, Bird, LogOut, Tag, User, GitBranch, PiggyBank } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import DProjects from './dashboard/D-Projects';
 import DTags from './dashboard/D-Tags';
 import DLinks from './dashboard/D-Links';
@@ -61,20 +62,20 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
         // Staggered Sidebar Entrance Animation
         anime({
             targets: '.sidebar-item',
-            translateX: [-50, 0],
+            translateX: [-16, 0],
             opacity: [0, 1],
-            delay: anime.stagger(100, { start: 300 }),
+            delay: anime.stagger(30, { start: 50 }),
             easing: 'easeOutQuint',
-            duration: 800
+            duration: 350
         });
 
         // Logo Entrance
         anime({
             targets: '.dashboard-logo',
-            scale: [0.5, 1],
+            scale: [0.85, 1],
             opacity: [0, 1],
-            duration: 1000,
-            easing: 'easeOutElastic(1, .8)'
+            duration: 400,
+            easing: 'easeOutQuint'
         });
 
         return () => {
@@ -82,25 +83,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
         };
     }, []);
 
-    // Tab Switch Animation
-    useEffect(() => {
-        anime({
-            targets: '.dashboard-content-area',
-            translateY: [20, 0],
-            opacity: [0, 1],
-            scale: [0.98, 1],
-            duration: 600,
-            easing: 'easeOutQuint'
-        });
 
-        // Active indicator pulse
-        anime({
-            targets: '.active-sidebar-pill',
-            scale: [0.9, 1.1, 1],
-            duration: 400,
-            easing: 'easeOutQuad'
-        });
-    }, [activeTab]);
 
     const menuItems = [
         { id: 'projects', label: 'Projects', icon: Layout },
@@ -208,7 +191,11 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                                 }}
                             >
                                 {isActive && (
-                                    <div className="active-sidebar-pill absolute left-0 w-1 h-[60%] bg-accent rounded-r" />
+                                    <motion.div
+                                        layoutId="active-sidebar-pill"
+                                        className="active-sidebar-pill absolute left-0 w-1 h-[60%] bg-accent rounded-r"
+                                        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                                    />
                                 )}
                                 <Icon size={iconSize} />
                                 {!isMobile && (
@@ -268,35 +255,46 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                     </div>
 
                     {/* Content Viewport */}
-                    <div className="dashboard-content-area flex-1">
-                        {activeTab === 'projects' ? (
-                            <DProjects />
-                        ) : activeTab === 'tags' ? (
-                            <DTags />
-                        ) : activeTab === 'views' ? (
-                            <DLinks />
-                        ) : activeTab === 'developer' ? (
-                            <DDeveloper />
-                        ) : activeTab === 'treasury' ? (
-                            <DTreasury />
-                        ) : activeTab === 'settings' ? (
-                            <DSettings />
-                        ) : activeTab === 'canary' ? (
-                            <DCanary />
-                        ) : (
-                            <div className={`
-                                w-full h-[90%] flex items-center justify-center text-center p-4
-                                border-2 border-dashed border-input-border text-sec font-inter
-                                ${isExtraSmall ? 'rounded-2xl text-sm' : 'rounded-3xl text-base'}
-                            `}>
-                                <span>Content for {menuItems.find(i => i.id === activeTab)?.label} will go here</span>
-                            </div>
-                        )}
+                    <div className="dashboard-content-area flex-1 relative min-h-0">
+                        <AnimatePresence mode="wait">
+                            <motion.div
+                                key={activeTab}
+                                initial={{ opacity: 0, y: 6 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -6 }}
+                                transition={{ duration: 0.15, ease: 'easeInOut' }}
+                                className="w-full h-full flex flex-col"
+                            >
+                                {activeTab === 'projects' ? (
+                                    <DProjects />
+                                ) : activeTab === 'tags' ? (
+                                    <DTags />
+                                ) : activeTab === 'views' ? (
+                                    <DLinks />
+                                ) : activeTab === 'developer' ? (
+                                    <DDeveloper />
+                                ) : activeTab === 'treasury' ? (
+                                    <DTreasury />
+                                ) : activeTab === 'settings' ? (
+                                    <DSettings />
+                                ) : activeTab === 'canary' ? (
+                                    <DCanary />
+                                ) : (
+                                    <div className={`
+                                        w-full h-[90%] flex items-center justify-center text-center p-4
+                                        border-2 border-dashed border-input-border text-sec font-inter
+                                        ${isExtraSmall ? 'rounded-2xl text-sm' : 'rounded-3xl text-base'}
+                                    `}>
+                                        <span>Content for {menuItems.find(i => i.id === activeTab)?.label} will go here</span>
+                                    </div>
+                                )}
+                            </motion.div>
+                        </AnimatePresence>
                     </div>
                 </div>
             </main>
 
-            {/* AI co-pilot — floating orb, can navigate, click, and read/write data */}
+            {/* AI co-pilot - floating orb, can navigate, click, and read/write data */}
             <Assistant onNavigate={(page) => setActiveTab(page)} currentPage={activeTab} />
         </div >
     );
