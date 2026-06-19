@@ -793,8 +793,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.2 }}
-                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : 'minmax(300px, 1.2fr) minmax(300px, 1fr)', gap: isMobile ? '40px' : '32px', overflowY: 'auto', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
-                    className="custom-scrollbar"
+                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : 'minmax(300px, 1.2fr) minmax(300px, 1fr)', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
+                    className={isMobile ? "custom-scrollbar" : ""}
                   >
 
                     {/* Left Column: Calendar */}
@@ -999,8 +999,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       )}
                     </div>
 
-                    {/* Right Column: Details & Agenda */}
-                    <div style={{ flex: 1, overflowY: 'visible', display: 'flex', flexDirection: 'column', gap: '24px', borderLeft: isMobile ? 'none' : `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`, borderTop: isMobile ? `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}` : 'none', paddingLeft: isMobile ? '0' : '32px', paddingTop: '40px' }} className="will-change-transform">
+                    {/* Right Column: Details & Agenda (Scrollable on overflow on desktop) */}
+                    <div className={!isMobile ? "custom-scrollbar" : ""} style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: '24px', borderLeft: isMobile ? 'none' : `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`, borderTop: isMobile ? `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}` : 'none', paddingLeft: isMobile ? '0' : '32px', paddingRight: isMobile ? '0' : '8px', paddingTop: isMobile ? '40px' : '0', willChange: 'transform' }}>
                       <AnimatePresence mode="wait">
                         <motion.div
                           key={bookingSuccess ? 'success' : (selectedDate?.toISOString() || 'no-date')}
