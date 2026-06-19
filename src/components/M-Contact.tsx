@@ -792,8 +792,17 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     className={isMobile ? "custom-scrollbar" : ""}
                   >
 
-                    {/* Left Column: Calendar (Fixed) */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    {/* Left Column: Calendar (Scrollable on overflow on desktop) */}
+                    <div 
+                      className={!isMobile ? "custom-scrollbar" : ""} 
+                      style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '24px', 
+                        overflowY: isMobile ? 'visible' : 'auto', 
+                        paddingRight: isMobile ? '0' : '8px' 
+                      }}
+                    >
                       {/* Calendar Header with No Scrollbar style */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
