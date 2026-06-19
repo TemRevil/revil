@@ -788,7 +788,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.2 }}
-                    style={{ flex: 1, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : 'minmax(300px, 1.2fr) minmax(300px, 1fr)', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
+                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : 'minmax(300px, 1.2fr) minmax(300px, 1fr)', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
                     className={isMobile ? "custom-scrollbar" : ""}
                   >
 
@@ -804,7 +804,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       }}
                     >
                       {/* Calendar Header with No Scrollbar style */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
                           <AnimatePresence mode="wait">
                             <motion.span
@@ -865,7 +865,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       </div>
 
                       {/* Calendar Grid - Hiding Overflow Check */}
-                      <div style={{ overflow: 'hidden' }}>
+                      <div style={{ overflow: 'hidden', flexShrink: 0 }}>
                         <AnimatePresence mode="popLayout" initial={false} custom={direction}>
                           <motion.div
                             key={calendarDate.toISOString()}
@@ -970,6 +970,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         fontSize: '0.85rem',
                         lineHeight: '1.4',
                         color: 'var(--text-muted)',
+                        flexShrink: 0,
                       }}>
                         Looking to book further out than 1.5 months? Please{' '}
                         <button
