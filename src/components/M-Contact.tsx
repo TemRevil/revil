@@ -129,6 +129,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     return nextM > limitDate;
   }, [calendarDate, limitDate]);
 
+  const isFutureMonth = useMemo(() => {
+    return calendarDate.getFullYear() > today.getFullYear() || 
+      (calendarDate.getFullYear() === today.getFullYear() && calendarDate.getMonth() > today.getMonth());
+  }, [calendarDate, today]);
+
   // Timezone States
   const [hostTimezoneString, setHostTimezoneString] = useState('UTC+02:00 (EET)'); // Default
   const [userTimezone, setUserTimezone] = useState<number>(() => {
@@ -788,19 +793,17 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.2 }}
-                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : 'minmax(300px, 1.2fr) minmax(300px, 1fr)', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
-                    className={isMobile ? "custom-scrollbar" : ""}
+                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : 'minmax(300px, 1.2fr) minmax(300px, 1fr)', gap: isMobile ? '40px' : '32px', overflowY: 'auto', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
+                    className="custom-scrollbar"
                   >
 
-                    {/* Left Column: Calendar (Scrollable on overflow on desktop) */}
+                    {/* Left Column: Calendar */}
                     <div 
-                      className={!isMobile ? "custom-scrollbar" : ""} 
                       style={{ 
                         display: 'flex', 
                         flexDirection: 'column', 
                         gap: '24px', 
-                        overflowY: isMobile ? 'visible' : 'auto', 
-                        paddingRight: isMobile ? '0' : '8px' 
+                        overflowY: 'visible', 
                       }}
                     >
                       {/* Calendar Header with No Scrollbar style */}
@@ -961,41 +964,43 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       </div>
 
                       {/* Notice for booking more than 1.5 months out */}
-                      <div style={{
-                        marginTop: '12px',
-                        padding: '16px',
-                        borderRadius: '12px',
-                        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                        border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                        fontSize: '0.85rem',
-                        lineHeight: '1.4',
-                        color: 'var(--text-muted)',
-                        flexShrink: 0,
-                      }}>
-                        Looking to book further out than 1.5 months? Please{' '}
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('message')}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            padding: 0,
-                            color: '#3395ff',
-                            textDecoration: 'underline',
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                            fontSize: 'inherit',
-                            fontWeight: 600
-                          }}
-                        >
-                          send a direct mail
-                        </button>{' '}
-                        with your preferred dates instead.
-                      </div>
+                      {isFutureMonth && (
+                        <div style={{
+                          marginTop: '12px',
+                          padding: '16px',
+                          borderRadius: '12px',
+                          background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                          border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                          fontSize: '0.85rem',
+                          lineHeight: '1.4',
+                          color: 'var(--text-muted)',
+                          flexShrink: 0,
+                        }}>
+                          Looking to book further out than 1.5 months? Please{' '}
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('message')}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              color: '#3395ff',
+                              textDecoration: 'underline',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                              fontSize: 'inherit',
+                              fontWeight: 600
+                            }}
+                          >
+                            send a direct mail
+                          </button>{' '}
+                          with your preferred dates instead.
+                        </div>
+                      )}
                     </div>
 
-                    {/* Right Column: Details & Agenda (Scrollable) */}
-                    <div className={!isMobile ? "custom-scrollbar" : ""} style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: '24px', borderLeft: isMobile ? 'none' : `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`, borderTop: isMobile ? `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}` : 'none', paddingLeft: isMobile ? '0' : '32px', paddingRight: '8px', paddingTop: isMobile ? '40px' : '0', willChange: 'transform' }}>
+                    {/* Right Column: Details & Agenda */}
+                    <div style={{ flex: 1, overflowY: 'visible', display: 'flex', flexDirection: 'column', gap: '24px', borderLeft: isMobile ? 'none' : `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`, borderTop: isMobile ? `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}` : 'none', paddingLeft: isMobile ? '0' : '32px', paddingTop: '40px' }} className="will-change-transform">
                       <AnimatePresence mode="wait">
                         <motion.div
                           key={bookingSuccess ? 'success' : (selectedDate?.toISOString() || 'no-date')}
