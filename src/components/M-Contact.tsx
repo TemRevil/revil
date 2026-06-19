@@ -1036,24 +1036,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                             <>
                               {/* Agenda View */}
                               <div>
-                                <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '16px' }}>
+                                <h4 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
                                   {selectedDate ? selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : 'Select a Date'}
                                 </h4>
-                                {/* List of Meetings for that Day */}
-                                <div className="glass-surface" style={{ minHeight: '100px', borderRadius: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}` }}>
-                                  {selectedDate && getMeetingsForDate(selectedDate).length > 0 ? (
-                                    getMeetingsForDate(selectedDate).map((m: Meeting, i) => (
-                                      <div key={i} className="flex items-center gap-3 py-1" style={{ borderBottom: i === getMeetingsForDate(selectedDate).length - 1 ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)') }}>
-                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'rgb(59, 130, 246)', boxShadow: '0 0 8px rgba(59, 130, 246, 0.5)' }} />
-                                        <div className="flex-1">
-                                          <div className="text-sm font-semibold text-primary">{convertTimeToUser(m.Time)} - <span style={{ opacity: 0.7 }}>Booked</span></div>
-                                        </div>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <div className="flex-1 flex items-center justify-center text-muted text-sm italic">No meetings scheduled.</div>
-                                  )}
-                                </div>
                               </div>
 
                               {/* Time Slots & Form */}
@@ -1201,82 +1186,84 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                       </div>
                                     </div>
 
-                                    <div className="flex flex-col gap-3">
-                                      <div>
-                                        <div style={{ position: 'relative' }}>
-                                          <label
-                                            onMouseEnter={() => setShowNameTooltip(true)}
-                                            onMouseLeave={() => setShowNameTooltip(false)}
-                                            className="label-help"
-                                          >
-                                            Name * <AlertCircle size={14} className="opacity-60" />
-                                          </label>
-
-                                          <AnimatePresence>
-                                            {showNameTooltip && (
-                                              <motion.div
-                                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                                transition={{ duration: 0.2, ease: "easeOut" }}
-                                                className="tooltip-glass"
-                                              >
-                                                Warning: your name will show in the calendar, if you want to hide it, please use a nickname.
-                                                <div style={{
-                                                  position: 'absolute',
-                                                  top: '100%',
-                                                  left: '12px',
-                                                  width: '0',
-                                                  height: '0',
-                                                  borderLeft: '6px solid transparent',
-                                                  borderRight: '6px solid transparent',
-                                                  borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
-                                                }} />
-                                              </motion.div>
-                                            )}
-                                          </AnimatePresence>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                      <div style={{ display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1fr 1fr', gap: '16px' }}>
+                                        <div>
+                                          <div style={{ position: 'relative' }}>
+                                            <label
+                                              onMouseEnter={() => setShowNameTooltip(true)}
+                                              onMouseLeave={() => setShowNameTooltip(false)}
+                                              className="label-help"
+                                            >
+                                              Name * <AlertCircle size={14} className="opacity-60" />
+                                            </label>
+                                            <AnimatePresence>
+                                              {showNameTooltip && (
+                                                <motion.div
+                                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                  exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                                  transition={{ duration: 0.2, ease: "easeOut" }}
+                                                  className="tooltip-glass"
+                                                >
+                                                  Warning: your name will show in the calendar, if you want to hide it, please use a nickname.
+                                                  <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: '12px',
+                                                    width: '0',
+                                                    height: '0',
+                                                    borderLeft: '6px solid transparent',
+                                                    borderRight: '6px solid transparent',
+                                                    borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
+                                                  }} />
+                                                </motion.div>
+                                              )}
+                                            </AnimatePresence>
+                                          </div>
+                                          <input aria-label="Name" className="dashboard-input" style={{ borderRadius: '12px', width: '100%' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
                                         </div>
-                                        <input aria-label="Name" className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
-                                      </div>
-                                      <div>
-                                        <div style={{ position: 'relative' }}>
-                                          <label
-                                            onMouseEnter={() => setShowEmailTooltip(true)}
-                                            onMouseLeave={() => setShowEmailTooltip(false)}
-                                            className="label-help"
-                                          >
-                                            Email * <AlertCircle size={14} className="opacity-60" />
-                                          </label>
 
-                                          <AnimatePresence>
-                                            {showEmailTooltip && (
-                                              <motion.div
-                                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                                transition={{ duration: 0.2, ease: "easeOut" }}
-                                                className="tooltip-glass"
-                                              >
-                                                Please use a correct email address. I will send the Google Calendar invitation and meeting link directly to this inbox.
-                                                <div style={{
-                                                  position: 'absolute',
-                                                  top: '100%',
-                                                  left: '12px',
-                                                  width: '0',
-                                                  height: '0',
-                                                  borderLeft: '6px solid transparent',
-                                                  borderRight: '6px solid transparent',
-                                                  borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
-                                                }} />
-                                              </motion.div>
-                                            )}
-                                          </AnimatePresence>
+                                        <div>
+                                          <div style={{ position: 'relative' }}>
+                                            <label
+                                              onMouseEnter={() => setShowEmailTooltip(true)}
+                                              onMouseLeave={() => setShowEmailTooltip(false)}
+                                              className="label-help"
+                                            >
+                                              Email * <AlertCircle size={14} className="opacity-60" />
+                                            </label>
+                                            <AnimatePresence>
+                                              {showEmailTooltip && (
+                                                <motion.div
+                                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                  exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                                  transition={{ duration: 0.2, ease: "easeOut" }}
+                                                  className="tooltip-glass"
+                                                >
+                                                  Please use a correct email address. I will send the Google Calendar invitation and meeting link directly to this inbox.
+                                                  <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: '12px',
+                                                    width: '0',
+                                                    height: '0',
+                                                    borderLeft: '6px solid transparent',
+                                                    borderRight: '6px solid transparent',
+                                                    borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
+                                                  }} />
+                                                </motion.div>
+                                              )}
+                                            </AnimatePresence>
+                                          </div>
+                                          <input type="email" aria-label="Email" className="dashboard-input" style={{ borderRadius: '12px', width: '100%' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
                                         </div>
-                                        <input type="email" aria-label="Email" className="dashboard-input" style={{ borderRadius: '12px' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
                                       </div>
+
                                       <div>
                                         <label className="input-label font-semibold">Reason *</label>
-                                        <textarea aria-label="Reason for meeting" className="dashboard-textarea" style={{ minHeight: '80px', borderRadius: '12px' }} placeholder="What's this meeting for?" rows={2} value={meetingData.reason} onChange={e => setMeetingData({ ...meetingData, reason: e.target.value })} />
+                                        <textarea aria-label="Reason for meeting" className="dashboard-textarea" style={{ minHeight: '60px', borderRadius: '12px' }} placeholder="What's this meeting for?" rows={1} value={meetingData.reason} onChange={e => setMeetingData({ ...meetingData, reason: e.target.value })} />
                                       </div>
                                     </div>
                                     <button onClick={handleMeetingSubmit} disabled={isSubmitting || !selectedDate || !selectedTime || !meetingData.email} className="btn-primary btn w-full" style={{ padding: '14px', borderRadius: '14px', opacity: (isSubmitting || !selectedDate || !selectedTime || !meetingData.email) ? 0.5 : 1 }}>
@@ -1316,48 +1303,52 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     <form onSubmit={handleSubmit} className="custom-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', flex: 1, padding: isMobile ? '0 16px 40px' : '0 24px 24px', willChange: 'transform' }}>
 
                       {/* Message Form Fields */}
-                      <div>
-                        <label className="input-label font-semibold">Name *</label>
-                        <div className="input-container">
-                          <User size={18} className="input-icon" />
-                          <input name="name" aria-label="Name" value={formData.name} onChange={handleInputChange} required className="input-with-icon" placeholder="Full Name" />
+                      <div style={{ display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1fr 1fr', gap: '16px' }}>
+                        <div>
+                          <label className="input-label font-semibold">Name *</label>
+                          <div className="input-container">
+                            <User size={18} className="input-icon" />
+                            <input name="name" aria-label="Name" value={formData.name} onChange={handleInputChange} required className="input-with-icon" placeholder="Full Name" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="input-label font-semibold">Email *</label>
+                          <div className="input-container">
+                            <Mail size={18} className="input-icon" />
+                            <input type="email" name="email" aria-label="Email" value={formData.email} onChange={handleInputChange} required className="input-with-icon" placeholder="name@example.com" />
+                          </div>
                         </div>
                       </div>
 
-                      <div>
-                        <label className="input-label font-semibold">Email *</label>
-                        <div className="input-container">
-                          <Mail size={18} className="input-icon" />
-                          <input type="email" name="email" aria-label="Email" value={formData.email} onChange={handleInputChange} required className="input-with-icon" placeholder="name@example.com" />
+                      <div style={{ display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1fr 1fr', gap: '16px', alignItems: 'end' }}>
+                        <div>
+                          <label className="input-label font-semibold">Phone Number *</label>
+                          <div className="input-container">
+                            <Phone size={18} className="input-icon" />
+                            <input type="tel" name="number" aria-label="Phone number" value={formData.number} onChange={handleInputChange} required className="input-with-icon" placeholder="+1 (555) 123-4567" />
+                          </div>
                         </div>
-                      </div>
 
-                      <div>
-                        <label className="input-label font-semibold">Phone Number *</label>
-                        <div className="input-container">
-                          <Phone size={18} className="input-icon" />
-                          <input type="tel" name="number" aria-label="Phone number" value={formData.number} onChange={handleInputChange} required className="input-with-icon" placeholder="+1 (555) 123-4567" />
-                        </div>
-                      </div>
-
-                      <div className="toggle-container">
-                        <div className="flex items-center gap-2 font-semibold text-sm">
-                          <MessageSquare size={16} />
-                          WhatsApp Available
-                        </div>
-                        <div
-                          onClick={() => setFormData(prev => ({ ...prev, hasWhatsapp: !prev.hasWhatsapp }))}
-                          className={`toggle-switch ${formData.hasWhatsapp ? 'active' : ''}`}
-                        >
-                          <div className="toggle-knob">
-                            {formData.hasWhatsapp && <Check size={12} className="text-info" />}
+                        <div className="toggle-container" style={{ height: '48px', margin: 0 }}>
+                          <div className="flex items-center gap-2 font-semibold text-sm">
+                            <MessageSquare size={16} />
+                            WhatsApp Available
+                          </div>
+                          <div
+                            onClick={() => setFormData(prev => ({ ...prev, hasWhatsapp: !prev.hasWhatsapp }))}
+                            className={`toggle-switch ${formData.hasWhatsapp ? 'active' : ''}`}
+                          >
+                            <div className="toggle-knob">
+                              {formData.hasWhatsapp && <Check size={12} className="text-info" />}
+                            </div>
                           </div>
                         </div>
                       </div>
 
                       <div>
                         <label className="input-label font-semibold">Message *</label>
-                        <textarea name="message" aria-label="Message" value={formData.message} onChange={handleInputChange} required rows={4} className="dashboard-textarea" placeholder="How can I help you?" />
+                        <textarea name="message" aria-label="Message" value={formData.message} onChange={handleInputChange} required rows={3} className="dashboard-textarea" placeholder="How can I help you?" />
                       </div>
 
                       {/* Attachments */}
