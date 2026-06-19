@@ -707,23 +707,26 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
             stiffness: 350,
             mass: 1,
           }}
-          className="glass-panel-deep"
+          className={isMobile ? "glass-panel-deep" : ""}
           style={{
             width: isMobile ? '90vw' : (activeTab === 'meeting' ? '1100px' : '600px'),
             height: isMobile ? '90dvh' : (activeTab === 'meeting' ? '720px' : '680px'),
             maxWidth: isMobile ? '90vw' : '95vw',
             maxHeight: isMobile ? '90dvh' : '92vh',
             transformOrigin: 'bottom center',
-            overflow: 'hidden',
-            borderRadius: isMobile ? '16px' : '24px',
+            overflow: isMobile ? 'hidden' : 'visible',
+            borderRadius: isMobile ? '16px' : '0',
             display: 'flex',
             flexDirection: 'column',
-            pointerEvents: 'auto'
+            pointerEvents: 'auto',
+            backgroundColor: isMobile ? undefined : 'transparent',
+            border: isMobile ? undefined : 'none',
+            boxShadow: isMobile ? undefined : 'none',
           }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Internal background elements */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />
+          {isMobile && <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />}
 
           {/* Main Content Wrapper (Fixed Header/Tabs, Internal Scroll) */}
           <div className="flex flex-col flex-1 overflow-hidden" style={{ overscrollBehavior: 'contain' }}>
@@ -793,17 +796,21 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.2 }}
-                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '380px 1fr', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
+                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1.2fr 1fr', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
                     className={isMobile ? "custom-scrollbar" : ""}
                   >
 
-                    {/* Left Column: Calendar */}
+                    {/* Left Column: Calendar (Card Box on desktop) */}
                     <div 
+                      className={!isMobile ? "glass-panel-deep" : ""}
                       style={{ 
                         display: 'flex', 
                         flexDirection: 'column', 
                         gap: '24px', 
                         overflowY: 'visible', 
+                        padding: isMobile ? '0' : '24px',
+                        borderRadius: isMobile ? '0' : '24px',
+                        boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)',
                       }}
                     >
                       {/* Calendar Header with No Scrollbar style */}
@@ -868,7 +875,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       </div>
 
                       {/* Calendar Grid - Hiding Overflow Check */}
-                      <div style={{ overflow: 'hidden', flexShrink: 0 }}>
+                      <div style={{ overflow: 'hidden', flexShrink: 0, maxWidth: '360px', width: '100%', margin: '0 auto' }}>
                         <AnimatePresence mode="popLayout" initial={false} custom={direction}>
                           <motion.div
                             key={calendarDate.toISOString()}
@@ -999,8 +1006,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       )}
                     </div>
 
-                    {/* Right Column: Details & Agenda (Scrollable on overflow on desktop) */}
-                    <div className={!isMobile ? "custom-scrollbar" : ""} style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: '24px', borderLeft: isMobile ? 'none' : `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}`, borderTop: isMobile ? `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'}` : 'none', paddingLeft: isMobile ? '0' : '32px', paddingRight: isMobile ? '0' : '8px', paddingTop: isMobile ? '40px' : '0', willChange: 'transform' }}>
+                    {/* Right Column: Details & Agenda (Card Box on desktop) */}
+                    <div className={!isMobile ? "glass-panel-deep custom-scrollbar" : ""} style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: '24px', padding: isMobile ? '0' : '24px', paddingRight: isMobile ? '0' : '8px', borderRadius: isMobile ? '0' : '24px', boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)', willChange: 'transform' }}>
                       <AnimatePresence mode="wait">
                         <motion.div
                           key={bookingSuccess ? 'success' : (selectedDate?.toISOString() || 'no-date')}
@@ -1300,7 +1307,21 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     transition={{ duration: 0.2 }}
                     style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                   >
-                    <form onSubmit={handleSubmit} className="custom-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', flex: 1, padding: isMobile ? '0 16px 40px' : '0 24px 24px', willChange: 'transform' }}>
+                    <form 
+                      onSubmit={handleSubmit} 
+                      className={!isMobile ? "glass-panel-deep custom-scrollbar" : "custom-scrollbar"} 
+                      style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '20px', 
+                        overflowY: 'auto', 
+                        flex: 1, 
+                        padding: isMobile ? '0 16px 40px' : '24px', 
+                        borderRadius: isMobile ? '0' : '24px',
+                        boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)',
+                        willChange: 'transform' 
+                      }}
+                    >
 
                       {/* Message Form Fields */}
                       <div style={{ display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1fr 1fr', gap: '16px' }}>
