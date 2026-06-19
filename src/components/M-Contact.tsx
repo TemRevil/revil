@@ -105,6 +105,30 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const { alert, showAlert, hideAlert } = useSafeAlert(4000);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
 
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const limitDate = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 45); // 1.5 months limit
+    return d;
+  }, []);
+
+  const isPrevMonthDisabled = useMemo(() => {
+    const prevM = new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1);
+    const currentMStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    return prevM < currentMStart;
+  }, [calendarDate, today]);
+
+  const isNextMonthDisabled = useMemo(() => {
+    const nextM = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1);
+    return nextM > limitDate;
+  }, [calendarDate, limitDate]);
+
   // Timezone States
   const [hostTimezoneString, setHostTimezoneString] = useState('UTC+02:00 (EET)'); // Default
   const [userTimezone, setUserTimezone] = useState<number>(() => {
@@ -781,20 +805,44 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             aria-label="Previous month"
+                            disabled={isPrevMonthDisabled}
                             onClick={() => {
-                              setDirection(-1);
-                              setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
+                              if (!isPrevMonthDisabled) {
+                                setDirection(-1);
+                                setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
+                              }
                             }}
-                            style={{ padding: '8px', borderRadius: '10px', border: 'none', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                            style={{
+                              padding: '8px',
+                              borderRadius: '10px',
+                              border: 'none',
+                              background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                              color: 'var(--text-primary)',
+                              cursor: isPrevMonthDisabled ? 'not-allowed' : 'pointer',
+                              opacity: isPrevMonthDisabled ? 0.4 : 1
+                            }}
+                          >
                             <ChevronLeft size={16} />
                           </button>
                           <button
                             aria-label="Next month"
+                            disabled={isNextMonthDisabled}
                             onClick={() => {
-                              setDirection(1);
-                              setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
+                              if (!isNextMonthDisabled) {
+                                setDirection(1);
+                                setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
+                              }
                             }}
-                            style={{ padding: '8px', borderRadius: '10px', border: 'none', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                            style={{
+                              padding: '8px',
+                              borderRadius: '10px',
+                              border: 'none',
+                              background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                              color: 'var(--text-primary)',
+                              cursor: isNextMonthDisabled ? 'not-allowed' : 'pointer',
+                              opacity: isNextMonthDisabled ? 0.4 : 1
+                            }}
+                          >
                             <ChevronRight size={16} />
                           </button>
                         </div>
@@ -831,16 +879,15 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               const isSelected = selectedDate?.toDateString() === date.toDateString();
                               const meetingsForDay = getMeetingsForDate(date);
                               const hasMeetings = meetingsForDay.length > 0;
-                              const today = new Date();
-                              today.setHours(0, 0, 0, 0);
                               const isPast = date < today;
+                              const isTooFar = date > limitDate;
                               const hasFreeSlots = timeSlots.some((hostTime) => {
                                 const isBusy = getMeetingsForDate(date).some(m => m.Time === hostTime);
                                 const passed = isTimePassed(date, hostTime);
                                 return !isBusy && !passed;
                               });
 
-                              const isBookable = !isPast && hasFreeSlots;
+                              const isBookable = !isPast && !isTooFar && hasFreeSlots;
 
                               return (
                                 <div
@@ -872,7 +919,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   )}
                                   <span style={{
                                     position: 'relative', zIndex: 1,
-                                    color: isSelected ? 'white' : (isPast ? 'var(--text-muted)' : 'var(--text-primary)'),
+                                    color: isSelected ? 'white' : (isPast || isTooFar ? 'var(--text-muted)' : 'var(--text-primary)'),
                                     fontWeight: isSelected ? 700 : 500
                                   }}>
                                     {day}
@@ -895,6 +942,38 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                             })}
                           </motion.div>
                         </AnimatePresence>
+                      </div>
+
+                      {/* Notice for booking more than 1.5 months out */}
+                      <div style={{
+                        marginTop: '12px',
+                        padding: '16px',
+                        borderRadius: '12px',
+                        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                        border: `1px dashed ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                        fontSize: '0.85rem',
+                        lineHeight: '1.4',
+                        color: 'var(--text-muted)',
+                      }}>
+                        Looking to book further out than 1.5 months? Please{' '}
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('message')}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            color: '#3395ff',
+                            textDecoration: 'underline',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                            fontSize: 'inherit',
+                            fontWeight: 600
+                          }}
+                        >
+                          send a direct mail
+                        </button>{' '}
+                        with your preferred dates instead.
                       </div>
                     </div>
 
