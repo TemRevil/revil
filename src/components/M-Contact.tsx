@@ -1626,55 +1626,82 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
             {!hideTabs && (
               <div style={{
                 display: 'flex',
-                gap: '16px',
                 justifyContent: 'center',
                 padding: isMobile ? '12px 16px 20px' : '20px 24px 24px',
                 flexShrink: 0,
               }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeTab !== 'meeting') {
-                      setTabDirection(-1);
-                      setActiveTab('meeting');
-                    }
-                  }}
-                  className={`btn ${activeTab === 'meeting' ? 'btn-primary' : 'btn-secondary'}`}
+                <div
+                  className="flex items-center gap-1.5 p-1.5 rounded-full backdrop-blur-xl
+                             shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
                   style={{
-                    padding: '12px 28px',
-                    borderRadius: '9999px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '0.9rem',
-                    boxShadow: activeTab === 'meeting' ? '0 4px 12px rgba(59, 130, 246, 0.3)' : 'none',
-                    transition: 'all 0.2s ease',
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.25)',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
                   }}
                 >
-                  <Calendar size={16} /> Book a Call
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeTab !== 'message') {
-                      setTabDirection(1);
-                      setActiveTab('message');
-                    }
-                  }}
-                  className={`btn ${activeTab === 'message' ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{
-                    padding: '12px 28px',
-                    borderRadius: '9999px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '0.9rem',
-                    boxShadow: activeTab === 'message' ? '0 4px 12px rgba(59, 130, 246, 0.3)' : 'none',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  <MessageSquare size={16} /> Send a Message
-                </button>
+                  {/* Book a Call Tab */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeTab !== 'meeting') {
+                        setTabDirection(-1);
+                        setActiveTab('meeting');
+                      }
+                    }}
+                    className="relative flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold cursor-pointer"
+                    style={{
+                      color: activeTab === 'meeting' ? 'var(--accent)' : 'var(--text-muted)',
+                      background: 'transparent',
+                      border: 'none',
+                      transition: 'color 0.2s ease',
+                    }}
+                  >
+                    {activeTab === 'meeting' && (
+                      <motion.div
+                        layoutId="contact-subnav-pill"
+                        className="absolute inset-0 rounded-full"
+                        style={{
+                          background: 'rgba(51, 149, 255, 0.12)',
+                          border: '1px solid rgba(51, 149, 255, 0.25)',
+                        }}
+                        transition={{ type: 'spring', damping: 28, stiffness: 380 }}
+                      />
+                    )}
+                    <Calendar size={16} className="relative z-10" />
+                    <span className="relative z-10">Book a Call</span>
+                  </button>
+
+                  {/* Send a Message Tab */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeTab !== 'message') {
+                        setTabDirection(1);
+                        setActiveTab('message');
+                      }
+                    }}
+                    className="relative flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold cursor-pointer"
+                    style={{
+                      color: activeTab === 'message' ? 'var(--accent)' : 'var(--text-muted)',
+                      background: 'transparent',
+                      border: 'none',
+                      transition: 'color 0.2s ease',
+                    }}
+                  >
+                    {activeTab === 'message' && (
+                      <motion.div
+                        layoutId="contact-subnav-pill"
+                        className="absolute inset-0 rounded-full"
+                        style={{
+                          background: 'rgba(51, 149, 255, 0.12)',
+                          border: '1px solid rgba(51, 149, 255, 0.25)',
+                        }}
+                        transition={{ type: 'spring', damping: 28, stiffness: 380 }}
+                      />
+                    )}
+                    <MessageSquare size={16} className="relative z-10" />
+                    <span className="relative z-10">Send a Message</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
