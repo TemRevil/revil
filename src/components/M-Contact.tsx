@@ -665,27 +665,35 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   return createPortal(
     <>
       {alert?.show && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
+      {/* Overlay */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
         style={{
-          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)', // Slightly lighter overlay
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
           backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1400, padding: '1rem',
-        }} onClick={onClose}>
+          zIndex: 1400
+        }}
+        onClick={onClose}
+      />
+
+      {/* Modal Container */}
+      <div 
+        className="fixed inset-0 z-[1401] flex items-center justify-center p-4 pointer-events-none"
+        style={{ overscrollBehavior: 'contain' }}
+      >
         <motion.div
           role="dialog"
           aria-modal="true"
           aria-labelledby="contact-modal-title"
+          layout
           initial={{ opacity: 0, scale: 0.3, y: 400 }}
           animate={{
             opacity: 1,
             scale: 1,
             y: 0,
-            width: isMobile ? '90vw' : (activeTab === 'meeting' ? '1100px' : '600px'),
-            height: isMobile ? '90dvh' : (activeTab === 'meeting' ? '720px' : '680px'),
           }}
           exit={{ opacity: 0, scale: 0.3, y: 400 }}
           transition={{
@@ -693,17 +701,16 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
             damping: 30,
             stiffness: 350,
             mass: 1,
-            // Allow width and height to have a slightly smoother transition if desired
-            width: { duration: 0.4, ease: [0.4, 0, 0.2, 1] },
-            height: { duration: 0.4, ease: [0.4, 0, 0.2, 1] }
           }}
           className="glass-panel-deep"
           style={{
+            width: isMobile ? '90vw' : (activeTab === 'meeting' ? '1100px' : '600px'),
+            height: isMobile ? '90dvh' : (activeTab === 'meeting' ? '720px' : '680px'),
             maxWidth: isMobile ? '90vw' : '95vw',
             maxHeight: isMobile ? '90dvh' : '92vh',
             transformOrigin: 'bottom center',
             overflow: 'hidden',
-            borderRadius: isMobile ? '0' : '24px',
+            borderRadius: isMobile ? '16px' : '24px',
             display: 'flex',
             flexDirection: 'column',
             pointerEvents: 'auto'
@@ -1387,7 +1394,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
             </div>
           </div>
         </motion.div>
-      </motion.div>
+      </div>
     </>,
     document.body
   );

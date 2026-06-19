@@ -322,9 +322,11 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             onMouseEnter={() => setHoveredTab('cv')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <motion.div layoutId="cv-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
-                                <FileText size={20} strokeWidth={2.5} />
-                            </motion.div>
+                            {!isCVOpen && (
+                                <motion.div layoutId="cv-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
+                                    <FileText size={20} strokeWidth={2.5} />
+                                </motion.div>
+                            )}
                         </motion.button>
                         <Tooltip text="Digital CV" icon={<FileText size={14} strokeWidth={2} />} show={hoveredTab === 'cv' && !isSubnavHovered} isDark={isDark} />
 
@@ -372,9 +374,11 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             onMouseEnter={() => setHoveredTab('mail')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <motion.div layoutId="contact-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
-                                <Mail size={24} strokeWidth={2} />
-                            </motion.div>
+                            {!isContactOpen && (
+                                <motion.div layoutId="contact-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
+                                    <Mail size={24} strokeWidth={2} />
+                                </motion.div>
+                            )}
                         </motion.button>
                         <Tooltip text="Contact" icon={<Mail size={14} strokeWidth={2} />} show={(hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)) && !isSubnavHovered} isDark={isDark} />
 
