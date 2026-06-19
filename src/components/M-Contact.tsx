@@ -92,6 +92,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [direction, setDirection] = useState(0);
+  const [tabDirection, setTabDirection] = useState(0);
   const [meetingData, setMeetingData] = useState({
     name: '',
     email: '',
@@ -104,6 +105,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const [showEmailTooltip, setShowEmailTooltip] = useState(false);
   const { alert, showAlert, hideAlert } = useSafeAlert(4000);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  const tabVariants = {
+    enter: (d: number) => ({ x: d > 0 ? '40%' : '-40%', opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (d: number) => ({ x: d > 0 ? '-40%' : '40%', opacity: 0 }),
+  };
 
   const today = useMemo(() => {
     const d = new Date();
@@ -709,8 +716,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           }}
           className={isMobile ? "glass-panel-deep" : ""}
           style={{
-            width: isMobile ? '90vw' : '1150px',
-            height: isMobile ? '90dvh' : '780px',
+            width: isMobile ? '90vw' : '1220px',
+            height: isMobile ? '90dvh' : '820px',
             maxWidth: isMobile ? '90vw' : '95vw',
             maxHeight: isMobile ? '90dvh' : '92vh',
             transformOrigin: 'bottom center',
@@ -772,14 +779,16 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
             )}
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <AnimatePresence mode="wait">
+              <AnimatePresence mode="wait" custom={tabDirection} initial={false}>
                 {activeTab === 'meeting' ? (
                   <motion.div
                     key="meeting"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.2 }}
+                    custom={tabDirection}
+                    variants={tabVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
                     style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1.2fr 1fr', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
                     className={isMobile ? "custom-scrollbar" : ""}
                   >
@@ -867,7 +876,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       </div>
 
                       {/* Calendar Grid - Hiding Overflow Check */}
-                      <div style={{ overflow: 'hidden', flexShrink: 0, maxWidth: '390px', width: '100%', margin: '0 auto' }}>
+                      <div style={{ overflow: 'hidden', flexShrink: 0, maxWidth: '300px', width: '100%', margin: '0 auto' }}>
                         <AnimatePresence mode="popLayout" initial={false} custom={direction}>
                           <motion.div
                             key={calendarDate.toISOString()}
@@ -881,10 +890,10 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                             animate="center"
                             exit="exit"
                             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                            style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px', textAlign: 'center' }}
+                            style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}
                           >
                             {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                              <div key={`${d}-${i}`} style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>{d}</div>
+                              <div key={`${d}-${i}`} style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)' }}>{d}</div>
                             ))}
                             {Array.from({ length: getDaysInMonth(calendarDate).firstDay }).map((_, i) => (
                               <div key={`empty-${i}`} />
@@ -920,7 +929,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   style={{
                                     aspectRatio: '1',
                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                    borderRadius: '14px',
+                                    borderRadius: '10px',
                                     cursor: isBookable ? 'pointer' : 'default',
                                     position: 'relative',
                                     opacity: isBookable ? 1 : 0.4,
@@ -930,7 +939,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                     <motion.div
                                       layoutId="selected-day-bg"
                                       style={{
-                                        position: 'absolute', inset: 0, borderRadius: '14px',
+                                        position: 'absolute', inset: 0, borderRadius: '10px',
                                         backgroundColor: 'rgb(59, 130, 246)', zIndex: 0
                                       }}
                                     />
@@ -938,14 +947,15 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   <span style={{
                                     position: 'relative', zIndex: 1,
                                     color: isSelected ? 'white' : (isPast || isTooFar ? 'var(--text-muted)' : 'var(--text-primary)'),
-                                    fontWeight: isSelected ? 700 : 500
+                                    fontWeight: isSelected ? 700 : 500,
+                                    fontSize: '0.8rem'
                                   }}>
                                     {day}
                                   </span>
 
                                   {/* Meeting Indicators on Calendar */}
                                   {hasMeetings && !isSelected && (
-                                    <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginTop: '4px' }}>
+                                    <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginTop: '2px' }}>
                                       {meetingsForDay.slice(0, 3).map((m: Meeting, idx) => (
                                         <div key={idx} title={`${convertTimeToUser(m.Time)} - Booked`} style={{
                                           width: '4px', height: '4px', borderRadius: '50%',
@@ -978,7 +988,10 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                           Looking to book further out than 1.5 months? Please{' '}
                           <button
                             type="button"
-                            onClick={() => setActiveTab('message')}
+                            onClick={() => {
+                              setTabDirection(1);
+                              setActiveTab('message');
+                            }}
                             style={{
                               background: 'none',
                               border: 'none',
@@ -1311,10 +1324,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                   </motion.div>                ) : (
                   <motion.div
                     key="message"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.2 }}
+                    custom={tabDirection}
+                    variants={tabVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
                     style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1.2fr 1fr', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
                     className={isMobile ? "custom-scrollbar" : ""}
                   >
@@ -1618,7 +1633,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
               }}>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('meeting')}
+                  onClick={() => {
+                    if (activeTab !== 'meeting') {
+                      setTabDirection(-1);
+                      setActiveTab('meeting');
+                    }
+                  }}
                   className={`btn ${activeTab === 'meeting' ? 'btn-primary' : 'btn-secondary'}`}
                   style={{
                     padding: '12px 28px',
@@ -1635,7 +1655,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('message')}
+                  onClick={() => {
+                    if (activeTab !== 'message') {
+                      setTabDirection(1);
+                      setActiveTab('message');
+                    }
+                  }}
                   className={`btn ${activeTab === 'message' ? 'btn-primary' : 'btn-secondary'}`}
                   style={{
                     padding: '12px 28px',
