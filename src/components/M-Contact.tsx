@@ -709,8 +709,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           }}
           className={isMobile ? "glass-panel-deep" : ""}
           style={{
-            width: isMobile ? '90vw' : (activeTab === 'meeting' ? '1100px' : '600px'),
-            height: isMobile ? '90dvh' : (activeTab === 'meeting' ? '720px' : '680px'),
+            width: isMobile ? '90vw' : '1150px',
+            height: isMobile ? '90dvh' : '780px',
             maxWidth: isMobile ? '90vw' : '95vw',
             maxHeight: isMobile ? '90dvh' : '92vh',
             transformOrigin: 'bottom center',
@@ -729,63 +729,47 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           {isMobile && <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />}
 
           {/* Main Content Wrapper (Fixed Header/Tabs, Internal Scroll) */}
-          <div className="flex flex-col flex-1 overflow-hidden" style={{ overscrollBehavior: 'contain' }}>
+          <div className="flex flex-col flex-1 overflow-hidden" style={{ overscrollBehavior: 'contain', padding: isMobile ? '0' : '24px 24px 0 24px' }}>
 
-            {/* Header & Tabs */}
-            <div className="p-6 pb-0 flex flex-col gap-4">
-              <div className="flex-row-between mb-6">
-                <div className="flex items-center gap-3">
-                  <motion.div
-                    layoutId="contact-icon"
-                    className="flex items-center justify-center"
-                    transition={{
-                      type: 'spring',
-                      damping: 30,
-                      stiffness: 350,
-                      mass: 1
+            {/* Header only on Mobile */}
+            {isMobile && (
+              <div className="p-6 pb-0 flex flex-col gap-4">
+                <div className="flex-row-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <motion.div
+                      layoutId="contact-icon"
+                      className="flex items-center justify-center"
+                      transition={{
+                        type: 'spring',
+                        damping: 30,
+                        stiffness: 350,
+                        mass: 1
+                      }}
+                    >
+                      <Mail size={24} strokeWidth={2} />
+                    </motion.div>
+                    <h2 id="contact-modal-title" className="heading-md m-0 font-bold" style={{ fontSize: '1.5rem' }}>
+                      Contact Me
+                    </h2>
+                  </div>
+                  <button
+                    onClick={onClose}
+                    aria-label="Close contact form"
+                    className="btn-icon rounded-full"
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)';
+                      e.currentTarget.style.color = 'var(--text-primary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = 'var(--text-muted)';
                     }}
                   >
-                    <Mail size={24} strokeWidth={2} />
-                  </motion.div>
-                  <h2 id="contact-modal-title" className="heading-md m-0 font-bold" style={{ fontSize: '1.5rem' }}>
-                    Contact Me
-                  </h2>
+                    <X size={20} />
+                  </button>
                 </div>
-                <button
-                  onClick={onClose}
-                  aria-label="Close contact form"
-                  className="btn-icon rounded-full"
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)';
-                    e.currentTarget.style.color = 'var(--text-primary)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                    e.currentTarget.style.color = 'var(--text-muted)';
-                  }}
-                >
-                  <X size={20} />
-                </button>
               </div>
-
-              {/* Tabs */}
-              {!hideTabs && (
-                <div className="tabs-container mb-6">
-                  <button
-                    onClick={() => setActiveTab('meeting')}
-                    className={`tab-item ${activeTab === 'meeting' ? 'active' : ''}`}
-                  >
-                    <Calendar size={16} /> Book a Call
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('message')}
-                    className={`tab-item ${activeTab === 'message' ? 'active' : ''}`}
-                  >
-                    <MessageSquare size={16} /> Message
-                  </button>
-                </div>
-              )}
-            </div>
+            )}
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <AnimatePresence mode="wait">
@@ -813,6 +797,14 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)',
                       }}
                     >
+                      {/* Left Box Header */}
+                      {!isMobile && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                          <Mail size={22} className="text-primary" />
+                          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Contact Me</h2>
+                        </div>
+                      )}
+
                       {/* Calendar Header with No Scrollbar style */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
@@ -834,8 +826,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                             disabled={isPrevMonthDisabled}
                             onClick={() => {
                               if (!isPrevMonthDisabled) {
-                                setDirection(-1);
-                                setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
+                                  setDirection(-1);
+                                  setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
                               }
                             }}
                             style={{
@@ -855,8 +847,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                             disabled={isNextMonthDisabled}
                             onClick={() => {
                               if (!isNextMonthDisabled) {
-                                setDirection(1);
-                                setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
+                                  setDirection(1);
+                                  setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
                               }
                             }}
                             style={{
@@ -875,7 +867,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       </div>
 
                       {/* Calendar Grid - Hiding Overflow Check */}
-                      <div style={{ overflow: 'hidden', flexShrink: 0, maxWidth: '360px', width: '100%', margin: '0 auto' }}>
+                      <div style={{ overflow: 'hidden', flexShrink: 0, maxWidth: '390px', width: '100%', margin: '0 auto' }}>
                         <AnimatePresence mode="popLayout" initial={false} custom={direction}>
                           <motion.div
                             key={calendarDate.toISOString()}
@@ -1007,7 +999,26 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     </div>
 
                     {/* Right Column: Details & Agenda (Card Box on desktop) */}
-                    <div className={!isMobile ? "glass-panel-deep custom-scrollbar" : ""} style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: '24px', padding: isMobile ? '0' : '24px', paddingRight: isMobile ? '0' : '8px', borderRadius: isMobile ? '0' : '24px', boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)', willChange: 'transform' }}>
+                    <div className={!isMobile ? "glass-panel-deep custom-scrollbar" : ""} style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: '24px', padding: isMobile ? '0' : '24px', paddingRight: isMobile ? '0' : '8px', borderRadius: isMobile ? '0' : '24px', boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)', willChange: 'transform', position: 'relative' }}>
+                      {!isMobile && (
+                        <button
+                          type="button"
+                          onClick={onClose}
+                          aria-label="Close contact form"
+                          className="btn-icon rounded-full"
+                          style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10 }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)';
+                            e.currentTarget.style.color = 'var(--text-primary)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                          }}
+                        >
+                          <X size={20} />
+                        </button>
+                      )}
                       <AnimatePresence mode="wait">
                         <motion.div
                           key={bookingSuccess ? 'success' : (selectedDate?.toISOString() || 'no-date')}
@@ -1297,31 +1308,206 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       </AnimatePresence>
                     </div>
 
-                  </motion.div>
-                ) : (
+                  </motion.div>                ) : (
                   <motion.div
                     key="message"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.2 }}
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1.2fr 1fr', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 40px' : '0 24px 24px' }}
+                    className={isMobile ? "custom-scrollbar" : ""}
                   >
+                    {/* Left Column: Contact Info (Card Box on desktop) */}
+                    <div 
+                      className={!isMobile ? "glass-panel-deep" : ""}
+                      style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '24px', 
+                        overflowY: 'visible', 
+                        padding: isMobile ? '0' : '24px',
+                        borderRadius: isMobile ? '0' : '24px',
+                        boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)',
+                      }}
+                    >
+                      {/* Left Box Header */}
+                      {!isMobile && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                          <Mail size={22} className="text-primary" />
+                          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Contact Me</h2>
+                        </div>
+                      )}
+
+                      {/* Welcome Text */}
+                      <div style={{ fontSize: '0.9rem', lineHeight: '1.6', color: 'var(--text-muted)' }}>
+                        Have a project in mind, a question, or just want to say hello? Drop me a line, and I'll get back to you as soon as possible.
+                      </div>
+
+                      {/* Contact details cards */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {/* Email Card */}
+                        <a
+                          href="mailto:hello@temrevil.com"
+                          className="glass-panel-deep"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '16px',
+                            padding: '16px',
+                            borderRadius: '16px',
+                            textDecoration: 'none',
+                            color: 'inherit',
+                            transition: 'all 0.2s ease',
+                            border: '1px solid var(--input-border)',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.borderColor = 'var(--input-border)';
+                          }}
+                        >
+                          <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '12px',
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            color: 'rgb(59, 130, 246)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            <Mail size={20} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>Email directly</div>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>hello@temrevil.com</div>
+                          </div>
+                        </a>
+
+                        {/* WhatsApp Card */}
+                        <a
+                          href="https://wa.me/201001308280"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="glass-panel-deep"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '16px',
+                            padding: '16px',
+                            borderRadius: '16px',
+                            textDecoration: 'none',
+                            color: 'inherit',
+                            transition: 'all 0.2s ease',
+                            border: '1px solid var(--input-border)',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.borderColor = 'var(--input-border)';
+                          }}
+                        >
+                          <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '12px',
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            color: '#10b981',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            <MessageSquare size={20} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>Chat on WhatsApp</div>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>+20 100 130 8280</div>
+                          </div>
+                        </a>
+
+                        {/* Location Card */}
+                        <div
+                          className="glass-panel-deep"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '16px',
+                            padding: '16px',
+                            borderRadius: '16px',
+                            border: '1px solid var(--input-border)',
+                          }}
+                        >
+                          <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '12px',
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            color: 'rgb(59, 130, 246)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            <Globe size={20} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>Based in</div>
+                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>El Mansoura, Egypt</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Message Form (Card Box on desktop) */}
                     <form 
                       onSubmit={handleSubmit} 
                       className={!isMobile ? "glass-panel-deep custom-scrollbar" : "custom-scrollbar"} 
                       style={{ 
+                        flex: 1,
+                        overflowY: isMobile ? 'visible' : 'auto', 
                         display: 'flex', 
                         flexDirection: 'column', 
                         gap: '20px', 
-                        overflowY: 'auto', 
-                        flex: 1, 
-                        padding: isMobile ? '0 16px 40px' : '24px', 
+                        padding: isMobile ? '0' : '24px', 
+                        paddingRight: isMobile ? '0' : '8px', 
                         borderRadius: isMobile ? '0' : '24px',
                         boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)',
-                        willChange: 'transform' 
+                        willChange: 'transform',
+                        position: 'relative'
                       }}
                     >
+                      {/* Right Box Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Send a Message</h3>
+                        {!isMobile && (
+                          <button
+                            type="button"
+                            onClick={onClose}
+                            aria-label="Close contact form"
+                            className="btn-icon rounded-full"
+                            style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 10 }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)';
+                              e.currentTarget.style.color = 'var(--text-primary)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                              e.currentTarget.style.color = 'var(--text-muted)';
+                            }}
+                          >
+                            <X size={20} />
+                          </button>
+                        )}
+                      </div>
 
                       {/* Message Form Fields */}
                       <div style={{ display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1fr 1fr', gap: '16px' }}>
@@ -1359,6 +1545,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                           <div
                             onClick={() => setFormData(prev => ({ ...prev, hasWhatsapp: !prev.hasWhatsapp }))}
                             className={`toggle-switch ${formData.hasWhatsapp ? 'active' : ''}`}
+                            style={{ cursor: 'pointer' }}
                           >
                             <div className="toggle-knob">
                               {formData.hasWhatsapp && <Check size={12} className="text-info" />}
@@ -1419,6 +1606,52 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Toggle Buttons at the bottom */}
+            {!hideTabs && (
+              <div style={{
+                display: 'flex',
+                gap: '16px',
+                justifyContent: 'center',
+                padding: isMobile ? '12px 16px 20px' : '20px 24px 24px',
+                flexShrink: 0,
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('meeting')}
+                  className={`btn ${activeTab === 'meeting' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{
+                    padding: '12px 28px',
+                    borderRadius: '9999px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '0.9rem',
+                    boxShadow: activeTab === 'meeting' ? '0 4px 12px rgba(59, 130, 246, 0.3)' : 'none',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <Calendar size={16} /> Book a Call
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('message')}
+                  className={`btn ${activeTab === 'message' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{
+                    padding: '12px 28px',
+                    borderRadius: '9999px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '0.9rem',
+                    boxShadow: activeTab === 'message' ? '0 4px 12px rgba(59, 130, 246, 0.3)' : 'none',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <MessageSquare size={16} /> Send a Message
+                </button>
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
