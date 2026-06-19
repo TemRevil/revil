@@ -927,7 +927,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   onClick={() => { if (isBookable) setSelectedDate(date); }}
                                   onKeyDown={(e) => { if (isBookable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSelectedDate(date); } }}
                                   style={{
-                                    aspectRatio: '1',
+                                    width: '100%',
+                                    height: '36px',
                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                     borderRadius: '10px',
                                     cursor: isBookable ? 'pointer' : 'default',
@@ -1631,11 +1632,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                 flexShrink: 0,
               }}>
                 <div
-                  className="flex items-center gap-1.5 p-1.5 rounded-full backdrop-blur-xl
+                  className="flex items-center gap-1 p-1.5 rounded-2xl md:gap-1.5 md:p-2 md:rounded-3xl backdrop-blur-xl
                              shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
                   style={{
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.25)',
-                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                    backgroundColor: 'var(--subnav-bg, rgba(255,255,255,0.25))',
+                    border: '1px solid var(--section-border)',
                   }}
                 >
                   {/* Book a Call Tab */}
@@ -1647,7 +1648,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         setActiveTab('meeting');
                       }
                     }}
-                    className="relative flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold cursor-pointer"
+                    className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold
+                               md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm cursor-pointer"
                     style={{
                       color: activeTab === 'meeting' ? 'var(--accent)' : 'var(--text-muted)',
                       background: 'transparent',
@@ -1658,7 +1660,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     {activeTab === 'meeting' && (
                       <motion.div
                         layoutId="contact-subnav-pill"
-                        className="absolute inset-0 rounded-full"
+                        className="absolute inset-0 rounded-xl md:rounded-2xl"
                         style={{
                           background: 'rgba(51, 149, 255, 0.12)',
                           border: '1px solid rgba(51, 149, 255, 0.25)',
@@ -1666,7 +1668,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         transition={{ type: 'spring', damping: 28, stiffness: 380 }}
                       />
                     )}
-                    <Calendar size={16} className="relative z-10" />
+                    <Calendar className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" strokeWidth={2.2} />
                     <span className="relative z-10">Book a Call</span>
                   </button>
 
@@ -1679,7 +1681,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         setActiveTab('message');
                       }
                     }}
-                    className="relative flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold cursor-pointer"
+                    className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold
+                               md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm cursor-pointer"
                     style={{
                       color: activeTab === 'message' ? 'var(--accent)' : 'var(--text-muted)',
                       background: 'transparent',
@@ -1690,7 +1693,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     {activeTab === 'message' && (
                       <motion.div
                         layoutId="contact-subnav-pill"
-                        className="absolute inset-0 rounded-full"
+                        className="absolute inset-0 rounded-xl md:rounded-2xl"
                         style={{
                           background: 'rgba(51, 149, 255, 0.12)',
                           border: '1px solid rgba(51, 149, 255, 0.25)',
@@ -1698,7 +1701,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         transition={{ type: 'spring', damping: 28, stiffness: 380 }}
                       />
                     )}
-                    <MessageSquare size={16} className="relative z-10" />
+                    <MessageSquare className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" strokeWidth={2.2} />
                     <span className="relative z-10">Send a Message</span>
                   </button>
                 </div>
