@@ -717,9 +717,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           className={isMobile ? "glass-panel-deep" : ""}
           style={{
             width: isMobile ? '90vw' : '1220px',
-            height: isMobile ? '90dvh' : '820px',
+            height: isMobile ? '90dvh' : '750px',
             maxWidth: isMobile ? '90vw' : '95vw',
-            maxHeight: isMobile ? '90dvh' : '92vh',
+            maxHeight: isMobile ? '90dvh' : '82vh',
             transformOrigin: 'bottom center',
             overflow: isMobile ? 'hidden' : 'visible',
             borderRadius: isMobile ? '16px' : '0',
@@ -815,7 +815,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       )}
 
                       {/* Calendar Header with No Scrollbar style */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, maxWidth: '440px', width: '100%', margin: '0 auto' }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
                           <AnimatePresence mode="wait">
                             <motion.span
@@ -876,7 +876,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       </div>
 
                       {/* Calendar Grid - Hiding Overflow Check */}
-                      <div style={{ overflow: 'hidden', flexShrink: 0, maxWidth: '300px', width: '100%', margin: '0 auto' }}>
+                      <div style={{ overflow: 'hidden', flexShrink: 0, maxWidth: '440px', width: '100%', margin: '0 auto' }}>
                         <AnimatePresence mode="popLayout" initial={false} custom={direction}>
                           <motion.div
                             key={calendarDate.toISOString()}
@@ -893,7 +893,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                             style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}
                           >
                             {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                              <div key={`${d}-${i}`} style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)' }}>{d}</div>
+                              <div key={`${d}-${i}`} style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', paddingBottom: '6px' }}>{d}</div>
                             ))}
                             {Array.from({ length: getDaysInMonth(calendarDate).firstDay }).map((_, i) => (
                               <div key={`empty-${i}`} />
@@ -928,9 +928,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   onKeyDown={(e) => { if (isBookable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSelectedDate(date); } }}
                                   style={{
                                     width: '100%',
-                                    height: '36px',
+                                    height: '46px',
                                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                    borderRadius: '10px',
+                                    borderRadius: '12px',
                                     cursor: isBookable ? 'pointer' : 'default',
                                     position: 'relative',
                                     opacity: isBookable ? 1 : 0.4,
@@ -940,7 +940,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                     <motion.div
                                       layoutId="selected-day-bg"
                                       style={{
-                                        position: 'absolute', inset: 0, borderRadius: '10px',
+                                        position: 'absolute', inset: 0, borderRadius: '12px',
                                         backgroundColor: 'rgb(59, 130, 246)', zIndex: 0
                                       }}
                                     />
@@ -948,8 +948,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   <span style={{
                                     position: 'relative', zIndex: 1,
                                     color: isSelected ? 'white' : (isPast || isTooFar ? 'var(--text-muted)' : 'var(--text-primary)'),
-                                    fontWeight: isSelected ? 700 : 500,
-                                    fontSize: '0.8rem'
+                                    fontWeight: isSelected ? 700 : 600,
+                                    fontSize: '1rem'
                                   }}>
                                     {day}
                                   </span>
@@ -985,6 +985,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                           lineHeight: '1.4',
                           color: 'var(--text-muted)',
                           flexShrink: 0,
+                          maxWidth: '440px',
+                          width: '100%',
+                          margin: '12px auto 0',
                         }}>
                           Looking to book further out than 1.5 months? Please{' '}
                           <button
@@ -1623,92 +1626,94 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
               </AnimatePresence>
             </div>
 
-            {/* Toggle Buttons at the bottom */}
-            {!hideTabs && (
-              <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                padding: isMobile ? '12px 16px 20px' : '20px 24px 24px',
-                flexShrink: 0,
-              }}>
-                <div
-                  className="flex items-center gap-1 p-1.5 rounded-2xl md:gap-1.5 md:p-2 md:rounded-3xl backdrop-blur-xl
-                             shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
-                  style={{
-                    backgroundColor: 'var(--subnav-bg, rgba(255,255,255,0.25))',
-                    border: '1px solid var(--section-border)',
-                  }}
-                >
-                  {/* Book a Call Tab */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (activeTab !== 'meeting') {
-                        setTabDirection(-1);
-                        setActiveTab('meeting');
-                      }
-                    }}
-                    className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold
-                               md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm cursor-pointer"
-                    style={{
-                      color: activeTab === 'meeting' ? 'var(--accent)' : 'var(--text-muted)',
-                      background: 'transparent',
-                      border: 'none',
-                      transition: 'color 0.2s ease',
-                    }}
-                  >
-                    {activeTab === 'meeting' && (
-                      <motion.div
-                        layoutId="contact-subnav-pill"
-                        className="absolute inset-0 rounded-xl md:rounded-2xl"
-                        style={{
-                          background: 'rgba(51, 149, 255, 0.12)',
-                          border: '1px solid rgba(51, 149, 255, 0.25)',
-                        }}
-                        transition={{ type: 'spring', damping: 28, stiffness: 380 }}
-                      />
-                    )}
-                    <Calendar className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" strokeWidth={2.2} />
-                    <span className="relative z-10">Book a Call</span>
-                  </button>
-
-                  {/* Send a Message Tab */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (activeTab !== 'message') {
-                        setTabDirection(1);
-                        setActiveTab('message');
-                      }
-                    }}
-                    className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold
-                               md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm cursor-pointer"
-                    style={{
-                      color: activeTab === 'message' ? 'var(--accent)' : 'var(--text-muted)',
-                      background: 'transparent',
-                      border: 'none',
-                      transition: 'color 0.2s ease',
-                    }}
-                  >
-                    {activeTab === 'message' && (
-                      <motion.div
-                        layoutId="contact-subnav-pill"
-                        className="absolute inset-0 rounded-xl md:rounded-2xl"
-                        style={{
-                          background: 'rgba(51, 149, 255, 0.12)',
-                          border: '1px solid rgba(51, 149, 255, 0.25)',
-                        }}
-                        transition={{ type: 'spring', damping: 28, stiffness: 380 }}
-                      />
-                    )}
-                    <MessageSquare className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" strokeWidth={2.2} />
-                    <span className="relative z-10">Send a Message</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </motion.div>
+
+        {/* Toggle Buttons at the bottom (fixed at bottom of screen, matching project hub's subnav) */}
+        {!hideTabs && (
+          <div
+            className="fixed bottom-[90px] md:bottom-[106px] left-1/2 -translate-x-1/2 z-[1402] pointer-events-auto"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.92 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.96 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="flex items-center gap-1 p-1.5 rounded-2xl md:gap-1.5 md:p-2 md:rounded-3xl backdrop-blur-xl
+                         shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
+              style={{
+                backgroundColor: 'var(--subnav-bg, rgba(255,255,255,0.25))',
+                border: '1px solid var(--section-border)',
+              }}
+            >
+              {/* Book a Call Tab */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab !== 'meeting') {
+                    setTabDirection(-1);
+                    setActiveTab('meeting');
+                  }
+                }}
+                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold
+                           md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm cursor-pointer"
+                style={{
+                  color: activeTab === 'meeting' ? 'var(--accent)' : 'var(--text-muted)',
+                  background: 'transparent',
+                  border: 'none',
+                  transition: 'color 0.2s ease',
+                }}
+              >
+                {activeTab === 'meeting' && (
+                  <motion.div
+                    layoutId="contact-subnav-pill"
+                    className="absolute inset-0 rounded-xl md:rounded-2xl"
+                    style={{
+                      background: 'rgba(51, 149, 255, 0.12)',
+                      border: '1px solid rgba(51, 149, 255, 0.25)',
+                    }}
+                    transition={{ type: 'spring', damping: 28, stiffness: 380 }}
+                  />
+                )}
+                <Calendar className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" strokeWidth={2.2} />
+                <span className="relative z-10">Book a Call</span>
+              </button>
+
+              {/* Send a Message Tab */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab !== 'message') {
+                    setTabDirection(1);
+                    setActiveTab('message');
+                  }
+                }}
+                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold
+                           md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm cursor-pointer"
+                style={{
+                  color: activeTab === 'message' ? 'var(--accent)' : 'var(--text-muted)',
+                  background: 'transparent',
+                  border: 'none',
+                  transition: 'color 0.2s ease',
+                }}
+              >
+                {activeTab === 'message' && (
+                  <motion.div
+                    layoutId="contact-subnav-pill"
+                    className="absolute inset-0 rounded-xl md:rounded-2xl"
+                    style={{
+                      background: 'rgba(51, 149, 255, 0.12)',
+                      border: '1px solid rgba(51, 149, 255, 0.25)',
+                    }}
+                    transition={{ type: 'spring', damping: 28, stiffness: 380 }}
+                  />
+                )}
+                <MessageSquare className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" strokeWidth={2.2} />
+                <span className="relative z-10">Send a Message</span>
+              </button>
+            </motion.div>
+          </div>
+        )}
       </div>
     </>,
     document.body
