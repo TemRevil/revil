@@ -223,6 +223,21 @@ textarea,
   background: var(--text-muted);
 }
 
+/* Scrolls, but the scrollbar is never painted (used in panels where a visible
+   track would break the seamless glass look — e.g. the contact modal columns). */
+.hide-scrollbar {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE/legacy Edge */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;                /* Chrome/Safari */
+}
+
 /* ========================================
    3. ANIMATED BACKGROUND BLOBS
    ======================================== */
