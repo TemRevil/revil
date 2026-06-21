@@ -14,6 +14,10 @@ const smtpPass = defineSecret("SMTP_PASS");
 // Public-facing inbox that booking notifications are also copied to.
 const HELLO_EMAIL = "hello@temrevil.com";
 
+// Remote MCP server (agentic portfolio access over OAuth) — defined in its own
+// module and re-exported so `firebase deploy --only functions:mcp` works.
+exports.mcp = require("./mcp").mcp;
+
 /**
  * Escape user-supplied strings before interpolating into email HTML.
  * Prevents an attacker from injecting <img onerror=...> via Name/Email/Message.

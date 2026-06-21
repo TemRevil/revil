@@ -210,6 +210,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // MCP server state — OAuth clients, auth codes, access/refresh tokens, pending
+    // logins. Written ONLY by the Cloud Function via the Admin SDK (which bypasses
+    // rules), so NO client may ever read or write it (tokens must never leak).
+    match /MCP/{docId} {
+      allow read, write: if false;
+    }
+
     // Public-readable Settings content docs (Account bio, Availability,
     // HandledProjects, Developer, Tech Stack, BookedSlots, etc.). Canary is the
     // one private exception (its admin-only block is above; rules are additive, so
