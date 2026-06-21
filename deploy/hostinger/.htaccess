@@ -1,5 +1,13 @@
 RewriteEngine On
 
+# Map extensionless routes to their exported `.html` file. The static export emits
+# pages as `mcp-login.html` (not `mcp-login/index.html`), but a bare `/mcp-login`
+# request gets a 301 to `/mcp-login/`, which the host then serves as a directory →
+# 403 Forbidden. Rewrite to the real file first (with or without a trailing slash)
+# so these routes resolve to a 200 instead of the directory trap.
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.+?)/?$ $1.html [L]
+
 # Serve real files directly and fall back to the exported app shell.
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d

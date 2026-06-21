@@ -141,8 +141,11 @@ async function authorize(req, res) {
     exp: now() + LOGIN_TTL_MS,
   });
 
-  // Send the user to the portfolio's Google sign-in bridge page.
-  const bridge = new URL(`${SITE_URL}/mcp-login`);
+  // Send the user to the portfolio's Google sign-in bridge page. Use the explicit
+  // `.html` file: the static export deploys the page as `mcp-login.html`, while a
+  // bare `/mcp-login` 301-redirects to `/mcp-login/`, which the host serves as a
+  // directory request → 403 Forbidden. Pointing straight at the file avoids that.
+  const bridge = new URL(`${SITE_URL}/mcp-login.html`);
   bridge.searchParams.set("s", loginState);
   bridge.searchParams.set("cb", `${baseUrl(req)}/oauth/firebase/callback`);
   res.redirect(302, bridge.toString());
