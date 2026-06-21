@@ -1687,11 +1687,9 @@ export default function DSettings() {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -6 }}
                             transition={{ duration: 0.15, ease: 'easeInOut' }}
-                            className="settings-section grid grid-cols-1 md:grid-cols-12 gap-6 items-start"
+                            className="settings-section"
                         >
-                            <div className="md:col-span-7">
-                                <DMcpPanel isDark={isDark} />
-                            </div>
+                            <DMcpPanel isDark={isDark} />
                         </motion.div>
                     )}
                 </AnimatePresence>
