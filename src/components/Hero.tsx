@@ -42,29 +42,34 @@ const HandwritingText = ({
 
         letters.forEach((letter, index) => {
             const textEl = letter as SVGTextElement;
-            const estimatedLength = fontSize * 2;
+            // Over-estimate the glyph outline length so the stroke draws as ONE
+            // continuous pen stroke. Too small a value (e.g. fontSize*2) fills the
+            // outline almost instantly, which reads as a sudden pop, not writing.
+            const estimatedLength = fontSize * 5;
 
-            // Explicitly reset to transparent outline
+            // Each letter starts as an invisible outline. The colour is set up
+            // front but kept hidden via fill-opacity, so the ink can FADE in just
+            // behind the pen stroke instead of popping solid all at once.
             textEl.style.visibility = 'hidden';
             textEl.style.strokeDasharray = `${estimatedLength}`;
             textEl.style.strokeDashoffset = `${estimatedLength}`;
-            textEl.style.fill = 'transparent';
+            textEl.style.fill = color;
+            textEl.style.fillOpacity = '0';
+            textEl.style.strokeOpacity = '1';
 
             tl.add({
                 targets: textEl,
                 strokeDashoffset: [estimatedLength, 0],
-                opacity: [0, 1],
-                duration: 120, // Smooth & Elegant
-                delay: index === 0 ? startDelay : 0,
+                // Ink flows in shortly after the stroke starts, easing to full.
+                fillOpacity: { value: [0, 1], duration: 200, delay: 90, easing: 'easeOutSine' },
+                // Stroke softens to a subtle marker edge as the fill takes over.
+                strokeOpacity: { value: [1, 0.4], duration: 180, delay: 110, easing: 'easeOutSine' },
+                duration: 240,           // quick but still reads as handwriting
+                easing: 'easeInOutSine', // natural pen acceleration / settle
                 begin: () => {
                     textEl.style.visibility = 'visible';
                 },
-                complete: () => {
-                    // Immediate solid fill upon stroke completion
-                    textEl.style.fill = color;
-                    textEl.style.strokeOpacity = '0.4';
-                }
-            }, index === 0 ? startDelay : '-=60'); // More overlap for smoothness
+            }, index === 0 ? startDelay : '-=210'); // ~80ms cadence between letters
         });
     }, [text, delay, fontSize, color, isReady]);
 
