@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Upload, Github, Linkedin, Facebook, Instagram, Globe, ZoomIn, HardDrive } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
-import firebaseIcon from '../../assets/svgs/firebase.svg';
+const firebaseIcon = '/svgs/firebase.svg'; // served from public/ (see M-StackItem note)
 import { motion, AnimatePresence } from 'motion/react';
 
 import { ContributorData } from '../../types';

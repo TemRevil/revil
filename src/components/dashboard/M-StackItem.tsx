@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Save, Code, HardDrive } from 'lucide-react';
 import MFirebaseStorage from './M-FirebaseStorage';
-import firebaseIcon from '../../assets/svgs/firebase.svg';
+// Served from public/ (static export) — importing the .svg yields a static-asset
+// object, not a URL string, so it can't be used directly as an <img src>.
+const firebaseIcon = '/svgs/firebase.svg';
 
 export interface StackItemData {
     id?: string;

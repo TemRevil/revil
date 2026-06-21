@@ -3,7 +3,7 @@ import { sanitizeSvg } from '../../lib/sanitize';
 import { createPortal } from 'react-dom';
 import { X, HardDrive } from 'lucide-react';
 import MFirebaseStorage from './M-FirebaseStorage';
-import firebaseIcon from '../../assets/svgs/firebase.svg';
+const firebaseIcon = '/svgs/firebase.svg'; // served from public/ (see M-StackItem note)
 import { TagFormData } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 

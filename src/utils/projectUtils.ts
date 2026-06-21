@@ -1,4 +1,4 @@
-import firebaseIcon from '../assets/svgs/firebase.svg';
+const firebaseIcon = '/svgs/firebase.svg'; // served from public/ (static export)
 
 export const isVideoFile = (url: string) => {
     return url.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || url.includes('/videos/');
