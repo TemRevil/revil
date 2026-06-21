@@ -11,6 +11,9 @@ const db = admin.firestore();
 const smtpUser = defineSecret("SMTP_USER");
 const smtpPass = defineSecret("SMTP_PASS");
 
+// Public-facing inbox that booking notifications are also copied to.
+const HELLO_EMAIL = "hello@temrevil.com";
+
 /**
  * Escape user-supplied strings before interpolating into email HTML.
  * Prevents an attacker from injecting <img onerror=...> via Name/Email/Message.
@@ -138,6 +141,50 @@ function emailTemplate({ title, preheader, bodyHtml, footerNote }) {
 </div>
 </body>
 </html>`;
+}
+
+/** Basic sanity check so we never try to email obvious junk addresses. */
+const GUEST_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/**
+ * Auto-acknowledge a visitor: a branded "I received it, I'll reply within 24h"
+ * email sent back to the address they entered (contact message or booking).
+ * `intro`/`detailRows`/`ctaHtml` are server-built HTML; only echoed user fields
+ * are passed through escHtml by the caller. No-ops on a missing/invalid address.
+ */
+async function sendGuestAck(transporter, { to, name, heading, intro, detailRows = [], ctaHtml = "" }) {
+  if (!to || !GUEST_EMAIL_RE.test(String(to))) return;
+  const rows = detailRows
+    .map((r) => `
+            <div class="info-row">
+              <div class="info-label">${escHtml(r.label)}</div>
+              <div class="info-value">${r.value}</div>
+            </div>`)
+    .join("");
+
+  const html = emailTemplate({
+    title: heading,
+    preheader: "Thanks - I'll get back to you within 24 hours.",
+    bodyHtml: `
+          <h2>${escHtml(heading)}</h2>
+          <p>Hi ${escHtml(name || "there")},</p>
+          <p>${intro}</p>
+          ${rows ? `<div class="divider"></div><div>${rows}</div>` : ""}
+          ${ctaHtml}
+          <div class="divider"></div>
+          <p>I'll personally get back to you within <strong style="color:#e0e0e0">24 hours</strong>. If it's urgent, just reply to this email.</p>
+          <p style="margin-top:16px">- Revil</p>
+        `,
+    footerNote: `Sent from <a href="https://temrevil.com">temrevil.com</a>`,
+  });
+
+  await transporter.sendMail({
+    from: `"Revil" <${smtpUser.value()}>`,
+    to,
+    replyTo: HELLO_EMAIL,
+    subject: escSubject(heading),
+    html,
+  });
 }
 
 // =====================================================================
@@ -331,6 +378,8 @@ exports.notifyCanary = onDocumentWritten(
         await transporter.sendMail({
           from: `"Revil Portfolio" <${adminEmail}>`,
           to: adminEmail,
+          // Copy the public hello@ inbox too (skip if the admin already is hello@).
+          cc: adminEmail.toLowerCase() === HELLO_EMAIL ? undefined : HELLO_EMAIL,
           replyTo: e.Email,
           subject: escSubject(`New message from ${e.Name}`),
           html,
@@ -338,6 +387,19 @@ exports.notifyCanary = onDocumentWritten(
         console.log(`Email notification sent for contact #${key}`);
       } catch (err) {
         console.error("Failed to send contact notification:", err);
+      }
+
+      // Auto-acknowledge the sender at the address they entered.
+      try {
+        await sendGuestAck(createTransporter(), {
+          to: e.Email,
+          name: e.Name,
+          heading: "I got your message",
+          intro: "Thanks for reaching out through my portfolio - your message has landed in my inbox.",
+        });
+        console.log(`Acknowledgement sent to sender of contact #${key}`);
+      } catch (err) {
+        console.error("Failed to send sender acknowledgement:", err);
       }
     }
 
@@ -405,11 +467,16 @@ exports.notifyCanary = onDocumentWritten(
         footerNote: `Sent from <a href="https://temrevil.com">temrevil.com</a> meeting system`,
       });
 
+      // Notify the admin AND the public hello@ inbox (deduped if they're the same).
+      const meetingRecipients = adminEmail.toLowerCase() === HELLO_EMAIL
+        ? [adminEmail]
+        : [adminEmail, HELLO_EMAIL];
+
       try {
         const transporter = createTransporter();
         await transporter.sendMail({
           from: `"Revil Portfolio" <${adminEmail}>`,
-          to: adminEmail,
+          to: meetingRecipients,
           replyTo: m.Email,
           subject: escSubject(`Meeting booked: ${m.Name} on ${m.Date} at ${m.Time}`),
           html,
@@ -417,6 +484,26 @@ exports.notifyCanary = onDocumentWritten(
         console.log(`Email notification sent for meeting #${key}`);
       } catch (err) {
         console.error("Failed to send meeting notification:", err);
+      }
+
+      // Auto-acknowledge the guest at the address they entered.
+      try {
+        await sendGuestAck(createTransporter(), {
+          to: m.Email,
+          name: m.Name,
+          heading: "Your call is booked",
+          intro: "Thanks for booking a call - it's on my calendar.",
+          detailRows: [
+            { label: "Date", value: `<span class="badge badge-blue">${mDate}</span>` },
+            { label: "Time", value: `${mUserLocal || mTime}` },
+          ],
+          ctaHtml: safeMeetLink
+            ? `<div style="margin-top:24px;text-align:center"><a href="${escAttr(safeMeetLink)}" class="btn">Join Google Meet</a></div>`
+            : "",
+        });
+        console.log(`Acknowledgement sent to guest of meeting #${key}`);
+      } catch (err) {
+        console.error("Failed to send guest acknowledgement:", err);
       }
     }
 
