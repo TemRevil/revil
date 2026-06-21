@@ -1035,7 +1035,10 @@ const DTreasury = () => {
                         project={modal.project}
                         expense={modal.expense}
                         income={modal.income}
-                        projects={data.projects.map(p => ({ id: p.id, name: p.name }))}
+                        projects={data.projects}
+                        expenseList={data.expenses}
+                        incomeList={data.income}
+                        rates={data.config.rates}
                         nextOrder={data.projects.length}
                         onSaveProject={saveProject}
                         onSaveExpense={saveExpense}

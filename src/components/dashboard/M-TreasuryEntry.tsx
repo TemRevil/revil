@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Briefcase, Receipt, Banknote } from 'lucide-react';
-import { motion } from 'motion/react';
+import { X, Trash2, Briefcase, Receipt, Banknote, Repeat } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
-    CURRENCIES, CURRENCY_SYMBOL, Currency, ProjectStatus,
+    CURRENCIES, CURRENCY_SYMBOL, Currency, ProjectStatus, Rates, DEFAULT_RATES,
     TreasuryProject, TreasuryExpense, TreasuryIncome, TreasuryConfig, uid, derivePaymentStatus,
+    ExpenseTemplate, matchExpenseTemplates, expenseProjectOptions, incomeProjectOptions, formatMoney,
+    expenseCategories, matchCategories,
 } from '../../lib/treasury';
 import DatePicker from './DatePicker';
 import ScrollMenu from './ScrollMenu';
@@ -17,7 +19,10 @@ interface Props {
     project?: TreasuryProject | null;
     expense?: TreasuryExpense | null;
     income?: TreasuryIncome | null;
-    projects?: { id: string; name: string }[]; // for the income → project picker
+    projects?: TreasuryProject[];        // full projects, filtered per money kind
+    expenseList?: TreasuryExpense[];     // history → repeat-templates
+    incomeList?: TreasuryIncome[];       // for income project-option filtering
+    rates?: Rates;                       // for payment-status filtering
     nextOrder: number;
     onSaveProject?: (p: TreasuryProject) => void;
     onSaveExpense?: (e: TreasuryExpense) => void;
@@ -29,7 +34,7 @@ interface Props {
 const today = () => new Date().toISOString().slice(0, 10);
 const NO_PROJECT = '- No project -';
 
-const MTreasuryEntry = ({ mode, config, project, expense, income, projects, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
+const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expenseList, incomeList, rates, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
     const [isDark, setIsDark] = useState(false);
     // "Money" = income or expense in ONE modal; the toggle picks which.
     const isMoney = mode !== 'project';
@@ -66,6 +71,42 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
 
     // Shared notes
     const [notes, setNotes] = useState((mode === 'project' ? project?.notes : mode === 'expense' ? expense?.notes : income?.note) ?? '');
+
+    // Repeat-templates: suggest past expense labels while typing, one-tap to refill
+    // amount/currency/category/recurring so a recurring cost isn't retyped.
+    const [showLabelSug, setShowLabelSug] = useState(false);
+    const labelSuggestions = useMemo(() => matchExpenseTemplates(label, expenseList || []), [label, expenseList]);
+    const applyTemplate = (t: ExpenseTemplate) => {
+        setLabel(t.label);
+        if (t.amount) setExpAmount(String(t.amount));
+        setExpCurrency(t.currency);
+        setCategory(t.category ?? '');
+        setRecurring(!!t.recurring);
+        setShowLabelSug(false);
+    };
+
+    // Category combobox: a scroll menu of past categories — browse on focus,
+    // filter (fuzzy) as you type, and a brand-new category can still be typed.
+    const [showCatSug, setShowCatSug] = useState(false);
+    const pastCategories = useMemo(() => expenseCategories(expenseList || []), [expenseList]);
+    const categorySuggestions = useMemo(() => matchCategories(category, pastCategories), [category, pastCategories]);
+
+    // Project pickers, filtered per money kind: expenses hide finished projects;
+    // income keeps any still owing (unpaid/partial) + monthly retainers.
+    const expenseProjs = useMemo(() => expenseProjectOptions(projects || []), [projects]);
+    const incomeProjs = useMemo(() => incomeProjectOptions(projects || [], incomeList || [], rates || DEFAULT_RATES), [projects, incomeList, rates]);
+    // Keep the currently-linked project selectable on edit even if it's been
+    // filtered out of the live options (e.g. an expense tied to a now-done project).
+    const expProjectOpts = useMemo(() => {
+        const names = expenseProjs.map(p => p.name);
+        if (expProjectName !== NO_PROJECT && !names.includes(expProjectName)) names.unshift(expProjectName);
+        return [NO_PROJECT, ...names];
+    }, [expenseProjs, expProjectName]);
+    const incProjectOpts = useMemo(() => {
+        const names = incomeProjs.map(p => p.name);
+        if (incProjectName !== NO_PROJECT && !names.includes(incProjectName)) names.unshift(incProjectName);
+        return [NO_PROJECT, ...names];
+    }, [incomeProjs, incProjectName]);
 
     const isEdit = mode === 'project' ? !!project : mode === 'expense' ? !!expense : !!income;
     const titleLabel = mode === 'project' ? 'Project' : isEdit ? (kind === 'expense' ? 'Expense' : 'Income') : 'Money';
@@ -259,9 +300,52 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
 
                     {isMoney && kind === 'expense' && (
                         <>
-                            <div>
+                            <div className="relative">
                                 <label className={labelCls}>What was it for?</label>
-                                <input className={inputCls} value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Figma subscription" autoFocus />
+                                <input
+                                    className={inputCls}
+                                    value={label}
+                                    onChange={e => { setLabel(e.target.value); setShowLabelSug(true); }}
+                                    onBlur={() => setTimeout(() => setShowLabelSug(false), 120)}
+                                    placeholder="e.g. Figma subscription"
+                                    autoComplete="off"
+                                    autoFocus
+                                />
+                                <AnimatePresence>
+                                    {showLabelSug && labelSuggestions.length > 0 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                                            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                                            style={{ transformOrigin: 'top center' }}
+                                            className={`absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#15151c] border-white/10' : 'bg-white border-black/10'}`}
+                                        >
+                                            <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-sec">Repeat a past expense</div>
+                                            {labelSuggestions.map(t => (
+                                                <button
+                                                    key={t.label}
+                                                    type="button"
+                                                    onMouseDown={e => { e.preventDefault(); applyTemplate(t); }}
+                                                    className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+                                                >
+                                                    <span className="min-w-0">
+                                                        <span className="flex items-center gap-1.5 text-sm font-semibold text-primary truncate">
+                                                            {t.label}
+                                                            {t.recurring && <Repeat size={11} className="text-blue-400 shrink-0" />}
+                                                        </span>
+                                                        {(t.category || t.count > 1) && (
+                                                            <span className="block text-[11px] text-sec truncate">
+                                                                {t.category || ''}{t.category && t.count > 1 ? ' · ' : ''}{t.count > 1 ? `used ${t.count}×` : ''}
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <span className="text-xs font-bold text-sec whitespace-nowrap">{formatMoney(t.amount, t.currency)}</span>
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -277,13 +361,45 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
                                 <label className={labelCls}>Currency</label>
                                 {currencyPicker(expCurrency, setExpCurrency)}
                             </div>
-                            <div>
+                            <div className="relative">
                                 <label className={labelCls}>Category</label>
-                                <input className={inputCls} value={category} onChange={e => setCategory(e.target.value)} placeholder="Optional - tools, ads, hosting…" />
+                                <input
+                                    className={inputCls}
+                                    value={category}
+                                    onChange={e => { setCategory(e.target.value); setShowCatSug(true); }}
+                                    onFocus={() => setShowCatSug(true)}
+                                    onBlur={() => setTimeout(() => setShowCatSug(false), 120)}
+                                    placeholder="Optional - tools, ads, hosting…"
+                                    autoComplete="off"
+                                />
+                                <AnimatePresence>
+                                    {showCatSug && categorySuggestions.length > 0 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                                            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                                            style={{ transformOrigin: 'top center' }}
+                                            className={`absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl border shadow-2xl overflow-hidden max-h-[220px] overflow-y-auto custom-scrollbar ${isDark ? 'bg-[#15151c] border-white/10' : 'bg-white border-black/10'}`}
+                                        >
+                                            <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-sec">Past categories</div>
+                                            {categorySuggestions.map(c => (
+                                                <button
+                                                    key={c}
+                                                    type="button"
+                                                    onMouseDown={e => { e.preventDefault(); setCategory(c); setShowCatSug(false); }}
+                                                    className="w-full px-3.5 py-2.5 text-left text-sm font-medium text-primary hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors truncate"
+                                                >
+                                                    {c}
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                             <div>
                                 <label className={labelCls}>For project (optional)</label>
-                                <ScrollMenu value={expProjectName} options={[NO_PROJECT, ...(projects || []).map(p => p.name)]} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
+                                <ScrollMenu value={expProjectName} options={expProjectOpts} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
                             </div>
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={recurring} onChange={e => setRecurring(e.target.checked)} className="w-4 h-4 accent-blue-500" />
@@ -310,7 +426,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, next
                             </div>
                             <div>
                                 <label className={labelCls}>From project (optional)</label>
-                                <ScrollMenu value={incProjectName} options={[NO_PROJECT, ...(projects || []).map(p => p.name)]} onChange={setIncProjectName} isDark={isDark} placeholder="Link to a project" />
+                                <ScrollMenu value={incProjectName} options={incProjectOpts} onChange={setIncProjectName} isDark={isDark} placeholder="Link to a project" />
                                 <p className="text-[11px] text-sec mt-1.5">Linking counts this toward that project&apos;s received amount.</p>
                             </div>
                         </>

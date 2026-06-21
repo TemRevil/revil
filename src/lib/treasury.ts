@@ -211,6 +211,147 @@ export function projectPaymentStatus(p: TreasuryProject, income: TreasuryIncome[
 }
 
 // ---------------------------------------------------------------------------
+// Expense templates (repeat suggestions) & money-modal project option lists
+// ---------------------------------------------------------------------------
+
+export interface ExpenseTemplate {
+    label: string;
+    amount: number;
+    currency: Currency;
+    category?: string;
+    recurring?: boolean;
+    count: number;       // how many times this label has been logged
+    lastUsed: number;    // createdAt (ms) of the most recent occurrence
+}
+
+/**
+ * Distinct expense "templates" built from past expenses, so a repeated cost can be
+ * re-added in one tap instead of retyped. Grouped case-insensitively by label; each
+ * template carries the MOST RECENT amount/currency/category/recurring plus a usage
+ * count. Sorted by frequency, then recency.
+ */
+export function expenseTemplates(expenses: TreasuryExpense[]): ExpenseTemplate[] {
+    const byLabel = new Map<string, ExpenseTemplate>();
+    for (const e of expenses || []) {
+        const label = (e.label || '').trim();
+        const key = label.toLowerCase();
+        if (!key) continue;
+        const at = e.createdAt || 0;
+        const prev = byLabel.get(key);
+        if (!prev) {
+            byLabel.set(key, { label, amount: e.amount || 0, currency: e.currency, category: e.category, recurring: e.recurring, count: 1, lastUsed: at });
+        } else {
+            prev.count += 1;
+            if (at >= prev.lastUsed) {
+                // Keep the most recent occurrence's details as the template.
+                prev.lastUsed = at;
+                prev.label = label;
+                prev.amount = e.amount || 0;
+                prev.currency = e.currency;
+                prev.category = e.category;
+                prev.recurring = e.recurring;
+            }
+        }
+    }
+    return Array.from(byLabel.values()).sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed);
+}
+
+/** Levenshtein edit distance (insertions/deletions/substitutions). Two-row DP. */
+export function levenshtein(a: string, b: string): number {
+    if (a === b) return 0;
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+        const curr = [i];
+        const ai = a.charCodeAt(i - 1);
+        for (let j = 1; j <= n; j++) {
+            const cost = ai === b.charCodeAt(j - 1) ? 0 : 1;
+            curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+        }
+        prev = curr;
+    }
+    return prev[n];
+}
+
+/**
+ * Templates relevant to what's being typed. Substring matches rank first; the rest
+ * fall back to a Levenshtein fuzzy match (vs the whole label and each word) so typos
+ * and near-misses still surface. Empty query → nothing (suggestions are type-driven,
+ * not shown on focus). An exact, identical label is omitted.
+ */
+export function matchExpenseTemplates(query: string, expenses: TreasuryExpense[], limit = 6): ExpenseTemplate[] {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return [];
+    const threshold = Math.max(2, Math.ceil(q.length * 0.45)); // allowed edit distance
+    const scored: { t: ExpenseTemplate; rank: number; score: number }[] = [];
+    for (const t of expenseTemplates(expenses)) {
+        const l = t.label.toLowerCase();
+        if (l === q) continue;                                  // already typed in full
+        const idx = l.indexOf(q);
+        if (idx >= 0) { scored.push({ t, rank: 0, score: idx }); continue; } // substring
+        let dist = levenshtein(q, l);
+        for (const w of l.split(/\s+/)) dist = Math.min(dist, levenshtein(q, w));
+        if (dist <= threshold) scored.push({ t, rank: 1, score: dist });     // fuzzy
+    }
+    scored.sort((a, b) => a.rank - b.rank || a.score - b.score || b.t.count - a.t.count || b.t.lastUsed - a.t.lastUsed);
+    return scored.slice(0, limit).map(s => s.t);
+}
+
+/** Distinct expense categories used before, ranked by frequency then recency. */
+export function expenseCategories(expenses: TreasuryExpense[]): string[] {
+    const counts = new Map<string, { name: string; count: number; lastUsed: number }>();
+    for (const e of expenses || []) {
+        const name = (e.category || '').trim();
+        if (!name) continue;
+        const key = name.toLowerCase();
+        const at = e.createdAt || 0;
+        const prev = counts.get(key);
+        if (!prev) counts.set(key, { name, count: 1, lastUsed: at });
+        else { prev.count += 1; if (at >= prev.lastUsed) { prev.lastUsed = at; prev.name = name; } }
+    }
+    return Array.from(counts.values()).sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed).map(c => c.name);
+}
+
+/**
+ * Past categories relevant to what's typed. Empty query → the full list (so the
+ * menu can be browsed on focus); otherwise substring matches first, then a
+ * Levenshtein fuzzy fallback. An exact, identical value is omitted.
+ */
+export function matchCategories(query: string, categories: string[], limit = 8): string[] {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return categories.slice(0, limit);
+    const threshold = Math.max(2, Math.ceil(q.length * 0.45));
+    const scored: { name: string; rank: number; score: number }[] = [];
+    for (const name of categories) {
+        const l = name.toLowerCase();
+        if (l === q) continue;
+        const idx = l.indexOf(q);
+        if (idx >= 0) { scored.push({ name, rank: 0, score: idx }); continue; }
+        let dist = levenshtein(q, l);
+        for (const w of l.split(/\s+/)) dist = Math.min(dist, levenshtein(q, w));
+        if (dist <= threshold) scored.push({ name, rank: 1, score: dist });
+    }
+    scored.sort((a, b) => a.rank - b.rank || a.score - b.score);
+    return scored.slice(0, limit).map(s => s.name);
+}
+
+/** Projects an EXPENSE can be linked to: exclude finished/completed projects. */
+export function expenseProjectOptions(projects: TreasuryProject[]): TreasuryProject[] {
+    return (projects || []).filter(p => !p.done && p.status !== 'completed');
+}
+
+/**
+ * Projects INCOME can be linked to: keep any that still owe money (unpaid or
+ * partial) so a late payment can be logged - even if the project is marked done -
+ * plus monthly retainers (which keep receiving). Fully-paid one-offs drop off.
+ */
+export function incomeProjectOptions(projects: TreasuryProject[], income: TreasuryIncome[], rates: Rates): TreasuryProject[] {
+    return (projects || []).filter(p => p.monthly || projectPaymentStatus(p, income, rates) !== 'paid');
+}
+
+// ---------------------------------------------------------------------------
 // Monthly series (for the earnings vs spendings chart)
 // ---------------------------------------------------------------------------
 
