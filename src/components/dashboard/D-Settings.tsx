@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link, Sun, Moon } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link, Sun, Moon, Plug } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
 import Cropper from 'react-easy-crop';
@@ -12,6 +12,7 @@ import app, { db } from '../../lib/firebase';
 const storage = getStorage(app);
 import Alert, { AlertType } from '../Alert';
 import MStackItem, { StackItemData } from './M-StackItem';
+import DMcpPanel from './D-MCP';
 import SaveBar from './SaveBar';
 import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
@@ -127,7 +128,7 @@ const getCroppedImg = (imageSrc: string, pixelCrop: unknown): Promise<File> => {
 export default function DSettings() {
     const [isLoading, setIsLoading] = useState(false);
 
-    const [activeTab, setActiveTab] = useState<'availability' | 'stack' | 'account'>('availability');
+    const [activeTab, setActiveTab] = useState<'availability' | 'stack' | 'account' | 'mcp'>('availability');
     const [availability, setAvailability] = useState(75);
     const [selectedTimezone, setSelectedTimezone] = useState(2);
     const [currentTime, setCurrentTime] = useState('');
@@ -209,7 +210,7 @@ export default function DSettings() {
     const [heroImageSizeDark, setHeroImageSizeDark] = useState<string>('');
     const [heroImageSizeLoadingDark, setHeroImageSizeLoadingDark] = useState(false);
 
-    const handleTabChange = (newTab: 'availability' | 'stack' | 'account') => {
+    const handleTabChange = (newTab: 'availability' | 'stack' | 'account' | 'mcp') => {
         setActiveTab(newTab);
     };
 
@@ -1078,6 +1079,7 @@ export default function DSettings() {
         { id: 'availability', label: 'Availability', icon: Sliders },
         { id: 'stack', label: 'Tech Stack', icon: Code },
         { id: 'account', label: 'Account', icon: User },
+        { id: 'mcp', label: 'MCP', icon: Plug },
     ] as const;
 
     const selectedTz = timezones.find(tz => tz.value === selectedTimezone);
@@ -1676,7 +1678,22 @@ export default function DSettings() {
                             </div>
                         </div>
                     </motion.div>
-                )}
+                    )}
+
+                    {activeTab === 'mcp' && (
+                        <motion.div
+                            key="mcp"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.15, ease: 'easeInOut' }}
+                            className="settings-section grid grid-cols-1 md:grid-cols-12 gap-6 items-start"
+                        >
+                            <div className="md:col-span-7">
+                                <DMcpPanel isDark={isDark} />
+                            </div>
+                        </motion.div>
+                    )}
                 </AnimatePresence>
             </div>
 
