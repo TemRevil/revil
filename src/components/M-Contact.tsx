@@ -152,6 +152,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       showAlert({
         type: 'info',
         message: 'Bookings open about 1.5 months ahead. For dates further out, use the “Send a Message” tab with your preferred times.',
+        duration: 10000,
       });
     }
   }, [isFutureMonth, showAlert]);
@@ -805,7 +806,10 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
               </div>
             )}
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div
+                className={isMobile ? 'custom-scrollbar' : ''}
+                style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: isMobile ? 'auto' : 'hidden', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}
+            >
               <AnimatePresence mode="wait" custom={tabDirection} initial={false}>
                 {activeTab === 'meeting' ? (
                   <motion.div
@@ -816,8 +820,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     animate="center"
                     exit="exit"
                     transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                    style={{ flex: 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1.2fr 1fr', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 24px' : '0 24px 12px', height: isMobile ? 'auto' : '100%' }}
-                    className={isMobile ? "custom-scrollbar" : ""}
+                    style={{ flex: isMobile ? '0 0 auto' : 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1.2fr 1fr', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'visible' : 'hidden', padding: isMobile ? '0 16px 24px' : '0 24px 12px', height: isMobile ? 'auto' : '100%' }}
                   >
 
                     {/* Left Column: Calendar (Card Box on desktop) */}
@@ -1402,8 +1405,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     animate="center"
                     exit="exit"
                     transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                    style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', overflowY: isMobile ? 'auto' : 'hidden', padding: isMobile ? '0 16px 24px' : '0 24px 12px', height: isMobile ? 'auto' : '100%' }}
-                    className={isMobile ? "custom-scrollbar" : ""}
+                    style={{ flex: isMobile ? '0 0 auto' : 1, minHeight: 0, display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: isMobile ? 'flex-start' : 'center', overflowY: isMobile ? 'visible' : 'hidden', padding: isMobile ? '0 16px 24px' : '0 24px 12px', height: isMobile ? 'auto' : '100%' }}
                   >
                     {/* Single mailing box — flush blur-on-scroll header, info column removed */}
                     <form
