@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Check, Search } from 'lucide-react';
 
 interface Props {
@@ -68,30 +69,40 @@ const ScrollMenu = ({ value, options, onChange, isDark, placeholder = 'Select…
                 <span className="truncate">{value || placeholder}</span>
                 <ChevronDown size={16} className={`text-sec flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
-            {open && createPortal(
-                <div
-                    ref={popRef}
-                    style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 10000, transform: pos.flipUp ? 'translateY(-100%)' : 'none' }}
-                    className={`rounded-2xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#15151c] border-white/10' : 'bg-white border-black/10'}`}
-                >
-                    {searchable && options.length > 8 && (
-                        <div className={`flex items-center gap-2 px-3 py-2 border-b ${isDark ? 'border-white/10' : 'border-black/10'}`}>
-                            <Search size={14} className="text-sec" />
-                            <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter…" className="flex-1 bg-transparent outline-none text-sm text-primary placeholder:text-sec" />
-                        </div>
+            {createPortal(
+                <AnimatePresence>
+                    {open && (
+                        <motion.div
+                            key="scrollmenu-pop"
+                            ref={popRef}
+                            initial={{ opacity: 0, scale: 0.96 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.96 }}
+                            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                            transformTemplate={(_, generated) => `translateY(${pos.flipUp ? '-100%' : '0px'}) ${generated}`}
+                            style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 10000, transformOrigin: pos.flipUp ? 'bottom center' : 'top center' }}
+                            className={`rounded-2xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#15151c] border-white/10' : 'bg-white border-black/10'}`}
+                        >
+                            {searchable && options.length > 8 && (
+                                <div className={`flex items-center gap-2 px-3 py-2 border-b ${isDark ? 'border-white/10' : 'border-black/10'}`}>
+                                    <Search size={14} className="text-sec" />
+                                    <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter…" className="flex-1 bg-transparent outline-none text-sm text-primary placeholder:text-sec" />
+                                </div>
+                            )}
+                            <div className="max-h-[260px] overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
+                                {filtered.length === 0 ? (
+                                    <div className="px-3 py-4 text-center text-sec text-sm">No matches</div>
+                                ) : filtered.map(o => (
+                                    <button key={o} type="button" onClick={() => { onChange(o); setOpen(false); }}
+                                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${o === value ? 'bg-blue-500/15 text-blue-500 font-semibold' : 'text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}>
+                                        <span className="truncate">{o}</span>
+                                        {o === value && <Check size={15} className="flex-shrink-0" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
                     )}
-                    <div className="max-h-[260px] overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
-                        {filtered.length === 0 ? (
-                            <div className="px-3 py-4 text-center text-sec text-sm">No matches</div>
-                        ) : filtered.map(o => (
-                            <button key={o} type="button" onClick={() => { onChange(o); setOpen(false); }}
-                                className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${o === value ? 'bg-blue-500/15 text-blue-500 font-semibold' : 'text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}>
-                                <span className="truncate">{o}</span>
-                                {o === value && <Check size={15} className="flex-shrink-0" />}
-                            </button>
-                        ))}
-                    </div>
-                </div>,
+                </AnimatePresence>,
                 document.body
             )}
         </>
