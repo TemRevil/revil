@@ -173,9 +173,13 @@ async function firebaseCallback(req, res) {
     return res.status(401).send("Invalid sign-in token.");
   }
 
+  // Admin gate. The portfolio's canonical admin signal is the `admin: true` custom
+  // claim (what every Firestore rule checks via request.auth.token.admin). Fall back
+  // to a Settings/Account.uid match for older setups where the claim isn't minted.
   const acc = await db().doc("Settings/Account").get();
   const adminUid = acc.exists ? acc.data().uid : null;
-  if (!adminUid || decoded.uid !== adminUid) {
+  const isAdmin = decoded.admin === true || (adminUid && decoded.uid === adminUid);
+  if (!isAdmin) {
     return res.status(403).send("Access denied — this account is not the portfolio admin.");
   }
 
