@@ -12,8 +12,8 @@ interface McpConfig {
     revokedBefore?: number;
 }
 
-// The deployed function URL — shown by default so the field is never empty.
-const DEFAULT_URL = 'https://us-central1-temrevil1.cloudfunctions.net/mcp';
+// The MCP server's vanity URL — shown by default so the field is never empty.
+const DEFAULT_URL = 'https://mcp.temrevil.com';
 
 /**
  * Settings panel for the remote MCP server (agentic portfolio access). Reads/writes
