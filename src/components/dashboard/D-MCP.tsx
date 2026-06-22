@@ -109,9 +109,9 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
             {/* Server URL */}
             <div className="flex flex-col gap-2">
                 <label className="dashboard-label">Server URL</label>
-                <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex items-stretch gap-2">
                     <input
-                        className="dashboard-input flex-1 font-mono text-sm"
+                        className="dashboard-input flex-1 min-w-0 font-mono text-sm"
                         spellCheck={false}
                         value={urlDraft}
                         onChange={(e) => setUrlDraft(e.target.value)}
@@ -120,10 +120,12 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
                     <button
                         type="button"
                         onClick={copyUrl}
-                        className="btn-primary inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer shrink-0"
+                        aria-label={copied ? 'Copied' : 'Copy server URL'}
+                        title={copied ? 'Copied' : 'Copy server URL'}
+                        className="btn-primary shrink-0 inline-flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold cursor-pointer"
                     >
                         {copied ? <Check size={16} /> : <Copy size={16} />}
-                        {copied ? 'Copied' : 'Copy URL'}
+                        <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
                     </button>
                 </div>
                 <p className="text-muted text-xs leading-relaxed">
