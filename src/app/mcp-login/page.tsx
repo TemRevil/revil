@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { Plug, ShieldCheck, Lock, Loader2 } from 'lucide-react';
 import { appAuth } from '../../lib/appAuth';
@@ -10,9 +10,11 @@ import useSafeAlert from '../../hooks/useSafeAlert';
 /**
  * MCP login bridge. An MCP client (e.g. Claude) is redirected here by the `mcp`
  * Cloud Function's /authorize. We sign the admin in with the portfolio's existing
- * Google auth, get a Firebase ID token, and POST it back to the function's
- * callback (a cross-origin form POST → the function verifies + 302-redirects back
- * to the client). This reuses the site's Firebase Auth — no separate OAuth client.
+ * Google auth, get a Firebase ID token, and fetch() it to the function's callback,
+ * which verifies it and returns the client redirect URL we then navigate to. (A
+ * navigating form POST is governed by CSP form-action — which also vets the
+ * downstream client redirect — so fetch + connect-src is used instead.) This
+ * reuses the site's Firebase Auth — no separate OAuth client.
  */
 type Phase = 'loading' | 'idle' | 'working' | 'invalid';
 
@@ -21,8 +23,6 @@ type State = { phase: Phase; s: string; cb: string };
 export default function McpLogin() {
     const [state, setState] = useState<State>({ phase: 'loading', s: '', cb: '' });
     const { phase } = state;
-    const [idToken, setIdToken] = useState('');
-    const formRef = useRef<HTMLFormElement>(null);
     const { alert, showAlert, hideAlert } = useSafeAlert();
 
     // Read the one-time login parameters the function handed us in the URL.
@@ -42,12 +42,6 @@ export default function McpLogin() {
         }
     }, [showAlert]);
 
-    // Once we have an ID token, submit the (declarative) cross-origin form so the
-    // browser follows the function's 302 back to the MCP client.
-    useEffect(() => {
-        if (idToken && formRef.current) formRef.current.submit();
-    }, [idToken]);
-
     const connect = async () => {
         if (state.phase !== 'idle') return;
         setState(prev => ({ ...prev, phase: 'working' }));
@@ -56,20 +50,28 @@ export default function McpLogin() {
             provider.setCustomParameters({ prompt: 'select_account' });
             const res = await signInWithPopup(appAuth(), provider);
             const token = await res.user.getIdToken();
-            setIdToken(token); // triggers the form submit effect
+
+            // Hand the token to the function; it returns the client redirect URL.
+            const resp = await fetch(state.cb, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+                body: new URLSearchParams({ s: state.s, id_token: token }),
+            });
+            const data = (await resp.json().catch(() => ({}))) as { redirect?: string; error?: string };
+            if (resp.ok && data.redirect) {
+                window.location.href = data.redirect; // back to the MCP client with the code
+                return;
+            }
+            setState(prev => ({ ...prev, phase: 'idle' }));
+            showAlert({ type: 'error', message: data.error || 'Authorization failed. Please try again.' });
         } catch {
             setState(prev => ({ ...prev, phase: 'idle' }));
-            showAlert({
-                type: 'error',
-                message: 'Sign-in was cancelled or failed. Please try again.',
-            });
+            showAlert({ type: 'error', message: 'Sign-in was cancelled or failed. Please try again.' });
         }
     };
 
     const busy = phase === 'working';
-    const buttonLabel = busy
-        ? (idToken ? 'Authorizing your AI client…' : 'Opening Google sign-in…')
-        : 'Continue with Google';
+    const buttonLabel = busy ? 'Authorizing your AI client…' : 'Continue with Google';
 
     return (
         <main className="w-full min-h-dvh flex items-center justify-center p-5 bg-primary">
@@ -130,13 +132,6 @@ export default function McpLogin() {
                     Manage from Dashboard → Settings → MCP.
                 </p>
             </section>
-
-            {/* Declarative cross-origin bridge form. Hidden; submitted via ref once the
-                Firebase ID token is ready — the function verifies it and redirects back. */}
-            <form ref={formRef} method="POST" action={state.cb} className="hidden" aria-hidden="true">
-                <input type="hidden" name="s" value={state.s} readOnly />
-                <input type="hidden" name="id_token" value={idToken} readOnly />
-            </form>
         </main>
     );
 }

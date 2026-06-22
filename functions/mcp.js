@@ -45,6 +45,35 @@ function json(res, status, obj) {
   res.status(status).send(JSON.stringify(obj));
 }
 
+// CORS for the bridge callback: the /mcp-login page calls it with fetch() (not a
+// navigating form POST — that trips CSP form-action on the downstream redirect),
+// so the response body must be readable from the site origin.
+function setCors(req, res) {
+  const origin = req.headers.origin || "";
+  if (origin === SITE_URL) {
+    res.set("Access-Control-Allow-Origin", origin);
+    res.set("Vary", "Origin");
+  }
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Accept");
+}
+
+// The bridge page sends `Accept: application/json` so it can read the redirect URL
+// and navigate itself; a direct browser POST (no such header) still gets a 302.
+const wantsJson = (req) => ((req.headers.accept || "").includes("application/json"));
+
+function callbackError(req, res, status, msg) {
+  setCors(req, res);
+  if (wantsJson(req)) return json(res, status, { error: msg });
+  return res.status(status).send(msg);
+}
+
+function callbackRedirect(req, res, url) {
+  setCors(req, res);
+  if (wantsJson(req)) return json(res, 200, { redirect: url });
+  return res.redirect(302, url);
+}
+
 // External base URL of THIS function (must include the /mcp path segment). Prefer
 // the explicit env so OAuth metadata advertises stable, exact URLs.
 function baseUrl(req) {
@@ -152,17 +181,19 @@ async function authorize(req, res) {
 }
 
 // ── OAuth: bridge callback → verify Firebase ID token → issue code ─
-// The /mcp-login page POSTs { s, id_token } here (cross-origin form POST, so no
-// CORS read is needed — we respond with a 302 the browser follows).
+// The /mcp-login page fetch()es { s, id_token } here with Accept: application/json
+// and reads back { redirect } to navigate itself (a navigating form POST trips CSP
+// form-action on the downstream client redirect). A plain browser POST still gets a
+// 302. CORS is set on every response so the site origin can read the body.
 async function firebaseCallback(req, res) {
   const loginState = (req.body && req.body.s) || req.query.s;
   const idToken = (req.body && req.body.id_token) || req.query.id_token;
-  if (!loginState || !idToken) return res.status(400).send("Missing login state / token.");
+  if (!loginState || !idToken) return callbackError(req, res, 400, "Missing login state or token.");
 
   const loginRef = db().doc(`MCP/login_${loginState}`);
   const loginSnap = await loginRef.get();
   if (!loginSnap.exists || loginSnap.data().exp < now()) {
-    return res.status(400).send("Login request expired — start again from your MCP client.");
+    return callbackError(req, res, 400, "Login request expired — start again from your MCP client.");
   }
   const login = loginSnap.data();
 
@@ -170,7 +201,7 @@ async function firebaseCallback(req, res) {
   try {
     decoded = await admin.auth().verifyIdToken(idToken);
   } catch {
-    return res.status(401).send("Invalid sign-in token.");
+    return callbackError(req, res, 401, "Invalid sign-in token.");
   }
 
   // Admin gate. The portfolio's canonical admin signal is the `admin: true` custom
@@ -180,7 +211,7 @@ async function firebaseCallback(req, res) {
   const adminUid = acc.exists ? acc.data().uid : null;
   const isAdmin = decoded.admin === true || (adminUid && decoded.uid === adminUid);
   if (!isAdmin) {
-    return res.status(403).send("Access denied — this account is not the portfolio admin.");
+    return callbackError(req, res, 403, "Access denied — this account is not the portfolio admin.");
   }
 
   await loginRef.delete();
@@ -200,7 +231,7 @@ async function firebaseCallback(req, res) {
   const back = new URL(login.redirectUri);
   back.searchParams.set("code", authCode);
   if (login.clientState) back.searchParams.set("state", login.clientState);
-  res.redirect(302, back.toString());
+  return callbackRedirect(req, res, back.toString());
 }
 
 // ── OAuth: /token (authorization_code + refresh_token) ─────────────
@@ -462,7 +493,10 @@ exports.mcp = onRequest(
       if (p.endsWith("/.well-known/oauth-authorization-server") || p.endsWith("/.well-known/openid-configuration")) return authServerMetadata(req, res);
       if (p.endsWith("/register")) return register(req, res);
       if (p.endsWith("/authorize")) return authorize(req, res);
-      if (p.endsWith("/oauth/firebase/callback")) return firebaseCallback(req, res);
+      if (p.endsWith("/oauth/firebase/callback")) {
+        if (req.method === "OPTIONS") { setCors(req, res); return res.status(204).send(""); }
+        return firebaseCallback(req, res);
+      }
       if (p.endsWith("/token")) return token(req, res);
       return handleMcp(req, res);
     } catch (err) {
