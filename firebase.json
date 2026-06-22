@@ -11,5 +11,13 @@
   "functions": {
     "source": "functions",
     "runtime": "nodejs22"
+  },
+  "hosting": {
+    "site": "mcp-temrevil1",
+    "public": "hosting-mcp",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "**", "run": { "serviceId": "mcp", "region": "us-central1" } }
+    ]
   }
 }
