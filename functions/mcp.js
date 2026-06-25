@@ -615,6 +615,36 @@ function registerTools(server, cfg, time) {
       return ok({ status: "added", id });
     });
 
+  server.registerTool("update_expense",
+    {
+      title: "Update a treasury expense",
+      description: "Change fields on an existing expense by id (e.g. link an account, fix the amount/date). Only the fields you pass change. Find ids via treasury_overview.",
+      inputSchema: {
+        id: z.string().min(1).describe("expense id (see treasury_overview)"),
+        label: z.string().min(1).optional(),
+        amount: z.number().optional(),
+        currency: z.enum(["USD", "EGP", "EUR"]).optional(),
+        category: z.string().optional(),
+        date: z.string().optional().describe("YYYY-MM-DD"),
+        recurring: z.boolean().optional(),
+        projectId: z.string().optional(),
+        accountId: z.string().optional().describe("account it was paid FROM (see list_accounts)"),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      const snap = await db().doc("Treasury/spendings").get();
+      const existing = snap.exists ? (snap.data().entries || {})[a.id] : null;
+      if (!existing) return fail(`No expense with id ${a.id}. Use treasury_overview to find the right id.`);
+      const patch = {};
+      for (const k of ["label", "amount", "currency", "category", "date", "recurring", "projectId", "accountId"]) {
+        if (a[k] !== undefined) patch[k] = a[k];
+      }
+      if (!Object.keys(patch).length) return fail("Nothing to update — pass at least one field to change.");
+      await db().doc("Treasury/spendings").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
+    });
+
   server.registerTool("add_income",
     {
       title: "Add treasury income",
@@ -656,6 +686,35 @@ function registerTools(server, cfg, time) {
         }
       }
       return ok({ status: "added", id, ...(nextPaymentDate ? { nextPaymentDate } : {}) });
+    });
+
+  server.registerTool("update_income",
+    {
+      title: "Update treasury income",
+      description: "Change fields on an existing income entry by id (e.g. link an account, fix the amount/date). Only the fields you pass change. Find ids via treasury_overview.",
+      inputSchema: {
+        id: z.string().min(1).describe("income id (see treasury_overview)"),
+        amount: z.number().optional(),
+        currency: z.enum(["USD", "EGP", "EUR"]).optional(),
+        date: z.string().optional().describe("YYYY-MM-DD"),
+        note: z.string().optional(),
+        projectId: z.string().optional(),
+        accountId: z.string().optional().describe("account it landed IN (see list_accounts)"),
+        monthlyPayment: z.boolean().optional(),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      const snap = await db().doc("Treasury/income").get();
+      const existing = snap.exists ? (snap.data().entries || {})[a.id] : null;
+      if (!existing) return fail(`No income with id ${a.id}. Use treasury_overview to find the right id.`);
+      const patch = {};
+      for (const k of ["amount", "currency", "date", "note", "projectId", "accountId", "monthlyPayment"]) {
+        if (a[k] !== undefined) patch[k] = a[k];
+      }
+      if (!Object.keys(patch).length) return fail("Nothing to update — pass at least one field to change.");
+      await db().doc("Treasury/income").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
     });
 
   server.registerTool("delete_treasury_entry",
