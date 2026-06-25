@@ -412,6 +412,28 @@ export function nextMonthlyPaymentDate(p: Pick<TreasuryProject, 'nextPaymentDate
     return addOneMonth(anchor);
 }
 
+/**
+ * The next-due date to SHOW for a monthly retainer. Prefers the stored
+ * nextPaymentDate, but if it's missing yet payments have been recorded, derives
+ * it from the latest payment (one month on, kept on the start date's billing day)
+ * so the UI never makes you guess. Returns null only when nothing is recorded.
+ */
+export function projectNextPaymentDate(p: TreasuryProject, income: TreasuryIncome[]): string | null {
+    if (p.nextPaymentDate) return p.nextPaymentDate;
+    if (!p.monthly) return null;
+    const valid = (s?: string | null) => !!s && !Number.isNaN(new Date(`${s}T00:00:00`).getTime());
+    const linked = (income || []).filter(i => i.projectId === p.id && valid(i.date));
+    if (!linked.length) return null;
+    // Prefer payments explicitly marked as the monthly payment, else any linked income.
+    const flagged = linked.filter(i => i.monthlyPayment);
+    const basis = flagged.length ? flagged : linked;
+    const latest = basis.map(i => i.date).sort().slice(-1)[0];
+    const d = new Date(`${latest}T00:00:00`);
+    const billingDay = valid(p.startDate) ? new Date(`${p.startDate}T00:00:00`).getDate() : d.getDate();
+    const lastDayNext = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
+    return ymd(new Date(d.getFullYear(), d.getMonth() + 1, Math.min(billingDay, lastDayNext)));
+}
+
 // ---------------------------------------------------------------------------
 // Accounts - where money actually lives
 // ---------------------------------------------------------------------------

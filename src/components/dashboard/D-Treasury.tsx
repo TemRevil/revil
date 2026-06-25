@@ -21,7 +21,7 @@ import {
     Currency, CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense,
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
     projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome, convert,
-    nextMonthlyPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
+    nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
 } from '../../lib/treasury';
 import MTreasuryEntry from './M-TreasuryEntry';
 import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './M-Account';
@@ -806,7 +806,7 @@ const DTreasury = () => {
                                                             <span className="text-base font-extrabold text-primary tnum">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}{p.monthly ? <span className="text-xs font-bold text-sec">/mo</span> : ''}</span>
                                                             {received > 0 && <p className="text-[10.5px] text-emerald-500 font-semibold leading-tight mt-0.5">{formatMoney(received, p.priceCurrency)} received</p>}
                                                             {!p.monthly && bal > 0 && <p className="text-[10.5px] text-amber-500 font-semibold leading-tight mt-0.5">{formatMoney(bal, p.priceCurrency)} to collect</p>}
-                                                            {p.monthly && p.nextPaymentDate && <p className="text-[10.5px] text-sec font-semibold leading-tight mt-0.5">next {new Date(`${p.nextPaymentDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
+                                                            {p.monthly && (() => { const np = projectNextPaymentDate(p, data.income); return np ? <p className="text-[10.5px] text-sec font-semibold leading-tight mt-0.5">next {new Date(`${np}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p> : null; })()}
                                                         </div>
                                                         <div className="text-[10.5px] text-sec flex items-center gap-1 mt-auto pt-2"><Clock size={11} /><span>{p.startDate || '-'}{p.endDate ? ` → ${p.endDate}` : p.done ? '' : ' → ongoing'}</span></div>
                                                     </Reorder.Item>
@@ -865,9 +865,7 @@ const DTreasury = () => {
                                                         <div className="text-right shrink-0">
                                                             <div className="text-[10px] font-bold uppercase tracking-wider text-sec">Next payment</div>
                                                             <div className="text-xs font-bold text-primary tnum">
-                                                                {focusedProject.nextPaymentDate
-                                                                    ? new Date(`${focusedProject.nextPaymentDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                                                    : 'Log a payment'}
+                                                                {(() => { const np = projectNextPaymentDate(focusedProject, data.income); return np ? new Date(`${np}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Log a payment'; })()}
                                                             </div>
                                                         </div>
                                                     </div>
