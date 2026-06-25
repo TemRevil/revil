@@ -528,6 +528,34 @@ function registerTools(server, cfg, time) {
       return ok({ status: "added", id });
     });
 
+  server.registerTool("update_account",
+    {
+      title: "Update a treasury account",
+      description: "Change an existing account's settings (name, type, currency, opening/starting balance, notes, archived). Match by id from list_accounts; only the fields you pass are changed.",
+      inputSchema: {
+        id: z.string().min(1).describe("account id (see list_accounts)"),
+        name: z.string().min(1).optional(),
+        type: z.enum(["cash", "bank", "card", "wallet", "other"]).optional(),
+        currency: z.enum(["USD", "EGP", "EUR"]).optional(),
+        openingBalance: z.number().optional().describe("the starting balance before logged activity"),
+        notes: z.string().optional(),
+        archived: z.boolean().optional(),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      const snap = await db().doc("Treasury/accounts").get();
+      const existing = snap.exists ? (snap.data().entries || {})[a.id] : null;
+      if (!existing) return fail(`No account with id ${a.id}. Use list_accounts to find the right id.`);
+      const patch = {};
+      for (const k of ["name", "type", "currency", "openingBalance", "notes", "archived"]) {
+        if (a[k] !== undefined) patch[k] = a[k];
+      }
+      if (!Object.keys(patch).length) return fail("Nothing to update — pass at least one field to change.");
+      await db().doc("Treasury/accounts").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
+    });
+
   server.registerTool("add_expense",
     {
       title: "Add a treasury expense",
