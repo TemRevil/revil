@@ -757,7 +757,18 @@ async function handleMcp(req, res) {
   // LLM via the MCP `initialize` instructions field on every connect.
   const time = formatLocal(await timezoneOffset());
   const server = new McpServer(
-    { name: "revil-portfolio", version: "1.1.0" },
+    {
+      name: "revil-portfolio",
+      version: "1.2.0",
+      title: "Revil Portfolio",
+      websiteUrl: "https://temrevil.com",
+      // The site's glitch-"r" monogram, so clients show it instead of a generated avatar.
+      icons: [
+        { src: "https://temrevil.com/icon.svg", mimeType: "image/svg+xml", sizes: ["any"] },
+        { src: "https://temrevil.com/icon-512.webp", mimeType: "image/webp", sizes: ["512x512"] },
+        { src: "https://temrevil.com/icon-192.webp", mimeType: "image/webp", sizes: ["192x192"] },
+      ],
+    },
     { instructions: buildInstructions(time, cfg) },
   );
   registerTools(server, cfg, time);
