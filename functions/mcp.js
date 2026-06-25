@@ -129,6 +129,28 @@ function nextMonthlyDate(proj, paymentDate) {
   return addOneMonth(anchor);
 }
 
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/** Sum of income linked to a project, converted to a target currency. */
+function linkedIncome(projectId, income, toCurrency, rates) {
+  return income.filter((i) => i.projectId === projectId)
+    .reduce((s, i) => s + convert(i.amount || 0, i.currency, toCurrency, rates), 0);
+}
+
+/** Total received by a project = legacy paidAmount + every linked income. */
+function projectReceived(p, income, rates) {
+  return (p.paidAmount || 0) + linkedIncome(p.id, income, p.priceCurrency, rates);
+}
+
+/** Derived payment status (the app never stores this — it computes it live). */
+function projectPaymentStatus(p, income, rates) {
+  if (!p.priceAmount) return "unpaid";
+  const r = projectReceived(p, income, rates);
+  if (r >= p.priceAmount) return "paid";
+  if (r > 0) return "partial";
+  return "unpaid";
+}
+
 /** Running balance of an account in its own currency. */
 function accountBalance(acc, income, expenses, rates) {
   let bal = acc.openingBalance || 0;
@@ -431,9 +453,17 @@ function registerTools(server, cfg, time) {
       const rates = settingsData.rates || DEFAULT_RATES;
       const income = entries(inc), expenses = entries(spend);
       const accounts = entries(acc).map((a) => ({ ...a, balance: accountBalance(a, income, expenses, rates) }));
+      // payment status is DERIVED from linked income (the app doesn't store it);
+      // overwrite the legacy raw paidAmount/paymentStatus with the real figures.
+      const projects = entries(proj).map((p) => {
+        const received = round2(projectReceived(p, income, rates));
+        const paymentStatus = p.monthly ? "monthly" : projectPaymentStatus(p, income, rates);
+        const outstanding = p.monthly ? null : round2(Math.max(0, (p.priceAmount || 0) - received));
+        return { ...p, paidAmount: received, received, paymentStatus, outstanding };
+      });
       return ok({
         serverTime: time.pretty,
-        projects: entries(proj),
+        projects,
         expenses,
         income,
         accounts,
