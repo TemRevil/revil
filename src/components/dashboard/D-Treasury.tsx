@@ -26,6 +26,7 @@ import {
 import MTreasuryEntry from './M-TreasuryEntry';
 import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './M-Account';
 import DatePicker from './DatePicker';
+import ScrollMenu from './ScrollMenu';
 import SaveBar from './SaveBar';
 import Alert, { AlertType } from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
@@ -984,27 +985,25 @@ const DTreasury = () => {
                                     <Wallet size={16} className="text-blue-400" />,
                                     'Money',
                                     <div className="flex items-center gap-2 flex-wrap">
-                                        <div className={`flex p-0.5 rounded-xl border ${isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-black/5'}`}>
-                                            {(['all', 'income', 'expense'] as const).map(tp => {
-                                                const active = moneyType === tp;
-                                                const activeCls = tp === 'income' ? 'bg-emerald-500 text-white shadow' : tp === 'expense' ? 'bg-rose-500 text-white shadow' : 'bg-blue-600 text-white shadow';
-                                                return (
-                                                    <button key={tp} onClick={() => setMoneyType(tp)}
-                                                        className={`px-3 py-1.5 rounded-[10px] text-[11px] font-bold uppercase tracking-wider transition-all ${active ? activeCls : isDark ? 'text-[#666] hover:text-[#999]' : 'text-slate-400 hover:text-slate-700'}`}>
-                                                        {tp === 'all' ? 'All' : tp === 'income' ? 'Income' : 'Expense'}
-                                                    </button>
-                                                );
-                                            })}
+                                        <div className="w-[152px]">
+                                            <ScrollMenu
+                                                value={moneyType === 'income' ? 'Income only' : moneyType === 'expense' ? 'Expenses only' : 'Income & expenses'}
+                                                options={['Income & expenses', 'Income only', 'Expenses only']}
+                                                onChange={(v) => setMoneyType(v === 'Income only' ? 'income' : v === 'Expenses only' ? 'expense' : 'all')}
+                                                isDark={isDark}
+                                                searchable={false}
+                                            />
                                         </div>
-                                        <div className={`flex p-0.5 rounded-xl border ${isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-black/5'}`}>
-                                            {(['all', 'day'] as const).map(v => (
-                                                <button key={v} onClick={() => setMoneyView(v)}
-                                                    className={`px-3 py-1.5 rounded-[10px] text-[11px] font-bold uppercase tracking-wider transition-all ${moneyView === v ? 'bg-blue-600 text-white shadow' : isDark ? 'text-[#666] hover:text-[#999]' : 'text-slate-400 hover:text-slate-700'}`}>
-                                                    {v === 'all' ? 'All' : 'By day'}
-                                                </button>
-                                            ))}
+                                        <div className="w-[136px]">
+                                            <ScrollMenu
+                                                value={moneyView === 'day' ? 'Grouped by day' : 'Flat list'}
+                                                options={['Flat list', 'Grouped by day']}
+                                                onChange={(v) => setMoneyView(v === 'Grouped by day' ? 'day' : 'all')}
+                                                isDark={isDark}
+                                                searchable={false}
+                                            />
                                         </div>
-                                        <button onClick={() => setModal({ mode: 'income', income: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add money</button>
+                                        <button onClick={() => setModal({ mode: 'income', income: null })} className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add money</button>
                                     </div>
                                 )}
                                 {/* Day navigator: ‹  date  › */}
