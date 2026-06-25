@@ -274,6 +274,7 @@ const DTreasury = () => {
     const [tab, setTab] = useState<Tab>('overview');
     const [chartFilter, setChartFilter] = useState<ChartFilter>('daily');
     const [moneyView, setMoneyView] = useState<'all' | 'day'>('all');
+    const [moneyType, setMoneyType] = useState<'all' | 'income' | 'expense'>('all');
     const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
     const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null } | null>(null);
     const [accountModal, setAccountModal] = useState<{ account: TreasuryAccount | null } | null>(null);
@@ -563,12 +564,15 @@ const DTreasury = () => {
         ...data.expenses.map(e => ({ t: 'expense' as const, date: e.date, raw: e })),
     ].sort((a, b) => (b.date || '').localeCompare(a.date || '')), [data.income, data.expenses]);
 
+    // Apply the income/expense type filter (the "All / Income / Expense" toggle).
+    const visibleRows = useMemo(() => moneyType === 'all' ? moneyRows : moneyRows.filter(r => r.t === moneyType), [moneyRows, moneyType]);
+
     // Same rows grouped by day (newest day first) for the "By day" view.
     const moneyByDay = useMemo(() => {
         const map = new Map<string, typeof moneyRows>();
-        for (const r of moneyRows) { const k = r.date || '-'; (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
+        for (const r of visibleRows) { const k = r.date || '-'; (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
         return Array.from(map.entries());
-    }, [moneyRows]);
+    }, [visibleRows]);
 
     // Aggregate the continuous daily series for the active filter (D-Views style).
     const chartData = useMemo<ChartPoint[]>(() => {
@@ -678,7 +682,7 @@ const DTreasury = () => {
         base.setDate(base.getDate() + delta);
         setSelectedDay(`${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`);
     };
-    const dayRows = selectedDay ? moneyRows.filter(r => r.date === selectedDay) : [];
+    const dayRows = selectedDay ? visibleRows.filter(r => r.date === selectedDay) : [];
 
     const kpiCards = (
         <div className={`grid gap-3 ${isExtraSmall ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
@@ -884,14 +888,16 @@ const DTreasury = () => {
                                                             return (
                                                                 <>
                                                                     {linkedInc.map(i => (
-                                                                        <div key={`li-${i.id}`} className="flex items-center justify-between p-2 rounded-xl bg-emerald-500/[0.03] dark:bg-emerald-500/[0.05] border border-emerald-500/10 text-xs">
-                                                                            <span className="text-sec truncate max-w-[120px]" title={i.note || 'Payment received'}>{i.note || 'Payment'}</span>
+                                                                        <div key={`li-${i.id}`} onClick={() => setModal({ mode: 'income', income: i })} role="button" tabIndex={0} title="Edit this payment"
+                                                                            className="group flex items-center justify-between gap-2 p-2 rounded-xl bg-emerald-500/[0.03] dark:bg-emerald-500/[0.05] border border-emerald-500/10 text-xs cursor-pointer hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] transition-colors">
+                                                                            <span className="text-sec truncate max-w-[120px] flex items-center gap-1.5">{i.note || 'Payment'}<Pencil size={11} className="text-sec opacity-0 group-hover:opacity-70 transition-opacity shrink-0" /></span>
                                                                             <span className="font-bold text-emerald-500 tnum">+{formatMoney(i.amount, i.currency)}</span>
                                                                         </div>
                                                                     ))}
                                                                     {linkedExp.map(e => (
-                                                                        <div key={`le-${e.id}`} className="flex items-center justify-between p-2 rounded-xl bg-rose-500/[0.03] dark:bg-rose-500/[0.05] border border-rose-500/10 text-xs">
-                                                                            <span className="text-sec truncate max-w-[120px]" title={e.label}>{e.label}</span>
+                                                                        <div key={`le-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e })} role="button" tabIndex={0} title="Edit this expense"
+                                                                            className="group flex items-center justify-between gap-2 p-2 rounded-xl bg-rose-500/[0.03] dark:bg-rose-500/[0.05] border border-rose-500/10 text-xs cursor-pointer hover:border-rose-500/40 hover:bg-rose-500/[0.08] transition-colors">
+                                                                            <span className="text-sec truncate max-w-[120px] flex items-center gap-1.5">{e.label}<Pencil size={11} className="text-sec opacity-0 group-hover:opacity-70 transition-opacity shrink-0" /></span>
                                                                             <span className="font-bold text-rose-500 tnum">-{formatMoney(e.amount, e.currency)}</span>
                                                                         </div>
                                                                     ))}
@@ -977,7 +983,19 @@ const DTreasury = () => {
                                 {sectionTitle(
                                     <Wallet size={16} className="text-blue-400" />,
                                     'Money',
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <div className={`flex p-0.5 rounded-xl border ${isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-black/5'}`}>
+                                            {(['all', 'income', 'expense'] as const).map(tp => {
+                                                const active = moneyType === tp;
+                                                const activeCls = tp === 'income' ? 'bg-emerald-500 text-white shadow' : tp === 'expense' ? 'bg-rose-500 text-white shadow' : 'bg-blue-600 text-white shadow';
+                                                return (
+                                                    <button key={tp} onClick={() => setMoneyType(tp)}
+                                                        className={`px-3 py-1.5 rounded-[10px] text-[11px] font-bold uppercase tracking-wider transition-all ${active ? activeCls : isDark ? 'text-[#666] hover:text-[#999]' : 'text-slate-400 hover:text-slate-700'}`}>
+                                                        {tp === 'all' ? 'All' : tp === 'income' ? 'Income' : 'Expense'}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                         <div className={`flex p-0.5 rounded-xl border ${isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-black/5'}`}>
                                             {(['all', 'day'] as const).map(v => (
                                                 <button key={v} onClick={() => setMoneyView(v)}
@@ -1002,6 +1020,8 @@ const DTreasury = () => {
                             <div className="p-5">
                                 {moneyRows.length === 0 ? (
                                     <div className="glass-surface p-6 text-center text-sec text-sm">Nothing yet. Click "+ Add money" to log income or an expense.</div>
+                                ) : !selectedDay && visibleRows.length === 0 ? (
+                                    <div className="glass-surface p-6 text-center text-sec text-sm">No {moneyType} entries yet.</div>
                                 ) : selectedDay ? (
                                     <div className="glass-surface overflow-hidden">
                                         <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
@@ -1014,7 +1034,7 @@ const DTreasury = () => {
                                     </div>
                                 ) : moneyView === 'all' ? (
                                     <div className="glass-surface divide-y divide-[var(--input-border)] overflow-hidden">
-                                        {moneyRows.map(renderMoneyRow)}
+                                        {visibleRows.map(renderMoneyRow)}
                                     </div>
                                 ) : (
                                     <div className="flex flex-col gap-3">
