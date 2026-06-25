@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Briefcase, Receipt, Banknote, Repeat } from 'lucide-react';
+import { X, Trash2, Briefcase, Receipt, Banknote, Repeat, Paperclip, ImagePlus, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ref, uploadBytes, getDownloadURL, deleteObject, getStorage } from 'firebase/storage';
+import app from '../../lib/firebase';
+// Lazy Dashboard chunk - keeps firebase/storage out of the eager bundle.
+const storage = getStorage(app);
 import {
     CURRENCIES, CURRENCY_SYMBOL, Currency, ProjectStatus, Rates, DEFAULT_RATES,
-    TreasuryProject, TreasuryExpense, TreasuryIncome, TreasuryConfig, uid, derivePaymentStatus,
+    TreasuryProject, TreasuryExpense, TreasuryIncome, TreasuryAccount, TreasuryConfig, uid, derivePaymentStatus,
     ExpenseTemplate, matchExpenseTemplates, expenseProjectOptions, incomeProjectOptions, formatMoney,
-    expenseCategories, matchCategories,
+    expenseCategories, matchCategories, nextMonthlyPaymentDate, accountOptions,
 } from '../../lib/treasury';
 import DatePicker from './DatePicker';
 import ScrollMenu from './ScrollMenu';
@@ -20,6 +24,7 @@ interface Props {
     expense?: TreasuryExpense | null;
     income?: TreasuryIncome | null;
     projects?: TreasuryProject[];        // full projects, filtered per money kind
+    accounts?: TreasuryAccount[];        // accounts money flows in/out of
     expenseList?: TreasuryExpense[];     // history → repeat-templates
     incomeList?: TreasuryIncome[];       // for income project-option filtering
     rates?: Rates;                       // for payment-status filtering
@@ -33,8 +38,9 @@ interface Props {
 
 const today = () => new Date().toISOString().slice(0, 10);
 const NO_PROJECT = '- No project -';
+const NO_ACCOUNT = '- No account -';
 
-const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expenseList, incomeList, rates, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
+const MTreasuryEntry = ({ mode, config, project, expense, income, projects, accounts, expenseList, incomeList, rates, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
     const [isDark, setIsDark] = useState(false);
     // "Money" = income or expense in ONE modal; the toggle picks which.
     const isMoney = mode !== 'project';
@@ -59,6 +65,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
     const [expDate, setExpDate] = useState(expense?.date ?? today());
     const [recurring, setRecurring] = useState(expense?.recurring ?? false);
     const [expProjectName, setExpProjectName] = useState(() => expense?.projectId ? (projects?.find(p => p.id === expense.projectId)?.name ?? NO_PROJECT) : NO_PROJECT);
+    const [expAccountName, setExpAccountName] = useState(() => expense?.accountId ? (accounts?.find(a => a.id === expense.accountId)?.name ?? NO_ACCOUNT) : NO_ACCOUNT);
 
     // Income fields
     const [incAmount, setIncAmount] = useState(income?.amount ? String(income.amount) : '');
@@ -68,9 +75,45 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
         if (income?.projectId) return projects?.find(p => p.id === income.projectId)?.name ?? NO_PROJECT;
         return NO_PROJECT;
     });
+    const [incAccountName, setIncAccountName] = useState(() => income?.accountId ? (accounts?.find(a => a.id === income.accountId)?.name ?? NO_ACCOUNT) : NO_ACCOUNT);
+    // When the linked project is a monthly retainer, ask whether this payment IS
+    // its monthly payment (it may arrive early or late). Defaults to yes - the
+    // common case - but the admin can mark it as a one-off extra instead.
+    const [incIsMonthly, setIncIsMonthly] = useState(income?.monthlyPayment ?? true);
 
     // Shared notes
     const [notes, setNotes] = useState((mode === 'project' ? project?.notes : mode === 'expense' ? expense?.notes : income?.note) ?? '');
+
+    // Optional image attachments (receipts / proof). Uploaded immediately to a
+    // stable folder keyed by the entry's id so the saved URLs always resolve.
+    const [moneyId] = useState(() => expense?.id || income?.id || uid('m'));
+    const [attachments, setAttachments] = useState<string[]>(expense?.attachments || income?.attachments || []);
+    const [uploading, setUploading] = useState(0);
+
+    const addFiles = async (files: FileList | null) => {
+        if (!files?.length) return;
+        const images = Array.from(files).filter(f => f.type.startsWith('image/'));
+        if (!images.length) return;
+        setUploading(u => u + images.length);
+        await Promise.all(images.map(async file => {
+            try {
+                const safe = file.name.replace(/[^\w.-]+/g, '_');
+                const r = ref(storage, `treasury/${moneyId}/${Date.now()}-${safe}`);
+                await uploadBytes(r, file);
+                const url = await getDownloadURL(r);
+                setAttachments(prev => [...prev, url]);
+            } catch (err) {
+                console.warn('[Treasury] attachment upload failed', err);
+            } finally {
+                setUploading(u => Math.max(0, u - 1));
+            }
+        }));
+    };
+
+    const removeAttachment = (url: string) => {
+        setAttachments(prev => prev.filter(u => u !== url));
+        deleteObject(ref(storage, url)).catch(() => { /* best-effort */ });
+    };
 
     // Repeat-templates: suggest past expense labels while typing, one-tap to refill
     // amount/currency/category/recurring so a recurring cost isn't retyped.
@@ -107,6 +150,31 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
         if (incProjectName !== NO_PROJECT && !names.includes(incProjectName)) names.unshift(incProjectName);
         return [NO_PROJECT, ...names];
     }, [incomeProjs, incProjectName]);
+
+    // Account pickers: live accounts, but keep the linked one selectable on edit
+    // even if it's since been archived.
+    const liveAccounts = useMemo(() => accountOptions(accounts || []), [accounts]);
+    const expAccountOpts = useMemo(() => {
+        const names = liveAccounts.map(a => a.name);
+        if (expAccountName !== NO_ACCOUNT && !names.includes(expAccountName)) names.unshift(expAccountName);
+        return [NO_ACCOUNT, ...names];
+    }, [liveAccounts, expAccountName]);
+    const incAccountOpts = useMemo(() => {
+        const names = liveAccounts.map(a => a.name);
+        if (incAccountName !== NO_ACCOUNT && !names.includes(incAccountName)) names.unshift(incAccountName);
+        return [NO_ACCOUNT, ...names];
+    }, [liveAccounts, incAccountName]);
+
+    // The project the income is linked to, and whether it's a monthly retainer -
+    // drives the "is this the monthly payment?" question + next-due preview.
+    const selectedIncProject = useMemo(() => projects?.find(p => p.name === incProjectName) ?? null, [projects, incProjectName]);
+    const isMonthlyProject = !!selectedIncProject?.monthly;
+    const nextDuePreview = useMemo(
+        () => (isMonthlyProject && incIsMonthly && selectedIncProject)
+            ? nextMonthlyPaymentDate(selectedIncProject, incDate || today())
+            : null,
+        [isMonthlyProject, incIsMonthly, selectedIncProject, incDate],
+    );
 
     const isEdit = mode === 'project' ? !!project : mode === 'expense' ? !!expense : !!income;
     const titleLabel = mode === 'project' ? 'Project' : isEdit ? (kind === 'expense' ? 'Expense' : 'Income') : 'Money';
@@ -154,7 +222,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
         } else if (kind === 'expense') {
             if (!label.trim()) return;
             const e: TreasuryExpense = {
-                id: expense?.id ?? uid('exp'),
+                id: moneyId,
                 label: label.trim(),
                 amount: parseFloat(expAmount) || 0,
                 currency: expCurrency,
@@ -162,6 +230,8 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
                 date: expDate || today(),
                 recurring,
                 projectId: expProjectName === NO_PROJECT ? undefined : projects?.find(p => p.name === expProjectName)?.id,
+                accountId: expAccountName === NO_ACCOUNT ? undefined : accounts?.find(a => a.name === expAccountName)?.id,
+                attachments: attachments.length ? attachments : undefined,
                 notes: notes.trim() || undefined,
                 createdAt: expense?.createdAt ?? Date.now(),
             };
@@ -169,13 +239,17 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
         } else {
             const amount = parseFloat(incAmount) || 0;
             if (!amount) return;
-            const projectId = incProjectName === NO_PROJECT ? undefined : projects?.find(p => p.name === incProjectName)?.id;
+            const linked = incProjectName === NO_PROJECT ? null : projects?.find(p => p.name === incProjectName) ?? null;
             const i: TreasuryIncome = {
-                id: income?.id ?? uid('inc'),
+                id: moneyId,
                 amount,
                 currency: incCurrency,
                 date: incDate || today(),
-                projectId,
+                projectId: linked?.id,
+                accountId: incAccountName === NO_ACCOUNT ? undefined : accounts?.find(a => a.name === incAccountName)?.id,
+                attachments: attachments.length ? attachments : undefined,
+                // Only meaningful for monthly retainers; flags this as the month's payment.
+                monthlyPayment: linked?.monthly && incIsMonthly ? true : undefined,
                 note: notes.trim() || undefined,
                 createdAt: income?.createdAt ?? Date.now(),
             };
@@ -401,6 +475,13 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
                                 <label className={labelCls}>For project (optional)</label>
                                 <ScrollMenu value={expProjectName} options={expProjectOpts} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
                             </div>
+                            {(accounts?.length ?? 0) > 0 && (
+                                <div>
+                                    <label className={labelCls}>Paid from account</label>
+                                    <ScrollMenu value={expAccountName} options={expAccountOpts} onChange={setExpAccountName} isDark={isDark} placeholder="Which account?" />
+                                    <p className="text-[11px] text-sec mt-1.5">Deducts this from the account&apos;s balance.</p>
+                                </div>
+                            )}
                             <label className="flex items-center gap-3 cursor-pointer select-none">
                                 <input type="checkbox" checked={recurring} onChange={e => setRecurring(e.target.checked)} className="w-4 h-4 accent-blue-500" />
                                 <span className="text-sm text-primary font-medium">Monthly fee (recurring)</span>
@@ -429,7 +510,75 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
                                 <ScrollMenu value={incProjectName} options={incProjectOpts} onChange={setIncProjectName} isDark={isDark} placeholder="Link to a project" />
                                 <p className="text-[11px] text-sec mt-1.5">Linking counts this toward that project&apos;s received amount.</p>
                             </div>
+
+                            {(accounts?.length ?? 0) > 0 && (
+                                <div>
+                                    <label className={labelCls}>Into account</label>
+                                    <ScrollMenu value={incAccountName} options={incAccountOpts} onChange={setIncAccountName} isDark={isDark} placeholder="Which account?" />
+                                    <p className="text-[11px] text-sec mt-1.5">Adds this to the account&apos;s balance.</p>
+                                </div>
+                            )}
+
+                            {/* Monthly retainer: is this THE monthly payment, or a one-off extra? */}
+                            {isMonthlyProject && (
+                                <div className={`rounded-2xl border p-3.5 flex flex-col gap-3 ${isDark ? 'bg-emerald-500/[0.04] border-emerald-500/20' : 'bg-emerald-500/[0.04] border-emerald-500/20'}`}>
+                                    <div className="flex items-start gap-2.5">
+                                        <Repeat size={16} className="text-emerald-500 mt-0.5 shrink-0" />
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-bold text-primary leading-snug">Is this {selectedIncProject?.name}&apos;s monthly payment?</p>
+                                            <p className="text-[11px] text-sec leading-snug mt-0.5">Whether it came early or late, marking it as the monthly payment sets the next expected date. Choose &ldquo;No&rdquo; to log it as a normal one-off income.</p>
+                                        </div>
+                                    </div>
+                                    <div className={`flex rounded-xl border ${fieldBg} p-1 gap-1`}>
+                                        {([['yes', 'Yes - monthly payment'], ['no', 'No - normal income']] as const).map(([val, lbl]) => {
+                                            const on = (val === 'yes') === incIsMonthly;
+                                            return (
+                                                <button key={val} type="button" onClick={() => setIncIsMonthly(val === 'yes')}
+                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${on ? 'bg-emerald-500 text-white shadow' : 'text-sec hover:text-primary'}`}>
+                                                    {lbl}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {nextDuePreview && (
+                                        <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                                            <Banknote size={12} className="shrink-0" />
+                                            Next payment will be expected on {new Date(`${nextDuePreview}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                         </>
+                    )}
+
+                    {isMoney && (
+                        <div>
+                            <label className={labelCls}>Attachments (optional)</label>
+                            <div className="flex flex-wrap gap-2.5">
+                                {attachments.map(url => (
+                                    <div key={url} className="relative w-16 h-16 rounded-xl overflow-hidden border border-[var(--input-border)] group/att">
+                                        <a href={url} target="_blank" rel="noopener noreferrer" title="Open full size">
+                                            <img src={url} alt="Attachment" className="w-full h-full object-cover" />
+                                        </a>
+                                        <button type="button" onClick={() => removeAttachment(url)} aria-label="Remove attachment"
+                                            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/65 text-white flex items-center justify-center opacity-0 group-hover/att:opacity-100 transition-opacity hover:bg-rose-500">
+                                            <X size={12} />
+                                        </button>
+                                    </div>
+                                ))}
+                                {uploading > 0 && Array.from({ length: uploading }).map((_, i) => (
+                                    <div key={`up-${i}`} className={`w-16 h-16 rounded-xl border border-dashed ${fieldBg} flex items-center justify-center`}>
+                                        <Loader2 size={18} className="animate-spin text-blue-400" />
+                                    </div>
+                                ))}
+                                <label className={`w-16 h-16 rounded-xl border border-dashed ${fieldBg} flex flex-col items-center justify-center gap-1 cursor-pointer text-sec hover:text-primary hover:border-blue-400/50 transition-colors`}>
+                                    <ImagePlus size={18} />
+                                    <span className="text-[9px] font-bold uppercase tracking-wide">Add</span>
+                                    <input type="file" accept="image/*" multiple className="hidden" onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+                                </label>
+                            </div>
+                            <p className="text-[11px] text-sec mt-1.5 flex items-center gap-1"><Paperclip size={11} /> Receipts or proof - images only, private to you.</p>
+                        </div>
                     )}
 
                     <div>
@@ -447,8 +596,9 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, expe
                     )}
                     <div className="flex-1" />
                     <button onClick={onClose} className="px-5 py-2.5 rounded-xl font-semibold text-sm text-sec hover:bg-black/5 dark:hover:bg-white/10 transition-all">Cancel</button>
-                    <button onClick={save} className={`px-6 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all active:scale-95 ${mode === 'project' ? 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/20' : kind === 'income' ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20' : 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20'}`}>
-                        {isEdit ? 'Save' : 'Add'}
+                    <button onClick={save} disabled={uploading > 0} className={`px-6 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 ${mode === 'project' ? 'bg-blue-500 hover:bg-blue-600 shadow-blue-500/20' : kind === 'income' ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20' : 'bg-rose-500 hover:bg-rose-600 shadow-rose-500/20'}`}>
+                        {uploading > 0 && <Loader2 size={15} className="animate-spin" />}
+                        {uploading > 0 ? 'Uploading…' : isEdit ? 'Save' : 'Add'}
                     </button>
                 </div>
             </motion.div>

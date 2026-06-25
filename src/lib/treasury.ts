@@ -22,6 +22,25 @@ export const CURRENCY_SYMBOL: Record<Currency, string> = {
 export type ProjectStatus = 'active' | 'pending' | 'completed';
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid';
 
+export type AccountType = 'cash' | 'bank' | 'card' | 'wallet' | 'other';
+export const ACCOUNT_TYPES: AccountType[] = ['cash', 'bank', 'card', 'wallet', 'other'];
+
+// A place money actually lives - a bank account, cash, a card, a digital wallet.
+// Income lands in one; expenses are paid from one. Its running balance is the
+// opening balance plus every linked income minus every linked expense (each
+// converted into the account's own currency).
+export interface TreasuryAccount {
+    id: string;
+    name: string;                 // e.g. "Main bank", "Cash", "PayPal"
+    type: AccountType;
+    currency: Currency;           // the account's native currency
+    openingBalance: number;       // balance before any logged activity, in `currency`
+    notes?: string;
+    archived?: boolean;           // hidden from pickers, kept for history
+    order: number;
+    createdAt: number;            // ms epoch
+}
+
 export interface TreasuryProject {
     id: string;
     name: string;
@@ -35,6 +54,7 @@ export interface TreasuryProject {
     notes?: string;
     startDate?: string | null;    // 'YYYY-MM-DD'
     endDate?: string | null;      // 'YYYY-MM-DD' (set when marked done)
+    nextPaymentDate?: string;     // 'YYYY-MM-DD' - for monthly retainers: when the next payment is due (auto-advanced)
     done: boolean;
     order: number;
     createdAt: number;            // ms epoch
@@ -49,6 +69,8 @@ export interface TreasuryExpense {
     date: string;                 // 'YYYY-MM-DD'
     recurring?: boolean;          // a monthly fee
     projectId?: string;           // optional: a fee tied to a specific project
+    accountId?: string;           // optional: the account it was paid FROM
+    attachments?: string[];       // optional: receipt/proof image download URLs
     notes?: string;
     createdAt: number;
 }
@@ -61,6 +83,9 @@ export interface TreasuryIncome {
     currency: Currency;
     date: string;                 // 'YYYY-MM-DD' - when the money came in
     projectId?: string;           // optional link to the project it's from
+    accountId?: string;           // optional: the account it landed IN
+    attachments?: string[];       // optional: receipt/proof image download URLs
+    monthlyPayment?: boolean;     // true = this IS a monthly retainer's payment (advances the project's schedule)
     note?: string;
     createdAt: number;
 }
@@ -111,6 +136,7 @@ export interface TreasuryData {
     projects: TreasuryProject[];
     expenses: TreasuryExpense[];
     income: TreasuryIncome[];
+    accounts: TreasuryAccount[];
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +378,75 @@ export function incomeProjectOptions(projects: TreasuryProject[], income: Treasu
 }
 
 // ---------------------------------------------------------------------------
+// Monthly retainer scheduling
+// ---------------------------------------------------------------------------
+
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/**
+ * Advance a 'YYYY-MM-DD' date by exactly one calendar month, clamping the day to
+ * the target month's length so e.g. Jan 31 → Feb 28 (not an overflow into March).
+ */
+export function addOneMonth(dateStr: string): string {
+    const d = new Date(`${dateStr}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return dateStr;
+    const day = d.getDate();
+    const lastDayOfNext = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
+    return ymd(new Date(d.getFullYear(), d.getMonth() + 1, Math.min(day, lastDayOfNext)));
+}
+
+/**
+ * The date a monthly retainer's NEXT payment falls due, once the current one is
+ * confirmed received. Anchors to the project's existing scheduled date if it has
+ * one (so the billing day stays fixed regardless of whether the money arrived
+ * early or late); otherwise seeds the first cycle from the project's start date,
+ * falling back to the payment date. Always lands one calendar month after the
+ * cycle just paid.
+ */
+export function nextMonthlyPaymentDate(p: Pick<TreasuryProject, 'nextPaymentDate' | 'startDate'>, paymentDate: string): string {
+    const valid = (s?: string | null) => !!s && !Number.isNaN(new Date(`${s}T00:00:00`).getTime());
+    const anchor = valid(p.nextPaymentDate) ? p.nextPaymentDate!
+        : valid(p.startDate) ? p.startDate!
+        : valid(paymentDate) ? paymentDate
+        : ymd(new Date());
+    return addOneMonth(anchor);
+}
+
+// ---------------------------------------------------------------------------
+// Accounts - where money actually lives
+// ---------------------------------------------------------------------------
+
+/**
+ * Running balance of an account: its opening balance, plus every income logged
+ * INTO it, minus every expense paid FROM it - each entry converted into the
+ * account's own currency so mixed-currency activity still nets correctly.
+ */
+export function accountBalance(acc: TreasuryAccount, income: TreasuryIncome[], expenses: TreasuryExpense[], rates: Rates): number {
+    let bal = acc.openingBalance || 0;
+    for (const i of income || []) if (i.accountId === acc.id) bal += convert(i.amount || 0, i.currency, acc.currency, rates);
+    for (const e of expenses || []) if (e.accountId === acc.id) bal -= convert(e.amount || 0, e.currency, acc.currency, rates);
+    return bal;
+}
+
+/** How many income + expense entries touch this account. */
+export function accountActivityCount(accId: string, income: TreasuryIncome[], expenses: TreasuryExpense[]): number {
+    return (income || []).filter(i => i.accountId === accId).length + (expenses || []).filter(e => e.accountId === accId).length;
+}
+
+/** Combined balance of all (non-archived) accounts, in the display currency. */
+export function accountsTotal(data: TreasuryData): number {
+    const { displayCurrency: cur, rates } = data.config;
+    return (data.accounts || [])
+        .filter(a => !a.archived)
+        .reduce((s, a) => s + convert(accountBalance(a, data.income, data.expenses, rates), a.currency, cur, rates), 0);
+}
+
+/** Accounts selectable for a new entry: live ones first, by order. */
+export function accountOptions(accounts: TreasuryAccount[]): TreasuryAccount[] {
+    return (accounts || []).filter(a => !a.archived).sort((a, b) => a.order - b.order);
+}
+
+// ---------------------------------------------------------------------------
 // Monthly series (for the earnings vs spendings chart)
 // ---------------------------------------------------------------------------
 
@@ -567,13 +662,29 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
         </tr>`;
     }).join('');
 
+    const accountRows = [...(data.accounts || [])]
+        .sort((a, b) => a.order - b.order)
+        .map(a => {
+            const bal = accountBalance(a, data.income, data.expenses, rates);
+            return `
+        <tr>
+          <td><b>${esc(a.name)}</b>${a.archived ? ' <span class="pill recurring">archived</span>' : ''}</td>
+          <td><span class="pill recurring">${esc(a.type)}</span></td>
+          <td>${esc(a.currency)}</td>
+          <td>${formatMoney(a.openingBalance || 0, a.currency)}</td>
+          <td style="color:${bal >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${formatMoney(bal, a.currency)}</td>
+        </tr>`;
+        }).join('');
+
     const projById = new Map(data.projects.map(p => [p.id, p.name]));
+    const accById = new Map((data.accounts || []).map(a => [a.id, a.name]));
     const incomeRows = [...(data.income || [])]
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
         .map(i => `
         <tr>
           <td><b>${formatMoney(i.amount, i.currency)}</b></td>
           <td>${esc(i.projectId ? (projById.get(i.projectId) || '-') : '-')}</td>
+          <td>${esc(i.accountId ? (accById.get(i.accountId) || '-') : '-')}</td>
           <td>${esc(i.date || '-')}</td>
           <td class="notes">${esc(i.note || '')}</td>
         </tr>`).join('');
@@ -584,6 +695,7 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
         <tr>
           <td><b>${esc(e.label)}</b>${e.recurring ? ' <span class="pill recurring">recurring</span>' : ''}${e.projectId ? `<div class="sub">${esc(projById.get(e.projectId) || '')}</div>` : ''}</td>
           <td>${esc(e.category || '-')}</td>
+          <td>${esc(e.accountId ? (accById.get(e.accountId) || '-') : '-')}</td>
           <td>${formatMoney(e.amount, e.currency)}</td>
           <td>${esc(e.date || '-')}</td>
         </tr>`).join('');
@@ -621,15 +733,18 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
     ${card('Spent', formatMoney(t.spent, cur), 'var(--red)')}
     ${card('Net profit', formatMoney(t.net, cur), t.net >= 0 ? 'var(--green)' : 'var(--red)')}
   </div>
+  ${(data.accounts || []).length ? `<h2>Accounts (${data.accounts.length})</h2>
+  <table><thead><tr><th>Account</th><th>Type</th><th>Currency</th><th>Opening</th><th>Balance</th></tr></thead>
+  <tbody>${accountRows}</tbody></table>` : ''}
   <h2>Projects (${sorted.length})</h2>
   <table><thead><tr><th>Project</th><th>Status</th><th>Price</th><th>Payment</th><th>Received</th><th>Timeline</th><th>Notes</th></tr></thead>
   <tbody>${projectRows || '<tr><td colspan="7" style="color:var(--muted)">No projects yet.</td></tr>'}</tbody></table>
   <h2>Income (${(data.income || []).length})</h2>
-  <table><thead><tr><th>Amount</th><th>Project</th><th>Date</th><th>Note</th></tr></thead>
-  <tbody>${incomeRows || '<tr><td colspan="4" style="color:var(--muted)">No income logged yet.</td></tr>'}</tbody></table>
+  <table><thead><tr><th>Amount</th><th>Project</th><th>Account</th><th>Date</th><th>Note</th></tr></thead>
+  <tbody>${incomeRows || '<tr><td colspan="5" style="color:var(--muted)">No income logged yet.</td></tr>'}</tbody></table>
   <h2>Expenses (${data.expenses.length})</h2>
-  <table><thead><tr><th>Item</th><th>Category</th><th>Amount</th><th>Date</th></tr></thead>
-  <tbody>${expenseRows || '<tr><td colspan="4" style="color:var(--muted)">No expenses yet.</td></tr>'}</tbody></table>
+  <table><thead><tr><th>Item</th><th>Category</th><th>Account</th><th>Amount</th><th>Date</th></tr></thead>
+  <tbody>${expenseRows || '<tr><td colspan="5" style="color:var(--muted)">No expenses yet.</td></tr>'}</tbody></table>
   <footer>The State of Revil - Treasury · ${date}</footer>
 </div></body></html>`;
 }

@@ -6,20 +6,25 @@ import {
     Plus, Download, CheckCircle2, Pencil, Receipt, Briefcase, LayoutDashboard,
     TrendingUp, TrendingDown, Wallet, Sparkles, Clock, Lightbulb, SlidersHorizontal,
     ChevronLeft, ChevronRight, RefreshCcw, Percent, Repeat, Hourglass, Tag, Banknote,
-    GripVertical,
+    GripVertical, Landmark, Wallet2, Paperclip,
 } from 'lucide-react';
 import {
     ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps,
 } from 'recharts';
 import { onAuthStateChanged } from 'firebase/auth';
-import { db } from '../../lib/firebase';
+import { ref, listAll, deleteObject, getStorage } from 'firebase/storage';
+import app, { db } from '../../lib/firebase';
 import { appAuth } from '../../lib/appAuth';
+// Lazy Dashboard chunk - keeps firebase/storage out of the eager bundle.
+const storage = getStorage(app);
 import {
     Currency, CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense,
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
     projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome, convert,
+    nextMonthlyPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
 } from '../../lib/treasury';
 import MTreasuryEntry from './M-TreasuryEntry';
+import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './M-Account';
 import DatePicker from './DatePicker';
 import SaveBar from './SaveBar';
 import Alert, { AlertType } from '../Alert';
@@ -32,10 +37,11 @@ import useSafeAlert from '../../hooks/useSafeAlert';
 const PROJECTS_DOC = doc(db, 'Treasury', 'projects');
 const SPENDINGS_DOC = doc(db, 'Treasury', 'spendings');
 const INCOME_DOC = doc(db, 'Treasury', 'income');
+const ACCOUNTS_DOC = doc(db, 'Treasury', 'accounts');
 const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
 const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
 
-type Tab = 'overview' | 'projects' | 'money' | 'settings';
+type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'settings';
 type ChartFilter = 'daily' | 'weekly' | 'monthly';
 interface ChartPoint { label: string; fullDate: string; earned: number; spent: number; type: ChartFilter; }
 
@@ -262,7 +268,7 @@ const DTreasury = () => {
     const [isDark, setIsDark] = useState(false);
     const [loading, setLoading] = useState(true);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
-    const [data, setData] = useState<TreasuryData>({ config: { ...DEFAULT_CONFIG }, projects: [], expenses: [], income: [] });
+    const [data, setData] = useState<TreasuryData>({ config: { ...DEFAULT_CONFIG }, projects: [], expenses: [], income: [], accounts: [] });
     const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
     const [archiveOpen, setArchiveOpen] = useState(false);
     const [tab, setTab] = useState<Tab>('overview');
@@ -270,6 +276,7 @@ const DTreasury = () => {
     const [moneyView, setMoneyView] = useState<'all' | 'day'>('all');
     const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
     const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null } | null>(null);
+    const [accountModal, setAccountModal] = useState<{ account: TreasuryAccount | null } | null>(null);
     const [ratesLoading, setRatesLoading] = useState(false);
     const ratesChecked = useRef(false);
     const { alert, showAlert, hideAlert } = useSafeAlert();
@@ -327,6 +334,13 @@ const DTreasury = () => {
                     .map(([id, i]) => ({ id, ...i } as TreasuryIncome))
                     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                 setData(prev => ({ ...prev, income }));
+            }, onErr));
+            unsubs.push(onSnapshot(ACCOUNTS_DOC, snap => {
+                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryAccount, 'id'>>;
+                const accounts = Object.entries(entries)
+                    .map(([id, a], i) => ({ id, ...a, order: a.order ?? i } as TreasuryAccount))
+                    .sort((a, b) => a.order - b.order);
+                setData(prev => ({ ...prev, accounts }));
             }, onErr));
             unsubs.push(onSnapshot(SETTINGS_DOC, snap => {
                 const c = (snap.exists() ? snap.data() : {}) as Partial<TreasuryData['config']>;
@@ -400,7 +414,14 @@ const DTreasury = () => {
         const exists = data.expenses.some(x => x.id === e.id);
         writeExpenses(exists ? data.expenses.map(x => x.id === e.id ? e : x) : [...data.expenses, e]);
     };
-    const deleteExpense = (id: string) => writeExpenses(data.expenses.filter(e => e.id !== id));
+    // Best-effort: drop any uploaded receipt images for an entry when it's deleted.
+    const purgeAttachments = (id: string) => {
+        listAll(ref(storage, `treasury/${id}`))
+            .then(res => Promise.all(res.items.map(it => deleteObject(it).catch(() => { }))))
+            .catch(() => { /* nothing to clean / offline */ });
+    };
+
+    const deleteExpense = (id: string) => { purgeAttachments(id); writeExpenses(data.expenses.filter(e => e.id !== id)); };
 
     const writeIncome = useCallback((income: TreasuryIncome[]) => {
         setData(prev => ({ ...prev, income }));
@@ -413,8 +434,33 @@ const DTreasury = () => {
     const saveIncome = (i: TreasuryIncome) => {
         const exists = data.income.some(x => x.id === i.id);
         writeIncome(exists ? data.income.map(x => x.id === i.id ? i : x) : [...data.income, i]);
+        // A newly-logged monthly retainer payment advances that project's schedule
+        // to the next due date (even if the money arrived early or late).
+        if (!exists && i.monthlyPayment && i.projectId) {
+            const proj = data.projects.find(p => p.id === i.projectId);
+            if (proj?.monthly) {
+                const next = nextMonthlyPaymentDate(proj, i.date);
+                saveProject({ ...proj, nextPaymentDate: next });
+                const pretty = new Date(`${next}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                showToast(`Logged ${proj.name}'s monthly payment - next due ${pretty}`, 'good');
+            }
+        }
     };
-    const deleteIncome = (id: string) => writeIncome(data.income.filter(i => i.id !== id));
+    const deleteIncome = (id: string) => { purgeAttachments(id); writeIncome(data.income.filter(i => i.id !== id)); };
+
+    const writeAccounts = useCallback((accounts: TreasuryAccount[]) => {
+        setData(prev => ({ ...prev, accounts }));
+        const entries: Record<string, Omit<TreasuryAccount, 'id'>> = {};
+        accounts.forEach(a => { const { id, ...rest } = a; entries[id] = rest; });
+        setDoc(ACCOUNTS_DOC, { entries, lastWrite: serverTimestamp() })
+            .catch(err => { console.warn('[Treasury] accounts save failed', err); showToast('Save failed - check connection', 'warn'); });
+    }, [showToast]);
+
+    const saveAccount = (a: TreasuryAccount) => {
+        const exists = data.accounts.some(x => x.id === a.id);
+        writeAccounts(exists ? data.accounts.map(x => x.id === a.id ? a : x) : [...data.accounts, a]);
+    };
+    const deleteAccount = (id: string) => writeAccounts(data.accounts.filter(a => a.id !== id));
 
     const markDone = (p: TreasuryProject) => {
         const today = new Date().toISOString().slice(0, 10);
@@ -499,6 +545,10 @@ const DTreasury = () => {
     const activeProjects = useMemo(() => data.projects.filter(p => !p.done), [data.projects]);
     const completedProjects = useMemo(() => data.projects.filter(p => p.done), [data.projects]);
 
+    const liveAccounts = useMemo(() => accountOptions(data.accounts), [data.accounts]);
+    const archivedAccounts = useMemo(() => data.accounts.filter(a => a.archived), [data.accounts]);
+    const liquidTotal = useMemo(() => accountsTotal(data), [data]);
+
     const focusedProject = useMemo(() => {
         if (focusedProjectId) {
             const found = data.projects.find(p => p.id === focusedProjectId);
@@ -556,6 +606,7 @@ const DTreasury = () => {
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
         { id: 'projects', label: 'Projects', icon: Briefcase },
         { id: 'money', label: 'Money', icon: Wallet },
+        { id: 'accounts', label: 'Accounts', icon: Landmark },
         { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
     ];
 
@@ -575,13 +626,15 @@ const DTreasury = () => {
         if (r.t === 'income') {
             const i = r.raw;
             const proj = i.projectId ? data.projects.find(p => p.id === i.projectId) : null;
+            const acct = i.accountId ? data.accounts.find(a => a.id === i.accountId) : null;
             return (
                 <div key={`i-${i.id}`} onClick={() => setModal({ mode: 'income', income: i })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500 flex-shrink-0"><Banknote size={16} /></div>
                     <div className="min-w-0 flex-1">
                         <span className="text-sm font-semibold text-primary truncate block">{proj ? proj.name : (i.note || 'Payment')}</span>
-                        <span className="text-xs text-sec">{i.date}{proj && i.note ? ` · ${i.note}` : ''}</span>
+                        <span className="text-xs text-sec truncate block">{i.date}{proj && i.note ? ` · ${i.note}` : ''}{acct ? ` · → ${acct.name}` : ''}</span>
                     </div>
+                    {i.attachments?.length ? <span className="flex items-center gap-0.5 text-[11px] text-sec font-semibold flex-shrink-0" title={`${i.attachments.length} attachment${i.attachments.length === 1 ? '' : 's'}`}><Paperclip size={12} />{i.attachments.length}</span> : null}
                     <span className="text-sm font-bold text-emerald-500 tnum flex-shrink-0">+{formatMoney(i.amount, i.currency)}</span>
                     <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                 </div>
@@ -589,6 +642,7 @@ const DTreasury = () => {
         }
         const e = r.raw;
         const eproj = e.projectId ? data.projects.find(p => p.id === e.projectId) : null;
+        const eacct = e.accountId ? data.accounts.find(a => a.id === e.accountId) : null;
         return (
             <div key={`e-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-rose-500/10 text-rose-400 flex-shrink-0"><Receipt size={16} /></div>
@@ -597,8 +651,9 @@ const DTreasury = () => {
                         <span className="text-sm font-semibold text-primary truncate">{e.label}</span>
                         {e.recurring && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">monthly</span>}
                     </div>
-                    <span className="text-xs text-sec">{e.category ? `${e.category} · ` : ''}{eproj ? `${eproj.name} · ` : ''}{e.date}</span>
+                    <span className="text-xs text-sec truncate block">{e.category ? `${e.category} · ` : ''}{eproj ? `${eproj.name} · ` : ''}{e.date}{eacct ? ` · ← ${eacct.name}` : ''}</span>
                 </div>
+                {e.attachments?.length ? <span className="flex items-center gap-0.5 text-[11px] text-sec font-semibold flex-shrink-0" title={`${e.attachments.length} attachment${e.attachments.length === 1 ? '' : 's'}`}><Paperclip size={12} />{e.attachments.length}</span> : null}
                 <span className="text-sm font-bold text-rose-500 tnum flex-shrink-0">−{formatMoney(e.amount, e.currency)}</span>
                 <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
             </div>
@@ -751,6 +806,7 @@ const DTreasury = () => {
                                                             <span className="text-base font-extrabold text-primary tnum">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}{p.monthly ? <span className="text-xs font-bold text-sec">/mo</span> : ''}</span>
                                                             {received > 0 && <p className="text-[10.5px] text-emerald-500 font-semibold leading-tight mt-0.5">{formatMoney(received, p.priceCurrency)} received</p>}
                                                             {!p.monthly && bal > 0 && <p className="text-[10.5px] text-amber-500 font-semibold leading-tight mt-0.5">{formatMoney(bal, p.priceCurrency)} to collect</p>}
+                                                            {p.monthly && p.nextPaymentDate && <p className="text-[10.5px] text-sec font-semibold leading-tight mt-0.5">next {new Date(`${p.nextPaymentDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
                                                         </div>
                                                         <div className="text-[10.5px] text-sec flex items-center gap-1 mt-auto pt-2"><Clock size={11} /><span>{p.startDate || '-'}{p.endDate ? ` → ${p.endDate}` : p.done ? '' : ' → ongoing'}</span></div>
                                                     </Reorder.Item>
@@ -795,6 +851,27 @@ const DTreasury = () => {
                                                         </div>
                                                     );
                                                 })()}
+
+                                                {/* Monthly retainer: rate + next due date */}
+                                                {focusedProject.monthly && (
+                                                    <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-emerald-500/[0.04] border border-emerald-500/15">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <Repeat size={15} className="text-emerald-500 shrink-0" />
+                                                            <div className="min-w-0">
+                                                                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Monthly retainer</div>
+                                                                <div className="text-xs text-sec truncate">{focusedProject.priceAmount ? `${formatMoney(focusedProject.priceAmount, focusedProject.priceCurrency)}/mo` : 'No rate set'}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right shrink-0">
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider text-sec">Next payment</div>
+                                                            <div className="text-xs font-bold text-primary tnum">
+                                                                {focusedProject.nextPaymentDate
+                                                                    ? new Date(`${focusedProject.nextPaymentDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                                                    : 'Log a payment'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
 
                                                 {/* Sub-Ledger: Linked Transactions */}
                                                 <div className="flex flex-col gap-2">
@@ -963,6 +1040,88 @@ const DTreasury = () => {
                         </div>
                     )}
 
+                    {tab === 'accounts' && (
+                        <div className="flex flex-col gap-5">
+                            {/* Liquid total + add */}
+                            <div className="glass-panel p-5 flex items-center justify-between gap-4 flex-wrap">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <span className="w-11 h-11 rounded-2xl flex items-center justify-center bg-blue-500/12 text-blue-500 shrink-0"><Wallet2 size={22} /></span>
+                                    <div className="min-w-0">
+                                        <div className="text-[11px] font-bold uppercase tracking-wider text-sec">Total balance · {cur}</div>
+                                        <div className="text-2xl sm:text-3xl font-black tnum text-primary leading-tight" style={{ color: liquidTotal >= 0 ? undefined : '#f43f5e' }}>{formatMoney(liquidTotal, cur)}</div>
+                                        <div className="text-[11px] text-sec">{liveAccounts.length} active account{liveAccounts.length === 1 ? '' : 's'}</div>
+                                    </div>
+                                </div>
+                                <button onClick={() => setAccountModal({ account: null })} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Account</button>
+                            </div>
+
+                            {data.accounts.length === 0 ? (
+                                <div className="glass-panel p-10 text-center flex flex-col items-center gap-3">
+                                    <span className="w-14 h-14 rounded-2xl flex items-center justify-center bg-blue-500/10 text-blue-500"><Landmark size={26} /></span>
+                                    <p className="text-sm text-sec max-w-sm">No accounts yet. Add a bank, cash or wallet, then pick it when logging income or an expense to track each balance.</p>
+                                    <button onClick={() => setAccountModal({ account: null })} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add your first account</button>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {liveAccounts.map(a => {
+                                        const bal = accountBalance(a, data.income, data.expenses, data.config.rates);
+                                        const moves = accountActivityCount(a.id, data.income, data.expenses);
+                                        const Icon = ACCOUNT_ICON[a.type];
+                                        const tColor = ACCOUNT_COLOR[a.type];
+                                        return (
+                                            <div key={a.id} onClick={() => setAccountModal({ account: a })} role="button" tabIndex={0}
+                                                className="group glass-panel p-4 flex flex-col gap-3 cursor-pointer hover:shadow-md transition-shadow relative">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${tColor}1f`, color: tColor }}><Icon size={18} /></span>
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-bold text-primary truncate" title={a.name}>{a.name}</div>
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider text-sec">{a.type} · {a.currency}</div>
+                                                        </div>
+                                                    </div>
+                                                    <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] font-bold uppercase tracking-wider text-sec">Balance</div>
+                                                    <div className="text-xl font-extrabold tnum" style={{ color: bal >= 0 ? '#10b981' : '#f43f5e' }}>{formatMoney(bal, a.currency)}</div>
+                                                </div>
+                                                <div className="text-[11px] text-sec flex items-center justify-between gap-2 pt-1 border-t border-[var(--section-border)]">
+                                                    <span>{moves} movement{moves === 1 ? '' : 's'}</span>
+                                                    <span className="tnum">opening {formatMoney(a.openingBalance || 0, a.currency)}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {archivedAccounts.length > 0 && (
+                                <div className="glass-panel p-5 flex flex-col gap-3">
+                                    <span className="text-sm font-bold text-primary flex items-center gap-2"><Landmark size={15} className="text-sec" /> Archived accounts</span>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {archivedAccounts.map(a => {
+                                            const bal = accountBalance(a, data.income, data.expenses, data.config.rates);
+                                            const Icon = ACCOUNT_ICON[a.type];
+                                            return (
+                                                <div key={a.id} onClick={() => setAccountModal({ account: a })} role="button" tabIndex={0}
+                                                    className="glass-surface p-3.5 flex items-center justify-between gap-2 cursor-pointer opacity-70 hover:opacity-100 transition-opacity">
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <span className="w-9 h-9 rounded-xl flex items-center justify-center bg-black/5 dark:bg-white/5 text-sec shrink-0"><Icon size={16} /></span>
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-semibold text-primary truncate">{a.name}</div>
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider text-sec">{a.currency}</div>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-sm font-bold tnum text-sec">{formatMoney(bal, a.currency)}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {tab === 'settings' && (
                         <>
                             <div className="glass-panel p-5 flex flex-col gap-5">
@@ -1036,6 +1195,7 @@ const DTreasury = () => {
                         expense={modal.expense}
                         income={modal.income}
                         projects={data.projects}
+                        accounts={data.accounts}
                         expenseList={data.expenses}
                         incomeList={data.income}
                         rates={data.config.rates}
@@ -1045,6 +1205,19 @@ const DTreasury = () => {
                         onSaveIncome={saveIncome}
                         onDelete={modal.project ? () => deleteProject(modal.project!.id) : modal.expense ? () => deleteExpense(modal.expense!.id) : modal.income ? () => deleteIncome(modal.income!.id) : undefined}
                         onClose={() => setModal(null)}
+                    />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {accountModal && (
+                    <MAccount
+                        config={data.config}
+                        account={accountModal.account}
+                        nextOrder={data.accounts.length}
+                        onSave={saveAccount}
+                        onDelete={accountModal.account ? () => deleteAccount(accountModal.account!.id) : undefined}
+                        onClose={() => setAccountModal(null)}
                     />
                 )}
             </AnimatePresence>

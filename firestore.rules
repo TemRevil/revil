@@ -197,6 +197,8 @@ service cloud.firestore {
     // Treasury — private finances, split into documents:
     //   Treasury/projects   the projects I handle (with prices/earnings)
     //   Treasury/spendings  expenses
+    //   Treasury/income     payments received
+    //   Treasury/accounts   where money lives (bank/cash/wallet balances)
     //   Treasury/settings   currency + FX config
     // Admin read+write ONLY; never public. The homepage's sanitized list lives
     // separately in the public Settings/HandledProjects doc.
