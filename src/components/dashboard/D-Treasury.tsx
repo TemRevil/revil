@@ -655,6 +655,7 @@ const DTreasury = () => {
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-primary truncate">{e.label}</span>
                         {e.recurring && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">monthly</span>}
+                        {e.clientPaid && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500">client-paid</span>}
                     </div>
                     <span className="text-xs text-sec truncate block">{e.category ? `${e.category} · ` : ''}{eproj ? `${eproj.name} · ` : ''}{e.date}{eacct ? ` · ← ${eacct.name}` : ''}</span>
                 </div>
@@ -666,7 +667,12 @@ const DTreasury = () => {
     };
 
     // Net of a day's rows in the display currency, + a friendly header label.
-    const dayNet = (rows: typeof moneyRows) => rows.reduce((s, r) => s + (r.t === 'income' ? 1 : -1) * convert(r.raw.amount || 0, r.raw.currency, cur, data.config.rates), 0);
+    const dayNet = (rows: typeof moneyRows) => rows.reduce((s, r) => {
+        const amt = convert(r.raw.amount || 0, r.raw.currency, cur, data.config.rates);
+        if (r.t === 'income') return s + amt;
+        if (r.raw.clientPaid) return s; // client-paid: not my money
+        return s - amt;
+    }, 0);
     const fmtDayHeader = (day: string) => {
         if (day === '-') return 'Undated';
         const d = new Date(`${day}T00:00:00`);

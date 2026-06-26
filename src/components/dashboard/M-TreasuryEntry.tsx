@@ -64,6 +64,9 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
     const [category, setCategory] = useState(expense?.category ?? '');
     const [expDate, setExpDate] = useState(expense?.date ?? today());
     const [recurring, setRecurring] = useState(expense?.recurring ?? false);
+    // Who covered this expense: me (deducted from my money/account) or the client
+    // (recorded only, never pulled from my balance).
+    const [expClientPaid, setExpClientPaid] = useState(expense?.clientPaid ?? false);
     const [expProjectName, setExpProjectName] = useState(() => expense?.projectId ? (projects?.find(p => p.id === expense.projectId)?.name ?? NO_PROJECT) : NO_PROJECT);
     const [expAccountName, setExpAccountName] = useState(() => expense?.accountId ? (accounts?.find(a => a.id === expense.accountId)?.name ?? NO_ACCOUNT) : NO_ACCOUNT);
 
@@ -230,7 +233,9 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                 date: expDate || today(),
                 recurring,
                 projectId: expProjectName === NO_PROJECT ? undefined : projects?.find(p => p.name === expProjectName)?.id,
-                accountId: expAccountName === NO_ACCOUNT ? undefined : accounts?.find(a => a.name === expAccountName)?.id,
+                // Client-paid expenses don't come out of any of my accounts.
+                accountId: (expClientPaid || expAccountName === NO_ACCOUNT) ? undefined : accounts?.find(a => a.name === expAccountName)?.id,
+                clientPaid: expClientPaid || undefined,
                 attachments: attachments.length ? attachments : undefined,
                 notes: notes.trim() || undefined,
                 createdAt: expense?.createdAt ?? Date.now(),
@@ -475,7 +480,22 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                 <label className={labelCls}>For project (optional)</label>
                                 <ScrollMenu value={expProjectName} options={expProjectOpts} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
                             </div>
-                            {(accounts?.length ?? 0) > 0 && (
+                            <div>
+                                <label className={labelCls}>Who paid this?</label>
+                                <div className={`flex rounded-xl border ${fieldBg} p-1 gap-1`}>
+                                    {([['me', 'I paid it'], ['client', 'Client paid it']] as const).map(([val, lbl]) => {
+                                        const on = (val === 'client') === expClientPaid;
+                                        return (
+                                            <button key={val} type="button" onClick={() => setExpClientPaid(val === 'client')}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${on ? 'bg-blue-500 text-white shadow' : 'text-sec hover:text-primary'}`}>
+                                                {lbl}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {expClientPaid && <p className="text-[11px] text-sec mt-1.5">Recorded for reference only — not counted as your spending or pulled from any account.</p>}
+                            </div>
+                            {!expClientPaid && (accounts?.length ?? 0) > 0 && (
                                 <div>
                                     <label className={labelCls}>Paid from account</label>
                                     <ScrollMenu value={expAccountName} options={expAccountOpts} onChange={setExpAccountName} isDark={isDark} placeholder="Which account?" />

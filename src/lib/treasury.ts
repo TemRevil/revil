@@ -70,6 +70,7 @@ export interface TreasuryExpense {
     recurring?: boolean;          // a monthly fee
     projectId?: string;           // optional: a fee tied to a specific project
     accountId?: string;           // optional: the account it was paid FROM
+    clientPaid?: boolean;         // the client/customer covered it - recorded only, not my spending, never pulled from an account
     attachments?: string[];       // optional: receipt/proof image download URLs
     notes?: string;
     createdAt: number;
@@ -211,7 +212,8 @@ export function computeTotals(data: TreasuryData): TreasuryTotals {
     for (const p of data.projects) earned += convert(p.monthly ? (p.paidAmount || 0) : Math.min(p.paidAmount || 0, p.priceAmount || p.paidAmount || 0), p.priceCurrency, cur, rates);
     for (const i of (data.income || [])) earned += convert(i.amount || 0, i.currency, cur, rates);
 
-    for (const e of data.expenses) spent += convert(e.amount || 0, e.currency, cur, rates);
+    // Client-paid expenses are recorded for reference only - they're not my money.
+    for (const e of data.expenses) { if (e.clientPaid) continue; spent += convert(e.amount || 0, e.currency, cur, rates); }
     return { earned, outstanding, contracted, spent, net: earned - spent, currency: cur };
 }
 
@@ -446,7 +448,7 @@ export function projectNextPaymentDate(p: TreasuryProject, income: TreasuryIncom
 export function accountBalance(acc: TreasuryAccount, income: TreasuryIncome[], expenses: TreasuryExpense[], rates: Rates): number {
     let bal = acc.openingBalance || 0;
     for (const i of income || []) if (i.accountId === acc.id) bal += convert(i.amount || 0, i.currency, acc.currency, rates);
-    for (const e of expenses || []) if (e.accountId === acc.id) bal -= convert(e.amount || 0, e.currency, acc.currency, rates);
+    for (const e of expenses || []) if (e.accountId === acc.id && !e.clientPaid) bal -= convert(e.amount || 0, e.currency, acc.currency, rates);
     return bal;
 }
 
@@ -510,6 +512,7 @@ export function monthlySeries(data: TreasuryData, count = 6): MonthPoint[] {
         if (point) point.earned += convert(Math.min(p.paidAmount, p.priceAmount || p.paidAmount), p.priceCurrency, cur, rates);
     }
     for (const e of data.expenses) {
+        if (e.clientPaid) continue;
         const point = index.get(monthKey(e.date || e.createdAt));
         if (point) point.spent += convert(e.amount || 0, e.currency, cur, rates);
     }
@@ -546,6 +549,7 @@ export function buildDailySeries(data: TreasuryData): DaySeriesPoint[] {
         if (day) earned[day] = (earned[day] || 0) + convert(i.amount || 0, i.currency, cur, rates);
     }
     for (const e of data.expenses) {
+        if (e.clientPaid) continue;
         const day = toDay(e.date, e.createdAt);
         if (day) spent[day] = (spent[day] || 0) + convert(e.amount || 0, e.currency, cur, rates);
     }
@@ -637,7 +641,7 @@ export function buildInsights(data: TreasuryData): Insight[] {
     }
 
     // Recurring expense burn
-    const recurring = data.expenses.filter(e => e.recurring);
+    const recurring = data.expenses.filter(e => e.recurring && !e.clientPaid);
     if (recurring.length) {
         const monthly = recurring.reduce((s, e) => s + convert(e.amount, e.currency, cur, data.config.rates), 0);
         out.push({ tone: 'info', icon: 'recurring', label: 'Recurring', text: `Recurring expenses total ${formatMoney(monthly, cur)}/mo across ${recurring.length} item${recurring.length === 1 ? '' : 's'}.` });
@@ -715,7 +719,7 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
         .map(e => `
         <tr>
-          <td><b>${esc(e.label)}</b>${e.recurring ? ' <span class="pill recurring">recurring</span>' : ''}${e.projectId ? `<div class="sub">${esc(projById.get(e.projectId) || '')}</div>` : ''}</td>
+          <td><b>${esc(e.label)}</b>${e.recurring ? ' <span class="pill recurring">recurring</span>' : ''}${e.clientPaid ? ' <span class="pill recurring">client-paid</span>' : ''}${e.projectId ? `<div class="sub">${esc(projById.get(e.projectId) || '')}</div>` : ''}</td>
           <td>${esc(e.category || '-')}</td>
           <td>${esc(e.accountId ? (accById.get(e.accountId) || '-') : '-')}</td>
           <td>${formatMoney(e.amount, e.currency)}</td>
