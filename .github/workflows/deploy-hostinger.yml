@@ -81,76 +81,76 @@ jobs:
         run: tar -czf release.tgz -C deploy_bundle .
 
       # SSH/SCP to Hostinger occasionally fails with a transient "dial tcp: i/o
-      # timeout". wretry re-runs the wrapped action up to 3 times, 15s apart, so
-      # a blip self-heals — bounded, never an endless retry loop.
+      # timeout". We drive ssh/scp directly (sshpass) and wrap each in
+      # nick-fields/retry: up to 3 attempts, 15s apart — bounded, not endless.
+      # DEPLOY_ROOT/RELEASE_SHA are expanded locally then set for the remote shell.
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
       - name: Prepare remote deploy directories
-        uses: Wandalen/wretry.action@v3.8.0
+        uses: nick-fields/retry@v3.0.2
         env:
-          RELEASE_SHA: ${{ github.sha }}
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+          SSH_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
         with:
-          action: appleboy/ssh-action@v1
-          attempt_limit: 3
-          attempt_delay: 15000
-          with: |
-            host: ${{ secrets.HOSTINGER_SSH_HOST }}
-            username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
-            password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
-            port: ${{ secrets.HOSTINGER_SSH_PORT }}
-            timeout: 90s
-            envs: DEPLOY_ROOT,RELEASE_SHA
-            script: |
-              set -eu
-              mkdir -p "$DEPLOY_ROOT/.codex-deploy/incoming"
-              mkdir -p "$DEPLOY_ROOT/.codex-deploy/releases"
-              mkdir -p "$DEPLOY_ROOT/.codex-deploy/backups"
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: |
+            sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "DEPLOY_ROOT='$DEPLOY_ROOT' bash -s" <<'REMOTE'
+            set -eu
+            mkdir -p "$DEPLOY_ROOT/.codex-deploy/incoming"
+            mkdir -p "$DEPLOY_ROOT/.codex-deploy/releases"
+            mkdir -p "$DEPLOY_ROOT/.codex-deploy/backups"
+            REMOTE
 
       - name: Upload release archive
-        uses: Wandalen/wretry.action@v3.8.0
+        uses: nick-fields/retry@v3.0.2
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+          SSH_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
         with:
-          action: appleboy/scp-action@v1
-          attempt_limit: 3
-          attempt_delay: 15000
-          with: |
-            host: ${{ secrets.HOSTINGER_SSH_HOST }}
-            username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
-            password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
-            port: ${{ secrets.HOSTINGER_SSH_PORT }}
-            timeout: 90s
-            source: release.tgz
-            target: ${{ env.DEPLOY_ROOT }}/.codex-deploy/incoming
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: |
+            sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -P "$SSH_PORT" release.tgz "$SSH_USER@$SSH_HOST:$DEPLOY_ROOT/.codex-deploy/incoming/release.tgz"
 
       - name: Activate release on Hostinger
-        uses: Wandalen/wretry.action@v3.8.0
+        uses: nick-fields/retry@v3.0.2
         env:
+          SSHPASS: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+          SSH_HOST: ${{ secrets.HOSTINGER_SSH_HOST }}
+          SSH_USER: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+          SSH_PORT: ${{ secrets.HOSTINGER_SSH_PORT }}
           RELEASE_SHA: ${{ github.sha }}
         with:
-          action: appleboy/ssh-action@v1
-          attempt_limit: 3
-          attempt_delay: 15000
-          with: |
-            host: ${{ secrets.HOSTINGER_SSH_HOST }}
-            username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
-            password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
-            port: ${{ secrets.HOSTINGER_SSH_PORT }}
-            timeout: 90s
-            envs: DEPLOY_ROOT,RELEASE_SHA
-            script: |
-              set -eu
-              CURRENT_DIR="$DEPLOY_ROOT/public_html"
-              INCOMING_ARCHIVE="$DEPLOY_ROOT/.codex-deploy/incoming/release.tgz"
-              STAGE_DIR="$DEPLOY_ROOT/.codex-deploy/releases/$RELEASE_SHA"
-              BACKUP_DIR="$DEPLOY_ROOT/.codex-deploy/backups/$(date +%Y%m%d%H%M%S)"
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: |
+            sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "DEPLOY_ROOT='$DEPLOY_ROOT' RELEASE_SHA='$RELEASE_SHA' bash -s" <<'REMOTE'
+            set -eu
+            CURRENT_DIR="$DEPLOY_ROOT/public_html"
+            INCOMING_ARCHIVE="$DEPLOY_ROOT/.codex-deploy/incoming/release.tgz"
+            STAGE_DIR="$DEPLOY_ROOT/.codex-deploy/releases/$RELEASE_SHA"
+            BACKUP_DIR="$DEPLOY_ROOT/.codex-deploy/backups/$(date +%Y%m%d%H%M%S)"
 
-              rm -rf "$STAGE_DIR"
-              mkdir -p "$STAGE_DIR"
-              tar -xzf "$INCOMING_ARCHIVE" -C "$STAGE_DIR"
+            rm -rf "$STAGE_DIR"
+            mkdir -p "$STAGE_DIR"
+            tar -xzf "$INCOMING_ARCHIVE" -C "$STAGE_DIR"
 
-              if [ -d "$CURRENT_DIR/.well-known" ]; then
-                mkdir -p "$STAGE_DIR/.well-known"
-                cp -a "$CURRENT_DIR/.well-known/." "$STAGE_DIR/.well-known/"
-              fi
+            if [ -d "$CURRENT_DIR/.well-known" ]; then
+              mkdir -p "$STAGE_DIR/.well-known"
+              cp -a "$CURRENT_DIR/.well-known/." "$STAGE_DIR/.well-known/"
+            fi
 
-              mkdir -p "$BACKUP_DIR"
-              mv "$CURRENT_DIR" "$BACKUP_DIR/public_html"
-              mv "$STAGE_DIR" "$CURRENT_DIR"
-              rm -f "$INCOMING_ARCHIVE"
+            mkdir -p "$BACKUP_DIR"
+            mv "$CURRENT_DIR" "$BACKUP_DIR/public_html"
+            mv "$STAGE_DIR" "$CURRENT_DIR"
+            rm -f "$INCOMING_ARCHIVE"
+            REMOTE
