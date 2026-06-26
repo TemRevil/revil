@@ -80,62 +80,77 @@ jobs:
       - name: Create release archive
         run: tar -czf release.tgz -C deploy_bundle .
 
+      # SSH/SCP to Hostinger occasionally fails with a transient "dial tcp: i/o
+      # timeout". wretry re-runs the wrapped action up to 3 times, 15s apart, so
+      # a blip self-heals — bounded, never an endless retry loop.
       - name: Prepare remote deploy directories
-        uses: appleboy/ssh-action@v1
+        uses: Wandalen/wretry.action@v3.8.0
         env:
           RELEASE_SHA: ${{ github.sha }}
         with:
-          host: ${{ secrets.HOSTINGER_SSH_HOST }}
-          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
-          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
-          port: ${{ secrets.HOSTINGER_SSH_PORT }}
-          timeout: 90s
-          envs: DEPLOY_ROOT,RELEASE_SHA
-          script: |
-            set -eu
-            mkdir -p "$DEPLOY_ROOT/.codex-deploy/incoming"
-            mkdir -p "$DEPLOY_ROOT/.codex-deploy/releases"
-            mkdir -p "$DEPLOY_ROOT/.codex-deploy/backups"
+          action: appleboy/ssh-action@v1
+          attempt_limit: 3
+          attempt_delay: 15000
+          with: |
+            host: ${{ secrets.HOSTINGER_SSH_HOST }}
+            username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+            password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+            port: ${{ secrets.HOSTINGER_SSH_PORT }}
+            timeout: 90s
+            envs: DEPLOY_ROOT,RELEASE_SHA
+            script: |
+              set -eu
+              mkdir -p "$DEPLOY_ROOT/.codex-deploy/incoming"
+              mkdir -p "$DEPLOY_ROOT/.codex-deploy/releases"
+              mkdir -p "$DEPLOY_ROOT/.codex-deploy/backups"
 
       - name: Upload release archive
-        uses: appleboy/scp-action@v1
+        uses: Wandalen/wretry.action@v3.8.0
         with:
-          host: ${{ secrets.HOSTINGER_SSH_HOST }}
-          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
-          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
-          port: ${{ secrets.HOSTINGER_SSH_PORT }}
-          timeout: 90s
-          source: release.tgz
-          target: ${{ env.DEPLOY_ROOT }}/.codex-deploy/incoming
+          action: appleboy/scp-action@v1
+          attempt_limit: 3
+          attempt_delay: 15000
+          with: |
+            host: ${{ secrets.HOSTINGER_SSH_HOST }}
+            username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+            password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+            port: ${{ secrets.HOSTINGER_SSH_PORT }}
+            timeout: 90s
+            source: release.tgz
+            target: ${{ env.DEPLOY_ROOT }}/.codex-deploy/incoming
 
       - name: Activate release on Hostinger
-        uses: appleboy/ssh-action@v1
+        uses: Wandalen/wretry.action@v3.8.0
         env:
           RELEASE_SHA: ${{ github.sha }}
         with:
-          host: ${{ secrets.HOSTINGER_SSH_HOST }}
-          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
-          password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
-          port: ${{ secrets.HOSTINGER_SSH_PORT }}
-          timeout: 90s
-          envs: DEPLOY_ROOT,RELEASE_SHA
-          script: |
-            set -eu
-            CURRENT_DIR="$DEPLOY_ROOT/public_html"
-            INCOMING_ARCHIVE="$DEPLOY_ROOT/.codex-deploy/incoming/release.tgz"
-            STAGE_DIR="$DEPLOY_ROOT/.codex-deploy/releases/$RELEASE_SHA"
-            BACKUP_DIR="$DEPLOY_ROOT/.codex-deploy/backups/$(date +%Y%m%d%H%M%S)"
+          action: appleboy/ssh-action@v1
+          attempt_limit: 3
+          attempt_delay: 15000
+          with: |
+            host: ${{ secrets.HOSTINGER_SSH_HOST }}
+            username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+            password: ${{ secrets.HOSTINGER_SSH_PASSWORD }}
+            port: ${{ secrets.HOSTINGER_SSH_PORT }}
+            timeout: 90s
+            envs: DEPLOY_ROOT,RELEASE_SHA
+            script: |
+              set -eu
+              CURRENT_DIR="$DEPLOY_ROOT/public_html"
+              INCOMING_ARCHIVE="$DEPLOY_ROOT/.codex-deploy/incoming/release.tgz"
+              STAGE_DIR="$DEPLOY_ROOT/.codex-deploy/releases/$RELEASE_SHA"
+              BACKUP_DIR="$DEPLOY_ROOT/.codex-deploy/backups/$(date +%Y%m%d%H%M%S)"
 
-            rm -rf "$STAGE_DIR"
-            mkdir -p "$STAGE_DIR"
-            tar -xzf "$INCOMING_ARCHIVE" -C "$STAGE_DIR"
+              rm -rf "$STAGE_DIR"
+              mkdir -p "$STAGE_DIR"
+              tar -xzf "$INCOMING_ARCHIVE" -C "$STAGE_DIR"
 
-            if [ -d "$CURRENT_DIR/.well-known" ]; then
-              mkdir -p "$STAGE_DIR/.well-known"
-              cp -a "$CURRENT_DIR/.well-known/." "$STAGE_DIR/.well-known/"
-            fi
+              if [ -d "$CURRENT_DIR/.well-known" ]; then
+                mkdir -p "$STAGE_DIR/.well-known"
+                cp -a "$CURRENT_DIR/.well-known/." "$STAGE_DIR/.well-known/"
+              fi
 
-            mkdir -p "$BACKUP_DIR"
-            mv "$CURRENT_DIR" "$BACKUP_DIR/public_html"
-            mv "$STAGE_DIR" "$CURRENT_DIR"
-            rm -f "$INCOMING_ARCHIVE"
+              mkdir -p "$BACKUP_DIR"
+              mv "$CURRENT_DIR" "$BACKUP_DIR/public_html"
+              mv "$STAGE_DIR" "$CURRENT_DIR"
+              rm -f "$INCOMING_ARCHIVE"
