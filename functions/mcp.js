@@ -155,7 +155,7 @@ function projectPaymentStatus(p, income, rates) {
 function accountBalance(acc, income, expenses, rates) {
   let bal = acc.openingBalance || 0;
   for (const i of income) if (i.accountId === acc.id) bal += convert(i.amount || 0, i.currency, acc.currency, rates);
-  for (const e of expenses) if (e.accountId === acc.id) bal -= convert(e.amount || 0, e.currency, acc.currency, rates);
+  for (const e of expenses) if (e.accountId === acc.id && !e.clientPaid) bal -= convert(e.amount || 0, e.currency, acc.currency, rates);
   return bal;
 }
 
@@ -197,6 +197,7 @@ function buildInstructions(t, cfg) {
     "- Ground answers in the read tools (list_*, treasury_overview, get_current_time) before stating facts or acting.",
     "- Money: amounts are in the stated currency; valid currencies are USD, EGP, EUR. Don't convert silently — the treasury has its own display currency and FX rates.",
     "- Accounts: income lands INTO an account and expenses are paid FROM one. Use list_accounts and pass the right accountId; never invent an id.",
+    "- Client-paid expenses: if the client/customer covered a cost, set clientPaid=true on the expense - it's recorded for reference but not counted as spending or deducted from any account.",
     "- Monthly retainers: when logging a payment that is the month's retainer payment, set monthlyPayment=true so the project's next-due date advances (early or late doesn't matter).",
     cfg.writesEnabled
       ? "- Writes are ENABLED. Before any create/update/delete, briefly state exactly what will change and get the owner's go-ahead. Be extra careful with delete_* (irreversible)."
@@ -599,6 +600,7 @@ function registerTools(server, cfg, time) {
         recurring: z.boolean().optional(),
         projectId: z.string().optional().describe("link to a treasury project id"),
         accountId: z.string().optional().describe("account it was paid FROM (see list_accounts)"),
+        clientPaid: z.boolean().optional().describe("the client/customer paid it - recorded only, not counted as spending or pulled from an account"),
       },
       annotations: { destructiveHint: false },
     },
@@ -608,7 +610,8 @@ function registerTools(server, cfg, time) {
         label: a.label, amount: a.amount, currency: a.currency, recurring: !!a.recurring,
         ...(a.category ? { category: a.category } : {}),
         ...(a.projectId ? { projectId: a.projectId } : {}),
-        ...(a.accountId ? { accountId: a.accountId } : {}),
+        ...(a.accountId && !a.clientPaid ? { accountId: a.accountId } : {}),
+        ...(a.clientPaid ? { clientPaid: true } : {}),
         date: a.date || new Date().toISOString().slice(0, 10), createdAt: now(),
       };
       await db().doc("Treasury/spendings").set({ entries: { [id]: entry }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
@@ -629,6 +632,7 @@ function registerTools(server, cfg, time) {
         recurring: z.boolean().optional(),
         projectId: z.string().optional(),
         accountId: z.string().optional().describe("account it was paid FROM (see list_accounts)"),
+        clientPaid: z.boolean().optional().describe("the client/customer paid it - recorded only, not counted as spending or pulled from an account"),
       },
       annotations: { destructiveHint: false },
     },
@@ -637,7 +641,7 @@ function registerTools(server, cfg, time) {
       const existing = snap.exists ? (snap.data().entries || {})[a.id] : null;
       if (!existing) return fail(`No expense with id ${a.id}. Use treasury_overview to find the right id.`);
       const patch = {};
-      for (const k of ["label", "amount", "currency", "category", "date", "recurring", "projectId", "accountId"]) {
+      for (const k of ["label", "amount", "currency", "category", "date", "recurring", "projectId", "accountId", "clientPaid"]) {
         if (a[k] !== undefined) patch[k] = a[k];
       }
       if (!Object.keys(patch).length) return fail("Nothing to update — pass at least one field to change.");
