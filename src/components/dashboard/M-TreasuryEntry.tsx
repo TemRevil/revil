@@ -23,6 +23,10 @@ interface Props {
     project?: TreasuryProject | null;
     expense?: TreasuryExpense | null;
     income?: TreasuryIncome | null;
+    // Opened from a project's ledger (not the global money tab). Drives whether the
+    // "Who paid this?" (client-paid) choice is offered — it only makes sense for
+    // project expenses, never for general/personal spending logged from money.
+    fromProject?: boolean;
     projects?: TreasuryProject[];        // full projects, filtered per money kind
     accounts?: TreasuryAccount[];        // accounts money flows in/out of
     expenseList?: TreasuryExpense[];     // history → repeat-templates
@@ -40,7 +44,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const NO_PROJECT = '- No project -';
 const NO_ACCOUNT = '- No account -';
 
-const MTreasuryEntry = ({ mode, config, project, expense, income, projects, accounts, expenseList, incomeList, rates, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
+const MTreasuryEntry = ({ mode, config, project, expense, income, fromProject, projects, accounts, expenseList, incomeList, rates, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
     const [isDark, setIsDark] = useState(false);
     // "Money" = income or expense in ONE modal; the toggle picks which.
     const isMoney = mode !== 'project';
@@ -484,21 +488,26 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                 <label className={labelCls}>For project (optional)</label>
                                 <ScrollMenu value={expProjectName} options={expProjectOpts} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
                             </div>
-                            <div>
-                                <label className={labelCls}>Who paid this?</label>
-                                <div className={`flex rounded-xl border ${fieldBg} p-1 gap-1`}>
-                                    {([['me', 'I paid it'], ['client', 'Client paid it']] as const).map(([val, lbl]) => {
-                                        const on = (val === 'client') === expClientPaid;
-                                        return (
-                                            <button key={val} type="button" onClick={() => setExpClientPaid(val === 'client')}
-                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${on ? 'bg-blue-500 text-white shadow' : 'text-sec hover:text-primary'}`}>
-                                                {lbl}
-                                            </button>
-                                        );
-                                    })}
+                            {/* "Who paid this?" only applies to project expenses (the client may
+                                have covered the cost). General spending from the money tab is
+                                always yours, so the choice is hidden there. */}
+                            {fromProject && (
+                                <div>
+                                    <label className={labelCls}>Who paid this?</label>
+                                    <div className={`flex rounded-xl border ${fieldBg} p-1 gap-1`}>
+                                        {([['me', 'I paid it'], ['client', 'Client paid it']] as const).map(([val, lbl]) => {
+                                            const on = (val === 'client') === expClientPaid;
+                                            return (
+                                                <button key={val} type="button" onClick={() => setExpClientPaid(val === 'client')}
+                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${on ? 'bg-blue-500 text-white shadow' : 'text-sec hover:text-primary'}`}>
+                                                    {lbl}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {expClientPaid && <p className="text-[11px] text-sec mt-1.5">Recorded for reference only — not counted as your spending or pulled from any account.</p>}
                                 </div>
-                                {expClientPaid && <p className="text-[11px] text-sec mt-1.5">Recorded for reference only — not counted as your spending or pulled from any account.</p>}
-                            </div>
+                            )}
                             {!expClientPaid && (accounts?.length ?? 0) > 0 && (
                                 <div>
                                     <label className={labelCls}>Paid from account</label>
