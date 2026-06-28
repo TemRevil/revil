@@ -137,9 +137,16 @@ function linkedIncome(projectId, income, toCurrency, rates) {
     .reduce((s, i) => s + convert(i.amount || 0, i.currency, toCurrency, rates), 0);
 }
 
-/** Total received by a project = legacy paidAmount + every linked income. */
+/**
+ * Total received by a project = legacy paidAmount + linked income. For a monthly
+ * retainer this counts ONLY the month's payments (monthlyPayment); one-off/goodwill
+ * income linked to it stays out of the retainer tally (but is still real earned money).
+ */
 function projectReceived(p, income, rates) {
-  return (p.paidAmount || 0) + linkedIncome(p.id, income, p.priceCurrency, rates);
+  const sum = income
+    .filter((i) => i.projectId === p.id && (!p.monthly || i.monthlyPayment))
+    .reduce((s, i) => s + convert(i.amount || 0, i.currency, p.priceCurrency, rates), 0);
+  return (p.paidAmount || 0) + sum;
 }
 
 /** Derived payment status (the app never stores this — it computes it live). */
