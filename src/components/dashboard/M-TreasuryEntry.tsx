@@ -82,7 +82,11 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
     // When the linked project is a monthly retainer, ask whether this payment IS
     // its monthly payment (it may arrive early or late). Defaults to yes - the
     // common case - but the admin can mark it as a one-off extra instead.
-    const [incIsMonthly, setIncIsMonthly] = useState(income?.monthlyPayment ?? true);
+    // New income on a monthly project defaults to "yes" (the common case). When
+    // EDITING an existing entry, reflect exactly what was saved — otherwise a
+    // one-off logged as "No" (monthlyPayment undefined) re-opens as "Yes" and
+    // silently flips to a monthly payment on the next save.
+    const [incIsMonthly, setIncIsMonthly] = useState(income ? !!income.monthlyPayment : true);
 
     // Shared notes
     const [notes, setNotes] = useState((mode === 'project' ? project?.notes : mode === 'expense' ? expense?.notes : income?.note) ?? '');
