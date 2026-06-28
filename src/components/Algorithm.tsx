@@ -127,22 +127,14 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         try {
             const today = new Date().toISOString().split('T')[0];
             const dailyRef = doc(db, 'Settings', 'Views', 'Analysis', 'Daily');
-            const mainRef = doc(db, 'Settings', 'Views', 'Analysis', 'Main');
 
-            // Map the field to the corresponding Main document field
-            const mainField = field === 'projectViews' ? 'Total Project Views' : 'Total Social Clicks';
-
-            // Update Daily (lastWrite satisfies rate-limit rule)
+            // Update Daily (lastWrite satisfies rate-limit rule). The per-day series
+            // is the single source of truth; lifetime/today totals are derived from it
+            // on read, so there is no separate Main aggregate doc to keep in sync.
             await setDoc(dailyRef, {
                 [today]: {
                     [field]: increment(1)
                 },
-                lastWrite: serverTimestamp()
-            }, { merge: true });
-
-            // Update Main
-            await setDoc(mainRef, {
-                [mainField]: increment(1),
                 lastWrite: serverTimestamp()
             }, { merge: true });
 
@@ -215,17 +207,14 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
             hasTrackedVisit.current = true;
 
             try {
-                const mainRef = doc(db, 'Settings', 'Views', 'Analysis', 'Main');
                 const dailyRef = doc(db, 'Settings', 'Views', 'Analysis', 'Daily');
                 const today = new Date().toISOString().split('T')[0];
 
                 const hasVisitedToday = localStorage.getItem(`revil_visitor_today_${today}`);
 
-                // Only the per-day denormalized fields need today's running totals, so
-                // read just the Daily doc (not Main). Main's lifetime "Total Reach" uses
-                // increment() - no read - and merge:true leaves the project/social totals
-                // we don't write untouched, so the second Firestore read AND the
-                // read-modify-write race on "Total Reach" are both eliminated.
+                // Read today's running totals from the Daily doc (the single source of
+                // truth). Lifetime/today aggregates are derived from this series on the
+                // dashboard, so there is no separate Main doc to update here.
                 const dailySnap = await getDoc(dailyRef);
                 const dailyData = dailySnap.exists() ? dailySnap.data() : {};
 
@@ -238,14 +227,6 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
                     newUniqueToday += 1;
                     localStorage.setItem(`revil_visitor_today_${today}`, 'true');
                 }
-
-                // Update Main document (lastWrite satisfies rate-limit rule)
-                await setDoc(mainRef, {
-                    "Total Reach": increment(1),
-                    "Today's Viewers": newTodayTotal,
-                    "Reach (Per Device)": newUniqueToday,
-                    lastWrite: serverTimestamp()
-                }, { merge: true });
 
                 // Update Daily map in Daily document
                 await setDoc(dailyRef, {
