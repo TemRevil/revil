@@ -276,6 +276,8 @@ const DTreasury = () => {
     const [chartFilter, setChartFilter] = useState<ChartFilter>('daily');
     const [moneyView, setMoneyView] = useState<'all' | 'day'>('all');
     const [moneyType, setMoneyType] = useState<'all' | 'income' | 'expense'>('all');
+    // Account filter: 'all' = every account, 'none' = entries with no account, or an account id.
+    const [moneyAccount, setMoneyAccount] = useState<string>('all');
     const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
     const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null; fromProject?: boolean } | null>(null);
     const [accountModal, setAccountModal] = useState<{ account: TreasuryAccount | null } | null>(null);
@@ -582,8 +584,12 @@ const DTreasury = () => {
         ...data.expenses.map(e => ({ t: 'expense' as const, date: e.date, raw: e })),
     ].sort((a, b) => (b.date || '').localeCompare(a.date || '')), [data.income, data.expenses]);
 
-    // Apply the income/expense type filter (the "All / Income / Expense" toggle).
-    const visibleRows = useMemo(() => moneyType === 'all' ? moneyRows : moneyRows.filter(r => r.t === moneyType), [moneyRows, moneyType]);
+    // Apply the income/expense type filter and the account filter together.
+    const visibleRows = useMemo(() => {
+        let rows = moneyType === 'all' ? moneyRows : moneyRows.filter(r => r.t === moneyType);
+        if (moneyAccount !== 'all') rows = rows.filter(r => (r.raw.accountId || 'none') === moneyAccount);
+        return rows;
+    }, [moneyRows, moneyType, moneyAccount]);
 
     // Same rows grouped by day (newest day first) for the "By day" view.
     const moneyByDay = useMemo(() => {
@@ -1026,6 +1032,17 @@ const DTreasury = () => {
                                                 searchable={false}
                                             />
                                         </div>
+                                        {data.accounts.length > 0 && (
+                                            <div className="w-[152px]">
+                                                <ScrollMenu
+                                                    value={moneyAccount === 'all' ? 'All accounts' : moneyAccount === 'none' ? 'No account' : (data.accounts.find(a => a.id === moneyAccount)?.name ?? 'All accounts')}
+                                                    options={['All accounts', ...data.accounts.map(a => a.name), 'No account']}
+                                                    onChange={(v) => setMoneyAccount(v === 'All accounts' ? 'all' : v === 'No account' ? 'none' : (data.accounts.find(a => a.name === v)?.id ?? 'all'))}
+                                                    isDark={isDark}
+                                                    searchable={data.accounts.length > 6}
+                                                />
+                                            </div>
+                                        )}
                                         <button onClick={() => setModal({ mode: 'income', income: null })} className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add money</button>
                                     </div>
                                 )}
@@ -1043,7 +1060,7 @@ const DTreasury = () => {
                                 {moneyRows.length === 0 ? (
                                     <div className="glass-surface p-6 text-center text-sec text-sm">Nothing yet. Click "+ Add money" to log income or an expense.</div>
                                 ) : !selectedDay && visibleRows.length === 0 ? (
-                                    <div className="glass-surface p-6 text-center text-sec text-sm">No {moneyType} entries yet.</div>
+                                    <div className="glass-surface p-6 text-center text-sec text-sm">No entries match these filters.</div>
                                 ) : selectedDay ? (
                                     <div className="glass-surface overflow-hidden">
                                         <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
