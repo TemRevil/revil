@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, serverTimestamp, deleteField } from 'firebase/firestore';
 import { Reorder, motion, AnimatePresence } from 'motion/react';
 import anime from 'animejs';
 import {
@@ -458,10 +458,27 @@ const DTreasury = () => {
             .catch(err => { console.warn('[Treasury] accounts save failed', err); showToast('Save failed - check connection', 'warn'); });
     }, [showToast]);
 
+    // Add/edit a single account. Persist ONLY that account's entry (merge) instead
+    // of rewriting the whole doc, so saving one account never clobbers concurrent
+    // changes to another (e.g. an opening-balance edit made via the MCP). Cleared
+    // optional fields are explicitly removed so merge doesn't keep stale values.
     const saveAccount = (a: TreasuryAccount) => {
-        const exists = data.accounts.some(x => x.id === a.id);
-        writeAccounts(exists ? data.accounts.map(x => x.id === a.id ? a : x) : [...data.accounts, a]);
+        setData(prev => ({
+            ...prev,
+            accounts: prev.accounts.some(x => x.id === a.id)
+                ? prev.accounts.map(x => x.id === a.id ? a : x)
+                : [...prev.accounts, a],
+        }));
+        const { id, ...rest } = a;
+        const entry: Record<string, unknown> = {
+            ...rest,
+            notes: rest.notes ?? deleteField(),
+            archived: rest.archived ?? deleteField(),
+        };
+        setDoc(ACCOUNTS_DOC, { entries: { [id]: entry }, lastWrite: serverTimestamp() }, { merge: true })
+            .catch(err => { console.warn('[Treasury] account save failed', err); showToast('Save failed - check connection', 'warn'); });
     };
+    // Delete needs the full-doc rewrite (merge can't remove a map key on its own).
     const deleteAccount = (id: string) => writeAccounts(data.accounts.filter(a => a.id !== id));
 
     const markDone = (p: TreasuryProject) => {
