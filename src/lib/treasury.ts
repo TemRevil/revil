@@ -177,20 +177,23 @@ export interface TreasuryTotals {
     currency: Currency;
 }
 
-/** Sum of income entries linked to a project, in that project's own currency. */
-export function linkedIncome(projectId: string, income: TreasuryIncome[], toCurrency: Currency, rates: Rates): number {
-    return (income || [])
-        .filter(i => i.projectId === projectId)
-        .reduce((s, i) => s + convert(i.amount || 0, i.currency, toCurrency, rates), 0);
-}
-
 /**
  * How much a project has received, in its own currency: its (legacy) manual
- * paidAmount PLUS every income entry logged against it. So earnings can be
- * recorded over time, not only when the project is created.
+ * paidAmount PLUS the income logged against it. So earnings can be recorded
+ * over time, not only when the project is created.
+ *
+ * For a MONTHLY retainer, "received" means the retainer that's been paid, so it
+ * counts ONLY income flagged as the month's payment (monthlyPayment) — one-off
+ * or goodwill income linked to the project is real money (it still shows in the
+ * ledger and the global earned total) but is not part of the retainer tally.
+ * One-off projects have no such flag, so every linked payment counts.
  */
 export function projectReceived(p: TreasuryProject, income: TreasuryIncome[], rates: Rates): number {
-    return (p.paidAmount || 0) + linkedIncome(p.id, income, p.priceCurrency, rates);
+    const linked = (income || []).filter(i =>
+        i.projectId === p.id && (!p.monthly || i.monthlyPayment)
+    );
+    const sum = linked.reduce((s, i) => s + convert(i.amount || 0, i.currency, p.priceCurrency, rates), 0);
+    return (p.paidAmount || 0) + sum;
 }
 
 export function computeTotals(data: TreasuryData): TreasuryTotals {
