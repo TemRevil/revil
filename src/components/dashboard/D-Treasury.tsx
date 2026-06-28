@@ -276,7 +276,7 @@ const DTreasury = () => {
     const [chartFilter, setChartFilter] = useState<ChartFilter>('daily');
     const [moneyView, setMoneyView] = useState<'all' | 'day'>('all');
     const [moneyType, setMoneyType] = useState<'all' | 'income' | 'expense'>('all');
-    // Account filter: 'all' = every account, 'none' = entries with no account, or an account id.
+    // Account filter: 'all' = every account, or a specific account id.
     const [moneyAccount, setMoneyAccount] = useState<string>('all');
     const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
     const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null; fromProject?: boolean } | null>(null);
@@ -587,7 +587,7 @@ const DTreasury = () => {
     // Apply the income/expense type filter and the account filter together.
     const visibleRows = useMemo(() => {
         let rows = moneyType === 'all' ? moneyRows : moneyRows.filter(r => r.t === moneyType);
-        if (moneyAccount !== 'all') rows = rows.filter(r => (r.raw.accountId || 'none') === moneyAccount);
+        if (moneyAccount !== 'all') rows = rows.filter(r => r.raw.accountId === moneyAccount);
         return rows;
     }, [moneyRows, moneyType, moneyAccount]);
 
@@ -1035,9 +1035,9 @@ const DTreasury = () => {
                                         {data.accounts.length > 0 && (
                                             <div className="w-[152px]">
                                                 <ScrollMenu
-                                                    value={moneyAccount === 'all' ? 'All accounts' : moneyAccount === 'none' ? 'No account' : (data.accounts.find(a => a.id === moneyAccount)?.name ?? 'All accounts')}
-                                                    options={['All accounts', ...data.accounts.map(a => a.name), 'No account']}
-                                                    onChange={(v) => setMoneyAccount(v === 'All accounts' ? 'all' : v === 'No account' ? 'none' : (data.accounts.find(a => a.name === v)?.id ?? 'all'))}
+                                                    value={moneyAccount === 'all' ? 'All accounts' : (data.accounts.find(a => a.id === moneyAccount)?.name ?? 'All accounts')}
+                                                    options={['All accounts', ...data.accounts.map(a => a.name)]}
+                                                    onChange={(v) => setMoneyAccount(v === 'All accounts' ? 'all' : (data.accounts.find(a => a.name === v)?.id ?? 'all'))}
                                                     isDark={isDark}
                                                     searchable={data.accounts.length > 6}
                                                 />
