@@ -12,13 +12,6 @@ import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
 
-interface AnalyticsData {
-    "Total Reach"?: string | number;
-    "Reach (Per Device)"?: string | number;
-    "Today's Viewers"?: string | number;
-    [key: string]: string | number | undefined;
-}
-
 interface GeneratedLink {
     id: string;
     name: string;
@@ -273,9 +266,6 @@ const AnalyticsChart = ({ data, filter, setFilter, isDark, windowWidth }: {
     data: ChartDataPoint[];
     filter: 'daily' | 'weekly' | 'monthly';
     setFilter: (f: 'daily' | 'weekly' | 'monthly') => void;
-    mainStat: string | number;
-    subStat: string | number;
-    analytics: AnalyticsData | null;
     isDark: boolean;
     windowWidth: number;
 }) => {
@@ -839,7 +829,6 @@ const DLinks = () => {
 
     const [isLoading, setIsLoading] = useState(false);
     const [isDark, setIsDark] = useState(false);
-    const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
     const [dailyMap, setDailyMap] = useState<Record<string, number | { total: number; projectViews?: number; socialClicks?: number }> | null>(null);
 
     // Convert dailyMap to sorted numeric series (ascending by date key)
@@ -1094,15 +1083,6 @@ const DLinks = () => {
             setGeneratedLinks(linksArray);
         });
 
-        // Subscribe to Analysis/Main document
-        const analysisUnsub = onSnapshot(doc(db, 'Settings', 'Views', 'Analysis', 'Main'), (docSnap) => {
-            if (docSnap.exists()) {
-                setAnalytics(docSnap.data() as AnalyticsData);
-            } else {
-                setAnalytics(null);
-            }
-        });
-
         // Subscribe to Analysis/Daily document (map of dates -> {total, unique})
         const dailyUnsub = onSnapshot(doc(db, 'Settings', 'Views', 'Analysis', 'Daily'), (docSnap) => {
             if (docSnap.exists()) {
@@ -1132,7 +1112,6 @@ const DLinks = () => {
 
         return () => {
             linksUnsub();
-            analysisUnsub();
             dailyUnsub();
             projectsUnsub();
         };
@@ -1344,9 +1323,6 @@ const DLinks = () => {
                                 data={chartData}
                                 filter={chartFilter}
                                 setFilter={setChartFilter}
-                                mainStat={analytics?.["Total Reach"] || '0'}
-                                subStat={analytics?.["Reach (Per Device)"] || '0'}
-                                analytics={analytics}
                                 isDark={isDark}
                                 windowWidth={windowWidth}
                             />

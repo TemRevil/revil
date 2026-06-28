@@ -123,20 +123,13 @@ service cloud.firestore {
       allow create, update: if isAdmin();
 
       // Public create: allowed so setDoc(merge:true) works on first-ever write.
-      // Restricted to the two known doc IDs to prevent bots from spamming garbage docs.
+      // Restricted to the single known doc ID to prevent bots from spamming garbage
+      // docs. (The legacy 'Main' aggregate doc was removed — all lifetime/today
+      // totals are derived from the Daily series on read.)
       allow create: if
-        docId in ['Main', 'Daily']
+        docId == 'Daily'
         && request.resource.data.lastWrite == request.time
         && request.resource.size() < 64 * 1024;
-
-      // Public update on Main: strict field allowlist + rate-limit
-      allow update: if docId == 'Main' && (
-        notRateLimited(30)
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['Total Reach', "Today's Viewers", 'Reach (Per Device)',
-                        'Total Project Views', 'Total Social Clicks', 'lastWrite'])
-        && request.resource.size() < 64 * 1024
-      );
 
       // Public update on Daily: dynamic date keys (e.g. "2026-05-04") can't
       // be enumerated in an allowlist, so we enforce rate-limit + size cap only.
