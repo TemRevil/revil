@@ -23,10 +23,6 @@ interface Props {
     project?: TreasuryProject | null;
     expense?: TreasuryExpense | null;
     income?: TreasuryIncome | null;
-    // Opened from a project's ledger (not the global money tab). Drives whether the
-    // "Who paid this?" (client-paid) choice is offered — it only makes sense for
-    // project expenses, never for general/personal spending logged from money.
-    fromProject?: boolean;
     projects?: TreasuryProject[];        // full projects, filtered per money kind
     accounts?: TreasuryAccount[];        // accounts money flows in/out of
     expenseList?: TreasuryExpense[];     // history → repeat-templates
@@ -44,7 +40,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const NO_PROJECT = '- No project -';
 const NO_ACCOUNT = '- No account -';
 
-const MTreasuryEntry = ({ mode, config, project, expense, income, fromProject, projects, accounts, expenseList, incomeList, rates, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
+const MTreasuryEntry = ({ mode, config, project, expense, income, projects, accounts, expenseList, incomeList, rates, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
     const [isDark, setIsDark] = useState(false);
     // "Money" = income or expense in ONE modal; the toggle picks which.
     const isMoney = mode !== 'project';
@@ -73,6 +69,11 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, fromProject, p
     const [expClientPaid, setExpClientPaid] = useState(expense?.clientPaid ?? false);
     const [expProjectName, setExpProjectName] = useState(() => expense?.projectId ? (projects?.find(p => p.id === expense.projectId)?.name ?? NO_PROJECT) : NO_PROJECT);
     const [expAccountName, setExpAccountName] = useState(() => expense?.accountId ? (accounts?.find(a => a.id === expense.accountId)?.name ?? NO_ACCOUNT) : NO_ACCOUNT);
+    // "Who paid this?" only applies to a project's expense (the client may have
+    // covered the cost). Gate purely on whether a project is linked — shown in any
+    // section. When unlinked it's hidden and forced to "I paid" so it can't stick.
+    const expIsProjectLinked = expProjectName !== NO_PROJECT;
+    const expIsClientPaid = expIsProjectLinked && expClientPaid;
 
     // Income fields
     const [incAmount, setIncAmount] = useState(income?.amount ? String(income.amount) : '');
@@ -242,8 +243,8 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, fromProject, p
                 recurring,
                 projectId: expProjectName === NO_PROJECT ? undefined : projects?.find(p => p.name === expProjectName)?.id,
                 // Client-paid expenses don't come out of any of my accounts.
-                accountId: (expClientPaid || expAccountName === NO_ACCOUNT) ? undefined : accounts?.find(a => a.name === expAccountName)?.id,
-                clientPaid: expClientPaid || undefined,
+                accountId: (expIsClientPaid || expAccountName === NO_ACCOUNT) ? undefined : accounts?.find(a => a.name === expAccountName)?.id,
+                clientPaid: expIsClientPaid || undefined,
                 attachments: attachments.length ? attachments : undefined,
                 notes: notes.trim() || undefined,
                 createdAt: expense?.createdAt ?? Date.now(),
@@ -488,10 +489,10 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, fromProject, p
                                 <label className={labelCls}>For project (optional)</label>
                                 <ScrollMenu value={expProjectName} options={expProjectOpts} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
                             </div>
-                            {/* "Who paid this?" only applies to project expenses (the client may
-                                have covered the cost). General spending from the money tab is
-                                always yours, so the choice is hidden there. */}
-                            {fromProject && (
+                            {/* "Who paid this?" only applies to a project's expense (the client
+                                may have covered the cost). Shown whenever a project is linked —
+                                in the money tab or the project section alike. */}
+                            {expIsProjectLinked && (
                                 <div>
                                     <label className={labelCls}>Who paid this?</label>
                                     <div className={`flex rounded-xl border ${fieldBg} p-1 gap-1`}>
@@ -508,7 +509,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, fromProject, p
                                     {expClientPaid && <p className="text-[11px] text-sec mt-1.5">Recorded for reference only — not counted as your spending or pulled from any account.</p>}
                                 </div>
                             )}
-                            {!expClientPaid && (accounts?.length ?? 0) > 0 && (
+                            {!expIsClientPaid && (accounts?.length ?? 0) > 0 && (
                                 <div>
                                     <label className={labelCls}>Paid from account</label>
                                     <ScrollMenu value={expAccountName} options={expAccountOpts} onChange={setExpAccountName} isDark={isDark} placeholder="Which account?" />

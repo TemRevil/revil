@@ -279,7 +279,7 @@ const DTreasury = () => {
     // Account filter: 'all' = every account, or a specific account id.
     const [moneyAccount, setMoneyAccount] = useState<string>('all');
     const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
-    const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null; fromProject?: boolean } | null>(null);
+    const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null } | null>(null);
     const [accountModal, setAccountModal] = useState<{ account: TreasuryAccount | null } | null>(null);
     const [ratesLoading, setRatesLoading] = useState(false);
     const ratesChecked = useRef(false);
@@ -925,7 +925,7 @@ const DTreasury = () => {
                                                                         </div>
                                                                     ))}
                                                                     {linkedExp.map(e => (
-                                                                        <div key={`le-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e, fromProject: true })} role="button" tabIndex={0} title="Edit this expense"
+                                                                        <div key={`le-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e })} role="button" tabIndex={0} title="Edit this expense"
                                                                             className="group flex items-center justify-between gap-2 p-2 rounded-xl bg-rose-500/[0.03] dark:bg-rose-500/[0.05] border border-rose-500/10 text-xs cursor-pointer hover:border-rose-500/40 hover:bg-rose-500/[0.08] transition-colors">
                                                                             <span className="text-sec truncate max-w-[120px] flex items-center gap-1.5">{e.label}<Pencil size={11} className="text-sec opacity-0 group-hover:opacity-70 transition-opacity shrink-0" /></span>
                                                                             <span className="font-bold text-rose-500 tnum">-{formatMoney(e.amount, e.currency)}</span>
@@ -942,7 +942,7 @@ const DTreasury = () => {
                                             <div className="flex flex-col gap-2 mt-auto pt-4 border-t border-[var(--section-border)]">
                                                 <div className="grid grid-cols-2 gap-2">
                                                     <button onClick={() => setModal({ mode: 'income', income: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-all"><Plus size={14} /> Log income</button>
-                                                    <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' }, fromProject: true })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
+                                                    <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
                                                 </div>
                                                 <button onClick={() => markDone(focusedProject)} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${focusedProject.done ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/10 text-blue-500 hover:bg-blue-500/15'}`}><CheckCircle2 size={14} /> {focusedProject.done ? 'Reopen Project' : 'Mark Project Done'}</button>
                                             </div>
@@ -1251,7 +1251,6 @@ const DTreasury = () => {
                         project={modal.project}
                         expense={modal.expense}
                         income={modal.income}
-                        fromProject={modal.fromProject}
                         projects={data.projects}
                         accounts={data.accounts}
                         expenseList={data.expenses}
