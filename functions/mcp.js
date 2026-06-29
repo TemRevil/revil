@@ -608,6 +608,7 @@ function registerTools(server, cfg, time) {
         projectId: z.string().optional().describe("link to a treasury project id"),
         accountId: z.string().optional().describe("account it was paid FROM (see list_accounts)"),
         clientPaid: z.boolean().optional().describe("the client/customer paid it - recorded only, not counted as spending or pulled from an account"),
+        notes: z.string().optional().describe("free-text note (e.g. receipt details), kept off the short label"),
       },
       annotations: { destructiveHint: false },
     },
@@ -619,6 +620,7 @@ function registerTools(server, cfg, time) {
         ...(a.projectId ? { projectId: a.projectId } : {}),
         ...(a.accountId && !a.clientPaid ? { accountId: a.accountId } : {}),
         ...(a.clientPaid ? { clientPaid: true } : {}),
+        ...(a.notes ? { notes: a.notes } : {}),
         date: a.date || new Date().toISOString().slice(0, 10), createdAt: now(),
       };
       await db().doc("Treasury/spendings").set({ entries: { [id]: entry }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
@@ -640,6 +642,7 @@ function registerTools(server, cfg, time) {
         projectId: z.string().optional(),
         accountId: z.string().optional().describe("account it was paid FROM (see list_accounts)"),
         clientPaid: z.boolean().optional().describe("the client/customer paid it - recorded only, not counted as spending or pulled from an account"),
+        notes: z.string().optional().describe("free-text note (e.g. receipt details), kept off the short label"),
       },
       annotations: { destructiveHint: false },
     },
@@ -648,7 +651,7 @@ function registerTools(server, cfg, time) {
       const existing = snap.exists ? (snap.data().entries || {})[a.id] : null;
       if (!existing) return fail(`No expense with id ${a.id}. Use treasury_overview to find the right id.`);
       const patch = {};
-      for (const k of ["label", "amount", "currency", "category", "date", "recurring", "projectId", "accountId", "clientPaid"]) {
+      for (const k of ["label", "amount", "currency", "category", "date", "recurring", "projectId", "accountId", "clientPaid", "notes"]) {
         if (a[k] !== undefined) patch[k] = a[k];
       }
       if (!Object.keys(patch).length) return fail("Nothing to update — pass at least one field to change.");
