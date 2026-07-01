@@ -609,7 +609,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         const unsub = onSnapshot(projectRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data() as {
-                    Views?: Record<string, string | number>;
+                    Views?: Record<string, number>;
                     Stack?: string[] | Record<string, unknown>;
                     Tags?: Record<string, string | { Name?: string; Color?: string; Icon?: string }>;
                     Description?: string;

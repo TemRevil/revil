@@ -689,10 +689,10 @@ const DProjects = () => {
                 "Tags": tagsMap,
                 "Project Images": imageUrls,
                 "Views": {
-                    "Github": (data.githubViews || 0).toString(),
-                    "Live": (data.liveViews || 0).toString(),
-                    "Download": (data.downloadViews || 0).toString(),
-                    "Project": (data.views || 0).toString()
+                    "Github": Number(data.githubViews) || 0,
+                    "Live": Number(data.liveViews) || 0,
+                    "Download": Number(data.downloadViews) || 0,
+                    "Project": Number(data.views) || 0
                 },
                 "Listing": data.listing || 0
             };
