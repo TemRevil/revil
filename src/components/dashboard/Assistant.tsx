@@ -7,8 +7,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { db } from '../../lib/firebase';
 import { appAuth } from '../../lib/appAuth';
 import {
-    chat, getApiKey, setKeyOverride, getModel, setModel, detectProvider, listModels,
-    userMessage, toolResultMessage, PROVIDER_LABEL, ToolCall, ToolResult,
+    chat, getApiKey, setKeyOverride, getModel, setModel, resolveProvider, listModels,
+    userMessage, toolResultMessage, PROVIDER_LABEL, Provider, ToolCall, ToolResult,
 } from '../../lib/llm';
 import ScrollMenu from './ScrollMenu';
 import Markdown from './Markdown';
@@ -242,7 +242,14 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const key = getApiKey();
-    const provider = detectProvider(key);
+    // Provider is resolved async: from the override key if pasted, else reported by
+    // the server proxy (which holds the key). Null until resolved / if unconfigured.
+    const [provider, setProvider] = useState<Provider | null>(null);
+    useEffect(() => {
+        let alive = true;
+        resolveProvider().then(p => { if (alive) setProvider(p); }).catch(() => { });
+        return () => { alive = false; };
+    }, []);
 
     useEffect(() => {
         const check = () => setIsDark(document.documentElement.classList.contains('dark'));
@@ -432,7 +439,10 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
     const send = async (override?: string) => {
         const text = (override ?? input).trim();
         if (!text || busy) return;
-        if (!key || !provider) { setShowSettings(true); push({ role: 'assistant', text: 'Add an API key in settings first - the gear, top-right.' }); return; }
+        // Resolve the provider (server proxy key or pasted override); no client key needed.
+        const prov = provider ?? await resolveProvider();
+        if (!prov) { setShowSettings(true); push({ role: 'assistant', text: "Spark isn't configured yet - open settings (gear, top-right) and hit Load, or paste a key." }); return; }
+        if (prov !== provider) setProvider(prov);
         if (!model) { setShowSettings(true); push({ role: 'assistant', text: 'Pick a model in settings first.' }); return; }
 
         // ── rate limiting (anti-spam + rolling cap) ──────────────────────────
@@ -449,7 +459,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
         try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
         speakingRef.current = false;
         setStatus('connecting');
-        nativeRef.current.push(userMessage(provider, text));
+        nativeRef.current.push(userMessage(prov, text));
 
         const turnStart = Date.now();
         let finalText = '';
@@ -468,7 +478,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                     + `${mem.instructions ? `Standing instructions from the user: ${mem.instructions} ` : ''}`
                     + `${mem.facts?.length ? `Saved facts: ${mem.facts.join('; ')}. ` : ''}`;
                 const screenCtx = `${memCtx}\nCURRENT SCREEN: the user is viewing the "${PAGE_LABEL[pageRef.current] || pageRef.current}" page (id: ${pageRef.current}). Call read_screen to read what's on it.`;
-                const res = await chat(key, model, nativeRef.current, screenCtx);
+                const res = await chat(prov, model, nativeRef.current, screenCtx);
                 nativeRef.current.push(res.assistant);
                 if (res.text) { push({ role: 'assistant', text: res.text }); finalText = res.text; }
                 if (!res.toolCalls.length) { setStatus('speaking'); break; }
@@ -481,7 +491,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                     const output = await execTool(tc);
                     results.push({ id: tc.id, name: tc.name, output });
                 }
-                const trm = toolResultMessage(provider, results);
+                const trm = toolResultMessage(prov, results);
                 if (Array.isArray(trm)) nativeRef.current.push(...trm);
                 else nativeRef.current.push(trm);
             }
@@ -512,14 +522,15 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
 
     // ── settings actions ─────────────────────────────────────────────────────
     const loadModels = async () => {
-        const k = keyInput.trim() || key;
-        if (!k) { setSettingsMsg('No key set (env or pasted).'); return; }
-        if (keyInput.trim()) setKeyOverride(keyInput.trim());
+        const pasted = keyInput.trim();
+        if (pasted) setKeyOverride(pasted); // switch this browser to direct mode
         setLoadingModels(true); setSettingsMsg('');
         try {
-            const list = await listModels(k);
+            const list = await listModels(); // uses the pasted key if set, else the server proxy
             setModels(list);
-            setSettingsMsg(`${list.length} models from ${PROVIDER_LABEL[detectProvider(k)!]}`);
+            const prov = await resolveProvider();
+            setProvider(prov);
+            setSettingsMsg(`${list.length} models from ${prov ? PROVIDER_LABEL[prov] : 'the server'}`);
         } catch (e) {
             setSettingsMsg(`Failed: ${(e as Error).message}`);
         } finally {
@@ -595,7 +606,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                             <div>
                                 <label className="text-[11px] font-semibold text-sec uppercase tracking-wider mb-1.5 block">API key (this browser)</label>
                                 <input value={keyInput} onChange={e => setKeyInput(e.target.value)} type="password" placeholder={`active: ${maskedKey}`} className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/[0.03] border-black/10'} text-primary`} />
-                                <p className="text-[10px] text-sec mt-1">Primary key comes from <code>NEXT_PUBLIC_LLM_API_KEY</code> (.env.local / Hostinger secret). Pasting here overrides it locally for testing. {provider ? `Detected: ${PROVIDER_LABEL[provider]}.` : ''}</p>
+                                <p className="text-[10px] text-sec mt-1">The key is held server-side by the <code>llm</code> Cloud Function - nothing ships in the bundle. Paste one here only to override it in this browser for testing. {provider ? `Provider: ${PROVIDER_LABEL[provider]}.` : ''}</p>
                             </div>
                             <div className="flex items-end gap-2">
                                 <div className="flex-1">

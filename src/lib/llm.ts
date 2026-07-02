@@ -1,13 +1,16 @@
 /**
  * LLM layer for the dashboard assistant ("Spark").
  *
- * Provider is auto-detected from the API key prefix. The key lives in an env
- * var (NEXT_PUBLIC_LLM_API_KEY) - set it in .env.local locally and as a
- * Hostinger secret in production - with an optional per-browser override saved
- * in localStorage for quick testing. The chosen model is saved in localStorage.
+ * The provider API key is held SERVER-SIDE by the `llm` Cloud Function (Firebase
+ * Secret Manager). This module calls that function as an authenticated, App
+ * Check-gated proxy, so no key is ever shipped in the public client bundle. For
+ * local testing you can paste a key in the dashboard; it's saved as a per-browser
+ * override in localStorage and, while set, requests go straight to the provider
+ * instead of through the proxy. The chosen model is saved in localStorage.
  *
- * No model names are hardcoded: the model list is pulled live from the
- * provider's own /models endpoint based on the detected key.
+ * Provider is auto-detected from the key prefix (override) or reported by the proxy
+ * (server key). No model names are hardcoded: the list is pulled live from the
+ * provider's own /models endpoint.
  */
 
 export type Provider = 'anthropic' | 'openai' | 'gemini';
@@ -30,12 +33,13 @@ export interface ChatResult { assistant: NativeMsg; text: string; toolCalls: Too
 const KEY_OVERRIDE = 'llm_key_override';
 const MODEL_KEY = 'llm_model';
 
+/** Per-browser override key (local testing only). Empty ⇒ use the server proxy. */
 export function getApiKey(): string {
     if (typeof window !== 'undefined') {
         const o = localStorage.getItem(KEY_OVERRIDE);
         if (o) return o.trim();
     }
-    return (process.env.NEXT_PUBLIC_LLM_API_KEY || '').trim();
+    return '';
 }
 export function setKeyOverride(key: string) {
     if (typeof window === 'undefined') return;
@@ -87,28 +91,97 @@ async function fetchWithTimeout(url: string, opts: RequestInit, ms: number): Pro
     }
 }
 
-/** Pull the provider's allowed models live (never hardcoded). */
-export async function listModels(key: string): Promise<string[]> {
-    const p = detectProvider(key);
-    if (!p) throw new Error('Unrecognized key format (expected sk-ant…, sk-…, or AIza…).');
+// ── transport: server proxy (default) or direct-to-provider (override key) ───
 
-    if (p === 'anthropic') {
-        const r = await fetchWithTimeout('https://api.anthropic.com/v1/models?limit=100', { headers: ANTHROPIC_HEADERS(key) }, MODELS_TIMEOUT_MS);
-        if (!r.ok) throw new Error(`Anthropic ${r.status}`);
-        const j = await r.json();
+/** True when a per-browser override key is set → talk to the provider directly. */
+function usingOverride(): boolean {
+    return !!getApiKey();
+}
+
+type ProxyResult = { ok?: boolean; status?: number; data?: unknown; provider?: Provider | null };
+
+/** Call the App Check-gated `llm` Cloud Function, which holds the key server-side. */
+async function callProxy(payload: Record<string, unknown>): Promise<ProxyResult> {
+    const [{ getFunctions, httpsCallable }, appMod] = await Promise.all([
+        import('firebase/functions'),
+        import('./firebase'),
+    ]);
+    const fns = getFunctions(appMod.default, 'us-central1');
+    const res = await httpsCallable(fns, 'llm')(payload);
+    return (res.data || {}) as ProxyResult;
+}
+
+let cachedServerProvider: Provider | null = null;
+
+/** The active provider: from the override key if set, otherwise reported by the proxy. */
+export async function resolveProvider(): Promise<Provider | null> {
+    const key = getApiKey();
+    if (key) return detectProvider(key);
+    if (cachedServerProvider) return cachedServerProvider;
+    try {
+        const r = await callProxy({ kind: 'provider' });
+        cachedServerProvider = r.provider || null;
+    } catch {
+        cachedServerProvider = null;
+    }
+    return cachedServerProvider;
+}
+
+/** Direct provider endpoint descriptor (used only in override mode). */
+function directEndpoint(kind: 'models' | 'chat', provider: Provider, model: string, key: string): { url: string; method: string; headers: Record<string, string> } {
+    if (provider === 'anthropic') {
+        return kind === 'models'
+            ? { url: 'https://api.anthropic.com/v1/models?limit=100', method: 'GET', headers: ANTHROPIC_HEADERS(key) }
+            : { url: 'https://api.anthropic.com/v1/messages', method: 'POST', headers: ANTHROPIC_HEADERS(key) };
+    }
+    if (provider === 'openai') {
+        return kind === 'models'
+            ? { url: 'https://api.openai.com/v1/models', method: 'GET', headers: { Authorization: `Bearer ${key}` } }
+            : { url: 'https://api.openai.com/v1/chat/completions', method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' } };
+    }
+    const enc = encodeURIComponent(key);
+    return kind === 'models'
+        ? { url: `https://generativelanguage.googleapis.com/v1beta/models?key=${enc}`, method: 'GET', headers: {} }
+        : { url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${enc}`, method: 'POST', headers: { 'content-type': 'application/json' } };
+}
+
+/**
+ * Run a provider request and return its parsed JSON. In override mode it calls the
+ * provider directly with the pasted key; otherwise it routes through the proxy,
+ * which injects the server key. Throws on a non-2xx provider response.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function providerRequest(kind: 'models' | 'chat', provider: Provider, model: string, body: unknown): Promise<any> {
+    const timeout = kind === 'chat' ? CHAT_TIMEOUT_MS : MODELS_TIMEOUT_MS;
+    if (usingOverride()) {
+        const { url, method, headers } = directEndpoint(kind, provider, model, getApiKey());
+        const opts: RequestInit = { method, headers };
+        if (body !== undefined) opts.body = JSON.stringify(body);
+        const r = await fetchWithTimeout(url, opts, timeout);
+        if (!r.ok) throw new Error(`${PROVIDER_LABEL[provider]} ${r.status}: ${await r.text()}`);
+        return await r.json();
+    }
+    const res = await callProxy({ kind, model, body });
+    if (!res || res.ok === false) {
+        const detail = res && res.data !== undefined ? (typeof res.data === 'string' ? res.data : JSON.stringify(res.data)) : 'proxy error';
+        throw new Error(`${PROVIDER_LABEL[provider]} ${res?.status ?? '?'}: ${detail}`);
+    }
+    return res.data;
+}
+
+/** Pull the provider's allowed models live (never hardcoded). */
+export async function listModels(): Promise<string[]> {
+    const provider = await resolveProvider();
+    if (!provider) throw new Error("No LLM available — the server key isn't set and no key is pasted.");
+    const j = await providerRequest('models', provider, '', undefined);
+    if (provider === 'anthropic') {
         return (j.data || []).map((m: { id: string }) => m.id);
     }
-    if (p === 'openai') {
-        const r = await fetchWithTimeout('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${key}` } }, MODELS_TIMEOUT_MS);
-        if (!r.ok) throw new Error(`OpenAI ${r.status}`);
-        const j = await r.json();
+    if (provider === 'openai') {
         return (j.data || []).map((m: { id: string }) => m.id)
             .filter((id: string) => /^(gpt|o1|o3|o4|chatgpt)/i.test(id))
             .sort();
     }
-    const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`, {}, MODELS_TIMEOUT_MS);
-    if (!r.ok) throw new Error(`Gemini ${r.status}`);
-    const j = await r.json();
     return (j.models || [])
         .filter((m: { supportedGenerationMethods?: string[] }) => (m.supportedGenerationMethods || []).includes('generateContent'))
         .map((m: { name: string }) => m.name.replace('models/', ''));
@@ -244,19 +317,37 @@ export function toolResultMessage(provider: Provider, results: ToolResult[]): Na
 }
 
 // ── One chat round (returns text + any tool calls to execute) ───────────────
-export async function chat(key: string, model: string, messages: NativeMsg[], context?: string): Promise<ChatResult> {
-    const provider = detectProvider(key);
-    if (!provider) throw new Error('Unrecognized API key.');
-    if (!model) throw new Error('No model selected.');
 
+/** Build the provider-native request body for one chat round (no key/URL). */
+function buildChatBody(provider: Provider, model: string, messages: NativeMsg[], context?: string): NativeMsg {
     if (provider === 'anthropic') {
-        const body = {
+        return {
             model, max_tokens: 1024, system: buildSystem(context), messages,
             tools: TOOLS.map(t => ({ name: t.name, description: t.description, input_schema: t.params })),
         };
-        const r = await fetchWithTimeout('https://api.anthropic.com/v1/messages', { method: 'POST', headers: ANTHROPIC_HEADERS(key), body: JSON.stringify(body) }, CHAT_TIMEOUT_MS);
-        if (!r.ok) throw new Error(`Anthropic ${r.status}: ${await r.text()}`);
-        const j = await r.json();
+    }
+    if (provider === 'openai') {
+        return {
+            model, max_completion_tokens: 1024,
+            messages: [{ role: 'system', content: buildSystem(context) }, ...messages],
+            tools: TOOLS.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.params } })),
+            tool_choice: 'auto',
+        };
+    }
+    return {
+        systemInstruction: { parts: [{ text: buildSystem(context) }] },
+        contents: messages,
+        tools: [{ functionDeclarations: TOOLS.map(t => ({ name: t.name, description: t.description, parameters: t.params })) }],
+    };
+}
+
+export async function chat(provider: Provider, model: string, messages: NativeMsg[], context?: string): Promise<ChatResult> {
+    if (!provider) throw new Error('No LLM provider.');
+    if (!model) throw new Error('No model selected.');
+
+    const j = await providerRequest('chat', provider, model, buildChatBody(provider, model, messages, context));
+
+    if (provider === 'anthropic') {
         const content = j.content || [];
         const text = content.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('');
         const toolCalls = content.filter((c: { type: string }) => c.type === 'tool_use').map((c: { id: string; name: string; input: Record<string, unknown> }) => ({ id: c.id, name: c.name, args: c.input || {} }));
@@ -264,15 +355,6 @@ export async function chat(key: string, model: string, messages: NativeMsg[], co
     }
 
     if (provider === 'openai') {
-        const body = {
-            model, max_completion_tokens: 1024,
-            messages: [{ role: 'system', content: buildSystem(context) }, ...messages],
-            tools: TOOLS.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.params } })),
-            tool_choice: 'auto',
-        };
-        const r = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }, CHAT_TIMEOUT_MS);
-        if (!r.ok) throw new Error(`OpenAI ${r.status}: ${await r.text()}`);
-        const j = await r.json();
         const m = j.choices?.[0]?.message || {};
         const toolCalls = (m.tool_calls || []).map((tc: { id: string; function: { name: string; arguments: string } }) => {
             let args: Record<string, unknown> = {};
@@ -283,14 +365,6 @@ export async function chat(key: string, model: string, messages: NativeMsg[], co
     }
 
     // gemini
-    const body = {
-        systemInstruction: { parts: [{ text: buildSystem(context) }] },
-        contents: messages,
-        tools: [{ functionDeclarations: TOOLS.map(t => ({ name: t.name, description: t.description, parameters: t.params })) }],
-    };
-    const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, CHAT_TIMEOUT_MS);
-    if (!r.ok) throw new Error(`Gemini ${r.status}: ${await r.text()}`);
-    const j = await r.json();
     const parts = j.candidates?.[0]?.content?.parts || [];
     const text = parts.filter((p: { text?: string }) => p.text).map((p: { text: string }) => p.text).join('');
     const toolCalls = parts

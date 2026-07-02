@@ -11,6 +11,11 @@ const db = admin.firestore();
 const smtpUser = defineSecret("SMTP_USER");
 const smtpPass = defineSecret("SMTP_PASS");
 
+// LLM provider key for the dashboard assistant ("Spark"). Held server-side so it
+// never ships in the public client bundle. Set with:
+//   firebase functions:secrets:set LLM_API_KEY
+const llmApiKey = defineSecret("LLM_API_KEY");
+
 // Public-facing inbox that booking notifications are also copied to.
 const HELLO_EMAIL = "hello@temrevil.com";
 
@@ -630,6 +635,115 @@ exports.notifyLogin = onCall(
       // details don't leak to the client.
       console.error("Failed to send login alert:", err);
       return { status: "error", message: "Failed to send login alert." };
+    }
+  }
+);
+
+// =====================================================================
+//  4. llm - admin-only proxy for the dashboard assistant ("Spark")
+//     Holds the provider API key server-side (Secret Manager) so it never
+//     ships in the public client bundle. The client sends the provider-native
+//     request body; this function injects the key and forwards to the fixed
+//     provider endpoint (no arbitrary URLs → no SSRF). App Check enforced.
+// =====================================================================
+
+/** Detect the provider from the server key's prefix (mirrors src/lib/llm.ts). */
+function detectLlmProvider(key) {
+  if (!key) return null;
+  if (key.startsWith("sk-ant")) return "anthropic";
+  if (key.startsWith("AIza") || key.startsWith("AQ.")) return "gemini";
+  if (key.startsWith("sk-")) return "openai";
+  return null;
+}
+
+exports.llm = onCall(
+  {
+    region: "us-central1",
+    secrets: [llmApiKey],
+    enforceAppCheck: true,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    // Admin gate: custom claim, or fall back to Settings/Account.uid (mirrors notifyLogin).
+    const accountSnap = await db.doc("Settings/Account").get();
+    const adminUid = accountSnap.data()?.uid;
+    const isAdmin = request.auth.token?.admin === true || (adminUid && request.auth.uid === adminUid);
+    if (!isAdmin) {
+      throw new HttpsError("permission-denied", "Admin only.");
+    }
+
+    const key = (llmApiKey.value() || "").trim();
+    const provider = detectLlmProvider(key);
+    if (!provider) {
+      throw new HttpsError("failed-precondition", "Server LLM key is not configured.");
+    }
+
+    const { kind, model, body } = request.data || {};
+
+    // The client asks which provider the server key is, so it can build native
+    // requests / parse responses without ever seeing the key.
+    if (kind === "provider") return { provider };
+
+    if (kind !== "models" && kind !== "chat") {
+      throw new HttpsError("invalid-argument", "kind must be 'provider', 'models', or 'chat'.");
+    }
+    // model is interpolated into the Gemini URL path — allow only safe chars.
+    if (kind === "chat" && (typeof model !== "string" || !/^[A-Za-z0-9.\-_]+$/.test(model))) {
+      throw new HttpsError("invalid-argument", "Invalid model id.");
+    }
+
+    // Build the outbound request from a fixed host map (never a client-supplied URL).
+    let url;
+    let method = "GET";
+    let headers = {};
+    let reqBody;
+    if (provider === "anthropic") {
+      headers = { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" };
+      if (kind === "models") {
+        url = "https://api.anthropic.com/v1/models?limit=100";
+      } else {
+        url = "https://api.anthropic.com/v1/messages";
+        method = "POST";
+        reqBody = JSON.stringify(body || {});
+      }
+    } else if (provider === "openai") {
+      headers = { Authorization: `Bearer ${key}`, "content-type": "application/json" };
+      if (kind === "models") {
+        url = "https://api.openai.com/v1/models";
+      } else {
+        url = "https://api.openai.com/v1/chat/completions";
+        method = "POST";
+        reqBody = JSON.stringify(body || {});
+      }
+    } else {
+      // gemini — key goes in the query string
+      const enc = encodeURIComponent(key);
+      if (kind === "models") {
+        url = `https://generativelanguage.googleapis.com/v1beta/models?key=${enc}`;
+      } else {
+        url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${enc}`;
+        method = "POST";
+        headers = { "content-type": "application/json" };
+        reqBody = JSON.stringify(body || {});
+      }
+    }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    try {
+      const r = await fetch(url, { method, headers, body: reqBody, signal: ctrl.signal });
+      const text = await r.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+      // Pass the provider's status through so the client surfaces real errors.
+      return { ok: r.ok, status: r.status, data };
+    } catch (err) {
+      console.error("llm proxy error:", err);
+      throw new HttpsError("internal", "LLM request failed.");
+    } finally {
+      clearTimeout(timer);
     }
   }
 );
