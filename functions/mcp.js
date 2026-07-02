@@ -500,7 +500,7 @@ function registerTools(server, cfg, time) {
   server.registerTool("create_or_update_project",
     {
       title: "Create or update a project",
-      description: "Add a new portfolio project or update an existing one (matched by name).",
+      description: "Add a new portfolio project or update an existing one (matched by name). This is a partial update: only the fields you pass are written, and any field you omit is left exactly as it was — so editing one field never wipes the others.",
       inputSchema: {
         name: z.string().min(1).describe("Project name (also the document id)"),
         description: z.string().optional(),
@@ -513,18 +513,30 @@ function registerTools(server, cfg, time) {
       annotations: { destructiveHint: false },
     },
     async (a) => {
-      const tagsMap = {};
-      (a.tags || []).forEach((t, i) => { tagsMap[(i + 1).toString()] = t; });
-      const doc = {
-        Description: a.description ?? "",
-        "Live Link": a.liveLink ?? "",
-        "Repository Link": a.repoLink ?? "",
-        "Download Link": a.downloadLink ?? "",
-        ...(a.tags ? { Tags: tagsMap } : {}),
-        ...(typeof a.listing === "number" ? { Listing: a.listing } : {}),
-      };
+      // Build the write from ONLY the fields the caller actually passed. Firestore
+      // set(..., {merge:true}) merges at the key level, so any key we DON'T include
+      // is preserved untouched. Previously the four link/description keys were always
+      // written with a `?? ""` fallback, so a partial edit (e.g. just description)
+      // silently blanked Live/Repository/Download Link. Omitting absent fields — like
+      // tags/listing already did — makes every edit a true non-destructive merge.
+      const doc = {};
+      if (a.description !== undefined) doc.Description = a.description;
+      if (a.liveLink !== undefined) doc["Live Link"] = a.liveLink;
+      if (a.repoLink !== undefined) doc["Repository Link"] = a.repoLink;
+      if (a.downloadLink !== undefined) doc["Download Link"] = a.downloadLink;
+      if (a.tags) {
+        const tagsMap = {};
+        a.tags.forEach((t, i) => { tagsMap[(i + 1).toString()] = t; });
+        doc.Tags = tagsMap;
+      }
+      if (typeof a.listing === "number") doc.Listing = a.listing;
+
+      if (!Object.keys(doc).length) {
+        return fail("Nothing to write — pass at least one field besides name (description, liveLink, repoLink, downloadLink, tags, or listing).");
+      }
+
       await db().doc(`Projects/${a.name}`).set(doc, { merge: true });
-      return ok({ status: "saved", id: a.name });
+      return ok({ status: "saved", id: a.name, changed: Object.keys(doc) });
     });
 
   server.registerTool("delete_project",
