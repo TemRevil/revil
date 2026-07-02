@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import anime from 'animejs';
-import { Layout, Eye, Settings, Bird, LogOut, Tag, User, GitBranch, PiggyBank } from 'lucide-react';
+import { Layout, Eye, Settings, Bird, LogOut, Tag, User, GitBranch, Landmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import DProjects from './dashboard/D-Projects';
 import DTags from './dashboard/D-Tags';
@@ -90,7 +90,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
         { id: 'tags', label: 'Tags', icon: Tag },
         { id: 'views', label: 'Views', icon: Eye },
         { id: 'developer', label: 'Developer', icon: GitBranch },
-        { id: 'treasury', label: 'Treasury', icon: PiggyBank },
+        { id: 'treasury', label: 'Treasury', icon: Landmark },
         { id: 'settings', label: 'Settings', icon: Settings },
         { id: 'canary', label: 'Canary', icon: Bird },
     ];
@@ -98,6 +98,11 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const sidebarWidth = isExtraSmall ? '56px' : (isMobile ? '72px' : '260px');
     const iconSize = isExtraSmall ? 18 : 20;
     const avatarSize = isExtraSmall ? '28px' : '32px';
+
+    const activeItem = menuItems.find(i => i.id === activeTab);
+    const ActiveIcon = activeItem?.icon;
+    const headerIconBoxSize = isExtraSmall ? 'w-8 h-8 rounded-lg' : isSmall ? 'w-9 h-9 rounded-xl' : 'w-11 h-11 rounded-2xl';
+    const headerIconSize = isExtraSmall ? 16 : isSmall ? 18 : 22;
 
     return (
         <div
@@ -244,14 +249,21 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                             ${isExtraSmall ? 'mb-4' : isSmall ? 'mb-5' : 'mb-8'}
                         `}
                     >
-                        <h1
-                            className={`
-                                font-extrabold text-primary font-inter m-0
-                                ${isExtraSmall ? 'text-xl' : isSmall ? 'text-2xl' : 'text-[2rem]'}
-                            `}
-                        >
-                            {menuItems.find(i => i.id === activeTab)?.label}
-                        </h1>
+                        <div className={`flex items-center ${isExtraSmall ? 'gap-2' : 'gap-3'}`}>
+                            {ActiveIcon && (
+                                <span className={`${headerIconBoxSize} flex items-center justify-center bg-blue-500/10 text-blue-500 shrink-0`}>
+                                    <ActiveIcon size={headerIconSize} />
+                                </span>
+                            )}
+                            <h1
+                                className={`
+                                    font-extrabold text-primary font-inter m-0
+                                    ${isExtraSmall ? 'text-xl' : isSmall ? 'text-2xl' : 'text-[2rem]'}
+                                `}
+                            >
+                                {activeItem?.label}
+                            </h1>
+                        </div>
                     </div>
 
                     {/* Content Viewport */}
@@ -285,7 +297,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                                         border-2 border-dashed border-input-border text-sec font-inter
                                         ${isExtraSmall ? 'rounded-2xl text-sm' : 'rounded-3xl text-base'}
                                     `}>
-                                        <span>Content for {menuItems.find(i => i.id === activeTab)?.label} will go here</span>
+                                        <span>Content for {activeItem?.label} will go here</span>
                                     </div>
                                 )}
                             </motion.div>
