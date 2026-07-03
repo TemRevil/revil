@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Trash2, Wallet, Landmark, Banknote, CreditCard, Coins, Archive } from 'lucide-react';
+import { X, Trash2, Wallet, Landmark, Banknote, CreditCard, Coins, Archive, TrendingUp } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
     CURRENCIES, CURRENCY_SYMBOL, Currency, AccountType, ACCOUNT_TYPES,
@@ -38,6 +38,7 @@ const MAccount = ({ config, account, nextOrder, onSave, onDelete, onClose }: Pro
     const [opening, setOpening] = useState(account?.openingBalance ? String(account.openingBalance) : '');
     const [notes, setNotes] = useState(account?.notes ?? '');
     const [archived, setArchived] = useState(account?.archived ?? false);
+    const [countsTowardNetProfit, setCountsTowardNetProfit] = useState(!account?.excludeFromNetProfit);
 
     const isEdit = !!account;
 
@@ -65,6 +66,7 @@ const MAccount = ({ config, account, nextOrder, onSave, onDelete, onClose }: Pro
             openingBalance: parseFloat(opening) || 0,
             notes: notes.trim() || undefined,
             archived: archived || undefined,
+            excludeFromNetProfit: countsTowardNetProfit ? undefined : true,
             order: account?.order ?? nextOrder,
             createdAt: account?.createdAt ?? Date.now(),
         };
@@ -158,6 +160,14 @@ const MAccount = ({ config, account, nextOrder, onSave, onDelete, onClose }: Pro
                     <div>
                         <label className={labelCls}>Notes</label>
                         <textarea className={`${inputCls} resize-none`} rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional - account number, holder…" />
+                    </div>
+
+                    <div>
+                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <input type="checkbox" checked={countsTowardNetProfit} onChange={e => setCountsTowardNetProfit(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
+                            <span className="text-sm text-primary font-medium flex items-center gap-1.5"><TrendingUp size={14} /> Counts toward net profit</span>
+                        </label>
+                        <p className="text-[11px] text-sec mt-1.5 ml-7">Turn off for money that isn't real business P&amp;L (e.g. savings, a client's escrow) - income/expenses here still update this account's balance, just not Net profit or the earnings chart.</p>
                     </div>
 
                     {isEdit && (

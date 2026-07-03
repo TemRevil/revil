@@ -37,6 +37,12 @@ export interface TreasuryAccount {
     openingBalance: number;       // balance before any logged activity, in `currency`
     notes?: string;
     archived?: boolean;           // hidden from pickers, kept for history
+    // true = income/expenses linked to this account are left out of Net profit
+    // (and the earnings/spendings trend) even though they still count toward
+    // this account's own balance. Use for money that isn't real business P&L -
+    // e.g. a savings account, a client's escrow, or a transfer already counted
+    // elsewhere. Undefined/false = counts normally (the default for every account).
+    excludeFromNetProfit?: boolean;
     order: number;
     createdAt: number;            // ms epoch
 }
@@ -196,8 +202,14 @@ export function projectReceived(p: TreasuryProject, income: TreasuryIncome[], ra
     return (p.paidAmount || 0) + sum;
 }
 
+/** Ids of accounts marked to be left out of Net profit and its trend series. */
+export function excludedAccountIds(accounts: TreasuryAccount[]): Set<string> {
+    return new Set((accounts || []).filter(a => a.excludeFromNetProfit).map(a => a.id));
+}
+
 export function computeTotals(data: TreasuryData): TreasuryTotals {
     const { displayCurrency: cur, rates } = data.config;
+    const excluded = excludedAccountIds(data.accounts);
     let earned = 0, outstanding = 0, contracted = 0, spent = 0;
 
     for (const p of data.projects) {
@@ -211,12 +223,18 @@ export function computeTotals(data: TreasuryData): TreasuryTotals {
     }
     // Earned = every payment actually received: legacy per-project paidAmount +
     // all logged income (linked or standalone). No double counting - income is
-    // never folded into paidAmount.
+    // never folded into paidAmount. Income tied to an excluded account is left
+    // out (legacy paidAmount has no account, so it always counts).
     for (const p of data.projects) earned += convert(p.monthly ? (p.paidAmount || 0) : Math.min(p.paidAmount || 0, p.priceAmount || p.paidAmount || 0), p.priceCurrency, cur, rates);
-    for (const i of (data.income || [])) earned += convert(i.amount || 0, i.currency, cur, rates);
+    for (const i of (data.income || [])) { if (i.accountId && excluded.has(i.accountId)) continue; earned += convert(i.amount || 0, i.currency, cur, rates); }
 
     // Client-paid expenses are recorded for reference only - they're not my money.
-    for (const e of data.expenses) { if (e.clientPaid) continue; spent += convert(e.amount || 0, e.currency, cur, rates); }
+    // Expenses paid from an excluded account are likewise left out of Net profit.
+    for (const e of data.expenses) {
+        if (e.clientPaid) continue;
+        if (e.accountId && excluded.has(e.accountId)) continue;
+        spent += convert(e.amount || 0, e.currency, cur, rates);
+    }
     return { earned, outstanding, contracted, spent, net: earned - spent, currency: cur };
 }
 
@@ -495,6 +513,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /** Last `count` months of earnings (by end/created date) vs spendings (by date). */
 export function monthlySeries(data: TreasuryData, count = 6): MonthPoint[] {
     const { displayCurrency: cur, rates } = data.config;
+    const excluded = excludedAccountIds(data.accounts);
     const now = new Date();
     const points: MonthPoint[] = [];
     const index = new Map<string, MonthPoint>();
@@ -516,6 +535,7 @@ export function monthlySeries(data: TreasuryData, count = 6): MonthPoint[] {
     }
     for (const e of data.expenses) {
         if (e.clientPaid) continue;
+        if (e.accountId && excluded.has(e.accountId)) continue;
         const point = index.get(monthKey(e.date || e.createdAt));
         if (point) point.spent += convert(e.amount || 0, e.currency, cur, rates);
     }
@@ -539,6 +559,7 @@ const toDay = (s: string | null | undefined, fallbackMs?: number) =>
  */
 export function buildDailySeries(data: TreasuryData): DaySeriesPoint[] {
     const { displayCurrency: cur, rates } = data.config;
+    const excluded = excludedAccountIds(data.accounts);
     const earned: Record<string, number> = {};
     const spent: Record<string, number> = {};
 
@@ -548,11 +569,13 @@ export function buildDailySeries(data: TreasuryData): DaySeriesPoint[] {
         if (day) earned[day] = (earned[day] || 0) + convert(Math.min(p.paidAmount, p.priceAmount || p.paidAmount), p.priceCurrency, cur, rates);
     }
     for (const i of (data.income || [])) {
+        if (i.accountId && excluded.has(i.accountId)) continue;
         const day = toDay(i.date, i.createdAt);
         if (day) earned[day] = (earned[day] || 0) + convert(i.amount || 0, i.currency, cur, rates);
     }
     for (const e of data.expenses) {
         if (e.clientPaid) continue;
+        if (e.accountId && excluded.has(e.accountId)) continue;
         const day = toDay(e.date, e.createdAt);
         if (day) spent[day] = (spent[day] || 0) + convert(e.amount || 0, e.currency, cur, rates);
     }

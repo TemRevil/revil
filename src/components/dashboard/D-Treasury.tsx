@@ -476,6 +476,7 @@ const DTreasury = () => {
             ...rest,
             notes: rest.notes ?? deleteField(),
             archived: rest.archived ?? deleteField(),
+            excludeFromNetProfit: rest.excludeFromNetProfit ?? deleteField(),
         };
         setDoc(ACCOUNTS_DOC, { entries: { [id]: entry }, lastWrite: serverTimestamp() }, { merge: true })
             .catch(err => { console.warn('[Treasury] account save failed', err); showToast('Save failed - check connection', 'warn'); });
@@ -1136,7 +1137,12 @@ const DTreasury = () => {
                                                             <div className="text-[10px] font-bold uppercase tracking-wider text-sec">{a.type} · {a.currency}</div>
                                                         </div>
                                                     </div>
-                                                    <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        {a.excludeFromNetProfit && (
+                                                            <span title="Excluded from Net profit and the earnings chart" className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-black/[0.06] dark:bg-white/[0.08] text-sec">Off P&amp;L</span>
+                                                        )}
+                                                        <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity" />
+                                                    </div>
                                                 </div>
                                                 <div>
                                                     <div className="text-[10px] font-bold uppercase tracking-wider text-sec">Balance</div>
