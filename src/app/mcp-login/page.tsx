@@ -20,6 +20,27 @@ type Phase = 'loading' | 'idle' | 'working' | 'invalid';
 
 type State = { phase: Phase; s: string; cb: string };
 
+// The bridge POSTs the admin's Firebase ID token to `cb`, and that value arrives in
+// the URL — so it MUST be pinned to the portfolio's own MCP callback origin. Without
+// this check a crafted /mcp-login link could relay the token to an attacker-controlled
+// host (the CSP alone still permits any *.cloudfunctions.net / *.a.run.app origin).
+// Only these exact origins are ever legitimate; localhost is allowed in dev for the
+// Firebase Functions emulator.
+const ALLOWED_CB_ORIGINS = ['https://mcp.temrevil.com'];
+
+function isAllowedCallback(raw: string): boolean {
+    try {
+        const u = new URL(raw);
+        if (ALLOWED_CB_ORIGINS.includes(u.origin)) return true;
+        if (process.env.NODE_ENV !== 'production' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')) {
+            return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
 export default function McpLogin() {
     const [state, setState] = useState<State>({ phase: 'loading', s: '', cb: '' });
     const { phase } = state;
@@ -30,13 +51,16 @@ export default function McpLogin() {
         const sp = new URLSearchParams(window.location.search);
         const s = sp.get('s') || '';
         const cb = sp.get('cb') || '';
-        const valid = !!(s && cb);
+        const cbAllowed = !!cb && isAllowedCallback(cb);
+        const valid = !!s && cbAllowed;
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setState({ phase: valid ? 'idle' : 'invalid', s, cb });
+        setState({ phase: valid ? 'idle' : 'invalid', s, cb: cbAllowed ? cb : '' });
         if (!valid) {
             showAlert({
                 type: 'error',
-                message: 'This link is missing its login parameters. Start again from your MCP client.',
+                message: cb && !cbAllowed
+                    ? 'This link points at an unrecognized callback and was blocked for your safety. Start again from your MCP client.'
+                    : 'This link is missing its login parameters. Start again from your MCP client.',
                 duration: 0,
             });
         }

@@ -65,7 +65,7 @@ docker run -p 3000:3000 revil-portfolio
 We maintain high-end reliability and stability across the entire project through automated defenses and strict security policies:
 - **Zero-Error Automation**: Every push to the protected `main` branch runs through aggressive GitHub Action workflows. It rigidly tests against `npm run lint`, `npm run build`, and enforces strict TypeScript standards.
 - **Data & Configuration Security**: The project utilizes hardened, defense-in-depth Firestore and Storage rules, consolidated real-time listeners, and strict CSP headers. Environment variables are managed securely using `NEXT_PUBLIC_*` prefixes.
-- **Rogue DOM Protection**: The React application runs `ClientProtection`, an aggressive `MutationObserver` on the real DOM. It shields against malicious external browser extensions, strictly sanitizes HTML/SVG injections via `sanitizeSvg()`, and destroys unauthorized style injections.
+- **DOM tamper deterrence**: `ClientProtection` runs a `MutationObserver` on the root nodes that strips injected `<script>`/`<style>` tags and hostile inline styles. It's a best-effort deterrent against console/extension tampering — **not** a security boundary (a hostile extension has full page access regardless). The actual XSS defenses are the strict CSP, `sanitizeSvg()` on any `dangerouslySetInnerHTML`, and the hardened Firestore/Storage rules.
 - **Email Red Alerts**: If a syntax error, bad prop, or type issue is ever committed, the deployment instantly aborts to protect production, and GitHub natively emails the owner with a link to the exact line of code failure.
 
 ---
@@ -95,7 +95,7 @@ src/
 | **Framework** | [React 19](https://react.dev/), [Next.js 15](https://nextjs.org/) |
 | **Backend** | [Firebase](https://firebase.google.com/) (Firestore, Functions, Storage) |
 | **Animation** | [Anime.js](https://animejs.com/), [Framer Motion](https://motion.dev/) |
-| **Security** | ClientProtection DOM Shield, Hardened Rules, strict CSP |
+| **Security** | Strict CSP, hardened Firestore/Storage rules, `sanitizeSvg`, DOM tamper-deterrent |
 | **Icons** | [Lucide React](https://lucide.dev/) |
 | **Styling** | Vanilla CSS (Custom Design System), Tailwind CSS v4 |
 | **Logic** | TypeScript |
