@@ -28,6 +28,9 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
     const [activeTab, setActiveTab] = useState('projects');
     const [profileImage, setProfileImage] = useState<string>('');
+    // In-dashboard AI copilot ("Spark") can be switched off from Settings → MCP.
+    // Defaults on; only skips mounting when explicitly disabled in Settings/MCP.
+    const [aiEnabled, setAiEnabled] = useState(true);
 
     // Responsive breakpoints
     const isExtraSmall = windowWidth < 400;  // 320px - 399px
@@ -51,6 +54,15 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                 if (data.imageUrl) setProfileImage(data.imageUrl);
             }
         });
+        return () => unsub();
+    }, []);
+
+    // Watch the AI assistant toggle (Settings/MCP.assistantEnabled).
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, 'Settings', 'MCP'), (snap) => {
+            const data = snap.exists() ? snap.data() : {};
+            setAiEnabled(data.assistantEnabled !== false);
+        }, () => { /* admin-only; ignore transient errors */ });
         return () => unsub();
     }, []);
 
@@ -306,8 +318,11 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                 </div>
             </main>
 
-            {/* AI co-pilot - floating orb, can navigate, click, and read/write data */}
-            <Assistant onNavigate={(page) => setActiveTab(page)} currentPage={activeTab} />
+            {/* AI co-pilot - floating orb, can navigate, click, and read/write data.
+                Gated by Settings → MCP → "Dashboard AI assistant". */}
+            {aiEnabled && (
+                <Assistant onNavigate={(page) => setActiveTab(page)} currentPage={activeTab} />
+            )}
         </div >
     );
 };

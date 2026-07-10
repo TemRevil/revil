@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plug, Copy, Check, ShieldAlert, RotateCcw, ShieldCheck, Power } from 'lucide-react';
+import { Plug, Copy, Check, ShieldAlert, RotateCcw, ShieldCheck, Power, Sparkles, Bot } from 'lucide-react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Alert from '../Alert';
@@ -8,6 +8,9 @@ import useSafeAlert from '../../hooks/useSafeAlert';
 interface McpConfig {
     enabled: boolean;
     writesEnabled: boolean;
+    // In-dashboard "Spark" copilot orb. Separate from the MCP server; when false the
+    // Dashboard skips mounting the Assistant entirely. Defaults on.
+    assistantEnabled: boolean;
     url: string;
     revokedBefore?: number;
 }
@@ -21,7 +24,7 @@ const DEFAULT_URL = 'https://mcp.temrevil.com';
  * Cloud Function; this panel only flips switches the function reads each request.
  */
 const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
-    const [cfg, setCfg] = useState<McpConfig>({ enabled: true, writesEnabled: false, url: '' });
+    const [cfg, setCfg] = useState<McpConfig>({ enabled: true, writesEnabled: false, assistantEnabled: true, url: '' });
     const [urlDraft, setUrlDraft] = useState(DEFAULT_URL);
     const [copied, setCopied] = useState(false);
     const { alert, showAlert, hideAlert } = useSafeAlert();
@@ -32,6 +35,7 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
             const next: McpConfig = {
                 enabled: d.enabled !== false,
                 writesEnabled: d.writesEnabled === true,
+                assistantEnabled: d.assistantEnabled !== false,
                 url: d.url || '',
                 revokedBefore: d.revokedBefore || 0,
             };
@@ -175,6 +179,38 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
                     <RotateCcw size={16} />
                     Revoke
                 </button>
+            </div>
+
+            {/* Dashboard AI assistant (Spark) — the in-dashboard copilot orb. This is a
+                SEPARATE feature from the MCP server above: turning it off just removes
+                the orb from this dashboard (it does not affect external MCP clients). */}
+            <div className="flex flex-col gap-4 pt-6" style={{ borderTop: '1px solid var(--section-border)' }}>
+                <div className="flex items-start gap-4 min-w-0">
+                    <span className="grid place-items-center shrink-0 rounded-2xl" style={{ width: 48, height: 48, background: 'rgba(139,92,246,0.12)', color: '#8b5cf6' }}>
+                        <Sparkles size={24} />
+                    </span>
+                    <div className="min-w-0">
+                        <h3 className="heading-md text-lg sm:text-xl m-0">Dashboard AI assistant</h3>
+                        <p className="text-muted text-xs sm:text-sm leading-relaxed mt-1 max-w-2xl">
+                            “Spark”, the floating copilot orb inside this dashboard. Independent of the MCP server above —
+                            this switch only controls the in-app assistant.
+                        </p>
+                    </div>
+                </div>
+                <div className={card} style={cardStyle}>
+                    <div className="flex items-start gap-3 min-w-0">
+                        <Bot size={18} className="mt-0.5 shrink-0" style={{ color: cfg.assistantEnabled ? '#8b5cf6' : 'var(--text-muted)' }} />
+                        <div className="min-w-0">
+                            <div className="text-sm font-bold text-primary">Show the assistant</div>
+                            <div className="text-muted text-xs mt-0.5">When off, the Spark orb is removed from the dashboard.</div>
+                        </div>
+                    </div>
+                    {toggle(
+                        cfg.assistantEnabled,
+                        () => patch({ assistantEnabled: !cfg.assistantEnabled }, cfg.assistantEnabled ? 'Assistant hidden' : 'Assistant enabled'),
+                        'Show the dashboard assistant',
+                    )}
+                </div>
             </div>
         </div>
     );
