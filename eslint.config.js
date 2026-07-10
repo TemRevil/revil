@@ -5,16 +5,37 @@ import tsEslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', '.next']),
-  // Node-side code (Cloud Functions + maintenance scripts) is CommonJS and runs in
-  // Node, not the browser. Lint it with Node globals so require/exports/process/console
-  // resolve (previously these produced spurious no-undef errors under browser globals).
+  globalIgnores(['dist', '.next', 'functions/lib']),
+  // Maintenance scripts are CommonJS and run in Node, not the browser. Lint with Node
+  // globals so require/exports/process/console resolve.
   {
-    files: ['functions/**/*.js', 'scripts/**/*.js'],
+    files: ['scripts/**/*.js'],
     languageOptions: {
       globals: globals.node,
       sourceType: 'commonjs',
       ecmaVersion: 'latest',
+    },
+  },
+  // Cloud Functions are TypeScript (functions/src → functions/lib) with their own
+  // strict tsconfig. Type-check them against that project, with Node globals.
+  {
+    files: ['functions/**/*.ts'],
+    extends: [
+      js.configs.recommended,
+      ...tsEslint.configs.recommended,
+    ],
+    languageOptions: {
+      parser: tsEslint.parser,
+      parserOptions: {
+        project: ['./functions/tsconfig.json'],
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+      globals: globals.node,
+    },
+    rules: {
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
   {
@@ -39,6 +60,8 @@ export default defineConfig([
   },
   {
     files: ['**/*.{ts,tsx}'],
+    // Cloud Functions .ts have their own block/tsconfig above.
+    ignores: ['functions/**'],
     extends: [
       js.configs.recommended,
       ...tsEslint.configs.recommended,

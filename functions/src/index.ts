@@ -1,8 +1,8 @@
-const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentWritten } = require("firebase-functions/v2/firestore");
-const admin = require("firebase-admin");
-const nodemailer = require("nodemailer");
-const { defineSecret } = require("firebase-functions/params");
+import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import admin from "firebase-admin";
+import nodemailer, { type Transporter } from "nodemailer";
+import { defineSecret } from "firebase-functions/params";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -21,13 +21,53 @@ const HELLO_EMAIL = "hello@temrevil.com";
 
 // Remote MCP server (agentic portfolio access over OAuth) — defined in its own
 // module and re-exported so `firebase deploy --only functions:mcp` works.
-exports.mcp = require("./mcp").mcp;
+export { mcp } from "./mcp.js";
+
+// ── Shapes of the Firestore records these functions read ─────────────
+interface EmailEntry {
+  Name?: string;
+  Email?: string;
+  Number?: string;
+  Message?: string;
+  Whatsapp?: boolean;
+  Timestamp?: string | number;
+  "Files Attached"?: Array<{ url?: string; name?: string }>;
+}
+interface MeetingEntry {
+  Name?: string;
+  Email?: string;
+  Date?: string;
+  Time?: string;
+  UserLocalTime?: string;
+  MeetingLink?: string;
+  "What For"?: string;
+  Reason?: string;
+}
+interface CanaryDoc {
+  Emails?: Record<string, EmailEntry>;
+  Meetings?: Record<string, MeetingEntry>;
+}
+
+interface EmailTemplateArgs {
+  title: string;
+  preheader?: string;
+  bodyHtml: string;
+  footerNote?: string;
+}
+interface GuestAckArgs {
+  to?: string;
+  name?: string;
+  heading: string;
+  intro: string;
+  detailRows?: Array<{ label: string; value: string }>;
+  ctaHtml?: string;
+}
 
 /**
  * Escape user-supplied strings before interpolating into email HTML.
  * Prevents an attacker from injecting <img onerror=...> via Name/Email/Message.
  */
-function escHtml(v) {
+function escHtml(v: unknown): string {
   if (v === null || v === undefined) return "";
   return String(v)
     .replace(/&/g, "&amp;")
@@ -41,7 +81,7 @@ function escHtml(v) {
  * Escape user-supplied strings used inside an HTML attribute (mailto:, href, etc).
  * Prevents attribute breakout without breaking URL protocols.
  */
-function escAttr(v) {
+function escAttr(v: unknown): string {
   if (v === null || v === undefined) return "";
   return String(v)
     .replace(/&/g, "&amp;")
@@ -55,7 +95,7 @@ function escAttr(v) {
  * Sanitize a string for use in an email subject / header.
  * Strips line breaks (prevents SMTP header injection) and clamps length.
  */
-function escSubject(v) {
+function escSubject(v: unknown): string {
   if (v === null || v === undefined) return "";
   return String(v).replace(/[\r\n]+/g, " ").trim().slice(0, 200);
 }
@@ -65,7 +105,7 @@ function escSubject(v) {
  * E.g. https://firebasestorage.googleapis.com/v0/b/.../o/emails%2F1781817458723_zmn0zb6%2Ffilename.jpg?alt=media...
  * returns "emails/1781817458723_zmn0zb6/filename.jpg".
  */
-function getStoragePathFromUrl(url) {
+function getStoragePathFromUrl(url: string): string | null {
   try {
     const parts = url.split("/o/");
     if (parts.length < 2) return null;
@@ -78,7 +118,7 @@ function getStoragePathFromUrl(url) {
 }
 
 /** Helper: create a reusable SMTP transporter */
-function createTransporter() {
+function createTransporter(): Transporter {
   return nodemailer.createTransport({
     host: "smtp.hostinger.com",
     port: 465,
@@ -91,7 +131,7 @@ function createTransporter() {
 }
 
 // ── Branded Email Template ─────────────────────────────────────────
-function emailTemplate({ title, preheader, bodyHtml, footerNote }) {
+function emailTemplate({ title, preheader, bodyHtml, footerNote }: EmailTemplateArgs): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -161,7 +201,10 @@ const GUEST_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
  * `intro`/`detailRows`/`ctaHtml` are server-built HTML; only echoed user fields
  * are passed through escHtml by the caller. No-ops on a missing/invalid address.
  */
-async function sendGuestAck(transporter, { to, name, heading, intro, detailRows = [], ctaHtml = "" }) {
+async function sendGuestAck(
+  transporter: Transporter,
+  { to, name, heading, intro, detailRows = [], ctaHtml = "" }: GuestAckArgs,
+): Promise<void> {
   if (!to || !GUEST_EMAIL_RE.test(String(to))) return;
   const rows = detailRows
     .map((r) => `
@@ -211,7 +254,7 @@ async function sendGuestAck(transporter, { to, name, heading, intro, detailRows 
 // =====================================================================
 //  1. syncSession - HTTP endpoint for Algorithm.tsx session recording
 // =====================================================================
-exports.syncSession = onRequest(
+export const syncSession = onRequest(
   {
     region: "us-central1",
     cors: [
@@ -220,11 +263,17 @@ exports.syncSession = onRequest(
       /localhost/,
     ],
     maxInstances: 10,
-    enforceAppCheck: true,
+    // NOTE: onRequest (HttpsOptions) does NOT support `enforceAppCheck` — that option
+    // is only honored by onCall (CallableOptions). The previous JS passed it here, but
+    // it was silently ignored, so this endpoint was never App Check-enforced by it.
+    // To actually enforce, verify the X-Firebase-AppCheck header manually with
+    // admin.appCheck().verifyToken() (the client already sends it — see
+    // src/lib/firebase.ts). Left as a follow-up to avoid changing runtime behavior here.
   },
   async (req, res) => {
     if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
+      res.status(405).json({ error: "Method not allowed" });
+      return;
     }
 
     const { linkId, recCli } = req.body;
@@ -232,13 +281,16 @@ exports.syncSession = onRequest(
     // Reject path separators / Firestore-illegal chars so a crafted linkId can't
     // escape the Settings/Views/Links/{id} document path.
     if (!linkId || typeof linkId !== "string" || linkId.length > 100 || /[/.]/.test(linkId)) {
-      return res.status(400).json({ error: "Invalid linkId" });
+      res.status(400).json({ error: "Invalid linkId" });
+      return;
     }
     if (!recCli || typeof recCli !== "string") {
-      return res.status(400).json({ error: "Invalid recCli" });
+      res.status(400).json({ error: "Invalid recCli" });
+      return;
     }
     if (recCli.length > 60000) {
-      return res.status(400).json({ error: "recCli too large" });
+      res.status(400).json({ error: "recCli too large" });
+      return;
     }
 
     try {
@@ -246,7 +298,8 @@ exports.syncSession = onRequest(
       const linkSnap = await linkRef.get();
 
       if (!linkSnap.exists) {
-        return res.status(404).json({ error: "Link not found" });
+        res.status(404).json({ error: "Link not found" });
+        return;
       }
 
       await linkRef.update({
@@ -254,33 +307,33 @@ exports.syncSession = onRequest(
         lastWrite: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      return res.status(200).json({ ok: true });
+      res.status(200).json({ ok: true });
     } catch (err) {
       console.error("syncSession error:", err);
-      return res.status(500).json({ error: "Internal error" });
+      res.status(500).json({ error: "Internal error" });
     }
-  }
+  },
 );
 
 // =====================================================================
 //  2. notifyCanary - Firestore trigger on Settings/Canary
 //     Detects new emails & meetings, sends notification to admin
 // =====================================================================
-exports.notifyCanary = onDocumentWritten(
+export const notifyCanary = onDocumentWritten(
   {
     document: "Settings/Canary",
     region: "us-central1",
     secrets: [smtpUser, smtpPass],
   },
   async (event) => {
-    const before = event.data?.before?.data() || {};
-    const after = event.data?.after?.data() || {};
+    const before = (event.data?.before?.data() || {}) as CanaryDoc;
+    const after = (event.data?.after?.data() || {}) as CanaryDoc;
 
     // ── Detect deleted email messages & clean up storage ──────────
     const oldEmails = before.Emails || {};
     const newEmails = after.Emails || {};
     const deletedEmailKeys = Object.keys(oldEmails).filter(
-      (k) => !newEmails[k]
+      (k) => !newEmails[k],
     );
 
     for (const key of deletedEmailKeys) {
@@ -308,7 +361,7 @@ exports.notifyCanary = onDocumentWritten(
 
     // ── Detect new email messages ──────────────────────────────
     const addedEmailKeys = Object.keys(newEmails).filter(
-      (k) => !oldEmails[k]
+      (k) => !oldEmails[k],
     );
 
     for (const key of addedEmailKeys) {
@@ -330,7 +383,7 @@ exports.notifyCanary = onDocumentWritten(
              ${e["Files Attached"]
                .map(
                  (f) =>
-                   `<p style="margin:4px 0"><a href="${escAttr(f.url)}" style="color:#3395ff;text-decoration:none">${escHtml(f.name)}</a></p>`
+                   `<p style="margin:4px 0"><a href="${escAttr(f.url)}" style="color:#3395ff;text-decoration:none">${escHtml(f.name)}</a></p>`,
                )
                .join("")}`
           : "";
@@ -416,7 +469,7 @@ exports.notifyCanary = onDocumentWritten(
     const oldMeetings = before.Meetings || {};
     const newMeetings = after.Meetings || {};
     const addedMeetingKeys = Object.keys(newMeetings).filter(
-      (k) => !oldMeetings[k]
+      (k) => !oldMeetings[k],
     );
 
     for (const key of addedMeetingKeys) {
@@ -534,14 +587,14 @@ exports.notifyCanary = onDocumentWritten(
     } catch (err) {
       console.error("Failed to mirror booked slots:", err);
     }
-  }
+  },
 );
 
 // =====================================================================
 //  3. notifyLogin - Callable function triggered by dashboard on sign-in
 //     Sends an email alert with date/time/device info
 // =====================================================================
-exports.notifyLogin = onCall(
+export const notifyLogin = onCall(
   {
     region: "us-central1",
     secrets: [smtpUser, smtpPass],
@@ -636,7 +689,7 @@ exports.notifyLogin = onCall(
       console.error("Failed to send login alert:", err);
       return { status: "error", message: "Failed to send login alert." };
     }
-  }
+  },
 );
 
 // =====================================================================
@@ -648,7 +701,7 @@ exports.notifyLogin = onCall(
 // =====================================================================
 
 /** Detect the provider from the server key's prefix (mirrors src/lib/llm.ts). */
-function detectLlmProvider(key) {
+function detectLlmProvider(key: string): "anthropic" | "gemini" | "openai" | null {
   if (!key) return null;
   if (key.startsWith("sk-ant")) return "anthropic";
   if (key.startsWith("AIza") || key.startsWith("AQ.")) return "gemini";
@@ -656,7 +709,7 @@ function detectLlmProvider(key) {
   return null;
 }
 
-exports.llm = onCall(
+export const llm = onCall(
   {
     region: "us-central1",
     secrets: [llmApiKey],
@@ -695,10 +748,10 @@ exports.llm = onCall(
     }
 
     // Build the outbound request from a fixed host map (never a client-supplied URL).
-    let url;
+    let url: string;
     let method = "GET";
-    let headers = {};
-    let reqBody;
+    let headers: Record<string, string> = {};
+    let reqBody: string | undefined;
     if (provider === "anthropic") {
       headers = { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" };
       if (kind === "models") {
@@ -735,7 +788,7 @@ exports.llm = onCall(
     try {
       const r = await fetch(url, { method, headers, body: reqBody, signal: ctrl.signal });
       const text = await r.text();
-      let data;
+      let data: unknown;
       try { data = JSON.parse(text); } catch { data = text; }
       // Pass the provider's status through so the client surfaces real errors.
       return { ok: r.ok, status: r.status, data };
@@ -745,5 +798,5 @@ exports.llm = onCall(
     } finally {
       clearTimeout(timer);
     }
-  }
+  },
 );

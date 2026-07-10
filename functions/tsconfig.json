@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    // CommonJS output (the Functions runtime is CJS), but nodenext resolution so the
+    // ESM-only MCP SDK still resolves types through its package `exports` map when
+    // pulled in via dynamic import().
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "lib": ["es2022"],
+    "outDir": "lib",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "lib"]
+}
