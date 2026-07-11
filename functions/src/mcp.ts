@@ -265,6 +265,14 @@ function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
     cfg.writesEnabled
       ? "- Writes are ENABLED. Before any create/update/delete, briefly state exactly what will change and get the owner's go-ahead. Be extra careful with delete_* (irreversible)."
       : "- Writes are currently DISABLED in settings, so only read tools are available. Don't promise changes you can't make.",
+    ...(cfg.writesEnabled
+      ? [
+          "- Bookings (add_booking) come in TWO modes — decide which one BEFORE creating a booking, and confirm it with the owner:",
+          "    • WITH a meeting link: pass `meetingLink`, an existing Google Meet / Zoom / etc. URL. Never invent or guess a link — if the owner wants one but hasn't given a URL, ask for it first.",
+          "    • WITHOUT a meeting link: omit `meetingLink` (an in-person / phone booking, or a link to be added later).",
+          "  Pass date as YYYY-MM-DD and time as 24-hour HH:MM in the owner's timezone. add_booking marks the slot busy on the public calendar and emails the admin (and the guest, if an email is given), but it does NOT create a Google Calendar event or auto-generate a link. Check list_bookings first to avoid double-booking a slot.",
+        ]
+      : []),
     "- Be concise and factual.",
   ].join("\n");
 }
@@ -557,6 +565,55 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
   if (!cfg.writesEnabled) return; // writes globally disabled in Settings/MCP
 
   // ---- writes ----
+
+  // ---- bookings ----
+  server.registerTool("add_booking",
+    {
+      title: "Add a booking",
+      description:
+        "Create a meeting/call booking in the dashboard's Canary inbox. TWO modes: " +
+        "WITH a meeting link — pass `meetingLink`, an existing Google Meet / Zoom / etc. URL you already have; " +
+        "or WITHOUT a link — omit `meetingLink` (an in-person / phone booking, or a link to be added later). " +
+        "Never invent a link. Pass `date` as YYYY-MM-DD and `time` as 24-hour HH:MM in the owner's timezone (see get_current_time). " +
+        "This writes the booking directly to Firestore: it marks the slot busy on the public calendar and emails the admin " +
+        "(and the guest, if `email` is given), but it does NOT create a Google Calendar event or auto-generate a Meet link.",
+      inputSchema: {
+        name: z.string().min(1).describe("Guest name"),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("YYYY-MM-DD in the owner's timezone"),
+        time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).describe("24-hour HH:MM in the owner's timezone"),
+        email: z.string().email().optional().describe("Guest email — if given, they get a confirmation email"),
+        reason: z.string().optional().describe("What the call is for"),
+        meetingLink: z.string().url().optional().describe("Meeting URL (Google Meet / Zoom / etc.). Omit for a booking WITHOUT a link."),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      // Convert to the host-perspective formats the dashboard calendar + the public
+      // BookedSlots mirror compare against: Date "DD/MM/YYYY", Time "hh:mm AM/PM".
+      const [Y, M, D] = a.date.split("-");
+      const storedDate = `${D}/${M}/${Y}`;
+      const [hhStr, mm] = a.time.split(":");
+      const h24 = parseInt(hhStr, 10);
+      const period = h24 >= 12 ? "PM" : "AM";
+      const storedTime = `${pad2(h24 % 12 || 12)}:${mm} ${period}`;
+
+      const id = `${now()}_${rand(4)}`;
+      const payload = {
+        Name: a.name,
+        Date: storedDate,
+        Time: storedTime,
+        ...(a.email ? { Email: a.email } : {}),
+        ...(a.reason ? { "What For": a.reason } : {}),
+        ...(a.meetingLink ? { MeetingLink: a.meetingLink } : {}),
+        timestamp: now(),
+      };
+      await db().doc("Settings/Canary").set(
+        { Meetings: { [id]: payload }, lastMeetingWrite: SERVER_TIMESTAMP() },
+        { merge: true },
+      );
+      return ok({ status: "booked", id, date: storedDate, time: storedTime, hasMeetingLink: !!a.meetingLink });
+    });
+
   server.registerTool("create_or_update_project",
     {
       title: "Create or update a project",
