@@ -25,7 +25,6 @@ const DEFAULT_URL = 'https://mcp.temrevil.com';
  */
 const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
     const [cfg, setCfg] = useState<McpConfig>({ enabled: true, writesEnabled: false, assistantEnabled: true, url: '' });
-    const [urlDraft, setUrlDraft] = useState(DEFAULT_URL);
     const [copied, setCopied] = useState(false);
     const { alert, showAlert, hideAlert } = useSafeAlert();
 
@@ -40,7 +39,6 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
                 revokedBefore: d.revokedBefore || 0,
             };
             setCfg(next);
-            setUrlDraft(next.url || DEFAULT_URL);
         }, () => { /* admin-only; ignore */ });
         return () => unsub();
     }, []);
@@ -115,11 +113,11 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
                 <label className="dashboard-label">Server URL</label>
                 <div className="flex items-stretch gap-2">
                     <input
-                        className="dashboard-input flex-1 min-w-0 font-mono text-sm"
+                        className="dashboard-input flex-1 min-w-0 font-mono text-sm cursor-default select-all"
                         spellCheck={false}
-                        value={urlDraft}
-                        onChange={(e) => setUrlDraft(e.target.value)}
-                        onBlur={() => { const v = urlDraft.trim(); if (v && v !== cfg.url) patch({ url: v }, 'Server URL saved'); }}
+                        value={effectiveUrl}
+                        readOnly
+                        aria-label="MCP server URL"
                     />
                     <button
                         type="button"
