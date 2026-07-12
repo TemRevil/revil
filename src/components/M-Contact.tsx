@@ -10,6 +10,7 @@ import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore'
 import app, { db } from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
+import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, buildHostSlots, isWorkingDay } from '../utils/availability';
 import useTheme from '../hooks/useTheme';
 
 /** Pragmatic email validator: requires local@domain.tld and rejects whitespace.
@@ -214,10 +215,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     return { days, firstDay };
   };
 
-  const timeSlots = useMemo(() => [
-    '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
-    '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM'
-  ], []);
+  // Host working days + hours (edited from the dashboard → Canary → Hours). The slot
+  // list is derived from it, so the times are no longer hardcoded. Defaults preserve
+  // the historic 09:00–17:00 schedule until the owner configures their own.
+  const [availConfig, setAvailConfig] = useState<AvailabilityConfig>(DEFAULT_AVAILABILITY);
+  const timeSlots = useMemo(() => buildHostSlots(availConfig), [availConfig]);
 
   // Sync Host Availability & Timezone
   useEffect(() => {
@@ -227,6 +229,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         if (data['Current Time']) {
           setHostTimezoneString(data['Current Time']);
         }
+        setAvailConfig(parseAvailabilityConfig(data));
+      } else {
+        setAvailConfig(DEFAULT_AVAILABILITY);
       }
     });
 
@@ -362,6 +367,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     if (!selectedDate || activeTab !== 'meeting' || hasAutoMoved.current) return;
 
     const checkAvailable = (date: Date) => {
+      if (!isWorkingDay(availConfig, date)) return false;
       return timeSlots.some((hostTime) => {
         const isBusy = getMeetingsForDate(date).some(m => m.Time === hostTime);
         const passed = isTimePassed(date, hostTime);
@@ -391,7 +397,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       }
     }
     hasAutoMoved.current = true;
-  }, [existingMeetings, hostTimezoneString, selectedDate, timeSlots, getMeetingsForDate, isTimePassed, activeTab]);
+  }, [existingMeetings, hostTimezoneString, selectedDate, timeSlots, getMeetingsForDate, isTimePassed, activeTab, availConfig]);
 
   // Reset auto-move flag when modal closes (if it was an external state) or handle it inside the component
   useEffect(() => {
@@ -980,7 +986,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                 return !isBusy && !passed;
                               });
 
-                              const isBookable = !isPast && !isTooFar && hasFreeSlots;
+                              const isBookable = !isPast && !isTooFar && hasFreeSlots && isWorkingDay(availConfig, date);
 
                               return (
                                 <div
@@ -1154,7 +1160,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   const passed = isTimePassed(selectedDate, hostTime);
                                   return !isBusy && !passed;
                                 });
-                                return !isPast && hasFreeSlots;
+                                return !isPast && hasFreeSlots && isWorkingDay(availConfig, selectedDate);
                               })() && (
                                   <>
                                     {/* Timezone Selection (Before Available Slots) */}
