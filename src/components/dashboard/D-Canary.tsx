@@ -94,6 +94,7 @@ const DCanary = () => {
     const [isLoading, setIsLoading] = useState(false);
 
     const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
+    const [viewingMeeting, setViewingMeeting] = useState<Meeting | null>(null);
     const [isBookingOpen, setIsBookingOpen] = useState(false);
     const [modalDirection, setModalDirection] = useState(0);
     const [modalViewDate, setModalViewDate] = useState(new Date());
@@ -853,49 +854,48 @@ const DCanary = () => {
                                 selectedDayMeetings.map((meeting) => (
                                     <div
                                         key={meeting.id}
-                                        className="p-4 rounded-2xl border transition-all hover:translate-x-1"
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => setViewingMeeting(meeting)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewingMeeting(meeting); } }}
+                                        className="group p-4 rounded-2xl border transition-all hover:translate-x-1 cursor-pointer"
                                         style={{
                                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                                             backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.4)'
                                         }}
                                     >
-                                        <div className="flex items-start justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex flex-col gap-1">
-                                                    <h4 className="text-sm font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>{meeting.title}</h4>
-                                                    {meeting.email && (
-                                                        <a
-                                                            href={`mailto:${meeting.email}`}
-                                                            className="flex items-center gap-1.5 min-w-0 no-underline hover:text-blue-500 transition-colors"
-                                                            style={{ color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)' }}
-                                                        >
-                                                            <Mail size={11} className="opacity-60 shrink-0" />
-                                                            <span className="text-[11px] truncate select-all">{meeting.email}</span>
-                                                        </a>
-                                                    )}
-                                                    <div className="flex items-center gap-2 text-[11px] font-medium" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
-                                                        <div className="flex items-center gap-1.5 p-1 rounded-md bg-black/5 dark:bg-white/5">
-                                                            <Clock size={12} className="opacity-70" />
-                                                            <span>{meeting.time}</span>
-                                                        </div>
-                                                        <span className="opacity-40 italic font-normal line-clamp-1">{meeting.reason || 'No description'}</span>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                                                <h4 className="text-sm font-bold m-0 truncate" style={{ color: isDark ? '#fff' : '#000' }}>{meeting.title}</h4>
+                                                {meeting.email && (
+                                                    <div className="flex items-center gap-1.5 min-w-0" style={{ color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)' }}>
+                                                        <Mail size={11} className="opacity-60 shrink-0" />
+                                                        <span className="text-[11px] truncate">{meeting.email}</span>
                                                     </div>
+                                                )}
+                                                <div className="flex items-center gap-2 text-[11px] font-medium flex-wrap" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
+                                                    <div className="flex items-center gap-1.5 p-1 rounded-md bg-black/5 dark:bg-white/5">
+                                                        <Clock size={12} className="opacity-70" />
+                                                        <span>{meeting.time}</span>
+                                                    </div>
+                                                    {meeting.link && (
+                                                        <div className="flex items-center gap-1.5 p-1 rounded-md text-blue-500 bg-blue-500/10">
+                                                            <Video size={12} />
+                                                            <span className="font-semibold">Meet link</span>
+                                                        </div>
+                                                    )}
                                                 </div>
+                                                <span className="text-[11px] opacity-40 italic font-normal line-clamp-1">{meeting.reason || 'No description'}</span>
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                <button
-                                                    onClick={() => handleReschedule(meeting)}
-                                                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-all"
-                                                    style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}
-                                                >
-                                                    <Edit2 size={14} />
-                                                </button>
+                                            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                                                 <button
                                                     onClick={() => setConfirmDelete(meeting.id)}
-                                                    className="p-2 hover:bg-red-500/10 rounded-lg transition-all group"
+                                                    className="p-2 hover:bg-red-500/10 rounded-lg transition-all group/del"
+                                                    aria-label="Delete session"
                                                 >
-                                                    <Trash2 size={14} className="text-red-500/60 group-hover:text-red-500" />
+                                                    <Trash2 size={14} className="text-red-500/60 group-hover/del:text-red-500" />
                                                 </button>
+                                                <ChevronRight size={16} className="opacity-30 group-hover:opacity-70 group-hover:translate-x-0.5 transition-all" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }} />
                                             </div>
                                         </div>
                                     </div>
@@ -1138,6 +1138,102 @@ const DCanary = () => {
                     </div>
                 </div>
             )
+            }
+
+            {/* Meeting details (info-first; Edit hands off to the edit modal) */}
+            {
+                typeof document !== 'undefined' && createPortal(
+                    <AnimatePresence mode="wait">
+                        {viewingMeeting && (
+                            <motion.div
+                                key="canary-view-overlay"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-2 md:p-4"
+                            >
+                                <div className="absolute inset-0" onClick={() => setViewingMeeting(null)} />
+                                <motion.div
+                                    key="canary-view-content"
+                                    initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                                    exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                                    className="relative w-full max-w-lg rounded-2xl md:rounded-[32px] overflow-hidden flex flex-col shadow-2xl max-h-[95vh]"
+                                    style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.95)' : 'rgba(255,255,255,0.95)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}
+                                >
+                                    {/* Header */}
+                                    <div className="p-5 md:p-6 border-b flex items-center justify-between gap-3" style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <span className="grid place-items-center shrink-0 rounded-2xl" style={{ width: 44, height: 44, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                                                <CalendarIcon size={22} />
+                                            </span>
+                                            <div className="min-w-0">
+                                                <h3 className="text-lg font-bold m-0 truncate" style={{ color: isDark ? '#fff' : '#000' }}>{viewingMeeting.title}</h3>
+                                                <p className="text-[11px] font-semibold uppercase tracking-wider m-0" style={{ color: 'var(--text-muted)' }}>Booking details</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => setViewingMeeting(null)} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors shrink-0" style={{ color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' }} aria-label="Close">
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+
+                                    {/* Body */}
+                                    <div className="p-5 md:p-6 flex flex-col gap-5 overflow-y-auto custom-scrollbar">
+                                        {viewingMeeting.email && (
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Email</span>
+                                                <a href={`mailto:${viewingMeeting.email}`} className="text-sm font-semibold hover:text-blue-500 transition-colors break-all select-all inline-flex items-center gap-2" style={{ color: isDark ? '#fff' : '#000' }}>
+                                                    <Mail size={14} className="opacity-60 shrink-0" />
+                                                    {viewingMeeting.email}
+                                                </a>
+                                            </div>
+                                        )}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Date</span>
+                                                <span className="text-sm font-semibold" style={{ color: isDark ? '#fff' : '#000' }}>{viewingMeeting.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Time</span>
+                                                <span className="text-sm font-semibold inline-flex items-center gap-2" style={{ color: isDark ? '#fff' : '#000' }}><Clock size={14} className="opacity-60 shrink-0" />{viewingMeeting.time}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>What it&apos;s for</span>
+                                            <span className="text-sm leading-relaxed" style={{ color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)' }}>{viewingMeeting.reason || 'No description provided.'}</span>
+                                        </div>
+                                        {viewingMeeting.link && (
+                                            <a href={viewingMeeting.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors self-start no-underline" style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                                                <Video size={16} /> Join meeting
+                                            </a>
+                                        )}
+                                    </div>
+
+                                    {/* Footer actions */}
+                                    <div className="p-5 md:p-6 border-t flex items-center justify-between gap-3" style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => { const id = viewingMeeting.id; setViewingMeeting(null); setConfirmDelete(id); }}
+                                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-colors"
+                                            style={{ border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}
+                                        >
+                                            <Trash2 size={16} /> Delete
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { const m = viewingMeeting; setViewingMeeting(null); handleReschedule(m); }}
+                                            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all"
+                                            style={{ background: '#3b82f6', color: '#fff' }}
+                                        >
+                                            <Edit2 size={16} /> Edit
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>,
+                    document.body
+                )
             }
 
             {/* Modal */}
