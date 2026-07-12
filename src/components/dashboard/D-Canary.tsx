@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, Phone, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField, setDoc } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app, { db } from '../../lib/firebase';
@@ -938,7 +938,20 @@ const DCanary = () => {
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="flex flex-col gap-1 overflow-hidden flex-1 min-w-0">
                                                 <h4 className="text-sm font-bold m-0 truncate" style={{ color: isDark ? '#fff' : '#000' }}>{email.name}</h4>
-                                                <p className="m-0 text-[11px] opacity-60 line-clamp-1">{email.message}</p>
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <Mail size={11} className="opacity-50 shrink-0" />
+                                                    <span className="text-[11px] opacity-70 truncate select-all">{email.email}</span>
+                                                </div>
+                                                {email.number && (
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        <Phone size={11} className="opacity-50 shrink-0" />
+                                                        <span className="text-[11px] opacity-70 truncate select-all">{email.number}</span>
+                                                        {email.whatsapp && (
+                                                            <span className="text-[9px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded-full shrink-0">WhatsApp</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                <p className="m-0 text-[11px] opacity-60 line-clamp-1 mt-0.5">{email.message}</p>
                                                 <div className="flex items-center gap-2 mt-1">
                                                     <span className="text-[9px] font-bold opacity-40">{new Date(email.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                                                     {email.attachments.length > 0 && (
