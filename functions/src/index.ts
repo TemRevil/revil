@@ -9,7 +9,9 @@ const db = admin.firestore();
 
 // ── Secrets (set via: firebase functions:secrets:set SMTP_USER etc.) ──
 const smtpUser = defineSecret("SMTP_USER");
-const smtpPass = defineSecret("SMTP_PASS");
+// Outbound email now routes through Resend (temrevil.com is a verified Resend domain
+// with aligned DKIM/SPF). The old Hostinger SMTP_PASS secret is no longer used.
+const resendKey = defineSecret("RESEND_API_KEY");
 
 // LLM provider key for the dashboard assistant ("Spark"). Held server-side so it
 // never ships in the public client bundle. Set with:
@@ -117,15 +119,17 @@ function getStoragePathFromUrl(url: string): string | null {
   }
 }
 
-/** Helper: create a reusable SMTP transporter */
+/** Helper: create a reusable SMTP transporter (Resend relay). */
 function createTransporter(): Transporter {
+  // Resend's SMTP relay: the username is literally "resend", the password is the API
+  // key. From addresses must be on a verified domain — we always send as HELLO_EMAIL.
   return nodemailer.createTransport({
-    host: "smtp.hostinger.com",
+    host: "smtp.resend.com",
     port: 465,
     secure: true,
     auth: {
-      user: smtpUser.value(),
-      pass: smtpPass.value(),
+      user: "resend",
+      pass: resendKey.value(),
     },
   });
 }
@@ -231,7 +235,7 @@ async function sendGuestAck(
   });
 
   await transporter.sendMail({
-    from: `"Revil" <${smtpUser.value()}>`,
+    from: `"Revil" <${HELLO_EMAIL}>`,
     to,
     replyTo: HELLO_EMAIL,
     subject: escSubject(heading),
@@ -323,7 +327,7 @@ export const notifyCanary = onDocumentWritten(
   {
     document: "Settings/Canary",
     region: "us-central1",
-    secrets: [smtpUser, smtpPass],
+    secrets: [smtpUser, resendKey],
   },
   async (event) => {
     const before = (event.data?.before?.data() || {}) as CanaryDoc;
@@ -438,7 +442,7 @@ export const notifyCanary = onDocumentWritten(
       try {
         const transporter = createTransporter();
         await transporter.sendMail({
-          from: `"Revil Portfolio" <${adminEmail}>`,
+          from: `"Revil Portfolio" <${HELLO_EMAIL}>`,
           to: adminEmail,
           // Copy the public hello@ inbox too (skip if the admin already is hello@).
           cc: adminEmail.toLowerCase() === HELLO_EMAIL ? undefined : HELLO_EMAIL,
@@ -537,7 +541,7 @@ export const notifyCanary = onDocumentWritten(
       try {
         const transporter = createTransporter();
         await transporter.sendMail({
-          from: `"Revil Portfolio" <${adminEmail}>`,
+          from: `"Revil Portfolio" <${HELLO_EMAIL}>`,
           to: meetingRecipients,
           replyTo: m.Email,
           subject: escSubject(`Meeting booked: ${m.Name} on ${m.Date} at ${m.Time}`),
@@ -597,7 +601,7 @@ export const notifyCanary = onDocumentWritten(
 export const notifyLogin = onCall(
   {
     region: "us-central1",
-    secrets: [smtpUser, smtpPass],
+    secrets: [smtpUser, resendKey],
     enforceAppCheck: true,
   },
   async (request) => {
@@ -676,7 +680,7 @@ export const notifyLogin = onCall(
       const adminEmail = smtpUser.value();
       const transporter = createTransporter();
       await transporter.sendMail({
-        from: `"Revil Security" <${adminEmail}>`,
+        from: `"Revil Security" <${HELLO_EMAIL}>`,
         to: adminEmail,
         subject: `Login alert: ${dateStr} at ${timeStr}`,
         html,
