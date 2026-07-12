@@ -26,7 +26,7 @@ import {
 import MTreasuryEntry from './M-TreasuryEntry';
 import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './M-Account';
 import DatePicker from './DatePicker';
-import ScrollMenu from './ScrollMenu';
+import Select from '../Select';
 import SaveBar from './SaveBar';
 import Alert, { AlertType } from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
@@ -1016,7 +1016,7 @@ const DTreasury = () => {
                                     'Money',
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <div className="w-[152px]">
-                                            <ScrollMenu
+                                            <Select
                                                 value={moneyType === 'income' ? 'Income only' : moneyType === 'expense' ? 'Expenses only' : 'Income & expenses'}
                                                 options={['Income & expenses', 'Income only', 'Expenses only']}
                                                 onChange={(v) => setMoneyType(v === 'Income only' ? 'income' : v === 'Expenses only' ? 'expense' : 'all')}
@@ -1025,7 +1025,7 @@ const DTreasury = () => {
                                             />
                                         </div>
                                         <div className="w-[136px]">
-                                            <ScrollMenu
+                                            <Select
                                                 value={moneyView === 'day' ? 'Grouped by day' : 'Flat list'}
                                                 options={['Flat list', 'Grouped by day']}
                                                 onChange={(v) => setMoneyView(v === 'Grouped by day' ? 'day' : 'all')}
@@ -1035,7 +1035,7 @@ const DTreasury = () => {
                                         </div>
                                         {data.accounts.length > 0 && (
                                             <div className="w-[152px]">
-                                                <ScrollMenu
+                                                <Select
                                                     value={moneyAccount === 'all' ? 'All accounts' : (data.accounts.find(a => a.id === moneyAccount)?.name ?? 'All accounts')}
                                                     options={['All accounts', ...data.accounts.map(a => a.name)]}
                                                     onChange={(v) => setMoneyAccount(v === 'All accounts' ? 'all' : (data.accounts.find(a => a.name === v)?.id ?? 'all'))}

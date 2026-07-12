@@ -13,7 +13,7 @@ import {
     expenseCategories, matchCategories, nextMonthlyPaymentDate, accountOptions,
 } from '../../lib/treasury';
 import DatePicker from './DatePicker';
-import ScrollMenu from './ScrollMenu';
+import Select from '../Select';
 
 type Mode = 'project' | 'expense' | 'income';
 
@@ -487,7 +487,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             </div>
                             <div>
                                 <label className={labelCls}>For project (optional)</label>
-                                <ScrollMenu value={expProjectName} options={expProjectOpts} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
+                                <Select value={expProjectName} options={expProjectOpts} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
                             </div>
                             {/* "Who paid this?" only applies to a project's expense (the client
                                 may have covered the cost). Shown whenever a project is linked —
@@ -512,7 +512,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             {!expIsClientPaid && (accounts?.length ?? 0) > 0 && (
                                 <div>
                                     <label className={labelCls}>Paid from account</label>
-                                    <ScrollMenu value={expAccountName} options={expAccountOpts} onChange={setExpAccountName} isDark={isDark} placeholder="Which account?" />
+                                    <Select value={expAccountName} options={expAccountOpts} onChange={setExpAccountName} isDark={isDark} placeholder="Which account?" />
                                     <p className="text-[11px] text-sec mt-1.5">Deducts this from the account&apos;s balance.</p>
                                 </div>
                             )}
@@ -541,14 +541,14 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             </div>
                             <div>
                                 <label className={labelCls}>From project (optional)</label>
-                                <ScrollMenu value={incProjectName} options={incProjectOpts} onChange={setIncProjectName} isDark={isDark} placeholder="Link to a project" />
+                                <Select value={incProjectName} options={incProjectOpts} onChange={setIncProjectName} isDark={isDark} placeholder="Link to a project" />
                                 <p className="text-[11px] text-sec mt-1.5">Linking counts this toward that project&apos;s received amount.</p>
                             </div>
 
                             {(accounts?.length ?? 0) > 0 && (
                                 <div>
                                     <label className={labelCls}>Into account</label>
-                                    <ScrollMenu value={incAccountName} options={incAccountOpts} onChange={setIncAccountName} isDark={isDark} placeholder="Which account?" />
+                                    <Select value={incAccountName} options={incAccountOpts} onChange={setIncAccountName} isDark={isDark} placeholder="Which account?" />
                                     <p className="text-[11px] text-sec mt-1.5">Adds this to the account&apos;s balance.</p>
                                 </div>
                             )}

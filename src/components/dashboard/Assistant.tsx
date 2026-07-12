@@ -10,7 +10,7 @@ import {
     chat, getApiKey, setKeyOverride, getModel, setModel, resolveProvider, listModels,
     userMessage, toolResultMessage, PROVIDER_LABEL, Provider, ToolCall, ToolResult,
 } from '../../lib/llm';
-import ScrollMenu from './ScrollMenu';
+import Select from '../Select';
 import Markdown from './Markdown';
 
 type Status = 'idle' | 'connecting' | 'thinking' | 'acting' | 'speaking' | 'error';
@@ -611,7 +611,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                             <div className="flex items-end gap-2">
                                 <div className="flex-1">
                                     <label className="text-[11px] font-semibold text-sec uppercase tracking-wider mb-1.5 block">Model</label>
-                                    <ScrollMenu value={model} options={models} onChange={chooseModel} isDark={isDark} placeholder={models.length ? 'Choose a model' : 'Load models first'} />
+                                    <Select value={model} options={models} onChange={chooseModel} isDark={isDark} placeholder={models.length ? 'Choose a model' : 'Load models first'} />
                                 </div>
                                 <button onClick={loadModels} disabled={loadingModels} className="px-3 py-2.5 rounded-xl text-sm font-semibold text-blue-500 border border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-all disabled:opacity-50 flex items-center gap-1.5">
                                     {loadingModels ? <Loader2 size={15} className="animate-spin" /> : 'Load'}
@@ -621,7 +621,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                             <div className="flex items-end gap-2">
                                 <div className="flex-1">
                                     <label className="text-[11px] font-semibold text-sec uppercase tracking-wider mb-1.5 block">Voice</label>
-                                    <ScrollMenu
+                                    <Select
                                         value={voiceName || (pickVoice()?.name ?? '')}
                                         options={enVoices.map(v => v.name)}
                                         onChange={(name) => { setVoiceName(name); try { localStorage.setItem('llm_voice_name', name); } catch { /* ignore */ } }}

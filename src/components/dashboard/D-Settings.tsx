@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, ChevronDown, HardDrive, ZoomIn, Check, Link, Sun, Moon, Plug } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, HardDrive, ZoomIn, Link, Sun, Moon, Plug } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
 import Cropper from 'react-easy-crop';
@@ -13,6 +13,7 @@ const storage = getStorage(app);
 import Alert, { AlertType } from '../Alert';
 import MStackItem, { StackItemData } from './M-StackItem';
 import DMcpPanel from './D-MCP';
+import Select from '../Select';
 import SaveBar from './SaveBar';
 import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
@@ -132,8 +133,6 @@ export default function DSettings() {
     const [availability, setAvailability] = useState(75);
     const [selectedTimezone, setSelectedTimezone] = useState(2);
     const [currentTime, setCurrentTime] = useState('');
-    const [timezoneDropdownOpen, setTimezoneDropdownOpen] = useState(false);
-    const timezoneRef = useRef<HTMLDivElement>(null);
 
     // Stack state
     const [stackItems, setStackItems] = useState<StackItem[]>([]);
@@ -715,17 +714,6 @@ export default function DSettings() {
 
 
 
-    // Close dropdown when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (timezoneRef.current && !timezoneRef.current.contains(e.target as Node)) {
-                setTimezoneDropdownOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
     // Update current time based on selected timezone
     useEffect(() => {
         const updateTime = () => {
@@ -1082,8 +1070,6 @@ export default function DSettings() {
         { id: 'mcp', label: 'MCP', icon: Plug },
     ] as const;
 
-    const selectedTz = timezones.find(tz => tz.value === selectedTimezone);
-
     if (isCropping && originalImageSrc) {
         return createPortal(
             <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[3000] flex items-center justify-center p-4 animate-fade-in">
@@ -1274,52 +1260,16 @@ export default function DSettings() {
                                         </div>
                                     </div>
                                     <div className="flex flex-col sm:flex-row gap-3">
-                                        {/* Custom Dropdown */}
-                                        <div ref={timezoneRef} className="flex-1 min-w-[140px] relative z-50">
-                                            <button
-                                                onClick={() => setTimezoneDropdownOpen(!timezoneDropdownOpen)}
-                                                className="input-field w-full sm:w-auto flex justify-between items-center cursor-pointer text-left"
-                                            >
-                                                <span className="text-sm sm:text-base md:text-lg">{selectedTz?.label || 'Select Timezone'}</span>
-                                                <ChevronDown size={18} className={`transition-transform duration-200 ${timezoneDropdownOpen ? 'rotate-180' : ''}`} />
-                                            </button>
-
-                                            {/* Dropdown Menu - Premium Liquid Glass */}
-                                            {timezoneDropdownOpen && (
-                                                <div
-                                                    className="absolute top-full left-0 right-0 mt-3 border border-white dark:border-white/20 rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_60px_rgba(0,0,0,0.45)] max-h-[300px] overflow-y-auto z-[100] p-2 flex flex-col gap-1.5 animate-pop ring-4 ring-black/[0.02] dark:ring-white/[0.02]"
-                                                    style={{
-                                                        backgroundColor: isDark ? 'rgba(20, 20, 20, 0.85)' : 'rgba(255, 255, 255, 0.92)',
-                                                        backdropFilter: 'blur(24px)',
-                                                        WebkitBackdropFilter: 'blur(24px)'
-                                                    }}
-                                                >
-                                                    {timezones.map(tz => (
-                                                        <button
-                                                            key={tz.value}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setSelectedTimezone(tz.value);
-                                                                setTimezoneDropdownOpen(false);
-                                                                setHasUnsavedChanges(true);
-                                                            }}
-                                                            className={`w-full p-3.5 rounded-xl border-none text-left cursor-pointer transition-all duration-300 text-sm font-sans flex items-center justify-between group
-                                                                ${selectedTimezone === tz.value
-                                                                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
-                                                                    : 'bg-transparent hover:bg-white dark:hover:bg-white/10 hover:shadow-sm hover:translate-x-1'}
-                                                            `}
-                                                            style={{
-                                                                color: selectedTimezone === tz.value ? '#ffffff' : 'var(--text-primary)'
-                                                            }}
-                                                        >
-                                                            <span className="font-medium">{tz.label}</span>
-                                                            {selectedTimezone === tz.value && (
-                                                                <Check size={16} strokeWidth={3} className="animate-scale-in" />
-                                                            )}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
+                                        {/* Timezone (reusable blurry Select) */}
+                                        <div className="flex-1 min-w-[140px]">
+                                            <Select
+                                                value={String(selectedTimezone)}
+                                                options={timezones.map(tz => ({ value: String(tz.value), label: tz.label }))}
+                                                onChange={(v) => { setSelectedTimezone(Number(v)); setHasUnsavedChanges(true); }}
+                                                isDark={isDark}
+                                                searchable
+                                                aria-label="Timezone"
+                                            />
                                         </div>
                                     </div>
                                 </div>
