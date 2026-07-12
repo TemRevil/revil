@@ -863,6 +863,16 @@ const DCanary = () => {
                                             <div className="flex items-center gap-3">
                                                 <div className="flex flex-col gap-1">
                                                     <h4 className="text-sm font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>{meeting.title}</h4>
+                                                    {meeting.email && (
+                                                        <a
+                                                            href={`mailto:${meeting.email}`}
+                                                            className="flex items-center gap-1.5 min-w-0 no-underline hover:text-blue-500 transition-colors"
+                                                            style={{ color: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.55)' }}
+                                                        >
+                                                            <Mail size={11} className="opacity-60 shrink-0" />
+                                                            <span className="text-[11px] truncate select-all">{meeting.email}</span>
+                                                        </a>
+                                                    )}
                                                     <div className="flex items-center gap-2 text-[11px] font-medium" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
                                                         <div className="flex items-center gap-1.5 p-1 rounded-md bg-black/5 dark:bg-white/5">
                                                             <Clock size={12} className="opacity-70" />
