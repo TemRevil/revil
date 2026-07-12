@@ -271,6 +271,7 @@ function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
           "    • WITH a meeting link: pass `meetingLink`, an existing Google Meet / Zoom / etc. URL. Never invent or guess a link — if the owner wants one but hasn't given a URL, ask for it first.",
           "    • WITHOUT a meeting link: omit `meetingLink` (an in-person / phone booking, or a link to be added later).",
           "  Pass date as YYYY-MM-DD and time as 24-hour HH:MM in the owner's timezone. add_booking marks the slot busy on the public calendar and emails the admin (and the guest, if an email is given), but it does NOT create a Google Calendar event or auto-generate a link. Check list_bookings first to avoid double-booking a slot.",
+          "- Working hours & days (get_availability / update_availability): the public booking calendar only offers the owner's selected working days and picked hours. update_availability REPLACES the entire list you send — read get_availability first, then send the FULL new list (workingDays: 0=Sun … 6=Sat; hours: 24-hour 0–23). Confirm with the owner before changing.",
         ]
       : []),
     "- Be concise and factual.",
@@ -487,6 +488,30 @@ function readEntries<T extends object>(s: DocumentSnapshot): Array<T & { id: str
   return Object.entries(map).map(([id, v]) => ({ id, ...v }));
 }
 
+// ── Availability (working days + hours) — mirrors src/utils/availability.ts ──
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4, 5, 6];
+const DEFAULT_HOURS = [9, 10, 11, 12, 14, 15, 16, 17];
+
+function sortUnique(arr: number[]): number[] {
+  return [...new Set(arr)].sort((a, b) => a - b);
+}
+function hourLabel(h: number): string {
+  const period = h >= 12 ? "PM" : "AM";
+  return `${pad2(h % 12 || 12)}:00 ${period}`;
+}
+async function readAvailability(): Promise<{ workingDays: number[]; hours: number[] }> {
+  const snap = await db().doc("Settings/Availability").get();
+  const d = (snap.data() || {}) as Record<string, unknown>;
+  const workingDays = Array.isArray(d.workingDays)
+    ? sortUnique(d.workingDays.filter((x): x is number => typeof x === "number" && x >= 0 && x <= 6))
+    : DEFAULT_WORKING_DAYS;
+  const hours = Array.isArray(d.hours)
+    ? sortUnique(d.hours.filter((x): x is number => typeof x === "number" && Number.isInteger(x) && x >= 0 && x <= 23))
+    : DEFAULT_HOURS;
+  return { workingDays, hours };
+}
+
 function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): void {
   // ---- reads ----
   server.registerTool("get_current_time",
@@ -562,9 +587,44 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       return ok(readEntries<Account>(acc).map((a) => ({ id: a.id, name: a.name, type: a.type, currency: a.currency, balance: accountBalance(a, income, expenses, rates), archived: !!a.archived })));
     });
 
+  server.registerTool("get_availability",
+    { title: "Get working hours & days", description: "The owner's bookable working days and hours — exactly what the public booking calendar offers.", inputSchema: {}, annotations: { readOnlyHint: true } },
+    async () => {
+      const a = await readAvailability();
+      return ok({
+        workingDays: a.workingDays,
+        workingDayNames: a.workingDays.map((d) => WEEKDAY_NAMES[d]),
+        hours: a.hours,
+        slots: a.hours.map(hourLabel),
+      });
+    });
+
   if (!cfg.writesEnabled) return; // writes globally disabled in Settings/MCP
 
   // ---- writes ----
+
+  server.registerTool("update_availability",
+    {
+      title: "Update working hours & days",
+      description:
+        "Set the owner's bookable working days and/or hours (drives the public booking calendar). " +
+        "Each argument is the FULL new list and REPLACES the old one — read get_availability first, then send the complete list. " +
+        "workingDays are weekday numbers (0=Sun … 6=Sat); hours are 24-hour integers (0–23). Pass only the one you want to change.",
+      inputSchema: {
+        workingDays: z.array(z.number().int().min(0).max(6)).optional().describe("Full list of working weekdays, 0=Sun … 6=Sat"),
+        hours: z.array(z.number().int().min(0).max(23)).optional().describe("Full list of bookable hours, 24-hour 0–23"),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      if (!a.workingDays && !a.hours) return fail("Pass workingDays and/or hours (the full new list) to change.");
+      const patch: Record<string, unknown> = {};
+      if (a.workingDays) patch.workingDays = sortUnique(a.workingDays);
+      if (a.hours) patch.hours = sortUnique(a.hours);
+      await db().doc("Settings/Availability").set(patch, { merge: true });
+      const updated = await readAvailability();
+      return ok({ status: "updated", workingDays: updated.workingDays, hours: updated.hours, slots: updated.hours.map(hourLabel) });
+    });
 
   // ---- bookings ----
   server.registerTool("add_booking",

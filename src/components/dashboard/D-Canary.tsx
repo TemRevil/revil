@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, C
 import { doc, onSnapshot, updateDoc, deleteField, setDoc } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app, { db } from '../../lib/firebase';
-import { AvailabilityConfig, DEFAULT_AVAILABILITY, WEEKDAY_LABELS, parseAvailabilityConfig, buildHostSlots, formatHourSlot } from '../../utils/availability';
+import { AvailabilityConfig, DEFAULT_AVAILABILITY, WEEKDAY_LABELS, ALL_HOURS, parseAvailabilityConfig, buildHostSlots, formatHourSlot } from '../../utils/availability';
 // Local Functions handle (lazy Dashboard chunk) - keeps firebase/functions out of eager.
 const functions = getFunctions(app);
 
@@ -552,15 +552,20 @@ const DCanary = () => {
                 : [...availDraft.workingDays, d].sort((a, b) => a - b),
         });
     };
+    const toggleHour = (h: number) => {
+        const has = availDraft.hours.includes(h);
+        patchAvail({
+            hours: has
+                ? availDraft.hours.filter(x => x !== h)
+                : [...availDraft.hours, h].sort((a, b) => a - b),
+        });
+    };
     const saveAvailability = async () => {
         setAvailSaving(true);
         try {
             await setDoc(doc(db, 'Settings', 'Availability'), {
                 workingDays: availDraft.workingDays,
-                startHour: availDraft.startHour,
-                endHour: availDraft.endHour,
-                breakStart: availDraft.breakStart,
-                breakEnd: availDraft.breakEnd,
+                hours: availDraft.hours,
             }, { merge: true });
             availDirtyRef.current = false;
             setAvailDirty(false);
@@ -572,12 +577,6 @@ const DCanary = () => {
         }
     };
     const previewSlots = buildHostSlots(availDraft);
-    const hourOptions = Array.from({ length: 24 }, (_, h) => h);
-    const selectStyle = {
-        background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-        color: isDark ? '#fff' : '#000',
-        border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`,
-    } as const;
 
     const hoursEditor = (
         <div className="canary-section w-full">
@@ -592,7 +591,7 @@ const DCanary = () => {
                     <div>
                         <h3 className="text-lg sm:text-xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>Working hours &amp; days</h3>
                         <p className="text-sm mt-1 max-w-xl" style={{ color: 'var(--text-muted)' }}>
-                            Choose which days and hours guests can book. These drive the public booking calendar — off-days are greyed out and the time slots follow the range below.
+                            Pick exactly which days and hours guests can book — toggle any hour on or off individually, gaps in the middle included. These drive the public booking calendar; off-days and unpicked hours are hidden from guests.
                         </p>
                     </div>
                 </div>
@@ -624,72 +623,47 @@ const DCanary = () => {
                     )}
                 </div>
 
-                {/* Hours range */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>First slot</label>
-                        <select value={availDraft.startHour} onChange={(e) => patchAvail({ startHour: Number(e.target.value) })} className="px-3 py-2.5 rounded-xl outline-none" style={selectStyle}>
-                            {hourOptions.map(h => <option key={h} value={h}>{formatHourSlot(h)}</option>)}
-                        </select>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <label className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>Last slot</label>
-                        <select value={availDraft.endHour} onChange={(e) => patchAvail({ endHour: Number(e.target.value) })} className="px-3 py-2.5 rounded-xl outline-none" style={selectStyle}>
-                            {hourOptions.map(h => <option key={h} value={h}>{formatHourSlot(h)}</option>)}
-                        </select>
-                    </div>
-                </div>
-
-                {/* Break */}
+                {/* Working hours (individually toggleable) */}
                 <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between gap-4">
-                        <div>
-                            <label className="text-sm font-bold block" style={{ color: isDark ? '#fff' : '#000' }}>Lunch break</label>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Skip a range in the middle of the day.</span>
-                        </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={availDraft.breakStart !== null}
-                            aria-label="Toggle lunch break"
-                            onClick={() => patchAvail(availDraft.breakStart !== null ? { breakStart: null, breakEnd: null } : { breakStart: 13, breakEnd: 14 })}
-                            className="relative shrink-0 rounded-full transition-colors cursor-pointer"
-                            style={{ width: 46, height: 28, background: availDraft.breakStart !== null ? '#3b82f6' : (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)') }}
-                        >
-                            <span className="absolute top-[3px] rounded-full bg-white shadow-sm transition-all" style={{ width: 22, height: 22, left: availDraft.breakStart !== null ? 21 : 3 }} />
-                        </button>
+                    <div className="flex items-center justify-between gap-3">
+                        <label className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>Working hours</label>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{availDraft.hours.length} selected</span>
                     </div>
-                    {availDraft.breakStart !== null && (
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="flex flex-col gap-2">
-                                <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Break from</label>
-                                <select value={availDraft.breakStart ?? 13} onChange={(e) => patchAvail({ breakStart: Number(e.target.value) })} className="px-3 py-2.5 rounded-xl outline-none" style={selectStyle}>
-                                    {hourOptions.map(h => <option key={h} value={h}>{formatHourSlot(h)}</option>)}
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                                <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Back at</label>
-                                <select value={availDraft.breakEnd ?? 14} onChange={(e) => patchAvail({ breakEnd: Number(e.target.value) })} className="px-3 py-2.5 rounded-xl outline-none" style={selectStyle}>
-                                    {hourOptions.map(h => <option key={h} value={h}>{formatHourSlot(h)}</option>)}
-                                </select>
-                            </div>
-                        </div>
+                    <div className="grid grid-cols-3 min-[460px]:grid-cols-4 sm:grid-cols-6 gap-2">
+                        {ALL_HOURS.map(h => {
+                            const on = availDraft.hours.includes(h);
+                            return (
+                                <button
+                                    key={h}
+                                    type="button"
+                                    onClick={() => toggleHour(h)}
+                                    aria-pressed={on}
+                                    className="px-2 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer text-center"
+                                    style={on
+                                        ? { background: '#3b82f6', color: '#fff', borderColor: '#3b82f6' }
+                                        : { background: 'transparent', color: 'var(--text-muted)', borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)' }}
+                                >
+                                    {formatHourSlot(h)}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    {availDraft.hours.length === 0 && (
+                        <p className="text-sm" style={{ color: '#ef4444' }}>No hours selected — guests won&apos;t be able to book any time.</p>
                     )}
                 </div>
 
                 {/* Preview */}
-                <div className="flex flex-col gap-2">
-                    <label className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>Bookable slots preview</label>
-                    {previewSlots.length ? (
+                {previewSlots.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>What guests will see</label>
                         <div className="flex flex-wrap gap-2">
                             {previewSlots.map(s => (
                                 <span key={s} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}>{s}</span>
                             ))}
                         </div>
-                    ) : (
-                        <p className="text-sm" style={{ color: '#ef4444' }}>No slots — the last slot is before the first. Fix the range above.</p>
-                    )}
-                </div>
+                    </div>
+                )}
 
                 {/* Save */}
                 <div className="flex justify-end">

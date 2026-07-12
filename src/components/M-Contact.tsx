@@ -11,6 +11,7 @@ import app, { db } from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, buildHostSlots, isWorkingDay } from '../utils/availability';
+import Select from './Select';
 import useTheme from '../hooks/useTheme';
 
 /** Pragmatic email validator: requires local@domain.tld and rejects whitespace.
@@ -164,20 +165,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     // Detect system timezone offset in hours
     return -(new Date().getTimezoneOffset() / 60);
   });
-  const [isTimezoneDropdownOpen, setIsTimezoneDropdownOpen] = useState(false);
   const [showTzTooltip, setShowTzTooltip] = useState(false);
-  const tzRef = useRef<HTMLDivElement>(null);
-
-  // Close timezone dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (tzRef.current && !tzRef.current.contains(e.target as Node)) {
-        setIsTimezoneDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -1164,7 +1152,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               })() && (
                                   <>
                                     {/* Timezone Selection (Before Available Slots) */}
-                                    <div ref={tzRef} style={{ position: 'relative', marginBottom: '24px' }}>
+                                    <div style={{ position: 'relative', marginBottom: '24px' }}>
                                       <div style={{ position: 'relative' }}>
                                         <label
                                           onMouseEnter={() => setShowTzTooltip(true)}
@@ -1209,55 +1197,14 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                         </AnimatePresence>
                                       </div>
 
-                                      <button
-                                        type="button"
-                                        onClick={() => setIsTimezoneDropdownOpen(!isTimezoneDropdownOpen)}
-                                        className="dashboard-input flex justify-between items-center text-left"
-                                        style={{ borderRadius: '12px', width: '100%', cursor: 'pointer' }}
-                                      >
-                                        <span style={{ fontSize: '0.85rem' }}>
-                                          {timezones.find(t => t.value === userTimezone)?.label || `UTC${userTimezone >= 0 ? '+' : ''}${userTimezone}:00`}
-                                        </span>
-                                        <ChevronRight size={16} style={{
-                                          transform: isTimezoneDropdownOpen ? 'rotate(90deg)' : 'none',
-                                          transition: 'transform 0.2s',
-                                          opacity: 0.5
-                                        }} />
-                                      </button>
-                                      <AnimatePresence>
-                                        {isTimezoneDropdownOpen && (
-                                          <motion.div
-                                            initial={{ opacity: 0, y: -10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={{ opacity: 0, y: -5 }}
-                                            className="dropdown-glass custom-scrollbar"
-                                            style={{
-                                              position: 'absolute', top: '100%', left: 0, right: 0,
-                                              marginTop: '8px', maxHeight: '200px', overflowY: 'auto',
-                                              zIndex: 100, borderRadius: '14px', padding: '8px'
-                                            }}
-                                          >
-                                            {timezones.map(tz => (
-                                              <button
-                                                key={tz.value}
-                                                type="button"
-                                                onClick={() => { setUserTimezone(tz.value); setIsTimezoneDropdownOpen(false); }}
-                                                style={{
-                                                  width: '100%', padding: '10px 12px', borderRadius: '8px', border: 'none',
-                                                  background: userTimezone === tz.value ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                                                  color: userTimezone === tz.value ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
-                                                  fontSize: '0.8rem', fontWeight: userTimezone === tz.value ? 700 : 500,
-                                                  textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s'
-                                                }}
-                                                onMouseEnter={e => { if (userTimezone !== tz.value) e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }}
-                                                onMouseLeave={e => { if (userTimezone !== tz.value) e.currentTarget.style.background = 'transparent'; }}
-                                              >
-                                                {tz.label}
-                                              </button>
-                                            ))}
-                                          </motion.div>
-                                        )}
-                                      </AnimatePresence>
+                                      <Select
+                                        value={String(userTimezone)}
+                                        options={timezones.map(t => ({ value: String(t.value), label: t.label }))}
+                                        onChange={(v) => setUserTimezone(Number(v))}
+                                        isDark={isDark}
+                                        searchable
+                                        aria-label="Your timezone"
+                                      />
                                     </div>
 
                                     <div>
