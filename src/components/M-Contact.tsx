@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe, Plus } from 'lucide-react';
+import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 // firebase/storage + firebase/functions are dynamic-imported inside the submit
 // handlers below (not statically) so they stay OUT of the eager first-paint
@@ -12,6 +12,7 @@ import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, buildHostSlots, isWorkingDay } from '../utils/availability';
 import Select from './Select';
+import CustomTimePicker from './CustomTimePicker';
 import useTheme from '../hooks/useTheme';
 
 /** Pragmatic email validator: requires local@domain.tld and rejects whitespace.
@@ -93,14 +94,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  // A custom (free) slot the visitor typed themselves, rather than one of the host's
+  // A custom (free) slot the visitor picked themselves, rather than one of the host's
   // fixed hours. When true, selectedTime holds that user-perspective time and the
-  // "must be one of the offered slots" submit guard is relaxed for it.
+  // "must be one of the offered slots" submit guard is relaxed for it. The picker UI +
+  // its open state live in <CustomTimePicker>.
   const [isCustomTime, setIsCustomTime] = useState(false);
-  const [showCustomPicker, setShowCustomPicker] = useState(false);
-  const [customH, setCustomH] = useState('10');
-  const [customM, setCustomM] = useState('00');
-  const [customP, setCustomP] = useState<'AM' | 'PM'>('AM');
   const [direction, setDirection] = useState(0);
   const [tabDirection, setTabDirection] = useState(0);
   const [meetingData, setMeetingData] = useState({
@@ -115,7 +113,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const [showEmailTooltip, setShowEmailTooltip] = useState(false);
   const { alert, showAlert, hideAlert } = useSafeAlert(4000);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
-  // True once a details column is scrolled — its header frosts (blurs) only then.
+  // True once a details column is scrolled - its header frosts (blurs) only then.
   const [agendaScrolled, setAgendaScrolled] = useState(false);
   const [messageScrolled, setMessageScrolled] = useState(false);
 
@@ -556,25 +554,14 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   };
 
 
-  // Apply the visitor's custom (free) time. Runs the SAME passed/busy checks the fixed
-  // slots get (in the host's perspective), then stores it as the selected time so the
-  // normal booking flow submits it unchanged.
-  const applyCustomTime = () => {
-    const t = `${customH.padStart(2, '0')}:${customM} ${customP}`;
-    if (selectedDate) {
-      const hostT = convertTimeToHost(t);
-      if (isTimePassed(selectedDate, hostT)) {
-        showAlert({ type: 'warning', message: 'That time has already passed — pick a later one.' });
-        return;
-      }
-      if (getMeetingsForDate(selectedDate).some(m => m.Time === hostT)) {
-        showAlert({ type: 'warning', message: 'That time overlaps an existing booking — pick another.' });
-        return;
-      }
-    }
-    setSelectedTime(t);
-    setIsCustomTime(true);
-    setShowCustomPicker(false);
+  // Validate a proposed custom (free) time with the SAME passed/busy checks the fixed
+  // slots get (in the host's perspective). Returns an error message, or null to allow.
+  const validateCustomTime = (t: string): string | null => {
+    if (!selectedDate) return null;
+    const hostT = convertTimeToHost(t);
+    if (isTimePassed(selectedDate, hostT)) return 'That time has already passed, pick a later one.';
+    if (getMeetingsForDate(selectedDate).some(m => m.Time === hostT)) return 'That time overlaps an existing booking, pick another.';
+    return null;
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -709,19 +696,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     }
   };
 
-  // Read the picker's open-state from a ref so the Escape handler binds once (stable
-  // deps) yet always sees the latest value.
-  const showCustomPickerRef = useRef(false);
-  showCustomPickerRef.current = showCustomPicker;
-
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
+      // The custom-time picker swallows Escape (capture + stopPropagation) while it's
+      // open, so this only closes the whole modal when the picker isn't showing.
       if (e.key === 'Escape') {
-        // Escape peels one layer: close the custom-time popup first, the modal second.
-        if (showCustomPickerRef.current) {
-          setShowCustomPicker(false);
-          return;
-        }
         onClose();
       }
     };
@@ -778,9 +757,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           className={isMobile ? "glass-panel-deep" : ""}
           style={{
             // Responsive but bounded: scales with the viewport, never below a usable
-            // floor or past a comfortable ceiling — both columns inherit this fixed height.
+            // floor or past a comfortable ceiling - both columns inherit this fixed height.
             // min() (not clamp with a px floor) so the modal NEVER exceeds the
-            // viewport on short/small screens — content scrolls inside instead of
+            // viewport on short/small screens - content scrolls inside instead of
             // overflowing off-screen and getting clipped.
             width: isMobile ? '90vw' : 'min(1240px, 94vw)',
             height: isMobile ? '90dvh' : 'min(760px, 92vh)',
@@ -916,7 +895,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         </div>
                       )}
 
-                      {/* Calendar block — vertically centered so it fills the card */}
+                      {/* Calendar block - vertically centered so it fills the card */}
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'safe center', gap: '24px', width: '100%', minHeight: 0 }}>
                       {/* Calendar Header with No Scrollbar style */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, width: '100%' }}>
@@ -1078,14 +1057,14 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       </div>
 
                       {/* The "further than 1.5 months" hint is surfaced as a toast
-                          (see the isFutureMonth effect) — inline it was clipped at the
+                          (see the isFutureMonth effect) - inline it was clipped at the
                           bottom of the calendar card. */}
                       </div>
                     </div>
 
                     {/* Right Column: Details & Agenda (Card Box on desktop) */}
                     <div className={!isMobile ? "glass-panel-deep" : ""} style={{ flex: 1, height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: isMobile ? '0' : '24px', boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)', willChange: 'transform', position: 'relative' }}>
-                      {/* Header — flush with the card top; frosts only once the body scrolls */}
+                      {/* Header - flush with the card top; frosts only once the body scrolls */}
                       <div style={{
                         flexShrink: 0,
                         display: 'flex',
@@ -1287,40 +1266,17 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                           );
                                         })}
 
-                                        {/* Custom (free) slot — always last. Opens a nested time picker so the
-                                            visitor can propose any time, not just the host's fixed hours. */}
-                                        {(() => {
-                                          const active = isCustomTime && !!selectedTime;
-                                          return (
-                                            <button
-                                              type="button"
-                                              onClick={() => setShowCustomPicker(true)}
-                                              aria-label="Pick a custom time"
-                                              style={{
-                                                padding: '10px 8px', borderRadius: '12px',
-                                                border: `1px dashed ${active ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.2)')}`,
-                                                background: active ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-                                                color: active ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
-                                                fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
-                                              }}
-                                              onMouseEnter={(e) => {
-                                                if (!active) {
-                                                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)';
-                                                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-                                                }
-                                              }}
-                                              onMouseLeave={(e) => {
-                                                if (!active) {
-                                                  e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.2)';
-                                                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
-                                                }
-                                              }}
-                                            >
-                                              {active ? selectedTime : (<><Plus size={13} /> Custom</>)}
-                                            </button>
-                                          );
-                                        })()}
+                                        {/* Custom (free) slot, always last. The chip morphs into a glassy
+                                            time picker so the visitor can propose any time, not just the
+                                            host's fixed hours. */}
+                                        <CustomTimePicker
+                                          isDark={isDark}
+                                          active={isCustomTime}
+                                          value={selectedTime}
+                                          validate={validateCustomTime}
+                                          onError={(msg) => showAlert({ type: 'warning', message: msg })}
+                                          onApply={(t) => { setSelectedTime(t); setIsCustomTime(true); }}
+                                        />
                                       </div>
                                     </div>
 
@@ -1440,7 +1396,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                     transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
                     style={{ flex: isMobile ? '0 0 auto' : 1, minHeight: 0, display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: isMobile ? 'flex-start' : 'center', overflowY: isMobile ? 'visible' : 'hidden', padding: isMobile ? '0 16px 24px' : '0 24px 12px', height: isMobile ? 'auto' : '100%' }}
                   >
-                    {/* Single mailing box — flush blur-on-scroll header, info column removed */}
+                    {/* Single mailing box - flush blur-on-scroll header, info column removed */}
                     <form
                       onSubmit={handleSubmit}
                       className={!isMobile ? "glass-panel-deep" : ""}
@@ -1457,7 +1413,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                         position: 'relative'
                       }}
                     >
-                      {/* Header — flush with the card top; frosts only once the body scrolls */}
+                      {/* Header - flush with the card top; frosts only once the body scrolls */}
                       <div style={{
                         flexShrink: 0,
                         display: 'flex',
@@ -1596,7 +1552,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
           </div>
 
-          {/* Sub-nav footer — inside the modal so it always sits centered at the
+          {/* Sub-nav footer - inside the modal so it always sits centered at the
               modal's bottom (tracks any screen size) instead of floating over content. */}
           {!hideTabs && (
             <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', padding: isMobile ? '8px 0 12px' : '6px 0 16px', pointerEvents: 'auto' }}>
@@ -1682,104 +1638,6 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           )}
         </motion.div>
       </div>
-
-      {/* Custom-time picker — a nested pop-up over the booking modal. Blurred backdrop,
-          spring pop-in, boxed shadow, and the reusable glassy <Select> (no browser
-          inputs). Sits above the modal (z 1500+) so its own dropdowns (z 10000) still
-          layer on top. */}
-      <AnimatePresence>
-        {showCustomPicker && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-              onClick={() => setShowCustomPicker(false)}
-              style={{
-                position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)',
-                backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 1500,
-              }}
-            />
-            <div style={{ position: 'fixed', inset: 0, zIndex: 1501, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', pointerEvents: 'none' }}>
-              <motion.div
-                role="dialog"
-                aria-modal="true"
-                aria-label="Pick a custom time"
-                initial={{ opacity: 0, scale: 0.85, y: 12 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 8 }}
-                transition={{ type: 'spring', damping: 26, stiffness: 360, mass: 0.9 }}
-                onClick={(e) => e.stopPropagation()}
-                className="glass-panel-deep"
-                style={{
-                  width: 'min(360px, 92vw)', borderRadius: '24px', padding: '24px',
-                  transformOrigin: 'center', pointerEvents: 'auto',
-                  boxShadow: isDark ? '0 30px 80px rgba(0,0,0,0.6)' : '0 30px 80px rgba(0,0,0,0.28)',
-                  display: 'flex', flexDirection: 'column', gap: '20px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                    <Clock size={18} /> Custom Time
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomPicker(false)}
-                    aria-label="Close custom time picker"
-                    className="btn-icon rounded-full"
-                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '-8px 0 0', lineHeight: 1.5 }}>
-                  Propose any time in your local zone — I'll confirm it by email.
-                </p>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Hour</label>
-                    <Select value={customH} onChange={setCustomH} isDark={isDark} searchable={false} aria-label="Hour"
-                      options={Array.from({ length: 12 }, (_, i) => String(i + 1))} />
-                  </div>
-                  <div>
-                    <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Minute</label>
-                    <Select value={customM} onChange={setCustomM} isDark={isDark} aria-label="Minute"
-                      options={['00', '15', '30', '45']} />
-                  </div>
-                  <div>
-                    <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Period</label>
-                    <Select value={customP} onChange={(v) => setCustomP(v as 'AM' | 'PM')} isDark={isDark} aria-label="AM or PM"
-                      options={['AM', 'PM']} />
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomPicker(false)}
-                    style={{ flex: 1, padding: '12px', borderRadius: '14px', border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`, background: 'transparent', color: 'var(--text-primary)', fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={applyCustomTime}
-                    className="btn-primary btn"
-                    style={{ flex: 1, padding: '12px', borderRadius: '14px' }}
-                  >
-                    Set Time
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
     </>,
     document.body
   );

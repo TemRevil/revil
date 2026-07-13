@@ -21,7 +21,7 @@ const llmApiKey = defineSecret("LLM_API_KEY");
 // Public-facing inbox that booking notifications are also copied to.
 const HELLO_EMAIL = "hello@temrevil.com";
 
-// Remote MCP server (agentic portfolio access over OAuth) — defined in its own
+// Remote MCP server (agentic portfolio access over OAuth) - defined in its own
 // module and re-exported so `firebase deploy --only functions:mcp` works.
 export { mcp } from "./mcp.js";
 
@@ -122,7 +122,7 @@ function getStoragePathFromUrl(url: string): string | null {
 /** Helper: create a reusable SMTP transporter (Resend relay). */
 function createTransporter(): Transporter {
   // Resend's SMTP relay: the username is literally "resend", the password is the API
-  // key. From addresses must be on a verified domain — we always send as HELLO_EMAIL.
+  // key. From addresses must be on a verified domain - we always send as HELLO_EMAIL.
   return nodemailer.createTransport({
     host: "smtp.resend.com",
     port: 465,
@@ -267,11 +267,11 @@ export const syncSession = onRequest(
       /localhost/,
     ],
     maxInstances: 10,
-    // NOTE: onRequest (HttpsOptions) does NOT support `enforceAppCheck` — that option
+    // NOTE: onRequest (HttpsOptions) does NOT support `enforceAppCheck` - that option
     // is only honored by onCall (CallableOptions). The previous JS passed it here, but
     // it was silently ignored, so this endpoint was never App Check-enforced by it.
     // To actually enforce, verify the X-Firebase-AppCheck header manually with
-    // admin.appCheck().verifyToken() (the client already sends it — see
+    // admin.appCheck().verifyToken() (the client already sends it - see
     // src/lib/firebase.ts). Left as a follow-up to avoid changing runtime behavior here.
   },
   async (req, res) => {
@@ -746,7 +746,7 @@ export const llm = onCall(
     if (kind !== "models" && kind !== "chat") {
       throw new HttpsError("invalid-argument", "kind must be 'provider', 'models', or 'chat'.");
     }
-    // model is interpolated into the Gemini URL path — allow only safe chars.
+    // model is interpolated into the Gemini URL path - allow only safe chars.
     if (kind === "chat" && (typeof model !== "string" || !/^[A-Za-z0-9.\-_]+$/.test(model))) {
       throw new HttpsError("invalid-argument", "Invalid model id.");
     }
@@ -775,7 +775,7 @@ export const llm = onCall(
         reqBody = JSON.stringify(body || {});
       }
     } else {
-      // gemini — key goes in the query string
+      // gemini - key goes in the query string
       const enc = encodeURIComponent(key);
       if (kind === "models") {
         url = `https://generativelanguage.googleapis.com/v1beta/models?key=${enc}`;

@@ -14,6 +14,7 @@ import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MConfirmModal from './M-ConfirmModal';
 import MContact from '../M-Contact';
+import CustomTimePicker from '../CustomTimePicker';
 import Loader from '../reactbits/Loader';
 
 interface Attachment {
@@ -572,7 +573,7 @@ const DCanary = () => {
             setAvailDirty(false);
             showAlert({ type: 'success', message: 'Working hours saved' });
         } catch {
-            showAlert({ type: 'error', message: 'Failed to save — are you signed in as admin?' });
+            showAlert({ type: 'error', message: 'Failed to save - are you signed in as admin?' });
         } finally {
             setAvailSaving(false);
         }
@@ -592,7 +593,7 @@ const DCanary = () => {
                     <div>
                         <h3 className="text-lg sm:text-xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>Working hours &amp; days</h3>
                         <p className="text-sm mt-1 max-w-xl" style={{ color: 'var(--text-muted)' }}>
-                            Pick exactly which days and hours guests can book — toggle any hour on or off individually, gaps in the middle included. These drive the public booking calendar; off-days and unpicked hours are hidden from guests.
+                            Pick exactly which days and hours guests can book - toggle any hour on or off individually, gaps in the middle included. These drive the public booking calendar; off-days and unpicked hours are hidden from guests.
                         </p>
                     </div>
                 </div>
@@ -620,7 +621,7 @@ const DCanary = () => {
                         })}
                     </div>
                     {availDraft.workingDays.length === 0 && (
-                        <p className="text-sm" style={{ color: '#ef4444' }}>No working days selected — guests won&apos;t be able to book any day.</p>
+                        <p className="text-sm" style={{ color: '#ef4444' }}>No working days selected - guests won&apos;t be able to book any day.</p>
                     )}
                 </div>
 
@@ -650,7 +651,7 @@ const DCanary = () => {
                         })}
                     </div>
                     {availDraft.hours.length === 0 && (
-                        <p className="text-sm" style={{ color: '#ef4444' }}>No hours selected — guests won&apos;t be able to book any time.</p>
+                        <p className="text-sm" style={{ color: '#ef4444' }}>No hours selected - guests won&apos;t be able to book any time.</p>
                     )}
                 </div>
 
@@ -1310,6 +1311,26 @@ const DCanary = () => {
                                                                 </button>
                                                             );
                                                         })}
+
+                                                        {/* Custom (free) slot: the chip morphs into a glassy picker so
+                                                            you can reschedule to any time, not just the fixed hours.
+                                                            zIndex clears this modal's own z-[2000]. */}
+                                                        <CustomTimePicker
+                                                            isDark={isDark}
+                                                            active={!!editingMeeting.time && !TIME_OPTIONS.includes(editingMeeting.time)}
+                                                            value={editingMeeting.time}
+                                                            zIndex={2100}
+                                                            validate={(t) => {
+                                                                const taken = meetings.some(m =>
+                                                                    m.id !== editingMeeting.id &&
+                                                                    m.date.toDateString() === editingMeeting.date.toDateString() &&
+                                                                    m.time === t
+                                                                );
+                                                                return taken ? 'That time is already booked, pick another.' : null;
+                                                            }}
+                                                            onError={(msg) => showAlert({ type: 'warning', message: msg })}
+                                                            onApply={(t) => setEditingMeeting({ ...editingMeeting, time: t })}
+                                                        />
                                                     </div>
                                                 </div>
                                             </div>

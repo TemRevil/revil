@@ -12,16 +12,16 @@ import useSafeAlert from '../../hooks/useSafeAlert';
  * Cloud Function's /authorize. We sign the admin in with the portfolio's existing
  * Google auth, get a Firebase ID token, and fetch() it to the function's callback,
  * which verifies it and returns the client redirect URL we then navigate to. (A
- * navigating form POST is governed by CSP form-action — which also vets the
- * downstream client redirect — so fetch + connect-src is used instead.) This
- * reuses the site's Firebase Auth — no separate OAuth client.
+ * navigating form POST is governed by CSP form-action - which also vets the
+ * downstream client redirect - so fetch + connect-src is used instead.) This
+ * reuses the site's Firebase Auth - no separate OAuth client.
  */
 type Phase = 'loading' | 'idle' | 'working' | 'invalid';
 
 type State = { phase: Phase; s: string; cb: string };
 
 // The bridge POSTs the admin's Firebase ID token to `cb`, and that value arrives in
-// the URL — so it MUST be pinned to the portfolio's own MCP callback origin. Without
+// the URL - so it MUST be pinned to the portfolio's own MCP callback origin. Without
 // this check a crafted /mcp-login link could relay the token to an attacker-controlled
 // host (the CSP alone still permits any *.cloudfunctions.net / *.a.run.app origin).
 // Only these exact origins are ever legitimate; localhost is allowed in dev for the
@@ -115,7 +115,7 @@ export default function McpLogin() {
                 <header className="flex flex-col gap-2">
                     <h1 className="heading-md text-2xl sm:text-3xl m-0">Connect your AI</h1>
                     <p className="text-muted text-sm leading-relaxed max-w-sm">
-                        Authorize an MCP client to act on your portfolio — read bookings, messages and
+                        Authorize an MCP client to act on your portfolio - read bookings, messages and
                         treasury, and manage projects. Only the portfolio admin can connect.
                     </p>
                 </header>

@@ -15,12 +15,12 @@ interface McpConfig {
     revokedBefore?: number;
 }
 
-// The MCP server's vanity URL — shown by default so the field is never empty.
+// The MCP server's vanity URL - shown by default so the field is never empty.
 const DEFAULT_URL = 'https://mcp.temrevil.com';
 
 /**
  * Settings panel for the remote MCP server (agentic portfolio access). Reads/writes
- * the Settings/MCP config doc directly — the OAuth + protocol live in the `mcp`
+ * the Settings/MCP config doc directly - the OAuth + protocol live in the `mcp`
  * Cloud Function; this panel only flips switches the function reads each request.
  */
 const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
@@ -50,7 +50,7 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
             await setDoc(doc(db, 'Settings', 'MCP'), data, { merge: true });
             if (okMsg) showAlert({ type: 'success', message: okMsg });
         } catch {
-            showAlert({ type: 'error', message: 'Failed to save — are you signed in as admin?' });
+            showAlert({ type: 'error', message: 'Failed to save - are you signed in as admin?' });
         }
     };
 
@@ -90,10 +90,10 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
                         <Plug size={24} />
                     </span>
                     <div className="min-w-0">
-                        <h3 className="heading-md text-lg sm:text-xl m-0">MCP — Agentic Access</h3>
+                        <h3 className="heading-md text-lg sm:text-xl m-0">MCP - Agentic Access</h3>
                         <p className="text-muted text-xs sm:text-sm leading-relaxed mt-1 max-w-2xl">
-                            Connect an AI client (e.g. Claude) over OAuth so it can read and manage your portfolio —
-                            bookings, messages, treasury and projects — without opening the dashboard.
+                            Connect an AI client (e.g. Claude) over OAuth so it can read and manage your portfolio -
+                            bookings, messages, treasury and projects - without opening the dashboard.
                         </p>
                     </div>
                 </div>
@@ -179,7 +179,7 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
                 </button>
             </div>
 
-            {/* Dashboard AI assistant (Spark) — the in-dashboard copilot orb. This is a
+            {/* Dashboard AI assistant (Spark) - the in-dashboard copilot orb. This is a
                 SEPARATE feature from the MCP server above: turning it off just removes
                 the orb from this dashboard (it does not affect external MCP clients). */}
             <div className="flex flex-col gap-4 pt-6" style={{ borderTop: '1px solid var(--section-border)' }}>
@@ -190,7 +190,7 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
                     <div className="min-w-0">
                         <h3 className="heading-md text-lg sm:text-xl m-0">Dashboard AI assistant</h3>
                         <p className="text-muted text-xs sm:text-sm leading-relaxed mt-1 max-w-2xl">
-                            “Spark”, the floating copilot orb inside this dashboard. Independent of the MCP server above —
+                            “Spark”, the floating copilot orb inside this dashboard. Independent of the MCP server above -
                             this switch only controls the in-app assistant.
                         </p>
                     </div>

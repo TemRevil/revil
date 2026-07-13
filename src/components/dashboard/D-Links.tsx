@@ -804,7 +804,7 @@ const ProjectRankings = ({ projects, isDark }: { projects: RankInput[]; isDark: 
                                         {stat(<Download size={12} />, p.downloadViews, '#F59E0B', 'Downloads')}
                                         <span
                                             className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md ${isDark ? 'bg-white/[0.05] text-white/50' : 'bg-black/[0.04] text-slate-500'}`}
-                                            title="Conversion — actions per view"
+                                            title="Conversion - actions per view"
                                         >
                                             {Math.round(p.conversion * 100)}% conv
                                         </span>

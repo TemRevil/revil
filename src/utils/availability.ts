@@ -1,5 +1,5 @@
 /**
- * Availability configuration — the owner's working days + individual working
+ * Availability configuration - the owner's working days + individual working
  * hours that drive the public booking calendar (M-Contact) and are edited from
  * the dashboard (D-Canary → Hours) and the MCP server. Stored on the
  * Settings/Availability doc alongside the timezone. Shared here so every consumer

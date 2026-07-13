@@ -224,7 +224,7 @@ textarea,
 }
 
 /* Scrolls, but the scrollbar is never painted (used in panels where a visible
-   track would break the seamless glass look — e.g. the contact modal columns). */
+   track would break the seamless glass look - e.g. the contact modal columns). */
 .hide-scrollbar {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;

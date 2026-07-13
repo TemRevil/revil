@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Check, Search } from 'lucide-react';
@@ -29,6 +29,10 @@ interface Props {
 const normalize = (o: SelectOption | string): SelectOption =>
     typeof o === 'string' ? { value: o, label: o } : o;
 
+/** SSR-safe layout effect. The site is a static export, so the module is evaluated
+ *  on the server where useLayoutEffect warns; fall back to useEffect there. */
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 /** Read the document's current theme (used when `isDark` isn't passed). */
 function useAutoDark(forced?: boolean): boolean {
     const [dark, setDark] = useState(() =>
@@ -46,9 +50,14 @@ function useAutoDark(forced?: boolean): boolean {
 }
 
 /**
- * Reusable blurry select — a portaled, glassy popover dropdown that replaces every
+ * Reusable blurry select: a portaled, glassy popover dropdown that replaces every
  * native <select> and the ad-hoc dropdowns across the app. Same spirit/positioning
  * as the old ScrollMenu, but backdrop-blurred, theme-aware, and value/label based.
+ *
+ * On open it lands already positioned AND already scrolled so the current value sits
+ * centered in the list (measured in a layout effect, before the browser paints) so
+ * there's no first-frame flash from (0,0) or from the top of the list. The entry
+ * itself springs up from the trigger, iOS-menu style.
  */
 const Select = ({
     value, options, onChange, placeholder = 'Select…', searchable, isDark: forcedDark,
@@ -62,6 +71,8 @@ const Select = ({
     const [query, setQuery] = useState('');
     const triggerRef = useRef<HTMLButtonElement>(null);
     const popRef = useRef<HTMLDivElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
+    const selectedRef = useRef<HTMLButtonElement>(null);
     const [pos, setPos] = useState({ top: 0, left: 0, width: 280, flipUp: false });
 
     const updatePos = useCallback(() => {
@@ -77,9 +88,22 @@ const Select = ({
         setPos({ top: flipUp ? r.top - gap : r.bottom + gap, left, width, flipUp });
     }, []);
 
-    useEffect(() => {
+    // Before the first paint of the open menu: fix its screen position AND scroll the
+    // current value to the vertical middle. Both use layout metrics (getBoundingClientRect
+    // / offsetTop), which are unaffected by the entry scale transform, and run in a layout
+    // effect so React flushes them before the browser paints - the menu never appears at
+    // (0,0) or scrolled to the top and then jumps.
+    useIsoLayoutEffect(() => {
         if (!open) return;
         updatePos();
+        const c = listRef.current, el = selectedRef.current;
+        if (c && el) {
+            c.scrollTop = el.offsetTop - (c.clientHeight - el.offsetHeight) / 2;
+        }
+    }, [open, updatePos]);
+
+    useEffect(() => {
+        if (!open) return;
         const onDown = (e: MouseEvent) => {
             if (popRef.current?.contains(e.target as Node) || triggerRef.current?.contains(e.target as Node)) return;
             setOpen(false);
@@ -117,7 +141,14 @@ const Select = ({
                 aria-label={ariaLabel}
                 aria-haspopup="listbox"
                 aria-expanded={open}
-                onClick={() => { if (!disabled) { setQuery(''); setOpen(o => !o); } }}
+                onClick={() => {
+                    if (disabled) return;
+                    setQuery('');
+                    // Compute position synchronously so the very first render of the
+                    // popover is already placed (belt-and-braces with the layout effect).
+                    if (!open) updatePos();
+                    setOpen(o => !o);
+                }}
                 className={triggerCls}
                 title={selected?.label || placeholder}
             >
@@ -131,10 +162,10 @@ const Select = ({
                             key="select-pop"
                             ref={popRef}
                             role="listbox"
-                            initial={{ opacity: 0, scale: 0.96 }}
+                            initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.96 }}
-                            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                            exit={{ opacity: 0, scale: 0.94 }}
+                            transition={{ type: 'spring', stiffness: 520, damping: 32, mass: 0.7 }}
                             transformTemplate={(_, generated) => `translateY(${pos.flipUp ? '-100%' : '0px'}) ${generated}`}
                             style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 10000, transformOrigin: pos.flipUp ? 'bottom center' : 'top center' }}
                             className={`rounded-2xl border shadow-2xl overflow-hidden backdrop-blur-xl
@@ -146,12 +177,13 @@ const Select = ({
                                     <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter…" className="flex-1 bg-transparent outline-none text-sm text-primary placeholder:text-sec" />
                                 </div>
                             )}
-                            <div className="max-h-[260px] overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
+                            <div ref={listRef} className="relative max-h-[260px] overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
                                 {filtered.length === 0 ? (
                                     <div className="px-3 py-4 text-center text-sec text-sm">No matches</div>
                                 ) : filtered.map(o => (
                                     <button
                                         key={o.value}
+                                        ref={o.value === value ? selectedRef : undefined}
                                         type="button"
                                         role="option"
                                         aria-selected={o.value === value}

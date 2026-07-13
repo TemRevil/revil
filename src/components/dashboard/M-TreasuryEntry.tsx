@@ -70,7 +70,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
     const [expProjectName, setExpProjectName] = useState(() => expense?.projectId ? (projects?.find(p => p.id === expense.projectId)?.name ?? NO_PROJECT) : NO_PROJECT);
     const [expAccountName, setExpAccountName] = useState(() => expense?.accountId ? (accounts?.find(a => a.id === expense.accountId)?.name ?? NO_ACCOUNT) : NO_ACCOUNT);
     // "Who paid this?" only applies to a project's expense (the client may have
-    // covered the cost). Gate purely on whether a project is linked — shown in any
+    // covered the cost). Gate purely on whether a project is linked - shown in any
     // section. When unlinked it's hidden and forced to "I paid" so it can't stick.
     const expIsProjectLinked = expProjectName !== NO_PROJECT;
     const expIsClientPaid = expIsProjectLinked && expClientPaid;
@@ -88,7 +88,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
     // its monthly payment (it may arrive early or late). Defaults to yes - the
     // common case - but the admin can mark it as a one-off extra instead.
     // New income on a monthly project defaults to "yes" (the common case). When
-    // EDITING an existing entry, reflect exactly what was saved — otherwise a
+    // EDITING an existing entry, reflect exactly what was saved - otherwise a
     // one-off logged as "No" (monthlyPayment undefined) re-opens as "Yes" and
     // silently flips to a monthly payment on the next save.
     const [incIsMonthly, setIncIsMonthly] = useState(income ? !!income.monthlyPayment : true);
@@ -140,7 +140,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
         setShowLabelSug(false);
     };
 
-    // Category combobox: a scroll menu of past categories — browse on focus,
+    // Category combobox: a scroll menu of past categories - browse on focus,
     // filter (fuzzy) as you type, and a brand-new category can still be typed.
     const [showCatSug, setShowCatSug] = useState(false);
     const pastCategories = useMemo(() => expenseCategories(expenseList || []), [expenseList]);
@@ -490,7 +490,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                 <Select value={expProjectName} options={expProjectOpts} onChange={setExpProjectName} isDark={isDark} placeholder="Link to a project" />
                             </div>
                             {/* "Who paid this?" only applies to a project's expense (the client
-                                may have covered the cost). Shown whenever a project is linked —
+                                may have covered the cost). Shown whenever a project is linked -
                                 in the money tab or the project section alike. */}
                             {expIsProjectLinked && (
                                 <div>
@@ -506,7 +506,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                             );
                                         })}
                                     </div>
-                                    {expClientPaid && <p className="text-[11px] text-sec mt-1.5">Recorded for reference only — not counted as your spending or pulled from any account.</p>}
+                                    {expClientPaid && <p className="text-[11px] text-sec mt-1.5">Recorded for reference only - not counted as your spending or pulled from any account.</p>}
                                 </div>
                             )}
                             {!expIsClientPaid && (accounts?.length ?? 0) > 0 && (

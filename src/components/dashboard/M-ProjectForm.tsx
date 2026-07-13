@@ -41,7 +41,7 @@ interface RawFirestoreContributor {
     };
 }
 
-/** Small helper that revokes its blob URL on unmount — used for video previews
+/** Small helper that revokes its blob URL on unmount - used for video previews
  *  (FileImage handles the same job for <img> tags). */
 const GalleryVideoPreview = ({ file }: { file: string | File }) => {
     const url = useObjectURL(file);
@@ -49,7 +49,7 @@ const GalleryVideoPreview = ({ file }: { file: string | File }) => {
     return <video src={url} className="w-full h-full object-cover" />;
 };
 
-/** LivePreviewCard image/video slot — handles blob URL cleanup automatically. */
+/** LivePreviewCard image/video slot - handles blob URL cleanup automatically. */
 const LivePreviewItem = ({
     img,
     isVid,

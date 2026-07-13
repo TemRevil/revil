@@ -1,5 +1,5 @@
 /**
- * Remote MCP server for the portfolio — lets an MCP client (e.g. Claude) connect
+ * Remote MCP server for the portfolio - lets an MCP client (e.g. Claude) connect
  * over OAuth 2.1 and act on the portfolio agentically (read bookings/messages,
  * read the treasury, add/edit/delete projects, log expenses/income, manage
  * accounts). On connect it hands the LLM prompt rules + the current date/time (in
@@ -14,9 +14,9 @@
  *     the token, confirm its uid == the admin (Settings/Account.uid), then WE mint
  *     the code + tokens Claude uses.
  *   - The MCP endpoint runs the official MCP SDK over Streamable HTTP in stateless
- *     mode (a fresh server+transport per request — Cloud Functions are stateless).
+ *     mode (a fresh server+transport per request - Cloud Functions are stateless).
  *
- * Config (env, set in functions/.env — no secrets needed):
+ * Config (env, set in functions/.env - no secrets needed):
  *   MCP_BASE_URL = the deployed function URL (e.g.
  *                  https://us-central1-temrevil1.cloudfunctions.net/mcp)
  *   MCP_SITE_URL = the portfolio origin hosting /mcp-login (default temrevil.com)
@@ -32,7 +32,7 @@ import type { DocumentSnapshot } from "firebase-admin/firestore";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 // The MCP server class is loaded via dynamic import() below (the SDK is ESM-only),
-// which resolves to the package's ESM build. Type against that same build — a plain
+// which resolves to the package's ESM build. Type against that same build - a plain
 // `import type` from a CommonJS module resolves to the CJS build, whose McpServer is
 // nominally distinct (private fields), so the two wouldn't be assignable.
 type McpServerInstance = import("@modelcontextprotocol/sdk/server/mcp.js", { with: { "resolution-mode": "import" } }).McpServer;
@@ -57,7 +57,7 @@ function json(res: Response, status: number, obj: unknown): void {
 }
 
 // CORS for the bridge callback: the /mcp-login page calls it with fetch() (not a
-// navigating form POST — that trips CSP form-action on the downstream redirect),
+// navigating form POST - that trips CSP form-action on the downstream redirect),
 // so the response body must be readable from the site origin.
 function setCors(req: Request, res: Response): void {
   const origin = req.headers.origin || "";
@@ -94,7 +94,7 @@ function callbackRedirect(req: Request, res: Response, url: string): void {
 function baseUrl(): string {
   const configured = process.env.MCP_BASE_URL;
   if (!configured) {
-    throw new Error("MCP_BASE_URL is not configured — refusing to derive the base URL from the untrusted Host header.");
+    throw new Error("MCP_BASE_URL is not configured - refusing to derive the base URL from the untrusted Host header.");
   }
   return configured.replace(/\/+$/, "");
 }
@@ -203,7 +203,7 @@ function projectReceived(p: Project, income: Income[], rates: Rates): number {
   return (p.paidAmount || 0) + sum;
 }
 
-/** Derived payment status (the app never stores this — it computes it live). */
+/** Derived payment status (the app never stores this - it computes it live). */
 function projectPaymentStatus(p: Project, income: Income[], rates: Rates): string {
   if (!p.priceAmount) return "unpaid";
   const r = projectReceived(p, income, rates);
@@ -252,13 +252,13 @@ async function timezoneOffset(): Promise<number> {
  */
 function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
   return [
-    "You are connected to the Revil portfolio's PRIVATE admin MCP. The only user is the portfolio owner (admin); treat every booking, message, project and financial figure as confidential, owner-only data — never expose it to anyone else.",
+    "You are connected to the Revil portfolio's PRIVATE admin MCP. The only user is the portfolio owner (admin); treat every booking, message, project and financial figure as confidential, owner-only data - never expose it to anyone else.",
     "",
-    `CURRENT DATE & TIME: ${t.pretty}. This is authoritative — use it as "now" instead of your training cutoff. Resolve "today", "yesterday", "this month", etc. from it, and use it for any tool date argument. Call get_current_time to re-check.`,
+    `CURRENT DATE & TIME: ${t.pretty}. This is authoritative - use it as "now" instead of your training cutoff. Resolve "today", "yesterday", "this month", etc. from it, and use it for any tool date argument. Call get_current_time to re-check.`,
     "",
     "Rules:",
     "- Ground answers in the read tools (list_*, treasury_overview, get_current_time) before stating facts or acting.",
-    "- Money: amounts are in the stated currency; valid currencies are USD, EGP, EUR. Don't convert silently — the treasury has its own display currency and FX rates.",
+    "- Money: amounts are in the stated currency; valid currencies are USD, EGP, EUR. Don't convert silently - the treasury has its own display currency and FX rates.",
     "- Accounts: income lands INTO an account and expenses are paid FROM one. Use list_accounts and pass the right accountId; never invent an id.",
     "- Client-paid expenses: if the client/customer covered a cost, set clientPaid=true on the expense - it's recorded for reference but not counted as spending or deducted from any account.",
     "- Monthly retainers: when logging a payment that is the month's retainer payment, set monthlyPayment=true so the project's next-due date advances (early or late doesn't matter).",
@@ -267,11 +267,11 @@ function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
       : "- Writes are currently DISABLED in settings, so only read tools are available. Don't promise changes you can't make.",
     ...(cfg.writesEnabled
       ? [
-          "- Bookings (add_booking) come in TWO modes — decide which one BEFORE creating a booking, and confirm it with the owner:",
-          "    • WITH a meeting link: pass `meetingLink`, an existing Google Meet / Zoom / etc. URL. Never invent or guess a link — if the owner wants one but hasn't given a URL, ask for it first.",
+          "- Bookings (add_booking) come in TWO modes - decide which one BEFORE creating a booking, and confirm it with the owner:",
+          "    • WITH a meeting link: pass `meetingLink`, an existing Google Meet / Zoom / etc. URL. Never invent or guess a link - if the owner wants one but hasn't given a URL, ask for it first.",
           "    • WITHOUT a meeting link: omit `meetingLink` (an in-person / phone booking, or a link to be added later).",
           "  Pass date as YYYY-MM-DD and time as 24-hour HH:MM in the owner's timezone. add_booking marks the slot busy on the public calendar and emails the admin (and the guest, if an email is given), but it does NOT create a Google Calendar event or auto-generate a link. Check list_bookings first to avoid double-booking a slot.",
-          "- Working hours & days (get_availability / update_availability): the public booking calendar only offers the owner's selected working days and picked hours. update_availability REPLACES the entire list you send — read get_availability first, then send the FULL new list (workingDays: 0=Sun … 6=Sat; hours: 24-hour 0–23). Confirm with the owner before changing.",
+          "- Working hours & days (get_availability / update_availability): the public booking calendar only offers the owner's selected working days and picked hours. update_availability REPLACES the entire list you send - read get_availability first, then send the FULL new list (workingDays: 0=Sun … 6=Sat; hours: 24-hour 0–23). Confirm with the owner before changing.",
         ]
       : []),
     "- Be concise and factual.",
@@ -378,7 +378,7 @@ async function firebaseCallback(req: Request, res: Response): Promise<void> {
   const loginSnap = await loginRef.get();
   const login = loginSnap.data() as LoginRec | undefined;
   if (!login || login.exp < now()) {
-    return callbackError(req, res, 400, "Login request expired — start again from your MCP client.");
+    return callbackError(req, res, 400, "Login request expired - start again from your MCP client.");
   }
 
   let decoded;
@@ -395,7 +395,7 @@ async function firebaseCallback(req: Request, res: Response): Promise<void> {
   const adminUid = acc.exists ? acc.data()?.uid : null;
   const isAdmin = decoded.admin === true || (adminUid && decoded.uid === adminUid);
   if (!isAdmin) {
-    return callbackError(req, res, 403, "Access denied — this account is not the portfolio admin.");
+    return callbackError(req, res, 403, "Access denied - this account is not the portfolio admin.");
   }
 
   await loginRef.delete();
@@ -488,7 +488,7 @@ function readEntries<T extends object>(s: DocumentSnapshot): Array<T & { id: str
   return Object.entries(map).map(([id, v]) => ({ id, ...v }));
 }
 
-// ── Availability (working days + hours) — mirrors src/utils/availability.ts ──
+// ── Availability (working days + hours) - mirrors src/utils/availability.ts ──
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const DEFAULT_HOURS = [9, 10, 11, 12, 14, 15, 16, 17];
@@ -588,7 +588,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
     });
 
   server.registerTool("get_availability",
-    { title: "Get working hours & days", description: "The owner's bookable working days and hours — exactly what the public booking calendar offers.", inputSchema: {}, annotations: { readOnlyHint: true } },
+    { title: "Get working hours & days", description: "The owner's bookable working days and hours - exactly what the public booking calendar offers.", inputSchema: {}, annotations: { readOnlyHint: true } },
     async () => {
       const a = await readAvailability();
       return ok({
@@ -608,7 +608,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       title: "Update working hours & days",
       description:
         "Set the owner's bookable working days and/or hours (drives the public booking calendar). " +
-        "Each argument is the FULL new list and REPLACES the old one — read get_availability first, then send the complete list. " +
+        "Each argument is the FULL new list and REPLACES the old one - read get_availability first, then send the complete list. " +
         "workingDays are weekday numbers (0=Sun … 6=Sat); hours are 24-hour integers (0–23). Pass only the one you want to change.",
       inputSchema: {
         workingDays: z.array(z.number().int().min(0).max(6)).optional().describe("Full list of working weekdays, 0=Sun … 6=Sat"),
@@ -632,8 +632,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       title: "Add a booking",
       description:
         "Create a meeting/call booking in the dashboard's Canary inbox. TWO modes: " +
-        "WITH a meeting link — pass `meetingLink`, an existing Google Meet / Zoom / etc. URL you already have; " +
-        "or WITHOUT a link — omit `meetingLink` (an in-person / phone booking, or a link to be added later). " +
+        "WITH a meeting link - pass `meetingLink`, an existing Google Meet / Zoom / etc. URL you already have; " +
+        "or WITHOUT a link - omit `meetingLink` (an in-person / phone booking, or a link to be added later). " +
         "Never invent a link. Pass `date` as YYYY-MM-DD and `time` as 24-hour HH:MM in the owner's timezone (see get_current_time). " +
         "This writes the booking directly to Firestore: it marks the slot busy on the public calendar and emails the admin " +
         "(and the guest, if `email` is given), but it does NOT create a Google Calendar event or auto-generate a Meet link.",
@@ -641,7 +641,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         name: z.string().min(1).describe("Guest name"),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("YYYY-MM-DD in the owner's timezone"),
         time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).describe("24-hour HH:MM in the owner's timezone"),
-        email: z.string().email().optional().describe("Guest email — if given, they get a confirmation email"),
+        email: z.string().email().optional().describe("Guest email - if given, they get a confirmation email"),
         reason: z.string().optional().describe("What the call is for"),
         meetingLink: z.string().url().optional().describe("Meeting URL (Google Meet / Zoom / etc.). Omit for a booking WITHOUT a link."),
       },
@@ -677,7 +677,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
   server.registerTool("create_or_update_project",
     {
       title: "Create or update a project",
-      description: "Add a new portfolio project or update an existing one (matched by name). This is a partial update: only the fields you pass are written, and any field you omit is left exactly as it was — so editing one field never wipes the others.",
+      description: "Add a new portfolio project or update an existing one (matched by name). This is a partial update: only the fields you pass are written, and any field you omit is left exactly as it was - so editing one field never wipes the others.",
       inputSchema: {
         name: z.string().min(1).describe("Project name (also the document id)"),
         description: z.string().optional(),
@@ -694,8 +694,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       // set(..., {merge:true}) merges at the key level, so any key we DON'T include
       // is preserved untouched. Previously the four link/description keys were always
       // written with a `?? ""` fallback, so a partial edit (e.g. just description)
-      // silently blanked Live/Repository/Download Link. Omitting absent fields — like
-      // tags/listing already did — makes every edit a true non-destructive merge.
+      // silently blanked Live/Repository/Download Link. Omitting absent fields - like
+      // tags/listing already did - makes every edit a true non-destructive merge.
       const doc: Record<string, unknown> = {};
       if (a.description !== undefined) doc.Description = a.description;
       if (a.liveLink !== undefined) doc["Live Link"] = a.liveLink;
@@ -709,7 +709,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       if (typeof a.listing === "number") doc.Listing = a.listing;
 
       if (!Object.keys(doc).length) {
-        return fail("Nothing to write — pass at least one field besides name (description, liveLink, repoLink, downloadLink, tags, or listing).");
+        return fail("Nothing to write - pass at least one field besides name (description, liveLink, repoLink, downloadLink, tags, or listing).");
       }
 
       await db().doc(`Projects/${a.name}`).set(doc, { merge: true });
@@ -779,7 +779,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       for (const k of ["name", "type", "currency", "openingBalance", "notes", "archived"]) {
         if (src[k] !== undefined) patch[k] = src[k];
       }
-      if (!Object.keys(patch).length) return fail("Nothing to update — pass at least one field to change.");
+      if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
       await db().doc("Treasury/accounts").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
     });
@@ -845,7 +845,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       for (const k of ["label", "amount", "currency", "category", "date", "recurring", "projectId", "accountId", "clientPaid", "notes"]) {
         if (src[k] !== undefined) patch[k] = src[k];
       }
-      if (!Object.keys(patch).length) return fail("Nothing to update — pass at least one field to change.");
+      if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
       await db().doc("Treasury/spendings").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
     });
@@ -918,7 +918,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       for (const k of ["amount", "currency", "date", "note", "projectId", "accountId", "monthlyPayment"]) {
         if (src[k] !== undefined) patch[k] = src[k];
       }
-      if (!Object.keys(patch).length) return fail("Nothing to update — pass at least one field to change.");
+      if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
       await db().doc("Treasury/income").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
     });
