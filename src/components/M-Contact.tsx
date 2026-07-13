@@ -76,9 +76,12 @@ interface MContactProps {
   onClose: () => void;
   initialTab?: 'message' | 'meeting';
   hideTabs?: boolean;
+  /** Screen rect of the control that opened the modal (e.g. the dock button). When
+   *  given, the modal zooms open FROM that point instead of the default bottom rise. */
+  launchRect?: DOMRect | null;
 }
 
-const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MContactProps, 'isOpen'>) => {
+const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRect = null }: Omit<MContactProps, 'isOpen'>) => {
   const isDark = useTheme();
   const [formData, setFormData] = useState({
     name: '',
@@ -713,6 +716,38 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     };
   }, [onClose]);
 
+  // Entry/exit for the modal box. With a launchRect (e.g. the dock button) the modal
+  // zooms straight OUT of that control: we set the transform-origin to the trigger's
+  // centre expressed inside the centered modal box, and scale uniformly from tiny to
+  // full - a big, distortion-free "the button became the whole modal" movement.
+  // Without one we keep the original rise-from-the-bottom.
+  const modalMotion = useMemo(() => {
+    if (!launchRect || typeof window === 'undefined') {
+      return {
+        initial: { opacity: 0, scale: 0.3, y: 400 },
+        animate: { opacity: 1, scale: 1, y: 0 },
+        exit: { opacity: 0, scale: 0.3, y: 400 },
+        transformOrigin: 'bottom center',
+        transition: { type: 'spring' as const, damping: 30, stiffness: 350, mass: 1 },
+      };
+    }
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const mW = isMobile ? vw * 0.9 : Math.min(1240, vw * 0.94);
+    const mH = isMobile ? vh * 0.9 : Math.min(760, vh * 0.92);
+    const mLeft = (vw - mW) / 2, mTop = (vh - mH) / 2;
+    const bx = launchRect.x + launchRect.width / 2;
+    const by = launchRect.y + launchRect.height / 2;
+    const ox = Math.max(0, Math.min(mW, bx - mLeft));
+    const oy = Math.max(0, Math.min(mH, by - mTop));
+    return {
+      initial: { opacity: 0, scale: 0.12 },
+      animate: { opacity: 1, scale: 1 },
+      exit: { opacity: 0, scale: 0.12 },
+      transformOrigin: `${ox}px ${oy}px`,
+      transition: { type: 'spring' as const, damping: 32, stiffness: 280, mass: 1 },
+    };
+  }, [launchRect, isMobile]);
+
 
   return createPortal(
     <>
@@ -740,20 +775,10 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           role="dialog"
           aria-modal="true"
           aria-labelledby="contact-modal-title"
-          layout
-          initial={{ opacity: 0, scale: 0.3, y: 400 }}
-          animate={{
-            opacity: 1,
-            scale: 1,
-            y: 0,
-          }}
-          exit={{ opacity: 0, scale: 0.3, y: 400 }}
-          transition={{
-            type: 'spring',
-            damping: 30,
-            stiffness: 350,
-            mass: 1,
-          }}
+          initial={modalMotion.initial}
+          animate={modalMotion.animate}
+          exit={modalMotion.exit}
+          transition={modalMotion.transition}
           className={isMobile ? "glass-panel-deep" : ""}
           style={{
             // Responsive but bounded: scales with the viewport, never below a usable
@@ -765,7 +790,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
             height: isMobile ? '90dvh' : 'min(760px, 92vh)',
             maxWidth: isMobile ? '90vw' : '94vw',
             maxHeight: isMobile ? '90dvh' : '92vh',
-            transformOrigin: 'bottom center',
+            transformOrigin: modalMotion.transformOrigin,
             overflow: isMobile ? 'hidden' : 'visible',
             borderRadius: isMobile ? '16px' : '0',
             display: 'flex',

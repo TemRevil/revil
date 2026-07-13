@@ -116,6 +116,9 @@ function App() {
     } catch { /* ignore */ }
   }, [currentSection]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  // Screen rect of whatever control opened the contact modal (e.g. the dock button),
+  // so the modal can zoom open FROM it instead of a generic rise. Null → default rise.
+  const [contactOrigin, setContactOrigin] = useState<DOMRect | null>(null);
   const [forceHideLoading, setForceHideLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
   const [isWindowReady, setIsWindowReady] = useState(false);
@@ -266,7 +269,11 @@ function App() {
     setIsTransitioning(false);
   }, []);
 
-  const openContactModal = useCallback(() => setIsContactModalOpen(true), []);
+  const openContactModal = useCallback((origin?: DOMRect) => {
+    // Guard against a click event being passed instead of a rect (some triggers pass none).
+    setContactOrigin(origin && typeof origin.width === 'number' ? origin : null);
+    setIsContactModalOpen(true);
+  }, []);
   const closeContactModal = useCallback(() => setIsContactModalOpen(false), []);
 
   const openCVModal = useCallback(() => setIsCVModalOpen(true), []);
@@ -603,7 +610,7 @@ function App() {
           <Suspense fallback={null}>
             <AnimatePresence>
               {isContactModalOpen && (
-                <MContact onClose={closeContactModal} />
+                <MContact onClose={closeContactModal} launchRect={contactOrigin} />
               )}
             </AnimatePresence>
           </Suspense>
