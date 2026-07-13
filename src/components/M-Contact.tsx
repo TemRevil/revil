@@ -77,12 +77,9 @@ interface MContactProps {
   onClose: () => void;
   initialTab?: 'message' | 'meeting';
   hideTabs?: boolean;
-  /** Screen rect of the control that opened the modal (e.g. the dock button). When
-   *  given, the modal zooms open FROM that point instead of the default bottom rise. */
-  launchRect?: DOMRect | null;
 }
 
-const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRect = null }: Omit<MContactProps, 'isOpen'>) => {
+const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MContactProps, 'isOpen'>) => {
   const isDark = useTheme();
   const [formData, setFormData] = useState({
     name: '',
@@ -716,35 +713,19 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
 
   // Entry/exit for the modal box. With a launchRect (e.g. the dock button) the modal
   // zooms straight OUT of that control: we set the transform-origin to the trigger's
-  // centre expressed inside the centered modal box, and scale uniformly from tiny to
-  // full - a big, distortion-free "the button became the whole modal" movement.
-  // Without one we keep the original rise-from-the-bottom.
-  const modalMotion = useMemo(() => {
-    if (!launchRect || typeof window === 'undefined') {
-      return {
-        initial: { opacity: 0, scale: 0.3, y: 400 },
-        animate: { opacity: 1, scale: 1, y: 0 },
-        exit: { opacity: 0, scale: 0.3, y: 400 },
-        transformOrigin: 'bottom center',
-        transition: { type: 'spring' as const, damping: 30, stiffness: 350, mass: 1 },
-      };
-    }
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const mW = isMobile ? vw * 0.9 : Math.min(1240, vw * 0.94);
-    const mH = isMobile ? vh * 0.9 : Math.min(760, vh * 0.92);
-    const mLeft = (vw - mW) / 2, mTop = (vh - mH) / 2;
-    const bx = launchRect.x + launchRect.width / 2;
-    const by = launchRect.y + launchRect.height / 2;
-    const ox = Math.max(0, Math.min(mW, bx - mLeft));
-    const oy = Math.max(0, Math.min(mH, by - mTop));
-    return {
-      initial: { opacity: 0, scale: 0.2 },
-      animate: { opacity: 1, scale: 1 },
-      exit: { opacity: 0, scale: 0.2 },
-      transformOrigin: `${ox}px ${oy}px`,
-      transition: { type: 'spring' as const, damping: 34, stiffness: 320, mass: 0.9 },
-    };
-  }, [launchRect, isMobile]);
+  // The dock->modal movement is carried by the SHARED "contact-icon" element (it flies
+  // from the dock button into this modal's header). The box itself must NOT scale/translate
+  // from the dock: a transform on the modal is an ancestor transform on that icon, which
+  // corrupts its shared-layout animation (the icon would double-move and look broken). So
+  // the box just fades in with a whisper of scale anchored at its top-left - right where
+  // the header icon lands - so even that tiny scale doesn't shift the icon.
+  const modalMotion = useMemo(() => ({
+    initial: { opacity: 0, scale: 0.97 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.97 },
+    transformOrigin: 'top left',
+    transition: { type: 'spring' as const, damping: 32, stiffness: 320, mass: 0.9 },
+  }), []);
 
 
   return createPortal(
@@ -804,19 +785,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
           {/* Internal background elements */}
           {isMobile && <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />}
 
-          {/* Main Content Wrapper (Fixed Header/Tabs, Internal Scroll).
-              When zooming open from a launch rect, the heavy content (blurred cards,
-              calendar) fades in just AFTER the box has grown, so only a light/empty box
-              is scaled during the morph - that's what keeps it smooth, same trick as the
-              custom-time picker. Without a launch rect it's visible immediately (the
-              default rise is unchanged). */}
-          <motion.div
-            className="flex flex-col flex-1 overflow-hidden"
-            style={{ overscrollBehavior: 'contain', padding: isMobile ? '0' : '24px 24px 0 24px' }}
-            initial={launchRect ? { opacity: 0 } : false}
-            animate={{ opacity: 1, transition: { duration: 0.28, delay: launchRect ? 0.12 : 0 } }}
-            exit={{ opacity: 0, transition: { duration: 0.12 } }}
-          >
+          {/* Main Content Wrapper (Fixed Header/Tabs, Internal Scroll) */}
+          <div className="flex flex-col flex-1 overflow-hidden" style={{ overscrollBehavior: 'contain', padding: isMobile ? '0' : '24px 24px 0 24px' }}>
 
             {/* Header only on Mobile */}
             {isMobile && (
@@ -886,14 +856,20 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
                         overflowY: isMobile ? 'visible' : 'auto',
                         padding: isMobile ? '0' : '24px',
                         borderRadius: isMobile ? '0' : '24px',
-                        boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)',
+                        boxShadow: isMobile ? 'none' : '0 18px 44px -22px rgba(0,0,0,0.16), 0 44px 96px -40px rgba(0,0,0,0.2)',
                       }}
                     >
                       {/* Left Box Header */}
                       {!isMobile && (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', width: '100%' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <Mail size={22} className="text-primary" />
+                            <motion.div
+                              layoutId="contact-icon"
+                              className="flex items-center justify-center text-primary"
+                              transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}
+                            >
+                              <Mail size={22} />
+                            </motion.div>
                             <h2 style={{ fontSize: 'clamp(1.15rem, 0.85rem + 1.1vw, 1.45rem)', fontWeight: 700, margin: 0 }}>Contact Me</h2>
                           </div>
                           {!selectedDate && (
@@ -1098,7 +1074,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
                     </div>
 
                     {/* Right Column: Details & Agenda (Card Box on desktop) */}
-                    <div className={!isMobile ? "glass-panel-deep" : ""} style={{ flex: 1, height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: isMobile ? '0' : '24px', boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)', willChange: 'transform', position: 'relative' }}>
+                    <div className={!isMobile ? "glass-panel-deep" : ""} style={{ flex: 1, height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: isMobile ? '0' : '24px', boxShadow: isMobile ? 'none' : '0 18px 44px -22px rgba(0,0,0,0.16), 0 44px 96px -40px rgba(0,0,0,0.2)', willChange: 'transform', position: 'relative' }}>
                       {/* Header - flush with the card top; frosts only once the body scrolls */}
                       <div style={{
                         flexShrink: 0,
@@ -1353,7 +1329,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
                         flexDirection: 'column',
                         overflow: 'hidden',
                         borderRadius: isMobile ? '0' : '24px',
-                        boxShadow: isMobile ? 'none' : '0 20px 50px rgba(0,0,0,0.15)',
+                        boxShadow: isMobile ? 'none' : '0 18px 44px -22px rgba(0,0,0,0.16), 0 44px 96px -40px rgba(0,0,0,0.2)',
                         willChange: 'transform',
                         position: 'relative'
                       }}
@@ -1495,7 +1471,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
               </AnimatePresence>
             </div>
 
-          </motion.div>
+          </div>
 
           {/* Sub-nav footer - inside the modal so it always sits centered at the
               modal's bottom (tracks any screen size) instead of floating over content. */}

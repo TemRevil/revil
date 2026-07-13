@@ -10,7 +10,7 @@ type NavigateFn = (section: NavigateSection) => void;
 interface NavbarProps {
     onNavigate?: NavigateFn;
     currentSection?: NavigateSection;
-    onOpenContact?: (origin?: DOMRect) => void;
+    onOpenContact?: () => void;
     isContactOpen?: boolean;
     onOpenCV?: () => void;
     isCVOpen?: boolean;
@@ -369,7 +369,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 opacity: isContactOpen ? 0 : 1,
                                 pointerEvents: isContactOpen ? 'none' : 'auto',
                             }}
-                            onClick={(e) => onOpenContact?.(e.currentTarget.getBoundingClientRect())}
+                            onClick={onOpenContact}
                             aria-label="Open contact form"
                             onMouseEnter={() => setHoveredTab('mail')}
                             onMouseLeave={() => setHoveredTab(null)}
