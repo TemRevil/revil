@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe } from 'lucide-react';
+import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, Globe } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 // firebase/storage + firebase/functions are dynamic-imported inside the submit
 // handlers below (not statically) so they stay OUT of the eager first-paint
@@ -13,6 +13,7 @@ import useSafeAlert from '../hooks/useSafeAlert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, buildHostSlots, isWorkingDay } from '../utils/availability';
 import Select from './Select';
 import CustomTimePicker from './CustomTimePicker';
+import HintTooltip from './HintTooltip';
 import useTheme from '../hooks/useTheme';
 
 /** Pragmatic email validator: requires local@domain.tld and rejects whitespace.
@@ -112,8 +113,6 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [existingMeetings, setExistingMeetings] = useState<Meeting[]>([]);
   const [bookingSuccess, setBookingSuccess] = useState<{ date: string, time: string, link: string } | null>(null);
-  const [showNameTooltip, setShowNameTooltip] = useState(false);
-  const [showEmailTooltip, setShowEmailTooltip] = useState(false);
   const { alert, showAlert, hideAlert } = useSafeAlert(4000);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   // True once a details column is scrolled - its header frosts (blurs) only then.
@@ -174,7 +173,6 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
     // Detect system timezone offset in hours
     return -(new Date().getTimezoneOffset() / 60);
   });
-  const [showTzTooltip, setShowTzTooltip] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -740,11 +738,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
     const ox = Math.max(0, Math.min(mW, bx - mLeft));
     const oy = Math.max(0, Math.min(mH, by - mTop));
     return {
-      initial: { opacity: 0, scale: 0.12 },
+      initial: { opacity: 0, scale: 0.2 },
       animate: { opacity: 1, scale: 1 },
-      exit: { opacity: 0, scale: 0.12 },
+      exit: { opacity: 0, scale: 0.2 },
       transformOrigin: `${ox}px ${oy}px`,
-      transition: { type: 'spring' as const, damping: 32, stiffness: 280, mass: 1 },
+      transition: { type: 'spring' as const, damping: 34, stiffness: 320, mass: 0.9 },
     };
   }, [launchRect, isMobile]);
 
@@ -799,14 +797,26 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
             backgroundColor: isMobile ? undefined : 'transparent',
             border: isMobile ? undefined : 'none',
             boxShadow: isMobile ? undefined : 'none',
+            willChange: 'transform, opacity',
           }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Internal background elements */}
           {isMobile && <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />}
 
-          {/* Main Content Wrapper (Fixed Header/Tabs, Internal Scroll) */}
-          <div className="flex flex-col flex-1 overflow-hidden" style={{ overscrollBehavior: 'contain', padding: isMobile ? '0' : '24px 24px 0 24px' }}>
+          {/* Main Content Wrapper (Fixed Header/Tabs, Internal Scroll).
+              When zooming open from a launch rect, the heavy content (blurred cards,
+              calendar) fades in just AFTER the box has grown, so only a light/empty box
+              is scaled during the morph - that's what keeps it smooth, same trick as the
+              custom-time picker. Without a launch rect it's visible immediately (the
+              default rise is unchanged). */}
+          <motion.div
+            className="flex flex-col flex-1 overflow-hidden"
+            style={{ overscrollBehavior: 'contain', padding: isMobile ? '0' : '24px 24px 0 24px' }}
+            initial={launchRect ? { opacity: 0 } : false}
+            animate={{ opacity: 1, transition: { duration: 0.28, delay: launchRect ? 0.12 : 0 } }}
+            exit={{ opacity: 0, transition: { duration: 0.12 } }}
+          >
 
             {/* Header only on Mobile */}
             {isMobile && (
@@ -1201,48 +1211,14 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
                                   <>
                                     {/* Timezone Selection (Before Available Slots) */}
                                     <div style={{ position: 'relative', marginBottom: '24px' }}>
-                                      <div style={{ position: 'relative' }}>
+                                      <div>
                                         <label
-                                          onMouseEnter={() => setShowTzTooltip(true)}
-                                          onMouseLeave={() => setShowTzTooltip(false)}
                                           className="label-help flex items-center gap-2 mb-2"
                                           style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}
                                         >
-                                          <Globe size={14} className="opacity-70" /> User Timezone <AlertCircle size={14} className="opacity-70" />
+                                          <Globe size={14} className="opacity-70" /> User Timezone
+                                          <HintTooltip text="We've detected your timezone automatically, but you can adjust it here. Available slots will update to match your local area's time." isDark={isDark} />
                                         </label>
-
-                                        <AnimatePresence>
-                                          {showTzTooltip && (
-                                            <motion.div
-                                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                                              exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                              transition={{ duration: 0.2, ease: "easeOut" }}
-                                              className="tooltip-glass"
-                                              style={{
-                                                position: 'absolute',
-                                                bottom: '100%',
-                                                left: '0',
-                                                marginBottom: '10px',
-                                                width: '280px',
-                                                zIndex: 200,
-                                                pointerEvents: 'none'
-                                              }}
-                                            >
-                                              We've detected your timezone automatically, but you can adjust it here. Available slots will update to match your local area's time.
-                                              <div style={{
-                                                position: 'absolute',
-                                                top: '100%',
-                                                left: '12px',
-                                                width: '0',
-                                                height: '0',
-                                                borderLeft: '6px solid transparent',
-                                                borderRight: '6px solid transparent',
-                                                borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
-                                              }} />
-                                            </motion.div>
-                                          )}
-                                        </AnimatePresence>
                                       </div>
 
                                       <Select
@@ -1308,74 +1284,18 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                         <div>
-                                          <div style={{ position: 'relative' }}>
-                                            <label
-                                              onMouseEnter={() => setShowNameTooltip(true)}
-                                              onMouseLeave={() => setShowNameTooltip(false)}
-                                              className="label-help"
-                                            >
-                                              Name * <AlertCircle size={14} className="opacity-60" />
-                                            </label>
-                                            <AnimatePresence>
-                                              {showNameTooltip && (
-                                                <motion.div
-                                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                  exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                                  transition={{ duration: 0.2, ease: "easeOut" }}
-                                                  className="tooltip-glass"
-                                                >
-                                                  Warning: your name will show in the calendar, if you want to hide it, please use a nickname.
-                                                  <div style={{
-                                                    position: 'absolute',
-                                                    top: '100%',
-                                                    left: '12px',
-                                                    width: '0',
-                                                    height: '0',
-                                                    borderLeft: '6px solid transparent',
-                                                    borderRight: '6px solid transparent',
-                                                    borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
-                                                  }} />
-                                                </motion.div>
-                                              )}
-                                            </AnimatePresence>
-                                          </div>
+                                          <label className="label-help">
+                                            Name *
+                                            <HintTooltip text="Warning: your name will show in the calendar, if you want to hide it, please use a nickname." isDark={isDark} />
+                                          </label>
                                           <input aria-label="Name" className="dashboard-input" style={{ borderRadius: '12px', width: '100%' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
                                         </div>
 
                                         <div>
-                                          <div style={{ position: 'relative' }}>
-                                            <label
-                                              onMouseEnter={() => setShowEmailTooltip(true)}
-                                              onMouseLeave={() => setShowEmailTooltip(false)}
-                                              className="label-help"
-                                            >
-                                              Email * <AlertCircle size={14} className="opacity-60" />
-                                            </label>
-                                            <AnimatePresence>
-                                              {showEmailTooltip && (
-                                                <motion.div
-                                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                  exit={{ opacity: 0, y: 5, scale: 0.95 }}
-                                                  transition={{ duration: 0.2, ease: "easeOut" }}
-                                                  className="tooltip-glass"
-                                                >
-                                                  Please use a correct email address. I will send the Google Calendar invitation and meeting link directly to this inbox.
-                                                  <div style={{
-                                                    position: 'absolute',
-                                                    top: '100%',
-                                                    left: '12px',
-                                                    width: '0',
-                                                    height: '0',
-                                                    borderLeft: '6px solid transparent',
-                                                    borderRight: '6px solid transparent',
-                                                    borderTop: `6px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0,0,0,0.8)'}`
-                                                  }} />
-                                                </motion.div>
-                                              )}
-                                            </AnimatePresence>
-                                          </div>
+                                          <label className="label-help">
+                                            Email *
+                                            <HintTooltip text="Please use a correct email address. I will send the Google Calendar invitation and meeting link directly to this inbox." isDark={isDark} />
+                                          </label>
                                           <input type="email" aria-label="Email" className="dashboard-input" style={{ borderRadius: '12px', width: '100%' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
                                         </div>
                                       </div>
@@ -1575,7 +1495,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, launchRec
               </AnimatePresence>
             </div>
 
-          </div>
+          </motion.div>
 
           {/* Sub-nav footer - inside the modal so it always sits centered at the
               modal's bottom (tracks any screen size) instead of floating over content. */}
