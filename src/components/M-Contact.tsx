@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe } from 'lucide-react';
+import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Globe, Plus } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 // firebase/storage + firebase/functions are dynamic-imported inside the submit
 // handlers below (not statically) so they stay OUT of the eager first-paint
@@ -93,6 +93,14 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  // A custom (free) slot the visitor typed themselves, rather than one of the host's
+  // fixed hours. When true, selectedTime holds that user-perspective time and the
+  // "must be one of the offered slots" submit guard is relaxed for it.
+  const [isCustomTime, setIsCustomTime] = useState(false);
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [customH, setCustomH] = useState('10');
+  const [customM, setCustomM] = useState('00');
+  const [customP, setCustomP] = useState<'AM' | 'PM'>('AM');
   const [direction, setDirection] = useState(0);
   const [tabDirection, setTabDirection] = useState(0);
   const [meetingData, setMeetingData] = useState({
@@ -192,6 +200,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   // stored time string no longer matches any visible button but is still submitted.
   useEffect(() => {
     setSelectedTime(null);
+    setIsCustomTime(false);
   }, [selectedDate, userTimezone]);
 
   // Calendar Helpers
@@ -405,8 +414,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     // isTimePassed/busy checks take the host-perspective time - convert first.
     const selectedHostTime = convertTimeToHost(selectedTime);
     const slotNowBusy = getMeetingsForDate(selectedDate).some(m => m.Time === selectedHostTime);
-    if (!convertedSlots.includes(selectedTime) || isTimePassed(selectedDate, selectedHostTime) || slotNowBusy) {
+    // Fixed slots must still be one of the currently-offered times; a custom (free)
+    // slot is exempt from that membership check, but both must be non-passed and free.
+    const notOffered = !isCustomTime && !convertedSlots.includes(selectedTime);
+    if (notOffered || isTimePassed(selectedDate, selectedHostTime) || slotNowBusy) {
       setSelectedTime(null);
+      setIsCustomTime(false);
       showAlert({ type: 'warning', message: 'That time slot is no longer available. Please pick another.' });
       return;
     }
@@ -543,6 +556,27 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   };
 
 
+  // Apply the visitor's custom (free) time. Runs the SAME passed/busy checks the fixed
+  // slots get (in the host's perspective), then stores it as the selected time so the
+  // normal booking flow submits it unchanged.
+  const applyCustomTime = () => {
+    const t = `${customH.padStart(2, '0')}:${customM} ${customP}`;
+    if (selectedDate) {
+      const hostT = convertTimeToHost(t);
+      if (isTimePassed(selectedDate, hostT)) {
+        showAlert({ type: 'warning', message: 'That time has already passed — pick a later one.' });
+        return;
+      }
+      if (getMeetingsForDate(selectedDate).some(m => m.Time === hostT)) {
+        showAlert({ type: 'warning', message: 'That time overlaps an existing booking — pick another.' });
+        return;
+      }
+    }
+    setSelectedTime(t);
+    setIsCustomTime(true);
+    setShowCustomPicker(false);
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -675,9 +709,19 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     }
   };
 
+  // Read the picker's open-state from a ref so the Escape handler binds once (stable
+  // deps) yet always sees the latest value.
+  const showCustomPickerRef = useRef(false);
+  showCustomPickerRef.current = showCustomPicker;
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // Escape peels one layer: close the custom-time popup first, the modal second.
+        if (showCustomPickerRef.current) {
+          setShowCustomPicker(false);
+          return;
+        }
         onClose();
       }
     };
@@ -1215,25 +1259,26 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                           const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
                                           const passed = isTimePassed(selectedDate, hostTime);
                                           const isDisabled = isBusy || passed;
+                                          const isActive = selectedTime === time && !isCustomTime;
                                           return (
-                                            <button key={time} onClick={() => setSelectedTime(time)} disabled={isDisabled}
+                                            <button key={time} onClick={() => { setSelectedTime(time); setIsCustomTime(false); }} disabled={isDisabled}
                                               style={{
                                                 padding: '10px 8px', borderRadius: '12px',
-                                                border: `1px solid ${selectedTime === time ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`,
-                                                background: selectedTime === time ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-                                                color: selectedTime === time ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
+                                                border: `1px solid ${isActive ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`,
+                                                background: isActive ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
+                                                color: isActive ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
                                                 fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
                                                 opacity: isDisabled ? 0.3 : 1,
                                                 textDecoration: isDisabled ? 'line-through' : 'none'
                                               }}
                                               onMouseEnter={(e) => {
-                                                if (selectedTime !== time && !isDisabled) {
+                                                if (!isActive && !isDisabled) {
                                                   e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
                                                   e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
                                                 }
                                               }}
                                               onMouseLeave={(e) => {
-                                                if (selectedTime !== time && !isDisabled) {
+                                                if (!isActive && !isDisabled) {
                                                   e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
                                                   e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
                                                 }
@@ -1241,6 +1286,41 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                             >{time}</button>
                                           );
                                         })}
+
+                                        {/* Custom (free) slot — always last. Opens a nested time picker so the
+                                            visitor can propose any time, not just the host's fixed hours. */}
+                                        {(() => {
+                                          const active = isCustomTime && !!selectedTime;
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => setShowCustomPicker(true)}
+                                              aria-label="Pick a custom time"
+                                              style={{
+                                                padding: '10px 8px', borderRadius: '12px',
+                                                border: `1px dashed ${active ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.2)')}`,
+                                                background: active ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
+                                                color: active ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
+                                                fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px'
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                if (!active) {
+                                                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)';
+                                                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+                                                }
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (!active) {
+                                                  e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.2)';
+                                                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
+                                                }
+                                              }}
+                                            >
+                                              {active ? selectedTime : (<><Plus size={13} /> Custom</>)}
+                                            </button>
+                                          );
+                                        })()}
                                       </div>
                                     </div>
 
@@ -1602,6 +1682,104 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           )}
         </motion.div>
       </div>
+
+      {/* Custom-time picker — a nested pop-up over the booking modal. Blurred backdrop,
+          spring pop-in, boxed shadow, and the reusable glassy <Select> (no browser
+          inputs). Sits above the modal (z 1500+) so its own dropdowns (z 10000) still
+          layer on top. */}
+      <AnimatePresence>
+        {showCustomPicker && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+              onClick={() => setShowCustomPicker(false)}
+              style={{
+                position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)',
+                backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex: 1500,
+              }}
+            />
+            <div style={{ position: 'fixed', inset: 0, zIndex: 1501, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', pointerEvents: 'none' }}>
+              <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Pick a custom time"
+                initial={{ opacity: 0, scale: 0.85, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 8 }}
+                transition={{ type: 'spring', damping: 26, stiffness: 360, mass: 0.9 }}
+                onClick={(e) => e.stopPropagation()}
+                className="glass-panel-deep"
+                style={{
+                  width: 'min(360px, 92vw)', borderRadius: '24px', padding: '24px',
+                  transformOrigin: 'center', pointerEvents: 'auto',
+                  boxShadow: isDark ? '0 30px 80px rgba(0,0,0,0.6)' : '0 30px 80px rgba(0,0,0,0.28)',
+                  display: 'flex', flexDirection: 'column', gap: '20px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                    <Clock size={18} /> Custom Time
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomPicker(false)}
+                    aria-label="Close custom time picker"
+                    className="btn-icon rounded-full"
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '-8px 0 0', lineHeight: 1.5 }}>
+                  Propose any time in your local zone — I'll confirm it by email.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Hour</label>
+                    <Select value={customH} onChange={setCustomH} isDark={isDark} searchable={false} aria-label="Hour"
+                      options={Array.from({ length: 12 }, (_, i) => String(i + 1))} />
+                  </div>
+                  <div>
+                    <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Minute</label>
+                    <Select value={customM} onChange={setCustomM} isDark={isDark} aria-label="Minute"
+                      options={['00', '15', '30', '45']} />
+                  </div>
+                  <div>
+                    <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Period</label>
+                    <Select value={customP} onChange={(v) => setCustomP(v as 'AM' | 'PM')} isDark={isDark} aria-label="AM or PM"
+                      options={['AM', 'PM']} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomPicker(false)}
+                    style={{ flex: 1, padding: '12px', borderRadius: '14px', border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`, background: 'transparent', color: 'var(--text-primary)', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyCustomTime}
+                    className="btn-primary btn"
+                    style={{ flex: 1, padding: '12px', borderRadius: '14px' }}
+                  >
+                    Set Time
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
     </>,
     document.body
   );
