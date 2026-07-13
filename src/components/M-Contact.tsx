@@ -711,20 +711,17 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     };
   }, [onClose]);
 
-  // Entry/exit for the modal box. With a launchRect (e.g. the dock button) the modal
-  // zooms straight OUT of that control: we set the transform-origin to the trigger's
-  // The dock->modal movement is carried by the SHARED "contact-icon" element (it flies
-  // from the dock button into this modal's header). The box itself must NOT scale/translate
-  // from the dock: a transform on the modal is an ancestor transform on that icon, which
-  // corrupts its shared-layout animation (the icon would double-move and look broken). So
-  // the box just fades in with a whisper of scale anchored at its top-left - right where
-  // the header icon lands - so even that tiny scale doesn't shift the icon.
+  // Entry/exit for the modal box: the two boxes rise up from the bottom (the taskbar-window
+  // feel), scaling up from bottom-center. Running ALONGSIDE it, the shared "contact-icon"
+  // element flies from the dock button into the header - so the whole thing reads as coming
+  // up from the dock. (The mobile header has always paired this rise with the icon morph, so
+  // they coexist fine.)
   const modalMotion = useMemo(() => ({
-    initial: { opacity: 0, scale: 0.97 },
-    animate: { opacity: 1, scale: 1 },
-    exit: { opacity: 0, scale: 0.97 },
-    transformOrigin: 'top left',
-    transition: { type: 'spring' as const, damping: 32, stiffness: 320, mass: 0.9 },
+    initial: { opacity: 0, scale: 0.3, y: 400 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.3, y: 400 },
+    transformOrigin: 'bottom center',
+    transition: { type: 'spring' as const, damping: 30, stiffness: 350, mass: 1 },
   }), []);
 
 
@@ -754,6 +751,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           role="dialog"
           aria-modal="true"
           aria-labelledby="contact-modal-title"
+          layout
           initial={modalMotion.initial}
           animate={modalMotion.animate}
           exit={modalMotion.exit}
