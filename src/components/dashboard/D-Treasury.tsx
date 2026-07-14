@@ -6,7 +6,7 @@ import {
     Plus, Download, CheckCircle2, Pencil, Receipt, Briefcase, LayoutDashboard,
     TrendingUp, TrendingDown, Wallet, Sparkles, Clock, Lightbulb, SlidersHorizontal,
     ChevronLeft, ChevronRight, RefreshCcw, Percent, Repeat, Hourglass, Tag, Banknote,
-    GripVertical, Landmark, Wallet2, Paperclip,
+    GripVertical, Landmark, Wallet2, Paperclip, CalendarClock,
 } from 'lucide-react';
 import {
     ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps,
@@ -22,6 +22,7 @@ import {
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
     projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome, convert,
     nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
+    hasInstallments, installmentMonthlyAmount, projectContractTotal,
 } from '../../lib/treasury';
 import MTreasuryEntry from './M-TreasuryEntry';
 import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './M-Account';
@@ -836,6 +837,11 @@ const DTreasury = () => {
                                                             {p.monthly
                                                                 ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#10b98122', color: '#10b981' }}>monthly</span>
                                                                 : <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${payColor[pay]}22`, color: payColor[pay] }}>{pay}</span>}
+                                                            {/* The list already flags retainers; flag plans too, or installments are
+                                                                invisible until you open the project. */}
+                                                            {hasInstallments(p) && (
+                                                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full tnum" style={{ background: '#3395ff22', color: '#3395ff' }}>{p.installmentMonths}x</span>
+                                                            )}
                                                         </div>
                                                         <div>
                                                             <span className="text-base font-extrabold text-primary tnum">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}{p.monthly ? <span className="text-xs font-bold text-sec">/mo</span> : ''}</span>
@@ -869,7 +875,16 @@ const DTreasury = () => {
                                                 {/* Progress Tracker */}
                                                 {!focusedProject.monthly && focusedProject.priceAmount > 0 && (() => {
                                                     const received = projectReceived(focusedProject, data.income, data.config.rates);
-                                                    const pct = Math.min(100, Math.round((received / focusedProject.priceAmount) * 100));
+                                                    // Measure against price + installment surcharge, NOT the raw price - otherwise
+                                                    // "% paid" overstates and contradicts the "left" figure right next to it
+                                                    // (which already uses the true total via projectBalance).
+                                                    const owed = projectContractTotal(focusedProject);
+                                                    const pct = Math.min(100, Math.round((received / owed) * 100));
+                                                    const onPlan = hasInstallments(focusedProject);
+                                                    const months = focusedProject.installmentMonths || 0;
+                                                    const perMonth = installmentMonthlyAmount(focusedProject);
+                                                    // How many whole installments the money received covers.
+                                                    const paidCount = onPlan && perMonth > 0 ? Math.min(months, Math.floor(received / perMonth)) : 0;
                                                     return (
                                                         <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5">
                                                             <div className="flex items-center justify-between text-xs font-bold text-sec">
@@ -878,7 +893,25 @@ const DTreasury = () => {
                                                             </div>
                                                             <div className="w-full h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden relative">
                                                                 <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.4, ease: "easeOut" }} className="h-full bg-emerald-500 rounded-full" />
+                                                                {/* On a plan, notch the bar into one segment per installment, so you can
+                                                                    read "how many months are covered" straight off the bar. */}
+                                                                {onPlan && Array.from({ length: months - 1 }, (_, i) => (
+                                                                    <div
+                                                                        key={i}
+                                                                        className="absolute top-0 bottom-0 w-px bg-white/70 dark:bg-black/50"
+                                                                        style={{ left: `${((i + 1) / months) * 100}%` }}
+                                                                    />
+                                                                ))}
                                                             </div>
+                                                            {onPlan && (
+                                                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                                                    <span className="inline-flex items-center gap-1.5 font-bold text-blue-500">
+                                                                        <CalendarClock size={13} className="shrink-0" />
+                                                                        <span className="tnum">{months} installments x {formatMoney(perMonth, focusedProject.priceCurrency)}/mo</span>
+                                                                    </span>
+                                                                    <span className="font-semibold text-sec tnum">{paidCount} of {months} paid</span>
+                                                                </div>
+                                                            )}
                                                             <div className="flex flex-wrap items-center justify-between text-[11px] text-sec gap-2 mt-0.5">
                                                                 <span className="font-semibold text-emerald-500 tnum">{formatMoney(received, focusedProject.priceCurrency)} received</span>
                                                                 <span className="font-semibold text-amber-500 tnum">{formatMoney(projectBalance(focusedProject, data.income, data.config.rates), focusedProject.priceCurrency)} left</span>
