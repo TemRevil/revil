@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -83,14 +84,25 @@ const DatePicker = ({ value, onChange, isDark, placeholder = 'Select a date', al
         ${isDark ? 'bg-white/5 border-white/10 hover:border-white/20' : 'bg-black/[0.03] border-black/10 hover:border-black/20'}
         ${open ? 'border-blue-400/60' : ''} ${selected ? 'text-primary' : 'text-sec'}`;
 
-    const popover = open ? createPortal(
-        <div
+    // Pops in/out and frosts the same way <Select> does, so every floating menu in the
+    // app reads as one system. transformTemplate keeps the flip-up offset out of the
+    // animated transform (motion owns `transform` while it animates scale).
+    const popover = createPortal(
+        <AnimatePresence>
+            {open && (
+        <motion.div
+            key="date-pop"
             ref={popRef}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.94 }}
+            transition={{ type: 'spring', stiffness: 520, damping: 32, mass: 0.7 }}
+            transformTemplate={(_, generated) => `translateY(${pos.flipUp ? '-100%' : '0px'}) ${generated}`}
             style={{
                 position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 10000,
-                transform: pos.flipUp ? 'translateY(-100%)' : 'none',
+                transformOrigin: pos.flipUp ? 'bottom center' : 'top center',
             }}
-            className={`rounded-2xl border shadow-2xl p-3 ${isDark ? 'bg-[#15151c] border-white/10' : 'bg-white border-black/10'}`}
+            className={`rounded-2xl border shadow-2xl p-3 backdrop-blur-xl ${isDark ? 'bg-[#15151c]/80 border-white/10' : 'bg-white/80 border-black/10'}`}
         >
             {/* Header */}
             <div className="flex items-center justify-between mb-2 px-1">
@@ -131,9 +143,11 @@ const DatePicker = ({ value, onChange, isDark, placeholder = 'Select a date', al
                     : <span />}
                 <button type="button" onClick={() => pick(new Date())} className="text-xs font-semibold text-blue-500 hover:text-blue-600 transition-colors px-1">Today</button>
             </div>
-        </div>,
+        </motion.div>
+            )}
+        </AnimatePresence>,
         document.body
-    ) : null;
+    );
 
     return (
         <>

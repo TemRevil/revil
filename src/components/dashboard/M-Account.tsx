@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Trash2, Wallet, Landmark, Banknote, CreditCard, Coins, Archive, TrendingUp } from 'lucide-react';
+import Toggle from '../Toggle';
 import { motion } from 'motion/react';
 import {
     CURRENCIES, CURRENCY_SYMBOL, Currency, AccountType, ACCOUNT_TYPES,
@@ -163,18 +164,19 @@ const MAccount = ({ config, account, nextOrder, onSave, onDelete, onClose }: Pro
                     </div>
 
                     <div>
-                        <label className="flex items-center gap-3 cursor-pointer select-none">
-                            <input type="checkbox" checked={countsTowardNetProfit} onChange={e => setCountsTowardNetProfit(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
+                        <div className="flex items-center gap-3 select-none">
+                            <Toggle checked={countsTowardNetProfit} onChange={setCountsTowardNetProfit} aria-label="Counts toward net profit" />
                             <span className="text-sm text-primary font-medium flex items-center gap-1.5"><TrendingUp size={14} /> Counts toward net profit</span>
-                        </label>
+                        </div>
                         <p className="text-[11px] text-sec mt-1.5 ml-7">Turn off for money that isn't real business P&amp;L (e.g. savings, a client's escrow) - income/expenses here still update this account's balance, just not Net profit or the earnings chart.</p>
                     </div>
 
                     {isEdit && (
-                        <label className="flex items-center gap-3 cursor-pointer select-none">
-                            <input type="checkbox" checked={archived} onChange={e => setArchived(e.target.checked)} className="w-4 h-4 accent-amber-500" />
+                        <div className="flex items-center gap-3 select-none">
+                            {/* Archive keeps amber: it's a warning state, not the primary action. */}
+                            <Toggle checked={archived} onChange={setArchived} color="#f59e0b" aria-label="Archive account" />
                             <span className="text-sm text-primary font-medium flex items-center gap-1.5"><Archive size={14} /> Archive (hide from pickers, keep history)</span>
-                        </label>
+                        </div>
                     )}
                 </div>
 

@@ -12,9 +12,10 @@ import {
     ExpenseTemplate, matchExpenseTemplates, expenseProjectOptions, incomeProjectOptions, formatMoney,
     expenseCategories, matchCategories, nextMonthlyPaymentDate, accountOptions, installmentTotal,
 } from '../../lib/treasury';
-import DatePicker from './DatePicker';
+import DatePicker from '../DatePicker';
 import Select from '../Select';
-import RangeSlider from '../RangeSlider';
+import Toggle from '../Toggle';
+import ElasticSlider from '../reactbits/ElasticSlider';
 
 type Mode = 'project' | 'expense' | 'income';
 
@@ -363,37 +364,43 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                     {currencyPicker(priceCurrency, setPriceCurrency)}
                                 </div>
                             </div>
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={monthly} onChange={e => setMonthly(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
+                            <div className="flex items-center gap-3 select-none">
+                                <Toggle checked={monthly} onChange={setMonthly} aria-label="Pays monthly (retainer)" />
                                 <span className="text-sm text-primary font-medium">Pays monthly (retainer) - the amount above is per month</span>
-                            </label>
+                            </div>
 
                             {/* Installments: only for a fixed price. A retainer has no total to split,
                                 so the two are mutually exclusive. */}
                             {!monthly && (
                                 <div className="rounded-xl border p-3 flex flex-col gap-3" style={{ borderColor: 'var(--section-border)' }}>
-                                    <label className="flex items-center gap-3 cursor-pointer select-none">
-                                        <input type="checkbox" checked={installmentsOn} onChange={e => setInstallmentsOn(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
+                                    <div className="flex items-center gap-3 select-none">
+                                        <Toggle checked={installmentsOn} onChange={setInstallmentsOn} aria-label="Pay in installments" />
                                         <span className="text-sm text-primary font-medium">Pay in installments - split the price over months</span>
-                                    </label>
+                                    </div>
 
                                     {installmentsOn && (
                                         <>
                                             <div>
                                                 <label className={labelCls}>Duration</label>
-                                                <RangeSlider
+                                                <ElasticSlider
                                                     value={installmentMonths}
-                                                    onChange={setInstallmentMonths}
-                                                    min={2} max={24} step={1} suffix=" mo"
+                                                    onChange={(v) => setInstallmentMonths(Math.round(v))}
+                                                    startingValue={2} maxValue={24} isStepped stepSize={1}
+                                                    suffix=" mo"
+                                                    leftIcon={<span className="text-[11px] font-bold">2</span>}
+                                                    rightIcon={<span className="text-[11px] font-bold">24</span>}
                                                     aria-label="Installment duration in months"
                                                 />
                                             </div>
                                             <div>
                                                 <label className={labelCls}>Extra charge (% of the whole price)</label>
-                                                <RangeSlider
+                                                <ElasticSlider
                                                     value={installmentPercent}
-                                                    onChange={setInstallmentPercent}
-                                                    min={0} max={50} step={1} suffix="%"
+                                                    onChange={(v) => setInstallmentPercent(Math.round(v))}
+                                                    startingValue={0} maxValue={50} isStepped stepSize={1}
+                                                    suffix="%"
+                                                    leftIcon={<span className="text-[11px] font-bold">0%</span>}
+                                                    rightIcon={<span className="text-[11px] font-bold">50%</span>}
                                                     aria-label="Installment extra charge percentage"
                                                 />
                                             </div>
@@ -431,10 +438,10 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                     <DatePicker value={endDate} onChange={setEndDate} isDark={isDark} placeholder="Not ended" />
                                 </div>
                             </div>
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={done} onChange={e => setDone(e.target.checked)} className="w-4 h-4 accent-green-500" />
+                            <div className="flex items-center gap-3 select-none">
+                                <Toggle checked={done} onChange={setDone} aria-label="Mark as done" />
                                 <span className="text-sm text-primary font-medium">Mark as done (sets the end date)</span>
-                            </label>
+                            </div>
                         </>
                     )}
 
@@ -582,10 +589,10 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                     <p className="text-[11px] text-sec mt-1.5">Deducts this from the account&apos;s balance.</p>
                                 </div>
                             )}
-                            <label className="flex items-center gap-3 cursor-pointer select-none">
-                                <input type="checkbox" checked={recurring} onChange={e => setRecurring(e.target.checked)} className="w-4 h-4 accent-blue-500" />
+                            <div className="flex items-center gap-3 select-none">
+                                <Toggle checked={recurring} onChange={setRecurring} aria-label="Monthly fee (recurring)" />
                                 <span className="text-sm text-primary font-medium">Monthly fee (recurring)</span>
-                            </label>
+                            </div>
                         </>
                     )}
 

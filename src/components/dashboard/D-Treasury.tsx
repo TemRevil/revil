@@ -25,7 +25,7 @@ import {
 } from '../../lib/treasury';
 import MTreasuryEntry from './M-TreasuryEntry';
 import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './M-Account';
-import DatePicker from './DatePicker';
+import DatePicker from '../DatePicker';
 import Select from '../Select';
 import SaveBar from './SaveBar';
 import Alert, { AlertType } from '../Alert';
