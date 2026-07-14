@@ -10,10 +10,11 @@ import {
     CURRENCIES, CURRENCY_SYMBOL, Currency, ProjectStatus, Rates, DEFAULT_RATES,
     TreasuryProject, TreasuryExpense, TreasuryIncome, TreasuryAccount, TreasuryConfig, uid, derivePaymentStatus,
     ExpenseTemplate, matchExpenseTemplates, expenseProjectOptions, incomeProjectOptions, formatMoney,
-    expenseCategories, matchCategories, nextMonthlyPaymentDate, accountOptions,
+    expenseCategories, matchCategories, nextMonthlyPaymentDate, accountOptions, installmentTotal,
 } from '../../lib/treasury';
 import DatePicker from './DatePicker';
 import Select from '../Select';
+import RangeSlider from '../RangeSlider';
 
 type Mode = 'project' | 'expense' | 'income';
 
@@ -56,6 +57,14 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
     const [endDate, setEndDate] = useState(project?.endDate ?? '');
     const [done, setDone] = useState(project?.done ?? false);
     const [monthly, setMonthly] = useState(project?.monthly ?? false);
+    // Installment plan: the fixed price split into equal monthly payments, with an
+    // optional surcharge charged on the WHOLE price. Mutually exclusive with the
+    // retainer above (a retainer has no total to split).
+    const [installmentsOn, setInstallmentsOn] = useState((project?.installmentMonths || 0) > 1);
+    const [installmentMonths, setInstallmentMonths] = useState(
+        (project?.installmentMonths || 0) > 1 ? project!.installmentMonths! : 3
+    );
+    const [installmentPercent, setInstallmentPercent] = useState(project?.installmentPercent ?? 0);
 
     // Expense fields
     const [label, setLabel] = useState(expense?.label ?? '');
@@ -221,6 +230,10 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                 priceAmount: price,
                 priceCurrency,
                 monthly,
+                // A retainer can't also be an installment plan, so only persist the plan
+                // for fixed-price projects. Undefined clears it back to "paid in one go".
+                installmentMonths: !monthly && installmentsOn ? installmentMonths : undefined,
+                installmentPercent: !monthly && installmentsOn && installmentPercent > 0 ? installmentPercent : undefined,
                 paidAmount: paid,
                 paymentStatus: derivePaymentStatus({ priceAmount: price, paidAmount: paid }),
                 notes: notes.trim() || undefined,
@@ -354,6 +367,59 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                 <input type="checkbox" checked={monthly} onChange={e => setMonthly(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
                                 <span className="text-sm text-primary font-medium">Pays monthly (retainer) - the amount above is per month</span>
                             </label>
+
+                            {/* Installments: only for a fixed price. A retainer has no total to split,
+                                so the two are mutually exclusive. */}
+                            {!monthly && (
+                                <div className="rounded-xl border p-3 flex flex-col gap-3" style={{ borderColor: 'var(--section-border)' }}>
+                                    <label className="flex items-center gap-3 cursor-pointer select-none">
+                                        <input type="checkbox" checked={installmentsOn} onChange={e => setInstallmentsOn(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
+                                        <span className="text-sm text-primary font-medium">Pay in installments - split the price over months</span>
+                                    </label>
+
+                                    {installmentsOn && (
+                                        <>
+                                            <div>
+                                                <label className={labelCls}>Duration</label>
+                                                <RangeSlider
+                                                    value={installmentMonths}
+                                                    onChange={setInstallmentMonths}
+                                                    min={2} max={24} step={1} suffix=" mo"
+                                                    aria-label="Installment duration in months"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className={labelCls}>Extra charge (% of the whole price)</label>
+                                                <RangeSlider
+                                                    value={installmentPercent}
+                                                    onChange={setInstallmentPercent}
+                                                    min={0} max={50} step={1} suffix="%"
+                                                    aria-label="Installment extra charge percentage"
+                                                />
+                                            </div>
+
+                                            {/* What the client actually ends up paying. */}
+                                            {(() => {
+                                                const price = parseFloat(priceAmount) || 0;
+                                                const total = installmentTotal({ priceAmount: price, installmentPercent });
+                                                const per = total / (installmentMonths || 1);
+                                                return (
+                                                    <div className="rounded-lg px-3 py-2 text-[11.5px] leading-relaxed" style={{ background: 'rgba(59,130,246,0.10)' }}>
+                                                        <span className="text-sec">{formatMoney(price, priceCurrency)}</span>
+                                                        {installmentPercent > 0 && (
+                                                            <span className="text-sec"> + {installmentPercent}% = <span className="font-bold text-primary">{formatMoney(total, priceCurrency)}</span></span>
+                                                        )}
+                                                        <span className="text-sec"> → </span>
+                                                        <span className="font-extrabold text-primary tnum">{formatMoney(per, priceCurrency)}</span>
+                                                        <span className="text-sec">/mo for {installmentMonths} months</span>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
                             <p className="text-[11px] text-sec -mt-1">Money received is logged separately in <span className="font-semibold">Income</span> - so payments can come in over time.</p>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>

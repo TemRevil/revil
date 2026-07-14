@@ -850,6 +850,76 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
     });
 
+  server.registerTool("add_treasury_project",
+    {
+      title: "Add a treasury project",
+      description:
+        "Create a CLIENT project in the treasury (the money side: client, price, billing). This is NOT a portfolio project - " +
+        "use create_or_update_project for the public showcase. Pick ONE billing shape and confirm the numbers with the owner first: " +
+        "(a) fixed price - pass price; optionally split it with installmentMonths (2-24). installmentPercent is an OPTIONAL extra " +
+        "charge worked out on the WHOLE price, so the client pays price x (1 + percent/100) divided over those months. " +
+        "(b) monthly retainer - pass monthly=true, and then `price` is the per-MONTH rate with no fixed total (installments don't apply). " +
+        "Money received is never set here: log it with add_income linked to this project's id.",
+      inputSchema: {
+        name: z.string().min(1),
+        client: z.string().optional(),
+        price: z.number().describe("contracted price; the per-MONTH rate when monthly=true"),
+        currency: z.enum(["USD", "EGP", "EUR"]),
+        status: z.enum(["active", "pending", "completed"]).optional().describe("defaults to active"),
+        monthly: z.boolean().optional().describe("open-ended retainer: price is charged every month"),
+        installmentMonths: z.number().int().min(2).max(24).optional().describe("split the fixed price over this many months"),
+        installmentPercent: z.number().min(0).max(100).optional().describe("extra charge as a % of the WHOLE price"),
+        startDate: z.string().optional().describe("YYYY-MM-DD"),
+        notes: z.string().optional(),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      const monthly = !!a.monthly;
+      // A retainer has no fixed total, so it can't also be an installment plan.
+      const plan = !monthly && (a.installmentMonths || 0) > 1;
+      if (monthly && a.installmentMonths) {
+        return fail("A monthly retainer can't also be paid in installments - it has no fixed total. Pass either monthly=true OR installmentMonths.");
+      }
+
+      const id = `proj_${rand(6)}`;
+      const pdoc = await db().doc("Treasury/projects").get();
+      const existing = pdoc.exists ? (pdoc.data()?.entries || {}) : {};
+
+      const entry = {
+        name: a.name.trim(),
+        ...(a.client ? { client: a.client } : {}),
+        status: a.status || "active",
+        priceAmount: a.price,
+        priceCurrency: a.currency,
+        ...(monthly ? { monthly: true } : {}),
+        ...(plan ? { installmentMonths: a.installmentMonths } : {}),
+        ...(plan && a.installmentPercent ? { installmentPercent: a.installmentPercent } : {}),
+        paidAmount: 0,
+        paymentStatus: "unpaid",
+        ...(a.notes ? { notes: a.notes } : {}),
+        startDate: a.startDate || null,
+        endDate: null,
+        done: false,
+        order: Object.keys(existing).length,
+        createdAt: now(),
+      };
+      await db().doc("Treasury/projects").set(
+        { entries: { [id]: entry }, lastWrite: SERVER_TIMESTAMP() },
+        { merge: true },
+      );
+
+      const total = a.price * (1 + (plan ? (a.installmentPercent || 0) : 0) / 100);
+      return ok({
+        status: "added",
+        id,
+        billing: monthly ? "monthly retainer" : plan ? "installments" : "fixed price",
+        ...(plan
+          ? { total, perMonth: total / (a.installmentMonths as number), months: a.installmentMonths }
+          : {}),
+      });
+    });
+
   server.registerTool("add_income",
     {
       title: "Add treasury income",

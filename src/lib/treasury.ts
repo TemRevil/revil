@@ -55,6 +55,11 @@ export interface TreasuryProject {
     priceAmount: number;          // contracted price (or, if monthly, the monthly rate), in priceCurrency
     priceCurrency: Currency;
     monthly?: boolean;            // a retainer that pays priceAmount every month
+    // Installment plan: the FIXED total split into equal monthly payments over a
+    // duration. Distinct from `monthly` (an open-ended retainer with no total) - the
+    // two are mutually exclusive. Absent/0/1 months = paid in one go, as before.
+    installmentMonths?: number;   // duration in months (>= 2 to count as a plan)
+    installmentPercent?: number;  // optional surcharge, % of the WHOLE price
     paymentStatus: PaymentStatus;
     paidAmount: number;           // received so far, in priceCurrency
     notes?: string;
@@ -216,7 +221,8 @@ export function computeTotals(data: TreasuryData): TreasuryTotals {
         // Monthly retainers have no fixed total - priceAmount is a per-month rate,
         // so they don't contribute to contracted/outstanding.
         if (p.monthly) continue;
-        const price = convert(p.priceAmount || 0, p.priceCurrency, cur, rates);
+        // Owed = price + any installment surcharge (identical to price when there's no plan).
+        const price = convert(projectContractTotal(p), p.priceCurrency, cur, rates);
         const received = convert(projectReceived(p, data.income, rates), p.priceCurrency, cur, rates);
         contracted += price;
         outstanding += Math.max(0, price - received);
@@ -238,9 +244,44 @@ export function computeTotals(data: TreasuryData): TreasuryTotals {
     return { earned, outstanding, contracted, spent, net: earned - spent, currency: cur };
 }
 
-/** Per-project remaining balance (price − received), in the project's own currency. */
+/* ── Installment plans ─────────────────────────────────────────────────────────
+ * A plan splits the contracted price into `installmentMonths` equal payments, with an
+ * optional surcharge charged as a % of the WHOLE price. Everything below degrades to
+ * the old behaviour when the fields are absent (no percent => x1, no months => no plan),
+ * so existing projects keep exactly the same numbers.
+ */
+
+/** True when the project is billed as a fixed-total installment plan. */
+export function hasInstallments(p: Pick<TreasuryProject, 'monthly' | 'installmentMonths'>): boolean {
+    return !p.monthly && (p.installmentMonths || 0) > 1;
+}
+
+/** Contracted price plus the installment surcharge (% of the whole price). */
+export function installmentTotal(p: Pick<TreasuryProject, 'priceAmount' | 'installmentPercent'>): number {
+    return (p.priceAmount || 0) * (1 + (p.installmentPercent || 0) / 100);
+}
+
+/** What the client pays per month under the plan (0 when there's no plan). */
+export function installmentMonthlyAmount(
+    p: Pick<TreasuryProject, 'priceAmount' | 'installmentPercent' | 'installmentMonths' | 'monthly'>
+): number {
+    if (!hasInstallments(p)) return 0;
+    return installmentTotal(p) / (p.installmentMonths || 1);
+}
+
+/**
+ * The full amount owed on a project: the contracted price plus any installment
+ * surcharge. This - not raw priceAmount - is what a client actually owes, so balance,
+ * payment status and the treasury totals are all measured against it.
+ * Monthly retainers have no fixed total, so they keep using the per-month rate.
+ */
+export function projectContractTotal(p: Pick<TreasuryProject, 'priceAmount' | 'installmentPercent' | 'installmentMonths' | 'monthly'>): number {
+    return hasInstallments(p) ? installmentTotal(p) : (p.priceAmount || 0);
+}
+
+/** Per-project remaining balance (total owed − received), in the project's own currency. */
 export function projectBalance(p: TreasuryProject, income: TreasuryIncome[], rates: Rates): number {
-    return Math.max(0, (p.priceAmount || 0) - projectReceived(p, income, rates));
+    return Math.max(0, projectContractTotal(p) - projectReceived(p, income, rates));
 }
 
 export function derivePaymentStatus(p: Pick<TreasuryProject, 'priceAmount' | 'paidAmount'>): PaymentStatus {
@@ -254,7 +295,7 @@ export function derivePaymentStatus(p: Pick<TreasuryProject, 'priceAmount' | 'pa
 export function projectPaymentStatus(p: TreasuryProject, income: TreasuryIncome[], rates: Rates): PaymentStatus {
     if (!p.priceAmount) return 'unpaid';
     const received = projectReceived(p, income, rates);
-    if (received >= p.priceAmount) return 'paid';
+    if (received >= projectContractTotal(p)) return 'paid';
     if (received > 0) return 'partial';
     return 'unpaid';
 }
