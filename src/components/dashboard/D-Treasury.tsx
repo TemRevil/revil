@@ -1252,6 +1252,12 @@ const DTreasury = () => {
             <AnimatePresence>
                 {modal && (
                     <MTreasuryEntry
+                        // Remount per record. Every field in the form (price, the installment
+                        // sliders, ...) is seeded ONCE from `project` via useState initialisers
+                        // and never re-synced, so reusing the instance for a different record
+                        // would silently show the previous one's values. The key forces a fresh
+                        // mount, so the sliders always read the record you actually opened.
+                        key={modal.project?.id ?? modal.expense?.id ?? modal.income?.id ?? modal.mode}
                         mode={modal.mode}
                         config={data.config}
                         project={modal.project}

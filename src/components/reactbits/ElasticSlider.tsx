@@ -96,8 +96,13 @@ const Slider: React.FC<SliderProps> = ({
   suffix,
   ariaLabel,
 }) => {
-  const [internal, setInternal] = useState<number>(defaultValue);
+  // Clamp the seed to the range. Upstream defaults to 50, which is outside a range like
+  // 2-24 and would park the thumb past the end showing a value nobody chose.
+  const [internal, setInternal] = useState<number>(() =>
+    Math.min(Math.max(defaultValue, startingValue), maxValue)
+  );
   const isControlled = controlled !== undefined;
+  // Controlled always wins, so the slider shows the CURRENT value, never the default.
   const value = isControlled ? (controlled as number) : internal;
 
   const sliderRef = useRef<HTMLDivElement>(null);
