@@ -73,19 +73,31 @@ const Select = ({
     const popRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const selectedRef = useRef<HTMLButtonElement>(null);
-    const [pos, setPos] = useState({ top: 0, left: 0, width: 280, flipUp: false });
+    const [pos, setPos] = useState({ top: 0, left: 0, width: 280, originY: 0 });
 
     const updatePos = useCallback(() => {
         const el = triggerRef.current;
         if (!el) return;
         const r = el.getBoundingClientRect();
-        const popH = 320, gap = 6;
-        const below = window.innerHeight - r.bottom;
-        const flipUp = below < popH + gap && r.top > below;
-        const width = Math.max(200, Math.min(r.width, window.innerWidth - 16));
-        let left = r.left;
-        left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-        setPos({ top: flipUp ? r.top - gap : r.bottom + gap, left, width, flipUp });
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const width = Math.max(200, Math.min(r.width, vw - 16));
+        const left = Math.max(8, Math.min(r.left, vw - width - 8));
+        // OVERLAY the trigger instead of dropping below it. The menu is centred on the
+        // input, and because the list is already scrolled to put the current value in the
+        // middle, that value lands exactly on top of the input - so the input reads as
+        // having expanded INTO the menu (the iOS picker), rather than a panel appearing
+        // somewhere else. originY is the input's centre expressed inside the menu, used as
+        // the transform-origin so it grows out of the input.
+        const centerY = r.top + r.height / 2;
+        const h = popRef.current?.offsetHeight || 0;
+        // Anchor on the middle of the LIST, not the middle of the menu: when the filter box
+        // is present it pushes the list down, so centring the menu would leave the current
+        // value sitting below the input. offsetTop is popover-relative (the popover is
+        // position:fixed, so it's the offset parent).
+        const lc = listRef.current;
+        const anchor = lc ? lc.offsetTop + lc.clientHeight / 2 : h / 2;
+        const top = h ? Math.max(8, Math.min(centerY - anchor, vh - h - 8)) : r.top;
+        setPos({ top, left, width, originY: centerY - top });
     }, []);
 
     // Before the first paint of the open menu: fix its screen position AND scroll the
@@ -95,11 +107,18 @@ const Select = ({
     // (0,0) or scrolled to the top and then jumps.
     useIsoLayoutEffect(() => {
         if (!open) return;
-        updatePos();
+        // Scroll the current value to the middle FIRST, then overlay the menu on the
+        // trigger using the popover's now-known height. Both happen before the browser
+        // paints, so neither the scroll nor the reposition is ever visible.
         const c = listRef.current, el = selectedRef.current;
         if (c && el) {
-            c.scrollTop = el.offsetTop - (c.clientHeight - el.offsetHeight) / 2;
+            // scrollTo({behavior:'instant'}) - NOT `c.scrollTop = x`. The app sets
+            // scroll-behavior: smooth globally, so a plain assignment starts an ANIMATED
+            // scroll that the very next re-render interrupts, leaving the list at 0. That
+            // silently defeated this centring entirely.
+            c.scrollTo({ top: el.offsetTop - (c.clientHeight - el.offsetHeight) / 2, behavior: 'instant' });
         }
+        updatePos();
     }, [open, updatePos]);
 
     useEffect(() => {
@@ -162,12 +181,11 @@ const Select = ({
                             key="select-pop"
                             ref={popRef}
                             role="listbox"
-                            initial={{ opacity: 0, scale: 0.9 }}
+                            initial={{ opacity: 0, scale: 0.92 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.94 }}
-                            transition={{ type: 'spring', stiffness: 520, damping: 32, mass: 0.7 }}
-                            transformTemplate={(_, generated) => `translateY(${pos.flipUp ? '-100%' : '0px'}) ${generated}`}
-                            style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 10000, transformOrigin: pos.flipUp ? 'bottom center' : 'top center' }}
+                            transition={{ type: 'spring', stiffness: 520, damping: 34, mass: 0.7 }}
+                            style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 10000, transformOrigin: `50% ${pos.originY}px` }}
                             className={`rounded-2xl border shadow-2xl overflow-hidden backdrop-blur-xl
                                 ${isDark ? 'bg-[#15151c]/80 border-white/10' : 'bg-white/80 border-black/10'}`}
                         >

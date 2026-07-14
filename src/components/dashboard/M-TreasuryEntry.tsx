@@ -372,14 +372,26 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             {/* Installments: only for a fixed price. A retainer has no total to split,
                                 so the two are mutually exclusive. */}
                             {!monthly && (
-                                <div className="rounded-xl border p-3 flex flex-col gap-3" style={{ borderColor: 'var(--section-border)' }}>
+                                <div className="rounded-xl border p-3 flex flex-col" style={{ borderColor: 'var(--section-border)' }}>
                                     <div className="flex items-center gap-3 select-none">
                                         <Toggle checked={installmentsOn} onChange={setInstallmentsOn} aria-label="Pay in installments" />
                                         <span className="text-sm text-primary font-medium">Pay in installments - split the price over months</span>
                                     </div>
 
+                                    {/* Expands/collapses instead of snapping in. The padding + gap live on
+                                        the INNER div so the animated height can go cleanly to 0 without a
+                                        leftover flex gap. */}
+                                    <AnimatePresence initial={false}>
                                     {installmentsOn && (
-                                        <>
+                                        <motion.div
+                                            key="installments"
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: 'auto', opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            transition={{ height: { duration: 0.28, ease: [0.4, 0, 0.2, 1] }, opacity: { duration: 0.18 } }}
+                                            style={{ overflow: 'hidden' }}
+                                        >
+                                          <div className="flex flex-col gap-3 pt-3">
                                             <div>
                                                 <label className={labelCls}>Duration</label>
                                                 <ElasticSlider
@@ -422,8 +434,10 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                                     </div>
                                                 );
                                             })()}
-                                        </>
+                                          </div>
+                                        </motion.div>
                                     )}
+                                    </AnimatePresence>
                                 </div>
                             )}
 
