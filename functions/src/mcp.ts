@@ -156,7 +156,7 @@ const DEFAULT_RATES: Rates = { USD: 1, EGP: 48, EUR: 0.92 };
 interface Account { id?: string; name?: string; type?: string; currency: string; openingBalance?: number; archived?: boolean; order?: number; createdAt?: number; notes?: string; }
 interface Income { id?: string; amount?: number; currency: string; date?: string; note?: string; projectId?: string; accountId?: string; monthlyPayment?: boolean; createdAt?: number; }
 interface Expense { id?: string; label?: string; amount?: number; currency: string; category?: string; date?: string; recurring?: boolean; projectId?: string; accountId?: string; clientPaid?: boolean; notes?: string; createdAt?: number; }
-interface Project { id?: string; monthly?: boolean; priceAmount?: number; priceCurrency: string; paidAmount?: number; nextPaymentDate?: string; startDate?: string; }
+interface Project { id?: string; monthly?: boolean; priceAmount?: number; priceCurrency: string; paidAmount?: number; nextPaymentDate?: string; startDate?: string; installmentMonths?: number; installmentPercent?: number; }
 interface TreasurySettings { rates?: Rates; [k: string]: unknown; }
 
 /** Convert between currencies using units-per-USD rates. */
@@ -203,11 +203,28 @@ function projectReceived(p: Project, income: Income[], rates: Rates): number {
   return (p.paidAmount || 0) + sum;
 }
 
+/** True when the project is billed as a fixed-total installment plan. */
+function hasInstallments(p: Project): boolean {
+  return !p.monthly && (p.installmentMonths || 0) > 1;
+}
+
+/**
+ * The full amount owed: the contracted price PLUS any installment surcharge (a % of the
+ * WHOLE price). Mirrors projectContractTotal() in src/lib/treasury.ts - keep the two in
+ * step. With no plan the surcharge is x1, so this is just priceAmount.
+ */
+function projectContractTotal(p: Project): number {
+  const price = p.priceAmount || 0;
+  return hasInstallments(p) ? price * (1 + (p.installmentPercent || 0) / 100) : price;
+}
+
 /** Derived payment status (the app never stores this - it computes it live). */
 function projectPaymentStatus(p: Project, income: Income[], rates: Rates): string {
   if (!p.priceAmount) return "unpaid";
   const r = projectReceived(p, income, rates);
-  if (r >= p.priceAmount) return "paid";
+  // Measured against price + surcharge, not the raw price, or a plan with an extra
+  // charge would read as "paid" while the client still owes the surcharge.
+  if (r >= projectContractTotal(p)) return "paid";
   if (r > 0) return "partial";
   return "unpaid";
 }
@@ -560,8 +577,20 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       const projects = readEntries<Project>(proj).map((p) => {
         const received = round2(projectReceived(p, income, rates));
         const paymentStatus = p.monthly ? "monthly" : projectPaymentStatus(p, income, rates);
-        const outstanding = p.monthly ? null : round2(Math.max(0, (p.priceAmount || 0) - received));
-        return { ...p, paidAmount: received, received, paymentStatus, outstanding };
+        // Owed = price + installment surcharge (identical to price when there's no plan).
+        const total = round2(projectContractTotal(p));
+        const outstanding = p.monthly ? null : round2(Math.max(0, total - received));
+        // Spell the plan out so the model can answer "how much per month?" directly
+        // instead of re-deriving it (and getting the surcharge wrong).
+        const installments = hasInstallments(p)
+          ? {
+            months: p.installmentMonths,
+            percent: p.installmentPercent || 0,
+            total,
+            perMonth: round2(total / (p.installmentMonths as number)),
+          }
+          : null;
+        return { ...p, paidAmount: received, received, paymentStatus, total, outstanding, installments };
       });
       return ok({
         serverTime: time.pretty,
@@ -916,6 +945,78 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         billing: monthly ? "monthly retainer" : plan ? "installments" : "fixed price",
         ...(plan
           ? { total, perMonth: total / (a.installmentMonths as number), months: a.installmentMonths }
+          : {}),
+      });
+    });
+
+  server.registerTool("update_treasury_project",
+    {
+      title: "Update a treasury project",
+      description:
+        "Change fields on an existing treasury project by id - price, client, status, billing shape, or the installment plan. " +
+        "Only the fields you pass change; everything you omit is left as-is. Find ids via treasury_overview. " +
+        "Installments: pass installmentMonths (2-24) to put a fixed-price project on a plan, and installmentPercent for an " +
+        "OPTIONAL extra charge worked out on the WHOLE price (client pays price x (1 + percent/100) split over the months). " +
+        "Pass installmentMonths=0 to clear the plan (back to paying in one go). A monthly retainer has no fixed total, so it " +
+        "cannot have installments. Money received is NOT set here - log it with add_income linked to this project.",
+      inputSchema: {
+        id: z.string().min(1).describe("treasury project id (see treasury_overview)"),
+        name: z.string().optional(),
+        client: z.string().optional(),
+        price: z.number().optional().describe("contracted price; the per-MONTH rate when monthly=true"),
+        currency: z.enum(["USD", "EGP", "EUR"]).optional(),
+        status: z.enum(["active", "pending", "completed"]).optional(),
+        monthly: z.boolean().optional().describe("open-ended retainer"),
+        installmentMonths: z.number().int().min(0).max(24).optional().describe("2-24 sets a plan; 0 clears it"),
+        installmentPercent: z.number().min(0).max(100).optional().describe("extra charge as a % of the WHOLE price"),
+        startDate: z.string().optional().describe("YYYY-MM-DD"),
+        notes: z.string().optional(),
+        done: z.boolean().optional(),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      const ref = db().doc("Treasury/projects");
+      const snap = await ref.get();
+      const entries = (snap.exists ? snap.data()?.entries : {}) || {};
+      const cur = entries[a.id] as Project | undefined;
+      if (!cur) return fail(`No treasury project with id "${a.id}". List them with treasury_overview.`);
+
+      const patch: Record<string, unknown> = {};
+      if (a.name !== undefined) patch.name = a.name.trim();
+      if (a.client !== undefined) patch.client = a.client;
+      if (a.price !== undefined) patch.priceAmount = a.price;
+      if (a.currency !== undefined) patch.priceCurrency = a.currency;
+      if (a.status !== undefined) patch.status = a.status;
+      if (a.monthly !== undefined) patch.monthly = a.monthly;
+      if (a.startDate !== undefined) patch.startDate = a.startDate;
+      if (a.notes !== undefined) patch.notes = a.notes;
+      if (a.done !== undefined) patch.done = a.done;
+      // 0/1 clears the plan. Written as 0 rather than deleted so a merge can express it.
+      if (a.installmentMonths !== undefined) {
+        const m = a.installmentMonths > 1 ? a.installmentMonths : 0;
+        patch.installmentMonths = m;
+        if (!m) patch.installmentPercent = 0;
+      }
+      if (a.installmentPercent !== undefined) patch.installmentPercent = a.installmentPercent;
+
+      if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
+
+      const merged = { ...cur, ...patch } as Project;
+      if (merged.monthly && (merged.installmentMonths || 0) > 1) {
+        return fail("A monthly retainer can't also be paid in installments - it has no fixed total. Clear one or the other.");
+      }
+
+      await ref.set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+
+      const total = projectContractTotal(merged);
+      return ok({
+        status: "updated",
+        id: a.id,
+        changed: Object.keys(patch),
+        billing: merged.monthly ? "monthly retainer" : hasInstallments(merged) ? "installments" : "fixed price",
+        ...(hasInstallments(merged)
+          ? { total: round2(total), perMonth: round2(total / (merged.installmentMonths as number)), months: merged.installmentMonths }
           : {}),
       });
     });

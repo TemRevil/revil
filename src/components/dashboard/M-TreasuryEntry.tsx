@@ -66,6 +66,13 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
         (project?.installmentMonths || 0) > 1 ? project!.installmentMonths! : 3
     );
     const [installmentPercent, setInstallmentPercent] = useState(project?.installmentPercent ?? 0);
+    // The expand/collapse needs overflow:hidden to animate height, but that also clips the
+    // slider's elastic overshoot. So clip only WHILE animating, then release to visible.
+    // Starts visible when the box is already open (AnimatePresence initial={false} means
+    // there's no enter animation to complete on mount).
+    const [instOverflow, setInstOverflow] = useState<'hidden' | 'visible'>(
+        (project?.installmentMonths || 0) > 1 ? 'visible' : 'hidden'
+    );
 
     // Expense fields
     const [label, setLabel] = useState(expense?.label ?? '');
@@ -374,7 +381,11 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             {!monthly && (
                                 <div className="rounded-xl border p-3 flex flex-col" style={{ borderColor: 'var(--section-border)' }}>
                                     <div className="flex items-center gap-3 select-none">
-                                        <Toggle checked={installmentsOn} onChange={setInstallmentsOn} aria-label="Pay in installments" />
+                                        <Toggle
+                                            checked={installmentsOn}
+                                            onChange={(v) => { setInstallmentsOn(v); if (!v) setInstOverflow('hidden'); }}
+                                            aria-label="Pay in installments"
+                                        />
                                         <span className="text-sm text-primary font-medium">Pay in installments - split the price over months</span>
                                     </div>
 
@@ -389,7 +400,8 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                             animate={{ height: 'auto', opacity: 1 }}
                                             exit={{ height: 0, opacity: 0 }}
                                             transition={{ height: { duration: 0.28, ease: [0.4, 0, 0.2, 1] }, opacity: { duration: 0.18 } }}
-                                            style={{ overflow: 'hidden' }}
+                                            style={{ overflow: instOverflow }}
+                                            onAnimationComplete={() => { if (installmentsOn) setInstOverflow('visible'); }}
                                         >
                                           <div className="flex flex-col gap-3 pt-3">
                                             <div>
