@@ -16,7 +16,7 @@
  *
  * Auth: gcloud owner token, or a service-account token via $FIRESTORE_ACCESS_TOKEN.
  */
-import { execFileSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,18 +46,18 @@ function decodeFields(fields) {
 
 function getToken() {
     if (process.env.FIRESTORE_ACCESS_TOKEN) return process.env.FIRESTORE_ACCESS_TOKEN.trim();
-    // execFileSync with an argument array: no shell, nothing interpolated. The binary
-    // name varies by platform/install, so try the usual suspects.
-    const candidates = process.platform === 'win32' ? ['gcloud.cmd', 'gcloud.exe', 'gcloud'] : ['gcloud'];
-    for (const bin of candidates) {
-        try {
-            return execFileSync(bin, ['auth', 'print-access-token'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-        } catch { /* try the next candidate */ }
+    // A fixed command with nothing interpolated into it, so there's no injection surface.
+    // It has to go through a shell: on Windows gcloud is a .cmd, and Node 20+ refuses to
+    // execFile a .cmd/.bat without one (CVE-2024-27980 mitigation), so execFile can never
+    // find it. execSync is the thing that actually works here.
+    try {
+        return execSync('gcloud auth print-access-token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+        throw new Error(
+            'Could not get a token from gcloud. Make sure the Google Cloud SDK is installed and ' +
+            'you are logged in as the temrevil1 owner (`gcloud auth login`), or set FIRESTORE_ACCESS_TOKEN.'
+        );
     }
-    throw new Error(
-        'No credentials. Either set $FIRESTORE_ACCESS_TOKEN=$(gcloud auth print-access-token), ' +
-        'or make sure `gcloud` is on PATH and logged in as the temrevil1 owner.'
-    );
 }
 
 const token = getToken();
