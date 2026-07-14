@@ -1,7 +1,12 @@
 import React, { useRef, useState } from 'react';
 import { animate, motion, useMotionValue, useMotionValueEvent, useTransform } from 'motion/react';
 
-const MAX_OVERFLOW = 50;
+// How far the track may rubber-band past either end. Upstream's 50 is a long, floaty
+// pull; tightened so it reads as a snap inside a form row.
+const MAX_OVERFLOW = 22;
+// Hover growth. Upstream's 1.2 inflates the whole row by 20%, which visibly bursts out
+// of a narrow container - keep it a subtle swell and let the track thicken instead.
+const HOVER_SCALE = 1.06;
 
 interface ElasticSliderProps {
   /** Controlled value. Omit to let the slider own its state (uncontrolled). */
@@ -177,12 +182,12 @@ const Slider: React.FC<SliderProps> = ({
   return (
     <>
       <motion.div
-        onHoverStart={() => animate(scale, 1.2)}
+        onHoverStart={() => animate(scale, HOVER_SCALE)}
         onHoverEnd={() => animate(scale, 1)}
-        onTouchStart={() => animate(scale, 1.2)}
+        onTouchStart={() => animate(scale, HOVER_SCALE)}
         onTouchEnd={() => animate(scale, 1)}
-        style={{ scale, opacity: useTransform(scale, [1, 1.2], [0.7, 1]) }}
-        className="flex w-full touch-none select-none items-center justify-center gap-3"
+        style={{ scale, opacity: useTransform(scale, [1, HOVER_SCALE], [0.8, 1]) }}
+        className="flex w-full min-w-0 touch-none select-none items-center justify-center gap-2.5"
       >
         <motion.div
           animate={{ scale: region === 'left' ? [1, 1.4, 1] : 1, transition: { duration: 0.25 } }}
@@ -202,7 +207,10 @@ const Slider: React.FC<SliderProps> = ({
           aria-valuenow={Math.round(value)}
           aria-valuetext={`${Math.round(value)}${suffix}`}
           onKeyDown={handleKeyDown}
-          className="relative flex w-full flex-grow cursor-grab touch-none select-none items-center py-3 outline-none"
+          // flex-1 + min-w-0 (NOT w-full): w-full claims 100% of the row while the two
+          // icons still take their own space, so the row overflows its container and the
+          // right icon gets pushed outside. min-w-0 lets it shrink below its content.
+          className="relative flex min-w-0 flex-1 cursor-grab touch-none select-none items-center py-3 outline-none"
           onPointerMove={handlePointerMove}
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
@@ -226,9 +234,11 @@ const Slider: React.FC<SliderProps> = ({
                 }
                 return 'center';
               }),
-              height: useTransform(scale, [1, 1.2], [6, 12]),
-              marginTop: useTransform(scale, [1, 1.2], [0, -3]),
-              marginBottom: useTransform(scale, [1, 1.2], [0, -3]),
+              // Ranges must track HOVER_SCALE, else the track stops thickening on hover.
+              // The thickening is now what sells the hover, since the row barely scales.
+              height: useTransform(scale, [1, HOVER_SCALE], [6, 11]),
+              marginTop: useTransform(scale, [1, HOVER_SCALE], [0, -2.5]),
+              marginBottom: useTransform(scale, [1, HOVER_SCALE], [0, -2.5]),
             }}
             className="flex flex-grow"
           >
