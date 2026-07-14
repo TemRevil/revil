@@ -4,6 +4,7 @@ import Script from 'next/script'
 import './globals.css'
 import '../lib/firebase'
 import ClientProtection from './ClientProtection'
+import projectsSnapshot from '../data/projects.snapshot.json'
 
 // ── next/font optimization: self-hosted, subsetted, no render-blocking requests ──
 const inter = Inter({
@@ -67,6 +68,24 @@ const socialProfiles = [
   'https://instagram.com/temrevil',
 ]
 
+/** Shape of a row in src/data/projects.snapshot.json (mirrors the Firestore doc). */
+type SnapshotProject = {
+  id: string
+  Description?: string
+  'Live Link'?: string
+  'Repository Link'?: string
+  'Project Icon'?: string
+  Tags?: Record<string, string | { Name?: string }>
+}
+
+const projects = projectsSnapshot as SnapshotProject[]
+
+const tagNames = (p: SnapshotProject) =>
+  Object.values(p.Tags || {})
+    .map((t) => (typeof t === 'string' ? t : t?.Name || ''))
+    .map((t) => t.trim())
+    .filter(Boolean)
+
 const structuredData = {
   '@context': 'https://schema.org',
   '@graph': [
@@ -119,6 +138,9 @@ const structuredData = {
         credentialCategory: 'portfolio',
         url: siteUrl,
       },
+      // Ties the person to the real project list below, so an engine answering
+      // "what has Tem Revil built?" has the work attached to the entity.
+      subjectOf: { '@id': `${siteUrl}/#projects` },
       makesOffer: {
         '@type': 'Offer',
         itemOffered: {
@@ -218,6 +240,39 @@ const structuredData = {
           },
         },
       ],
+    },
+    {
+      // The actual portfolio work, baked in at BUILD time from the committed snapshot
+      // (refresh with `npm run sync:projects`). The app loads these from Firestore at
+      // RUNTIME, which AI crawlers never see because they don't execute JavaScript - so
+      // without this node the portfolio's real projects are invisible to every generative
+      // engine. App Check blocks anonymous Firestore reads, hence the committed snapshot
+      // rather than a fetch during the build.
+      '@type': 'ItemList',
+      '@id': `${siteUrl}/#projects`,
+      name: 'Portfolio Projects',
+      description: 'Web and UI projects designed and built by Mohammed Ahmed (Tem Revil).',
+      numberOfItems: projects.length,
+      itemListOrder: 'https://schema.org/ItemListUnordered',
+      itemListElement: projects.map((p, i) => {
+        const keywords = tagNames(p)
+        return {
+          '@type': 'ListItem',
+          position: i + 1,
+          item: {
+            '@type': 'CreativeWork',
+            '@id': `${siteUrl}/#project-${encodeURIComponent(p.id.toLowerCase().replace(/\s+/g, '-'))}`,
+            name: p.id,
+            ...(p.Description ? { description: p.Description } : {}),
+            ...(p['Live Link'] ? { url: p['Live Link'] } : {}),
+            ...(p['Repository Link'] ? { codeRepository: p['Repository Link'] } : {}),
+            ...(p['Project Icon'] ? { image: p['Project Icon'] } : {}),
+            ...(keywords.length ? { keywords: keywords.join(', ') } : {}),
+            author: { '@id': `${siteUrl}/#person` },
+            isPartOf: { '@id': `${siteUrl}/#website` },
+          },
+        }
+      }),
     },
   ],
 }
