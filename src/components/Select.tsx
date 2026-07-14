@@ -29,6 +29,9 @@ interface Props {
 const normalize = (o: SelectOption | string): SelectOption =>
     typeof o === 'string' ? { value: o, label: o } : o;
 
+/** Breathing room between the input and the menu. */
+const GAP = 6;
+
 /** SSR-safe layout effect. The site is a static export, so the module is evaluated
  *  on the server where useLayoutEffect warns; fall back to useEffect there. */
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -73,7 +76,7 @@ const Select = ({
     const popRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const selectedRef = useRef<HTMLButtonElement>(null);
-    const [pos, setPos] = useState({ top: 0, left: 0, width: 280, originY: 0 });
+    const [pos, setPos] = useState({ top: 0, left: 0, width: 280, flipUp: false, triggerH: 40, menuH: 0 });
 
     const updatePos = useCallback(() => {
         const el = triggerRef.current;
@@ -82,23 +85,28 @@ const Select = ({
         const vw = window.innerWidth, vh = window.innerHeight;
         const width = Math.max(200, Math.min(r.width, vw - 16));
         const left = Math.max(8, Math.min(r.left, vw - width - 8));
-        // OVERLAY the trigger instead of dropping below it. The menu is centred on the
-        // input, and because the list is already scrolled to put the current value in the
-        // middle, that value lands exactly on top of the input - so the input reads as
-        // having expanded INTO the menu (the iOS picker), rather than a panel appearing
-        // somewhere else. originY is the input's centre expressed inside the menu, used as
-        // the transform-origin so it grows out of the input.
-        const centerY = r.top + r.height / 2;
+        // Sits just under the input (flipping above it when there isn't room) - the menu
+        // stays next to the control it belongs to. The entry animation below is what ties
+        // the two together.
         const h = popRef.current?.offsetHeight || 0;
-        // Anchor on the middle of the LIST, not the middle of the menu: when the filter box
-        // is present it pushes the list down, so centring the menu would leave the current
-        // value sitting below the input. offsetTop is popover-relative (the popover is
-        // position:fixed, so it's the offset parent).
-        const lc = listRef.current;
-        const anchor = lc ? lc.offsetTop + lc.clientHeight / 2 : h / 2;
-        const top = h ? Math.max(8, Math.min(centerY - anchor, vh - h - 8)) : r.top;
-        setPos({ top, left, width, originY: centerY - top });
+        const below = vh - r.bottom;
+        const flipUp = h > 0 && below < h + GAP && r.top > below;
+        const top = flipUp ? Math.max(8, r.top - GAP - h) : r.bottom + GAP;
+        setPos({ top, left, width, flipUp, triggerH: r.height, menuH: h });
     }, []);
+
+    // Shared transition: the menu starts life as the input itself - same width, same box,
+    // sitting exactly on top of it (scaled down to the input's height and translated back
+    // over it) - then unfolds into place. So the input visibly BECOMES the menu instead of
+    // a panel appearing beside it. Falls back to a plain small scale until the height is
+    // measured on the first open.
+    const grow = pos.menuH ? pos.triggerH / pos.menuH : 0.3;
+    const shift = pos.triggerH + GAP;
+    const entry = {
+        initial: { opacity: 0, scaleY: grow, y: pos.flipUp ? shift : -shift },
+        animate: { opacity: 1, scaleY: 1, y: 0 },
+        exit: { opacity: 0, scaleY: grow, y: pos.flipUp ? shift : -shift },
+    };
 
     // Before the first paint of the open menu: fix its screen position AND scroll the
     // current value to the vertical middle. Both use layout metrics (getBoundingClientRect
@@ -181,11 +189,19 @@ const Select = ({
                             key="select-pop"
                             ref={popRef}
                             role="listbox"
-                            initial={{ opacity: 0, scale: 0.92 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.94 }}
-                            transition={{ type: 'spring', stiffness: 520, damping: 34, mass: 0.7 }}
-                            style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 10000, transformOrigin: `50% ${pos.originY}px` }}
+                            initial={entry.initial}
+                            animate={entry.animate}
+                            exit={entry.exit}
+                            transition={{
+                                default: { type: 'spring', stiffness: 560, damping: 38, mass: 0.7 },
+                                // Fade in fast so the squashed first frames of the unfold aren't visible.
+                                opacity: { duration: 0.12 },
+                            }}
+                            style={{
+                                position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 10000,
+                                // Anchor on the edge that touches the input, so it unfolds away from it.
+                                transformOrigin: pos.flipUp ? 'bottom center' : 'top center',
+                            }}
                             className={`rounded-2xl border shadow-2xl overflow-hidden backdrop-blur-xl
                                 ${isDark ? 'bg-[#15151c]/80 border-white/10' : 'bg-white/80 border-black/10'}`}
                         >
