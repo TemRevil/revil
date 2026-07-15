@@ -24,6 +24,7 @@ import {
     nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
     hasInstallments, installmentMonthlyAmount, projectContractTotal,
 } from '../../lib/treasury';
+import RollingNumber from '../RollingNumber';
 import MTreasuryEntry from './M-TreasuryEntry';
 import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './M-Account';
 import DatePicker from '../DatePicker';
@@ -181,7 +182,10 @@ const TreasuryChart = ({ data, filter, setFilter, isDark, cur }: {
                 <div className="flex items-end gap-6 sm:gap-10">
                     <div>
                         <p className="text-sec text-[9px] font-bold uppercase tracking-[0.25em] mb-1.5">Earned · {cur}</p>
-                        <h3 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] leading-none tnum" style={{ color: '#10B981' }}>{formatMoney(pageEarned, cur)}</h3>
+                        <h3 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] leading-none tnum" style={{ color: '#10B981' }}>
+                            {/* keyed on the value so paging the chart re-rolls the figure */}
+                            <RollingNumber key={pageEarned} text={formatMoney(pageEarned, cur)} />
+                        </h3>
                     </div>
                     <div>
                         <p className="text-sec text-[9px] font-bold uppercase tracking-[0.25em] mb-1.5">Spent</p>
@@ -726,7 +730,11 @@ const DTreasury = () => {
                             <span className="text-[11px] font-semibold text-sec uppercase tracking-wider">{c.label}</span>
                             <Icon size={16} style={{ color: c.color }} />
                         </div>
-                        <span className="text-2xl font-extrabold font-inter tnum" style={{ color: c.color }}>{formatMoney(c.value, cur)}</span>
+                        <RollingNumber
+                            text={formatMoney(c.value, cur)}
+                            className="text-2xl font-extrabold font-inter tnum"
+                            style={{ color: c.color }}
+                        />
                     </div>
                 );
             })}
