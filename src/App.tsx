@@ -267,7 +267,25 @@ function App() {
   }, []);
 
   const openContactModal = useCallback(() => setIsContactModalOpen(true), []);
-  const closeContactModal = useCallback(() => setIsContactModalOpen(false), []);
+  const closeContactModal = useCallback(() => {
+    setIsContactModalOpen(false);
+    // Drop the deep-link hash on close so refreshing doesn't reopen it and the URL stays
+    // clean. replaceState doesn't fire hashchange, so this won't loop back into open.
+    if (typeof window !== 'undefined' && window.location.hash.toLowerCase() === '#booking') {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
+
+  // Deep link: temrevil.com/#booking opens the booking modal on arrival, and also if the
+  // visitor lands on that hash while the page is already open (e.g. an in-page anchor).
+  useEffect(() => {
+    const openIfBookingHash = () => {
+      if (window.location.hash.toLowerCase() === '#booking') openContactModal();
+    };
+    openIfBookingHash();
+    window.addEventListener('hashchange', openIfBookingHash);
+    return () => window.removeEventListener('hashchange', openIfBookingHash);
+  }, [openContactModal]);
 
   const openCVModal = useCallback(() => setIsCVModalOpen(true), []);
   const closeCVModal = useCallback(() => setIsCVModalOpen(false), []);
