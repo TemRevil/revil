@@ -51,6 +51,7 @@ export interface TreasuryProject {
     id: string;
     name: string;
     client?: string;
+    clientEmail?: string;         // customer email, for sending receipts
     status: ProjectStatus;
     priceAmount: number;          // contracted price (or, if monthly, the monthly rate), in priceCurrency
     priceCurrency: Currency;

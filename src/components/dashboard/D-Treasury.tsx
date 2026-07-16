@@ -26,6 +26,7 @@ import {
 } from '../../lib/treasury';
 import RollingNumber from '../RollingNumber';
 import MTreasuryEntry from './M-TreasuryEntry';
+import MReceipt from './M-Receipt';
 import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './M-Account';
 import DatePicker from '../DatePicker';
 import Select from '../Select';
@@ -285,6 +286,8 @@ const DTreasury = () => {
     const [moneyAccount, setMoneyAccount] = useState<string>('all');
     const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
     const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null } | null>(null);
+    // Which project the receipt builder opened from (more can be added inside it). Null = closed.
+    const [receiptFor, setReceiptFor] = useState<string | null>(null);
     const [accountModal, setAccountModal] = useState<{ account: TreasuryAccount | null } | null>(null);
     const [ratesLoading, setRatesLoading] = useState(false);
     const ratesChecked = useRef(false);
@@ -986,7 +989,10 @@ const DTreasury = () => {
                                                     <button onClick={() => setModal({ mode: 'income', income: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-all"><Plus size={14} /> Log income</button>
                                                     <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
                                                 </div>
-                                                <button onClick={() => markDone(focusedProject)} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${focusedProject.done ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/10 text-blue-500 hover:bg-blue-500/15'}`}><CheckCircle2 size={14} /> {focusedProject.done ? 'Reopen Project' : 'Mark Project Done'}</button>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button onClick={() => markDone(focusedProject)} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${focusedProject.done ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/10 text-blue-500 hover:bg-blue-500/15'}`}><CheckCircle2 size={14} /> {focusedProject.done ? 'Reopen' : 'Mark Done'}</button>
+                                                    <button onClick={() => setReceiptFor(focusedProject.id)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-primary bg-black/[0.05] dark:bg-white/[0.07] hover:bg-black/[0.09] dark:hover:bg-white/[0.11] transition-all"><Receipt size={14} /> Receipt</button>
+                                                </div>
                                             </div>
                                         </div>
                                     ) : (
@@ -1328,6 +1334,21 @@ const DTreasury = () => {
                         onSave={saveAccount}
                         onDelete={accountModal.account ? () => deleteAccount(accountModal.account!.id) : undefined}
                         onClose={() => setAccountModal(null)}
+                    />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {receiptFor && (
+                    <MReceipt
+                        projects={data.projects}
+                        income={data.income}
+                        rates={data.config.rates}
+                        displayCurrency={data.config.displayCurrency}
+                        initialProjectId={receiptFor}
+                        isDark={isDark}
+                        onClose={() => setReceiptFor(null)}
+                        onToast={showToast}
                     />
                 )}
             </AnimatePresence>

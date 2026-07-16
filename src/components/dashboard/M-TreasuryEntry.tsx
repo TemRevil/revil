@@ -51,6 +51,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
     // Project fields
     const [name, setName] = useState(project?.name ?? '');
     const [client, setClient] = useState(project?.client ?? '');
+    const [clientEmail, setClientEmail] = useState(project?.clientEmail ?? '');
     const [status, setStatus] = useState<ProjectStatus>(project?.status ?? 'active');
     const [priceAmount, setPriceAmount] = useState(project?.priceAmount ? String(project.priceAmount) : '');
     const [priceCurrency, setPriceCurrency] = useState<Currency>(project?.priceCurrency ?? config.defaultCurrency);
@@ -234,6 +235,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                 id: project?.id ?? uid('proj'),
                 name: name.trim(),
                 client: client.trim() || undefined,
+                clientEmail: clientEmail.trim() || undefined,
                 status,
                 priceAmount: price,
                 priceCurrency,
@@ -349,6 +351,10 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             <div>
                                 <label className={labelCls}>Client</label>
                                 <input className={inputCls} value={client} onChange={e => setClient(e.target.value)} placeholder="Optional - company or person" />
+                            </div>
+                            <div>
+                                <label className={labelCls}>Customer email</label>
+                                <input className={inputCls} type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} placeholder="Optional - where receipts are sent" />
                             </div>
                             <div>
                                 <label className={labelCls}>Status</label>

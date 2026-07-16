@@ -697,6 +697,61 @@ export const notifyLogin = onCall(
 );
 
 // =====================================================================
+//  3b. sendReceipt - admin-only: email a project receipt to a customer.
+//      The dashboard builds the receipt HTML (same string it previews and
+//      lets you download) and passes it here; this just verifies the caller
+//      is the owner, validates, and sends it via Resend from hello@temrevil.com.
+//      Emailing prebuilt HTML is safe because it's admin-only + App Check.
+// =====================================================================
+export const sendReceipt = onCall(
+  {
+    region: "us-central1",
+    secrets: [smtpUser, resendKey],
+    enforceAppCheck: true,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required to send a receipt.");
+    }
+    const accountSnap = await db.doc("Settings/Account").get();
+    const adminUid = accountSnap.data()?.uid;
+    if (adminUid && request.auth.uid !== adminUid) {
+      throw new HttpsError("permission-denied", "Only the portfolio owner can send receipts.");
+    }
+
+    const { to, subject, html } = (request.data || {}) as { to?: string; subject?: string; html?: string };
+    const email = String(to || "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      throw new HttpsError("invalid-argument", "A valid customer email is required.");
+    }
+    // Guard against an empty or absurdly large payload (it's built by the admin's
+    // dashboard, but still worth a sane bound).
+    if (typeof html !== "string" || html.length < 40 || html.length > 200000) {
+      throw new HttpsError("invalid-argument", "Receipt content is missing or too large.");
+    }
+
+    try {
+      const transporter = createTransporter();
+      const owner = smtpUser.value();
+      await transporter.sendMail({
+        from: `"Tem Revil" <${HELLO_EMAIL}>`,
+        to: email,
+        // Keep the owner a silent copy of every receipt sent, unless they're the recipient.
+        bcc: owner && owner.toLowerCase() !== email.toLowerCase() ? owner : undefined,
+        replyTo: HELLO_EMAIL,
+        subject: (subject ? String(subject).slice(0, 200) : "") || "Your receipt from Tem Revil",
+        html,
+      });
+      console.log(`Receipt emailed to ${email}`);
+      return { status: "sent" };
+    } catch (err) {
+      console.error("Failed to send receipt:", err);
+      throw new HttpsError("internal", "Failed to send the receipt email.");
+    }
+  },
+);
+
+// =====================================================================
 //  4. llm - admin-only proxy for the dashboard assistant ("Spark")
 //     Holds the provider API key server-side (Secret Manager) so it never
 //     ships in the public client bundle. The client sends the provider-native
