@@ -719,7 +719,10 @@ export const sendReceipt = onCall(
       throw new HttpsError("permission-denied", "Only the portfolio owner can send receipts.");
     }
 
-    const { to, subject, html } = (request.data || {}) as { to?: string; subject?: string; html?: string };
+    const { to, subject, html, meta } = (request.data || {}) as {
+      to?: string; subject?: string; html?: string;
+      meta?: { receiptNo?: string; currency?: string; total?: number; balance?: number; projectIds?: string[]; projectNames?: string[] };
+    };
     const email = String(to || "").trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       throw new HttpsError("invalid-argument", "A valid customer email is required.");
@@ -743,6 +746,31 @@ export const sendReceipt = onCall(
         html,
       });
       console.log(`Receipt emailed to ${email}`);
+
+      // Log it to the sent-receipts history (best-effort; a logging failure must not
+      // fail the send, which already went out).
+      try {
+        const id = `rcp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        await db.doc("Treasury/receipts").set({
+          entries: {
+            [id]: {
+              receiptNo: meta?.receiptNo || "",
+              to: email,
+              sentAt: Date.now(),
+              currency: meta?.currency || "USD",
+              total: typeof meta?.total === "number" ? meta.total : 0,
+              ...(typeof meta?.balance === "number" ? { balance: meta.balance } : {}),
+              projectIds: Array.isArray(meta?.projectIds) ? meta.projectIds : [],
+              projectNames: Array.isArray(meta?.projectNames) ? meta.projectNames : [],
+              via: "dashboard",
+            },
+          },
+          lastWrite: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      } catch (logErr) {
+        console.error("Receipt sent but history log failed:", logErr);
+      }
+
       return { status: "sent" };
     } catch (err) {
       console.error("Failed to send receipt:", err);

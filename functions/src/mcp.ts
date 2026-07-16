@@ -1141,6 +1141,29 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         return fail("Failed to send the receipt email.");
       }
 
+      // Log it to the sent-receipts history (best-effort - the email already went out).
+      try {
+        const rid = `rcp_${now().toString(36)}${rand(3)}`;
+        await db().doc("Treasury/receipts").set({
+          entries: {
+            [rid]: {
+              receiptNo,
+              to,
+              sentAt: now(),
+              currency: cur,
+              total: round2(totals.price),
+              balance: round2(totals.balance),
+              projectIds: selected.map((p) => p.id),
+              projectNames: selected.map((p) => p.name),
+              via: "mcp",
+            },
+          },
+          lastWrite: SERVER_TIMESTAMP(),
+        }, { merge: true });
+      } catch (logErr) {
+        console.error("[mcp] receipt sent but history log failed:", logErr);
+      }
+
       return ok({
         status: "sent",
         to,

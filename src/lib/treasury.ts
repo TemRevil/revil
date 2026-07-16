@@ -144,12 +144,27 @@ export const DEFAULT_CONFIG: TreasuryConfig = {
     rates: { ...DEFAULT_RATES },
 };
 
+/** A log entry for a receipt that was emailed (from the dashboard or over MCP). */
+export interface TreasuryReceipt {
+    id: string;
+    receiptNo: string;
+    to: string;                       // recipient email
+    sentAt: number;                   // ms epoch
+    currency: Currency;
+    total: number;                    // grand total (price) at send time, in `currency`
+    balance?: number;                 // balance due at send time
+    projectIds: string[];
+    projectNames: string[];
+    via?: 'dashboard' | 'mcp';
+}
+
 export interface TreasuryData {
     config: TreasuryConfig;
     projects: TreasuryProject[];
     expenses: TreasuryExpense[];
     income: TreasuryIncome[];
     accounts: TreasuryAccount[];
+    receipts: TreasuryReceipt[];
 }
 
 // ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ import { appAuth } from '../../lib/appAuth';
 // Lazy Dashboard chunk - keeps firebase/storage out of the eager bundle.
 const storage = getStorage(app);
 import {
-    Currency, CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense,
+    Currency, CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense, TreasuryReceipt,
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
     projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome, convert,
     nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
@@ -43,6 +43,7 @@ const SPENDINGS_DOC = doc(db, 'Treasury', 'spendings');
 const INCOME_DOC = doc(db, 'Treasury', 'income');
 const ACCOUNTS_DOC = doc(db, 'Treasury', 'accounts');
 const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
+const RECEIPTS_DOC = doc(db, 'Treasury', 'receipts');
 const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
 
 type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'settings';
@@ -275,7 +276,7 @@ const DTreasury = () => {
     const [isDark, setIsDark] = useState(false);
     const [loading, setLoading] = useState(true);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
-    const [data, setData] = useState<TreasuryData>({ config: { ...DEFAULT_CONFIG }, projects: [], expenses: [], income: [], accounts: [] });
+    const [data, setData] = useState<TreasuryData>({ config: { ...DEFAULT_CONFIG }, projects: [], expenses: [], income: [], accounts: [], receipts: [] });
     const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
     const [archiveOpen, setArchiveOpen] = useState(false);
     const [tab, setTab] = useState<Tab>('overview');
@@ -353,6 +354,13 @@ const DTreasury = () => {
                     .map(([id, a], i) => ({ id, ...a, order: a.order ?? i } as TreasuryAccount))
                     .sort((a, b) => a.order - b.order);
                 setData(prev => ({ ...prev, accounts }));
+            }, onErr));
+            unsubs.push(onSnapshot(RECEIPTS_DOC, snap => {
+                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryReceipt, 'id'>>;
+                const receipts = Object.entries(entries)
+                    .map(([id, r]) => ({ id, ...r }))
+                    .sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0)); // newest first
+                setData(prev => ({ ...prev, receipts }));
             }, onErr));
             unsubs.push(onSnapshot(SETTINGS_DOC, snap => {
                 const c = (snap.exists() ? snap.data() : {}) as Partial<TreasuryData['config']>;
@@ -982,6 +990,34 @@ const DTreasury = () => {
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            {/* Receipts sent for this project - when + how many */}
+                                            {(() => {
+                                                const rs = data.receipts.filter(r => (r.projectIds || []).includes(focusedProject.id));
+                                                if (!rs.length) return null;
+                                                return (
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center justify-between">
+                                                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-sec">Receipts sent</h4>
+                                                            <span className="text-[10px] font-bold text-blue-500 tnum">{rs.length}&times;</span>
+                                                        </div>
+                                                        <div className="flex flex-col gap-1 max-h-28 overflow-y-auto custom-scrollbar pr-0.5">
+                                                            {rs.map(r => (
+                                                                <div key={r.id} className="flex items-center justify-between gap-2 text-[11px] py-1.5 px-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.03]">
+                                                                    <span className="min-w-0">
+                                                                        <span className="block text-primary font-semibold truncate">{r.to}</span>
+                                                                        <span className="block text-sec">
+                                                                            {new Date(r.sentAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · {new Date(r.sentAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                                                            {r.via === 'mcp' ? ' · via AI' : ''}
+                                                                        </span>
+                                                                    </span>
+                                                                    <span className="text-primary font-bold tnum shrink-0">{formatMoney(r.total, r.currency)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
 
                                             {/* Quick Actions Panel */}
                                             <div className="flex flex-col gap-2 mt-auto pt-4 border-t border-[var(--section-border)]">

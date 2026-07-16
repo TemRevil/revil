@@ -168,7 +168,20 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         try {
             const { httpsCallable, getFunctions } = await import('firebase/functions');
             const fn = httpsCallable(getFunctions(app, 'us-central1'), 'sendReceipt');
-            await fn({ to: customerEmail.trim(), subject: `Receipt ${receiptNo} from Tem Revil`, html });
+            await fn({
+                to: customerEmail.trim(),
+                subject: `Receipt ${receiptNo} from Tem Revil`,
+                html,
+                // Metadata for the sent-receipts history log (the function stores it).
+                meta: {
+                    receiptNo,
+                    currency: receiptCurrency,
+                    total: data.totals.price,
+                    balance: data.totals.balance,
+                    projectIds: selectedProjects.map(p => p.id),
+                    projectNames: selectedProjects.map(p => p.name),
+                },
+            });
             setSentTo(customerEmail.trim());
             onToast?.(`Receipt sent to ${customerEmail.trim()}`, 'good');
         } catch (e) {
