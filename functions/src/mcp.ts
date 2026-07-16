@@ -24,12 +24,28 @@
  * Settings/MCP doc gates everything: { enabled, writesEnabled, revokedBefore }.
  */
 import { onRequest, type Request } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import admin from "firebase-admin";
 import { randomBytes, createHash } from "crypto";
 import { z } from "zod";
+import nodemailer, { type Transporter } from "nodemailer";
 import type { Response } from "express";
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { buildReceiptHtml, receiptNumber, type ReceiptLine } from "./receipt";
+
+// Email (Resend SMTP relay) - mirrors index.ts, so the MCP send-receipt tool can email.
+const smtpUser = defineSecret("SMTP_USER");
+const resendKey = defineSecret("RESEND_API_KEY");
+const HELLO_EMAIL = "hello@temrevil.com";
+function createTransporter(): Transporter {
+  return nodemailer.createTransport({
+    host: "smtp.resend.com",
+    port: 465,
+    secure: true,
+    auth: { user: "resend", pass: resendKey.value() },
+  });
+}
 
 // The MCP server class is loaded via dynamic import() below (the SDK is ESM-only),
 // which resolves to the package's ESM build. Type against that same build - a plain
@@ -156,7 +172,7 @@ const DEFAULT_RATES: Rates = { USD: 1, EGP: 48, EUR: 0.92 };
 interface Account { id?: string; name?: string; type?: string; currency: string; openingBalance?: number; archived?: boolean; order?: number; createdAt?: number; notes?: string; }
 interface Income { id?: string; amount?: number; currency: string; date?: string; note?: string; projectId?: string; accountId?: string; monthlyPayment?: boolean; createdAt?: number; }
 interface Expense { id?: string; label?: string; amount?: number; currency: string; category?: string; date?: string; recurring?: boolean; projectId?: string; accountId?: string; clientPaid?: boolean; notes?: string; createdAt?: number; }
-interface Project { id?: string; monthly?: boolean; priceAmount?: number; priceCurrency: string; paidAmount?: number; nextPaymentDate?: string; startDate?: string; installmentMonths?: number; installmentPercent?: number; }
+interface Project { id?: string; name?: string; client?: string; clientEmail?: string; monthly?: boolean; priceAmount?: number; priceCurrency: string; paidAmount?: number; nextPaymentDate?: string; startDate?: string; installmentMonths?: number; installmentPercent?: number; }
 interface TreasurySettings { rates?: Rates; [k: string]: unknown; }
 
 /** Convert between currencies using units-per-USD rates. */
@@ -892,6 +908,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       inputSchema: {
         name: z.string().min(1),
         client: z.string().optional(),
+        clientEmail: z.string().email().optional().describe("customer email - where receipts are sent"),
         price: z.number().describe("contracted price; the per-MONTH rate when monthly=true"),
         currency: z.enum(["USD", "EGP", "EUR"]),
         status: z.enum(["active", "pending", "completed"]).optional().describe("defaults to active"),
@@ -918,6 +935,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       const entry = {
         name: a.name.trim(),
         ...(a.client ? { client: a.client } : {}),
+        ...(a.clientEmail ? { clientEmail: a.clientEmail } : {}),
         status: a.status || "active",
         priceAmount: a.price,
         priceCurrency: a.currency,
@@ -963,6 +981,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         id: z.string().min(1).describe("treasury project id (see treasury_overview)"),
         name: z.string().optional(),
         client: z.string().optional(),
+        clientEmail: z.string().email().optional().describe("customer email - where receipts are sent"),
         price: z.number().optional().describe("contracted price; the per-MONTH rate when monthly=true"),
         currency: z.enum(["USD", "EGP", "EUR"]).optional(),
         status: z.enum(["active", "pending", "completed"]).optional(),
@@ -985,6 +1004,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       const patch: Record<string, unknown> = {};
       if (a.name !== undefined) patch.name = a.name.trim();
       if (a.client !== undefined) patch.client = a.client;
+      if (a.clientEmail !== undefined) patch.clientEmail = a.clientEmail;
       if (a.price !== undefined) patch.priceAmount = a.price;
       if (a.currency !== undefined) patch.priceCurrency = a.currency;
       if (a.status !== undefined) patch.status = a.status;
@@ -1018,6 +1038,116 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         ...(hasInstallments(merged)
           ? { total: round2(total), perMonth: round2(total / (merged.installmentMonths as number)), months: merged.installmentMonths }
           : {}),
+      });
+    });
+
+  server.registerTool("send_treasury_receipt",
+    {
+      title: "Send a receipt",
+      description:
+        "Build a Tem Revil receipt for ONE or MORE treasury projects and email it to the customer. " +
+        "Pass projectIds (from treasury_overview). The receipt shows each project's price / paid / balance and totals. " +
+        "`to` defaults to the FIRST project's saved customer email (set it with add/update_treasury_project's clientEmail); " +
+        "pass `to` to override. currency defaults to the first project's currency (others are converted at current rates); " +
+        "date defaults to today. ALWAYS confirm the recipient and the amounts with the owner before sending - this sends a real email. " +
+        "The owner is bcc'd a copy.",
+      inputSchema: {
+        projectIds: z.array(z.string().min(1)).min(1).describe("treasury project ids to include (see treasury_overview)"),
+        to: z.string().email().optional().describe("recipient email; defaults to the first project's clientEmail"),
+        customerName: z.string().optional().describe("defaults to the first project's client"),
+        currency: z.enum(["USD", "EGP", "EUR"]).optional().describe("receipt currency; defaults to the first project's currency"),
+        date: z.string().optional().describe("issue date YYYY-MM-DD; defaults today"),
+        note: z.string().optional().describe("optional note printed on the receipt"),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      const [pdoc, idoc, sdoc] = await Promise.all([
+        db().doc("Treasury/projects").get(),
+        db().doc("Treasury/income").get(),
+        db().doc("Treasury/settings").get(),
+      ]);
+      const allProjects = readEntries<Project>(pdoc);
+      const income = readEntries<Income>(idoc);
+      const rates = ((sdoc.data() || {}) as TreasurySettings).rates || DEFAULT_RATES;
+
+      // Keep the order the caller asked for, dropping ids that don't exist.
+      const selected = a.projectIds
+        .map((id) => allProjects.find((p) => p.id === id))
+        .filter((p): p is Project & { id: string } => !!p);
+      if (!selected.length) return fail("None of those project ids exist. List them with treasury_overview.");
+
+      const first = selected[0];
+      const to = (a.to || first.clientEmail || "").trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) {
+        return fail("No valid recipient email. Pass `to`, or set the project's clientEmail with update_treasury_project.");
+      }
+      const cur = a.currency || first.priceCurrency || "USD";
+
+      const lines: ReceiptLine[] = selected.map((p) => {
+        const cvt = (n: number) => convert(n, p.priceCurrency, cur, rates);
+        const priceNative = p.monthly ? (p.priceAmount || 0) : projectContractTotal(p);
+        const paidNative = projectReceived(p, income, rates);
+        const balNative = p.monthly ? null : Math.max(0, priceNative - paidNative);
+        return {
+          name: p.name || "Project",
+          note: p.monthly
+            ? "Monthly retainer"
+            : hasInstallments(p)
+              ? `${p.installmentMonths} installments${p.installmentPercent ? ` (+${p.installmentPercent}%)` : ""}`
+              : undefined,
+          price: round2(cvt(priceNative)),
+          paid: round2(cvt(paidNative)),
+          balance: balNative === null ? null : round2(cvt(balNative)),
+        };
+      });
+      const totals = lines.reduce(
+        (t, l) => ({ price: t.price + l.price, paid: t.paid + l.paid, balance: t.balance + (l.balance || 0) }),
+        { price: 0, paid: 0, balance: 0 },
+      );
+
+      const dateStr = a.date || new Date().toISOString().slice(0, 10);
+      const dateLabel = (() => {
+        const dt = new Date(`${dateStr}T00:00:00`);
+        return isNaN(dt.getTime()) ? dateStr : dt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      })();
+      const receiptNo = receiptNumber();
+
+      const html = buildReceiptHtml({
+        receiptNo,
+        dateLabel,
+        customerName: (a.customerName || first.client || undefined),
+        customerEmail: to,
+        currency: cur,
+        lines,
+        totals,
+        note: a.note,
+        converted: selected.some((p) => p.priceCurrency !== cur),
+      });
+
+      try {
+        const transporter = createTransporter();
+        const owner = smtpUser.value();
+        await transporter.sendMail({
+          from: `"Tem Revil" <${HELLO_EMAIL}>`,
+          to,
+          bcc: owner && owner.toLowerCase() !== to.toLowerCase() ? owner : undefined,
+          replyTo: HELLO_EMAIL,
+          subject: `Receipt ${receiptNo} from Tem Revil`,
+          html,
+        });
+      } catch (err) {
+        console.error("[mcp] send_treasury_receipt failed:", err);
+        return fail("Failed to send the receipt email.");
+      }
+
+      return ok({
+        status: "sent",
+        to,
+        receiptNo,
+        currency: cur,
+        projects: selected.map((p) => p.name),
+        totals,
       });
     });
 
@@ -1162,6 +1292,7 @@ export const mcp = onRequest(
     region: "us-central1",
     cors: false,
     maxInstances: 10,
+    secrets: [smtpUser, resendKey],
   },
   async (req, res) => {
     try {
