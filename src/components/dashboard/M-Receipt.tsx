@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { X, Receipt, Send, Download, Loader2, Check } from 'lucide-react';
@@ -54,6 +54,18 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         [projects, selected],
     );
 
+    // Auto-fill the customer + currency from the FIRST selected project as you change the
+    // selection, so picking a project pulls its client/email/currency in. A field stops
+    // auto-filling once you type in it (touched), so manual edits aren't clobbered.
+    const primary = selectedProjects[0];
+    const touched = useRef({ name: false, email: false, currency: false });
+    useEffect(() => {
+        if (!primary) return;
+        if (!touched.current.name) setCustomerName(primary.client ?? '');
+        if (!touched.current.email) setCustomerEmail(primary.clientEmail ?? '');
+        if (!touched.current.currency) setReceiptCurrency(primary.priceCurrency);
+    }, [primary]);
+
     const dateLabel = useMemo(() => {
         const d = new Date(`${issueDate}T00:00:00`);
         return Number.isNaN(d.getTime()) ? issueDate : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -95,6 +107,44 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     }, [selectedProjects, receiptCurrency, income, rates, receiptNo, dateLabel, customerName, customerEmail, note]);
 
     const html = useMemo(() => buildReceiptHtml(data), [data]);
+
+    // Fit-to-frame preview: the receipt is a fixed ~624px-wide document, so instead of
+    // scrolling it inside the panel we scale the whole thing down to fit the available box
+    // (both axes), showing it whole with no scrollbars. NAT_W is the receipt's natural
+    // width (600 card + 12px page padding each side); natH is measured from the iframe.
+    const NAT_W = 624;
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const fitRef = useRef<HTMLDivElement>(null);
+    const [natH, setNatH] = useState(560);
+    const [box, setBox] = useState({ w: 0, h: 0 });
+
+    const remeasure = useCallback(() => {
+        const doc = iframeRef.current?.contentDocument;
+        if (doc) setNatH(Math.max(200, doc.documentElement.scrollHeight || doc.body.scrollHeight || 560));
+    }, []);
+    // Re-measure whenever the content changes (a srcDoc change reloads the iframe, but this
+    // covers it even if onLoad doesn't refire).
+    useEffect(() => {
+        const t = setTimeout(remeasure, 60);
+        return () => clearTimeout(t);
+    }, [html, remeasure]);
+    // Track the available box so the scale recomputes on modal/viewport resize.
+    useEffect(() => {
+        const el = fitRef.current;
+        if (!el) return;
+        const update = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+    // A small inset absorbs sub-pixel measurement lag (the iframe height settles a frame
+    // after the box), so the receipt always fits fully instead of clipping a few px, and
+    // it reads as breathing room.
+    const PAD = 12;
+    const scale = box.w > 0
+        ? Math.max(0.1, Math.min((box.w - PAD) / NAT_W, natH ? (box.h - PAD) / natH : 1))
+        : 1;
 
     const emailValid = EMAIL_RE.test(customerEmail.trim());
     const canSend = emailValid && selectedProjects.length > 0 && !sending;
@@ -186,17 +236,17 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className={labelCls}>Customer name</label>
-                                <input className={inputCls} value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Person or company" />
+                                <input className={inputCls} value={customerName} onChange={e => { touched.current.name = true; setCustomerName(e.target.value); }} placeholder="Person or company" />
                             </div>
                             <div>
                                 <label className={labelCls}>Currency</label>
-                                <Select value={receiptCurrency} onChange={v => setReceiptCurrency(v as Currency)} isDark={isDark} options={CURRENCIES.map(c => ({ value: c, label: c }))} aria-label="Receipt currency" />
+                                <Select value={receiptCurrency} onChange={v => { touched.current.currency = true; setReceiptCurrency(v as Currency); }} isDark={isDark} options={CURRENCIES.map(c => ({ value: c, label: c }))} aria-label="Receipt currency" />
                             </div>
                         </div>
 
                         <div>
                             <label className={labelCls}>Customer email {selectedProjects.length > 0 && !emailValid && <span className="text-amber-500 normal-case">- required to send</span>}</label>
-                            <input className={inputCls} type="email" value={customerEmail} onChange={e => { setCustomerEmail(e.target.value); setSentTo(null); }} placeholder="name@example.com" />
+                            <input className={inputCls} type="email" value={customerEmail} onChange={e => { touched.current.email = true; setCustomerEmail(e.target.value); setSentTo(null); }} placeholder="name@example.com" />
                         </div>
 
                         <div>
@@ -212,18 +262,24 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                         <div className="text-[11px] text-sec">Receipt no. <span className="font-mono text-primary">{receiptNo}</span></div>
                     </div>
 
-                    {/* Preview */}
-                    <div className="p-5 flex flex-col gap-3 min-h-[320px] md:min-h-0 md:flex-1 min-w-0 bg-black/[0.02] dark:bg-white/[0.02]">
+                    {/* Preview - scaled to fit the panel, no scrollbars */}
+                    <div className="p-5 flex flex-col gap-3 min-h-[360px] md:min-h-0 md:flex-1 min-w-0 bg-black/[0.02] dark:bg-white/[0.02]">
                         <div className="flex items-center justify-between">
                             <span className={labelCls} style={{ margin: 0 }}>Preview</span>
                             {sentTo && <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500"><Check size={12} /> Sent to {sentTo}</span>}
                         </div>
-                        <iframe
-                            title="Receipt preview"
-                            srcDoc={html}
-                            className="flex-1 w-full rounded-xl border border-[var(--section-border)] bg-white"
-                            style={{ minHeight: 300 }}
-                        />
+                        <div ref={fitRef} className="flex-1 min-h-0 overflow-hidden rounded-xl border border-[var(--section-border)] bg-white flex items-center justify-center">
+                            <div style={{ width: NAT_W * scale, height: natH * scale }}>
+                                <iframe
+                                    ref={iframeRef}
+                                    title="Receipt preview"
+                                    srcDoc={html}
+                                    onLoad={remeasure}
+                                    scrolling="no"
+                                    style={{ width: NAT_W, height: natH, border: 0, display: 'block', transformOrigin: 'top left', transform: `scale(${scale})` }}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
 
