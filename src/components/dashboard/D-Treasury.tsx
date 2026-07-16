@@ -46,7 +46,7 @@ const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
 const RECEIPTS_DOC = doc(db, 'Treasury', 'receipts');
 const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
 
-type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'settings';
+type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
 type ChartFilter = 'daily' | 'weekly' | 'monthly';
 interface ChartPoint { label: string; fullDate: string; earned: number; spent: number; type: ChartFilter; }
 
@@ -652,6 +652,7 @@ const DTreasury = () => {
         { id: 'projects', label: 'Projects', icon: Briefcase },
         { id: 'money', label: 'Money', icon: Wallet },
         { id: 'accounts', label: 'Accounts', icon: Landmark },
+        { id: 'receipts', label: 'Receipts', icon: Receipt },
         { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
     ];
 
@@ -991,34 +992,6 @@ const DTreasury = () => {
                                                 </div>
                                             </div>
 
-                                            {/* Receipts sent for this project - when + how many */}
-                                            {(() => {
-                                                const rs = data.receipts.filter(r => (r.projectIds || []).includes(focusedProject.id));
-                                                if (!rs.length) return null;
-                                                return (
-                                                    <div className="flex flex-col gap-1.5">
-                                                        <div className="flex items-center justify-between">
-                                                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-sec">Receipts sent</h4>
-                                                            <span className="text-[10px] font-bold text-blue-500 tnum">{rs.length}&times;</span>
-                                                        </div>
-                                                        <div className="flex flex-col gap-1 max-h-28 overflow-y-auto custom-scrollbar pr-0.5">
-                                                            {rs.map(r => (
-                                                                <div key={r.id} className="flex items-center justify-between gap-2 text-[11px] py-1.5 px-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.03]">
-                                                                    <span className="min-w-0">
-                                                                        <span className="block text-primary font-semibold truncate">{r.to}</span>
-                                                                        <span className="block text-sec">
-                                                                            {new Date(r.sentAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · {new Date(r.sentAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                                                                            {r.via === 'mcp' ? ' · via AI' : ''}
-                                                                        </span>
-                                                                    </span>
-                                                                    <span className="text-primary font-bold tnum shrink-0">{formatMoney(r.total, r.currency)}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })()}
-
                                             {/* Quick Actions Panel */}
                                             <div className="flex flex-col gap-2 mt-auto pt-4 border-t border-[var(--section-border)]">
                                                 <div className="grid grid-cols-2 gap-2">
@@ -1265,6 +1238,52 @@ const DTreasury = () => {
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {tab === 'receipts' && (
+                        <div className="glass-panel overflow-hidden">
+                            <div className="sticky top-0 z-10 px-5 pt-5 pb-3 border-b border-[var(--section-border)]" style={{ background: isDark ? 'rgba(15,15,20,0.92)' : 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }}>
+                                {sectionTitle(
+                                    <Receipt size={16} className="text-blue-400" />,
+                                    'Receipts',
+                                    data.receipts.length > 0
+                                        ? <span className="text-xs font-bold text-sec tnum">{data.receipts.length} sent</span>
+                                        : undefined,
+                                )}
+                            </div>
+                            <div className="p-4">
+                                {data.receipts.length === 0 ? (
+                                    <div className="text-center text-sec text-sm italic py-14">
+                                        No receipts sent yet. Open a project in <span className="font-semibold">Projects</span> and hit <span className="font-semibold">Receipt</span> to send one.
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-2">
+                                        {data.receipts.map(r => {
+                                            const d = new Date(r.sentAt);
+                                            return (
+                                                <div key={r.id} className="flex items-center gap-3 p-3 rounded-2xl border border-[var(--section-border)] bg-black/[0.01] dark:bg-white/[0.02]">
+                                                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-500/10 text-blue-500"><Receipt size={16} /></div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-sm font-bold text-primary truncate">{r.to}</span>
+                                                            {r.via === 'mcp' && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">via AI</span>}
+                                                        </div>
+                                                        <div className="text-[11px] text-sec truncate">
+                                                            {r.projectNames && r.projectNames.length ? r.projectNames.join(', ') : '—'} · {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                                        </div>
+                                                        {r.receiptNo && <div className="text-[10px] text-sec/60 font-mono mt-0.5">{r.receiptNo}</div>}
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        <div className="text-base font-extrabold text-primary tnum">{formatMoney(r.total, r.currency)}</div>
+                                                        {typeof r.balance === 'number' && r.balance > 0 && <div className="text-[10.5px] text-amber-500 font-semibold leading-tight mt-0.5">{formatMoney(r.balance, r.currency)} due</div>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
