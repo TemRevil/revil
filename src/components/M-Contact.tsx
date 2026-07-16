@@ -212,6 +212,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   // list is derived from it, so the times are no longer hardcoded. Defaults preserve
   // the historic 09:00–17:00 schedule until the owner configures their own.
   const [availConfig, setAvailConfig] = useState<AvailabilityConfig>(DEFAULT_AVAILABILITY);
+  // Whether the public availability + booked-slots snapshots have fired at least once.
+  // The auto-move-to-the-next-open-day MUST wait for these: until they load, availConfig
+  // is still the hardcoded 9-17 default, so moving early picks the next day off stale
+  // hours instead of the owner's real ones - and since the move latches (runs once), it
+  // never self-corrects when the real config arrives a moment later.
+  const [availLoaded, setAvailLoaded] = useState(false);
+  const [slotsLoaded, setSlotsLoaded] = useState(false);
   const timeSlots = useMemo(() => buildHostSlots(availConfig), [availConfig]);
 
   // Sync Host Availability & Timezone
@@ -226,6 +233,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       } else {
         setAvailConfig(DEFAULT_AVAILABILITY);
       }
+      setAvailLoaded(true);
+    }, () => {
+      // On a read error keep the default and still mark loaded, so the auto-move isn't
+      // stuck forever (it just falls back to the historic hours, as it did before).
+      setAvailConfig(DEFAULT_AVAILABILITY);
+      setAvailLoaded(true);
     });
 
     // Read busy slots from the sanitized public mirror (Settings/BookedSlots),
@@ -249,6 +262,10 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       } else {
         setExistingMeetings([]);
       }
+      setSlotsLoaded(true);
+    }, () => {
+      setExistingMeetings([]);
+      setSlotsLoaded(true);
     });
 
     return () => {
@@ -357,7 +374,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   // Automatically find the next available day ONCE on initialization or when switching to meeting tab
   const hasAutoMoved = useRef(false);
   useEffect(() => {
-    if (!selectedDate || activeTab !== 'meeting' || hasAutoMoved.current) return;
+    // Wait for the real availability + booked slots before choosing the next open day,
+    // otherwise it moves off the stale 9-17 default and latches on the wrong day.
+    if (!selectedDate || activeTab !== 'meeting' || hasAutoMoved.current || !availLoaded || !slotsLoaded) return;
 
     const checkAvailable = (date: Date) => {
       if (!isWorkingDay(availConfig, date)) return false;
@@ -390,7 +409,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       }
     }
     hasAutoMoved.current = true;
-  }, [existingMeetings, hostTimezoneString, selectedDate, timeSlots, getMeetingsForDate, isTimePassed, activeTab, availConfig]);
+  }, [existingMeetings, hostTimezoneString, selectedDate, timeSlots, getMeetingsForDate, isTimePassed, activeTab, availConfig, availLoaded, slotsLoaded]);
 
   // Reset auto-move flag when modal closes (if it was an external state) or handle it inside the component
   useEffect(() => {
