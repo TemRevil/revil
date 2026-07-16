@@ -44,6 +44,12 @@ const INCOME_DOC = doc(db, 'Treasury', 'income');
 const ACCOUNTS_DOC = doc(db, 'Treasury', 'accounts');
 const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
 const RECEIPTS_DOC = doc(db, 'Treasury', 'receipts');
+
+/** Local 'YYYY-MM-DD' day key for a ms-epoch timestamp (receipts store sentAt in ms). */
+const receiptDayKey = (ms: number): string => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
 
 type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
@@ -289,6 +295,10 @@ const DTreasury = () => {
     const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null } | null>(null);
     // Which project the receipt builder opened from (more can be added inside it). Null = closed.
     const [receiptFor, setReceiptFor] = useState<string | null>(null);
+    // Receipts-tab filters (mirror the Money tab): by customer, flat vs grouped-by-day, and a day jump.
+    const [receiptCustomer, setReceiptCustomer] = useState<string>('all');
+    const [receiptView, setReceiptView] = useState<'all' | 'day'>('all');
+    const [receiptDay, setReceiptDay] = useState('');
     const [accountModal, setAccountModal] = useState<{ account: TreasuryAccount | null } | null>(null);
     const [ratesLoading, setRatesLoading] = useState(false);
     const ratesChecked = useRef(false);
@@ -615,6 +625,25 @@ const DTreasury = () => {
         return Array.from(map.entries());
     }, [visibleRows]);
 
+    // ── Receipts tab data (kept here, before the early return, so the hooks always run) ──
+    const receiptCustomers = useMemo(
+        () => [...new Set(data.receipts.map(r => r.to).filter(Boolean))],
+        [data.receipts],
+    );
+    const filteredReceipts = useMemo(
+        () => (receiptCustomer === 'all' ? data.receipts : data.receipts.filter(r => r.to === receiptCustomer)),
+        [data.receipts, receiptCustomer],
+    );
+    const receiptDayRows = useMemo(
+        () => (receiptDay ? filteredReceipts.filter(r => receiptDayKey(r.sentAt) === receiptDay) : []),
+        [filteredReceipts, receiptDay],
+    );
+    const receiptsByDay = useMemo(() => {
+        const map = new Map<string, TreasuryReceipt[]>();
+        for (const r of filteredReceipts) { const k = receiptDayKey(r.sentAt); (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
+        return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0])); // newest day first
+    }, [filteredReceipts]);
+
     // Aggregate the continuous daily series for the active filter (D-Views style).
     const chartData = useMemo<ChartPoint[]>(() => {
         if (!dailySeries.length) return [];
@@ -731,6 +760,37 @@ const DTreasury = () => {
         setSelectedDay(`${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`);
     };
     const dayRows = selectedDay ? visibleRows.filter(r => r.date === selectedDay) : [];
+
+    // ── Receipts tab: day navigator + row renderer (the memos live up with the others,
+    // before the early return, since hooks can't run conditionally). ──
+    const stepReceiptDay = (delta: number) => {
+        const base = receiptDay ? new Date(`${receiptDay}T00:00:00`) : new Date();
+        base.setDate(base.getDate() + delta);
+        setReceiptDay(receiptDayKey(base.getTime()));
+    };
+
+    const renderReceiptRow = (r: TreasuryReceipt) => {
+        const d = new Date(r.sentAt);
+        return (
+            <div key={r.id} className="flex items-center gap-3 p-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-500/10 text-blue-500"><Receipt size={16} /></div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-primary truncate">{r.to}</span>
+                        {r.via === 'mcp' && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">via AI</span>}
+                    </div>
+                    <div className="text-[11px] text-sec truncate">
+                        {r.projectNames && r.projectNames.length ? r.projectNames.join(', ') : '—'} · {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    {r.receiptNo && <div className="text-[10px] text-sec/60 font-mono mt-0.5">{r.receiptNo}</div>}
+                </div>
+                <div className="text-right shrink-0">
+                    <div className="text-base font-extrabold text-primary tnum">{formatMoney(r.total, r.currency)}</div>
+                    {typeof r.balance === 'number' && r.balance > 0 && <div className="text-[10.5px] text-amber-500 font-semibold leading-tight mt-0.5">{formatMoney(r.balance, r.currency)} due</div>}
+                </div>
+            </div>
+        );
+    };
 
     const kpiCards = (
         <div className={`grid gap-3 ${isExtraSmall ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
@@ -1247,40 +1307,71 @@ const DTreasury = () => {
                                 {sectionTitle(
                                     <Receipt size={16} className="text-blue-400" />,
                                     'Receipts',
-                                    data.receipts.length > 0
-                                        ? <span className="text-xs font-bold text-sec tnum">{data.receipts.length} sent</span>
-                                        : undefined,
+                                    data.receipts.length > 0 ? (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-bold text-sec tnum mr-0.5">{filteredReceipts.length}{receiptCustomer !== 'all' ? ` of ${data.receipts.length}` : ''} sent</span>
+                                            <div className="w-[176px]">
+                                                <Select
+                                                    value={receiptCustomer === 'all' ? 'All customers' : receiptCustomer}
+                                                    options={['All customers', ...receiptCustomers]}
+                                                    onChange={(v) => setReceiptCustomer(v === 'All customers' ? 'all' : v)}
+                                                    isDark={isDark}
+                                                    searchable={receiptCustomers.length > 6}
+                                                />
+                                            </div>
+                                            <div className="w-[136px]">
+                                                <Select
+                                                    value={receiptView === 'day' ? 'Grouped by day' : 'Flat list'}
+                                                    options={['Flat list', 'Grouped by day']}
+                                                    onChange={(v) => setReceiptView(v === 'Grouped by day' ? 'day' : 'all')}
+                                                    isDark={isDark}
+                                                    searchable={false}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : undefined,
+                                )}
+                                {data.receipts.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => stepReceiptDay(-1)} title="Previous day" className="p-2 rounded-xl text-sec hover:text-primary border border-[var(--input-border)] hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><ChevronLeft size={16} /></button>
+                                        <div className="w-44"><DatePicker value={receiptDay} onChange={setReceiptDay} isDark={isDark} placeholder="Jump to a day" allowClear /></div>
+                                        <button onClick={() => stepReceiptDay(1)} title="Next day" className="p-2 rounded-xl text-sec hover:text-primary border border-[var(--input-border)] hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><ChevronRight size={16} /></button>
+                                        {receiptDay && <button onClick={() => setReceiptDay('')} className="text-xs font-semibold text-blue-500 hover:text-blue-600 px-1">Clear</button>}
+                                    </div>
                                 )}
                             </div>
-                            <div className="p-4">
+                            <div className="p-5">
                                 {data.receipts.length === 0 ? (
-                                    <div className="text-center text-sec text-sm italic py-14">
+                                    <div className="glass-surface p-8 text-center text-sec text-sm">
                                         No receipts sent yet. Open a project in <span className="font-semibold">Projects</span> and hit <span className="font-semibold">Receipt</span> to send one.
                                     </div>
+                                ) : !receiptDay && filteredReceipts.length === 0 ? (
+                                    <div className="glass-surface p-6 text-center text-sec text-sm">No receipts match these filters.</div>
+                                ) : receiptDay ? (
+                                    <div className="glass-surface overflow-hidden">
+                                        <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
+                                            <span className="text-[11px] font-bold text-sec uppercase tracking-wider">{fmtDayHeader(receiptDay)}</span>
+                                            {receiptDayRows.length > 0 && <span className="text-xs font-bold text-sec tnum">{receiptDayRows.length} sent</span>}
+                                        </div>
+                                        {receiptDayRows.length > 0
+                                            ? <div className="divide-y divide-[var(--input-border)]">{receiptDayRows.map(renderReceiptRow)}</div>
+                                            : <div className="p-6 text-center text-sec text-sm">No receipts on this day.</div>}
+                                    </div>
+                                ) : receiptView === 'all' ? (
+                                    <div className="glass-surface divide-y divide-[var(--input-border)] overflow-hidden">
+                                        {filteredReceipts.map(renderReceiptRow)}
+                                    </div>
                                 ) : (
-                                    <div className="flex flex-col gap-2">
-                                        {data.receipts.map(r => {
-                                            const d = new Date(r.sentAt);
-                                            return (
-                                                <div key={r.id} className="flex items-center gap-3 p-3 rounded-2xl border border-[var(--section-border)] bg-black/[0.01] dark:bg-white/[0.02]">
-                                                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-500/10 text-blue-500"><Receipt size={16} /></div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <span className="text-sm font-bold text-primary truncate">{r.to}</span>
-                                                            {r.via === 'mcp' && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">via AI</span>}
-                                                        </div>
-                                                        <div className="text-[11px] text-sec truncate">
-                                                            {r.projectNames && r.projectNames.length ? r.projectNames.join(', ') : '—'} · {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                                                        </div>
-                                                        {r.receiptNo && <div className="text-[10px] text-sec/60 font-mono mt-0.5">{r.receiptNo}</div>}
-                                                    </div>
-                                                    <div className="text-right shrink-0">
-                                                        <div className="text-base font-extrabold text-primary tnum">{formatMoney(r.total, r.currency)}</div>
-                                                        {typeof r.balance === 'number' && r.balance > 0 && <div className="text-[10.5px] text-amber-500 font-semibold leading-tight mt-0.5">{formatMoney(r.balance, r.currency)} due</div>}
-                                                    </div>
+                                    <div className="flex flex-col gap-3">
+                                        {receiptsByDay.map(([day, rows]) => (
+                                            <div key={day} className="glass-surface overflow-hidden">
+                                                <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
+                                                    <span className="text-[11px] font-bold text-sec uppercase tracking-wider">{fmtDayHeader(day)}</span>
+                                                    <span className="text-xs font-bold text-sec tnum">{rows.length} sent</span>
                                                 </div>
-                                            );
-                                        })}
+                                                <div className="divide-y divide-[var(--input-border)]">{rows.map(renderReceiptRow)}</div>
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                             </div>
