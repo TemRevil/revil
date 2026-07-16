@@ -141,7 +141,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                 initial={{ scale: 0.95, opacity: 0, y: 15 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 15 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 350 }}
                 onClick={e => e.stopPropagation()}
-                className={`w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
+                className={`w-full max-w-5xl max-h-[90vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-5 border-b border-[var(--section-border)]">
@@ -152,10 +152,10 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                     <button onClick={onClose} className="p-2 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-all"><X size={18} /></button>
                 </div>
 
-                {/* Body: controls | preview */}
-                <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+                {/* Body: controls | preview, side by side on desktop, stacked on mobile */}
+                <div className="flex-1 min-h-0 flex flex-col md:flex-row">
                     {/* Controls */}
-                    <div className="p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar border-b md:border-b-0 md:border-r border-[var(--section-border)]">
+                    <div className="p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar border-b md:border-b-0 md:border-r border-[var(--section-border)] md:w-[400px] md:shrink-0">
                         <div>
                             <span className={labelCls}>Projects on this receipt</span>
                             <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto custom-scrollbar pr-1">
@@ -213,7 +213,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                     </div>
 
                     {/* Preview */}
-                    <div className="p-5 flex flex-col gap-3 min-h-[320px] bg-black/[0.02] dark:bg-white/[0.02]">
+                    <div className="p-5 flex flex-col gap-3 min-h-[320px] md:min-h-0 md:flex-1 min-w-0 bg-black/[0.02] dark:bg-white/[0.02]">
                         <div className="flex items-center justify-between">
                             <span className={labelCls} style={{ margin: 0 }}>Preview</span>
                             {sentTo && <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-500"><Check size={12} /> Sent to {sentTo}</span>}
