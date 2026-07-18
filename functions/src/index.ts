@@ -780,6 +780,101 @@ export const sendReceipt = onCall(
 );
 
 // =====================================================================
+//  3c. sendReply - admin-only: reply to a contact message from the
+//      dashboard composer. The dashboard builds the branded HTML (the
+//      same string it previews) and uploads any attachments to Storage
+//      under replies/<folder>/; this verifies the caller is the owner,
+//      reads those objects from our own bucket, and sends the reply via
+//      Resend from hello@temrevil.com (owner bcc'd).
+// =====================================================================
+export const sendReply = onCall(
+  {
+    region: "us-central1",
+    secrets: [smtpUser, resendKey],
+    enforceAppCheck: true,
+    memory: "512MiB",
+    timeoutSeconds: 120,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required to send a reply.");
+    }
+    const accountSnap = await db.doc("Settings/Account").get();
+    const adminUid = accountSnap.data()?.uid;
+    if (adminUid && request.auth.uid !== adminUid) {
+      throw new HttpsError("permission-denied", "Only the portfolio owner can send replies.");
+    }
+
+    const { to, subject, html, attachments } = (request.data || {}) as {
+      to?: string; subject?: string; html?: string;
+      attachments?: { name?: string; url?: string }[];
+    };
+    const email = String(to || "").trim();
+    if (!GUEST_EMAIL_RE.test(email)) {
+      throw new HttpsError("invalid-argument", "A valid recipient email is required.");
+    }
+    if (typeof html !== "string" || html.length < 40 || html.length > 200000) {
+      throw new HttpsError("invalid-argument", "Reply content is missing or too large.");
+    }
+
+    // Read attachments straight from our own Storage bucket (the dashboard uploaded
+    // them to replies/<folder>/). Restricting to that prefix means this can never be
+    // steered into reading unrelated objects, and there's no external fetch (no SSRF).
+    const MAX_FILES = 10;
+    const MAX_TOTAL = 20 * 1024 * 1024;
+    const mailAttachments: { filename: string; content: Buffer }[] = [];
+    if (Array.isArray(attachments) && attachments.length) {
+      if (attachments.length > MAX_FILES) {
+        throw new HttpsError("invalid-argument", `At most ${MAX_FILES} attachments per reply.`);
+      }
+      const bucket = admin.storage().bucket();
+      let total = 0;
+      for (const a of attachments) {
+        const path = getStoragePathFromUrl(String(a?.url || ""));
+        if (!path || !path.startsWith("replies/")) {
+          throw new HttpsError("invalid-argument", "Invalid attachment reference.");
+        }
+        try {
+          const [buf] = await bucket.file(path).download();
+          total += buf.length;
+          if (total > MAX_TOTAL) {
+            throw new HttpsError("invalid-argument", "Attachments exceed the 20 MB total limit.");
+          }
+          mailAttachments.push({
+            filename: String(a?.name || path.split("/").pop() || "attachment"),
+            content: buf,
+          });
+        } catch (err) {
+          if (err instanceof HttpsError) throw err;
+          console.error("Failed to read reply attachment:", path, err);
+          throw new HttpsError("internal", "Could not read one of the attachments.");
+        }
+      }
+    }
+
+    try {
+      const transporter = createTransporter();
+      const owner = smtpUser.value();
+      await transporter.sendMail({
+        from: `"Tem Revil" <${HELLO_EMAIL}>`,
+        to: email,
+        // Keep the owner a silent copy of every reply sent, unless they're the recipient.
+        bcc: owner && owner.toLowerCase() !== email.toLowerCase() ? owner : undefined,
+        replyTo: HELLO_EMAIL,
+        subject: (subject ? String(subject).slice(0, 200) : "") || "Reply from Tem Revil",
+        html,
+        attachments: mailAttachments.length ? mailAttachments : undefined,
+      });
+      console.log(`Reply emailed to ${email} (${mailAttachments.length} attachment(s))`);
+      return { status: "sent" };
+    } catch (err) {
+      console.error("Failed to send reply:", err);
+      throw new HttpsError("internal", "Failed to send the reply email.");
+    }
+  },
+);
+
+// =====================================================================
 //  4. llm - admin-only proxy for the dashboard assistant ("Spark")
 //     Holds the provider API key server-side (Secret Manager) so it never
 //     ships in the public client bundle. The client sends the provider-native

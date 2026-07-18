@@ -14,6 +14,7 @@ import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MConfirmModal from './M-ConfirmModal';
 import MContact from '../M-Contact';
+import MReply from './M-Reply';
 import CustomTimePicker from '../CustomTimePicker';
 import Loader from '../reactbits/Loader';
 
@@ -43,6 +44,7 @@ interface Email {
     whatsapp: boolean;
     timestamp: number;
     attachments: Attachment[];
+    repliedAt?: number;
 }
 
 interface MeetingData {
@@ -64,6 +66,7 @@ interface EmailData {
     Whatsapp: boolean;
     Timestamp: number;
     "Files Attached"?: Attachment[];
+    RepliedAt?: number;
 }
 
 const TIME_OPTIONS = [
@@ -116,6 +119,7 @@ const DCanary = () => {
     const [availSaving, setAvailSaving] = useState(false);
     const [emails, setEmails] = useState<Email[]>([]);
     const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+    const [replyTo, setReplyTo] = useState<Email | null>(null);
     const [openOptionsId, setOpenOptionsId] = useState<string | null>(null);
     const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
 
@@ -161,7 +165,8 @@ const DCanary = () => {
                     number: e.Number,
                     whatsapp: e.Whatsapp,
                     timestamp: e.Timestamp,
-                    attachments: e["Files Attached"] || []
+                    attachments: e["Files Attached"] || [],
+                    repliedAt: e.RepliedAt
                 })).sort((a, b) => b.timestamp - a.timestamp);
                 setEmails(emailsList);
             }
@@ -477,11 +482,20 @@ const DCanary = () => {
     };
 
     const handleReplyEmail = (email: Email) => {
-        const subject = `Re: Contact via Form`;
-        const body = `\n\nOn ${new Date(email.timestamp).toLocaleString()}, ${email.name} wrote:\n> ${email.message}`;
-        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email.email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        window.open(gmailUrl, '_blank');
+        setReplyTo(email);
         setOpenOptionsId(null);
+    };
+
+    // Mark a message replied after a reply is sent (Canary is admin-writable here).
+    const markReplied = async (emailId: string) => {
+        const at = Date.now();
+        try {
+            await updateDoc(doc(db, 'Settings', 'Canary'), { [`Emails.${emailId}.RepliedAt`]: at });
+        } catch (error) {
+            console.error('Failed to mark message replied:', error);
+        }
+        setEmails(prev => prev.map(e => e.id === emailId ? { ...e, repliedAt: at } : e));
+        setSelectedEmail(prev => prev && prev.id === emailId ? { ...prev, repliedAt: at } : prev);
     };
 
     const handleAddNew = () => {
@@ -1033,6 +1047,14 @@ const DCanary = () => {
                                                         <span>{new Date(selectedEmail.timestamp).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
                                                         <span>•</span>
                                                         <span>{new Date(selectedEmail.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span>
+                                                        {selectedEmail.repliedAt && (
+                                                            <>
+                                                                <span>•</span>
+                                                                <span className="inline-flex items-center gap-1 text-emerald-500 opacity-100">
+                                                                    <Check size={12} /> Replied
+                                                                </span>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1041,10 +1063,10 @@ const DCanary = () => {
                                                 <button
                                                     onClick={() => handleReplyEmail(selectedEmail)}
                                                     className="p-2.5 md:px-4 md:py-2 rounded-xl bg-blue-500 text-white shadow-lg shadow-blue-500/20 hover:bg-blue-600 active:scale-95 transition-all flex items-center gap-2"
-                                                    title="Reply via Gmail"
+                                                    title="Reply"
                                                 >
                                                     <Reply size={18} />
-                                                    <span className="hidden md:inline font-bold text-sm">Reply</span>
+                                                    <span className="hidden md:inline font-bold text-sm">{selectedEmail.repliedAt ? 'Reply again' : 'Reply'}</span>
                                                 </button>
                                                 <button
                                                     onClick={() => setConfirmDelete(selectedEmail.id)}
@@ -1480,6 +1502,18 @@ const DCanary = () => {
                     hideTabs={true}
                 />
             )}
+
+            <AnimatePresence>
+                {replyTo && (
+                    <MReply
+                        email={replyTo}
+                        isDark={isDark}
+                        onClose={() => setReplyTo(null)}
+                        onSent={() => markReplied(replyTo.id)}
+                        notify={(message, type) => showAlert({ type, message })}
+                    />
+                )}
+            </AnimatePresence>
 
             {/* Email Options Menu Portal & Attachment Preview (Omitted for brevity as they are unchanged) */}
             {
