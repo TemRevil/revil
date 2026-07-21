@@ -54,6 +54,8 @@ export interface ItemizedLine {
     caption?: string;
     amount: number;
     currency: Currency;
+    /** Dated sub-entries nested under this item (e.g. what shipped for this project). */
+    details?: WorkLogEntry[];
 }
 
 export interface WorkLogEntry {
@@ -118,14 +120,18 @@ export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
         </div>
       </td></tr>` : '';
 
-    const itemRows = d.lines.map(l => `
+    const itemRows = d.lines.map(l => {
+        const details = (l.details || []).filter(x => x.date.trim() || x.text.trim());
+        return `
           <tr>
             <td style="padding:14px 0;border-top:1px solid ${D_ROW};font-size:14px;color:#e8e8e8">
               ${esc(l.label)}
               ${l.caption ? `<div style="font-size:12px;color:#777;margin-top:3px">${esc(l.caption)}</div>` : ''}
+              ${details.length ? `<div style="margin-top:9px;padding-left:12px;border-left:2px solid #2a2a2a">${details.map(x => `<div style="font-size:12px;line-height:1.65;color:#9a9a9a;margin-top:5px"><span style="color:${ACCENT};font-weight:700">${esc(x.date)}</span> &nbsp;${esc(x.text)}</div>`).join('')}</div>` : ''}
             </td>
-            <td style="padding:14px 0;border-top:1px solid ${D_ROW};font-size:14px;color:#fff;font-weight:700;text-align:right;white-space:nowrap">${esc(itemMoney(l.amount, l.currency))}</td>
-          </tr>`).join('');
+            <td style="padding:14px 0;border-top:1px solid ${D_ROW};font-size:14px;color:#fff;font-weight:700;text-align:right;white-space:nowrap;vertical-align:top">${esc(itemMoney(l.amount, l.currency))}</td>
+          </tr>`;
+    }).join('');
 
     const totalRows = order.map((cur, i) => `
           ${i > 0 ? '<tr><td style="height:8px" colspan="2"></td></tr>' : ''}

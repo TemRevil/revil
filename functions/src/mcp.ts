@@ -32,7 +32,10 @@ import nodemailer, { type Transporter } from "nodemailer";
 import type { Response } from "express";
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { buildReceiptHtml, receiptNumber, type ReceiptLine } from "./receipt";
+import {
+  buildReceiptHtml, receiptNumber, type ReceiptLine,
+  buildItemizedReceiptHtml, revReceiptNumber,
+} from "./receipt";
 
 // Email (Resend SMTP relay) - mirrors index.ts, so the MCP send-receipt tool can email.
 const smtpUser = defineSecret("SMTP_USER");
@@ -1172,6 +1175,105 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         projects: selected.map((p) => p.name),
         totals,
       });
+    });
+
+  server.registerTool("send_itemized_receipt",
+    {
+      title: "Send an itemized receipt",
+      description:
+        "Send the DARK itemized Revil receipt: free-form line items that each carry their own " +
+        "currency, optional dated sub-entries nested under a line (what shipped for that project), " +
+        "and one total per currency (never converted). Use this instead of send_treasury_receipt " +
+        "when the receipt needs custom wording, a work log, or mixed currencies. Everything is " +
+        "escaped and rendered server-side. ALWAYS confirm the recipient and every amount with the " +
+        "owner before sending - this sends a real email. The owner is bcc'd a copy.",
+      inputSchema: {
+        to: z.string().email().describe("recipient email"),
+        customerName: z.string().optional().describe("name shown under 'Bill to'"),
+        customerSubtitle: z.string().optional().describe("second line under the name, e.g. 'RooleTask project'"),
+        lines: z.array(z.object({
+          label: z.string().min(1),
+          caption: z.string().optional().describe("small muted line under the label"),
+          amount: z.number(),
+          currency: z.enum(["USD", "EGP", "EUR"]),
+          details: z.array(z.object({
+            date: z.string().describe("short date chip, e.g. '2 Jul'"),
+            text: z.string(),
+          })).optional().describe("dated sub-entries nested under this line item"),
+        })).min(1).describe("the receipt's line items, in order"),
+        workLogTitle: z.string().optional().describe("heading for a standalone work-log section"),
+        workLog: z.array(z.object({ date: z.string(), text: z.string() })).optional()
+          .describe("standalone dated entries above the items (use `details` instead to nest them under a line)"),
+        subject: z.string().optional().describe("email subject; defaults to 'Receipt from Revil'"),
+        date: z.string().optional().describe("issue date YYYY-MM-DD; defaults today"),
+        note: z.string().optional().describe("optional note printed above the footer"),
+        projectIds: z.array(z.string()).optional().describe("treasury project ids, recorded in the receipt history"),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      const to = a.to.trim();
+      const dateStr = a.date || new Date().toISOString().slice(0, 10);
+      const dt = new Date(`${dateStr}T00:00:00`);
+      const valid = isNaN(dt.getTime()) ? new Date() : dt;
+      const dateLabel = valid.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      const receiptNo = revReceiptNumber(valid);
+
+      const html = buildItemizedReceiptHtml({
+        receiptNo,
+        dateLabel,
+        customerName: a.customerName,
+        customerSubtitle: a.customerSubtitle,
+        workLogTitle: a.workLogTitle,
+        workLog: a.workLog,
+        lines: a.lines,
+        note: a.note,
+      });
+
+      // Headline figure for the history log: the total of the first currency used.
+      const headCur = a.lines[0].currency;
+      const headTotal = round2(a.lines
+        .filter((l) => l.currency === headCur)
+        .reduce((s, l) => s + (l.amount || 0), 0));
+
+      try {
+        const transporter = createTransporter();
+        const owner = smtpUser.value();
+        await transporter.sendMail({
+          from: `"Tem Revil" <${HELLO_EMAIL}>`,
+          to,
+          bcc: owner && owner.toLowerCase() !== to.toLowerCase() ? owner : undefined,
+          replyTo: HELLO_EMAIL,
+          subject: (a.subject || "Receipt from Revil").slice(0, 200),
+          html,
+        });
+      } catch (err) {
+        console.error("[mcp] send_itemized_receipt failed:", err);
+        return fail("Failed to send the receipt email.");
+      }
+
+      try {
+        const rid = `rcp_${now().toString(36)}${rand(3)}`;
+        await db().doc("Treasury/receipts").set({
+          entries: {
+            [rid]: {
+              receiptNo,
+              to,
+              sentAt: now(),
+              currency: headCur,
+              total: headTotal,
+              projectIds: a.projectIds || [],
+              projectNames: [],
+              via: "mcp",
+            },
+          },
+          lastWrite: SERVER_TIMESTAMP(),
+        }, { merge: true });
+      } catch (logErr) {
+        console.error("[mcp] itemized receipt sent but history log failed:", logErr);
+      }
+
+      return ok({ status: "sent", to, receiptNo, lines: a.lines.length, headline: { currency: headCur, total: headTotal } });
     });
 
   server.registerTool("add_income",
