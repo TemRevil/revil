@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { X, Receipt, Send, Download, Loader2, Check } from 'lucide-react';
+import { X, Receipt, Send, Download, Loader2, Check, Plus, Trash2 } from 'lucide-react';
 import app from '../../lib/firebase';
 import {
     Currency, CURRENCIES, TreasuryProject, TreasuryIncome, Rates,
     convert, projectReceived, projectContractTotal, hasInstallments, formatMoney,
 } from '../../lib/treasury';
-import { buildReceiptHtml, receiptNumber, ReceiptData } from '../../lib/receipt';
+import {
+    buildReceiptHtml, receiptNumber, ReceiptData,
+    buildItemizedReceiptHtml, revReceiptNumber, ItemizedReceiptData,
+} from '../../lib/receipt';
 import Select from '../Select';
 import DatePicker from '../DatePicker';
 
@@ -24,6 +27,15 @@ interface Props {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** Which layout the receipt uses. */
+type Template = 'projects' | 'itemized';
+
+interface ItemRow { id: string; label: string; caption: string; amount: string; currency: Currency }
+interface LogRow { id: string; date: string; text: string }
+const rid = () => Math.random().toString(36).slice(2, 9);
+const emptyItem = (currency: Currency): ItemRow => ({ id: rid(), label: '', caption: '', amount: '', currency });
+const emptyLog = (): LogRow => ({ id: rid(), date: '', text: '' });
 
 /**
  * Receipt builder: pick one or more projects, set the customer + issue date, preview the
@@ -42,6 +54,15 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     const [note, setNote] = useState('');
     const [sending, setSending] = useState(false);
     const [sentTo, setSentTo] = useState<string | null>(null);
+
+    // Itemized template: free-form line items, a dated work log, per-currency totals.
+    const [template, setTemplate] = useState<Template>('projects');
+    const [customerSubtitle, setCustomerSubtitle] = useState(initial ? `${initial.name} project` : '');
+    const [workLogTitle, setWorkLogTitle] = useState('');
+    const [workLog, setWorkLog] = useState<LogRow[]>([emptyLog()]);
+    const [items, setItems] = useState<ItemRow[]>([emptyItem(initial?.priceCurrency ?? displayCurrency)]);
+    /** Empty = use the derived subject. */
+    const [subject, setSubject] = useState('');
 
     const toggle = (id: string) => setSelected(prev => {
         const next = new Set(prev);
@@ -106,13 +127,44 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         };
     }, [selectedProjects, receiptCurrency, income, rates, receiptNo, dateLabel, customerName, customerEmail, note]);
 
-    const html = useMemo(() => buildReceiptHtml(data), [data]);
+    // Itemized receipts are numbered REV-YYYY-MMDD off the issue date.
+    const revNo = useMemo(() => {
+        const d = new Date(`${issueDate}T00:00:00`);
+        return revReceiptNumber(Number.isNaN(d.getTime()) ? new Date() : d);
+    }, [issueDate]);
+
+    const itemizedData: ItemizedReceiptData = useMemo(() => ({
+        receiptNo: revNo,
+        dateLabel,
+        customerName: customerName.trim() || undefined,
+        customerSubtitle: customerSubtitle.trim() || undefined,
+        workLogTitle: workLogTitle.trim() || undefined,
+        workLog: workLog
+            .filter(w => w.date.trim() || w.text.trim())
+            .map(w => ({ date: w.date.trim(), text: w.text.trim() })),
+        lines: items
+            .filter(i => i.label.trim() || i.amount.trim())
+            .map(i => ({
+                label: i.label.trim() || 'Item',
+                caption: i.caption.trim() || undefined,
+                amount: Number(i.amount) || 0,
+                currency: i.currency,
+            })),
+        note: note.trim() || undefined,
+    }), [revNo, dateLabel, customerName, customerSubtitle, workLogTitle, workLog, items, note]);
+
+    const isItemized = template === 'itemized';
+    const html = useMemo(
+        () => (isItemized ? buildItemizedReceiptHtml(itemizedData) : buildReceiptHtml(data)),
+        [isItemized, itemizedData, data],
+    );
 
     // Fit-to-frame preview: the receipt is a fixed ~624px-wide document, so instead of
     // scrolling it inside the panel we scale the whole thing down to fit the available box
     // (both axes), showing it whole with no scrollbars. NAT_W is the receipt's natural
     // width (600 card + 12px page padding each side); natH is measured from the iframe.
-    const NAT_W = 624;
+    // The itemized doc is wider (640 card + 20px page padding each side).
+    const NAT_W = isItemized ? 680 : 624;
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const fitRef = useRef<HTMLDivElement>(null);
     const [natH, setNatH] = useState(560);
@@ -147,14 +199,44 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         : 1;
 
     const emailValid = EMAIL_RE.test(customerEmail.trim());
-    const canSend = emailValid && selectedProjects.length > 0 && !sending;
+    const activeNo = isItemized ? revNo : receiptNo;
+    const defaultSubject = isItemized
+        ? `Receipt from Revil${customerSubtitle.trim() ? ` - ${customerSubtitle.trim()}` : ''}`
+        : `Receipt ${receiptNo} from Tem Revil`;
+    // Itemized receipts stand on their line items; project ones need a project picked.
+    const hasContent = isItemized ? itemizedData.lines.length > 0 : selectedProjects.length > 0;
+    const canSend = emailValid && hasContent && !sending;
+
+    // History log needs one headline figure: for a multi-currency itemized receipt that's
+    // the total of the first currency used.
+    const itemizedHeadline = useMemo(() => {
+        const first = itemizedData.lines[0];
+        if (!first) return { currency: receiptCurrency as string, total: 0 };
+        return {
+            currency: first.currency as string,
+            total: itemizedData.lines.filter(l => l.currency === first.currency).reduce((s, l) => s + l.amount, 0),
+        };
+    }, [itemizedData, receiptCurrency]);
+
+    /** Append the currently selected projects as line items (keeps anything already typed). */
+    const fillFromProjects = () => {
+        const rows: ItemRow[] = selectedProjects.map(p => ({
+            id: rid(),
+            label: p.name,
+            caption: p.client || '',
+            amount: String(p.monthly ? (p.priceAmount || 0) : projectContractTotal(p)),
+            currency: p.priceCurrency,
+        }));
+        if (!rows.length) return;
+        setItems(prev => [...prev.filter(r => r.label.trim() || r.amount.trim()), ...rows]);
+    };
 
     const download = () => {
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${receiptNo}.html`;
+        a.download = `${activeNo}.html`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -162,7 +244,10 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     };
 
     const send = async () => {
-        if (!selectedProjects.length) { onToast?.('Pick at least one project first.', 'warn'); return; }
+        if (!hasContent) {
+            onToast?.(isItemized ? 'Add at least one line item first.' : 'Pick at least one project first.', 'warn');
+            return;
+        }
         if (!emailValid) { onToast?.('Enter a valid customer email.', 'warn'); return; }
         setSending(true);
         try {
@@ -170,14 +255,14 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             const fn = httpsCallable(getFunctions(app, 'us-central1'), 'sendReceipt');
             await fn({
                 to: customerEmail.trim(),
-                subject: `Receipt ${receiptNo} from Tem Revil`,
+                subject: subject.trim() || defaultSubject,
                 html,
                 // Metadata for the sent-receipts history log (the function stores it).
                 meta: {
-                    receiptNo,
-                    currency: receiptCurrency,
-                    total: data.totals.price,
-                    balance: data.totals.balance,
+                    receiptNo: activeNo,
+                    currency: isItemized ? itemizedHeadline.currency : receiptCurrency,
+                    total: isItemized ? itemizedHeadline.total : data.totals.price,
+                    balance: isItemized ? 0 : data.totals.balance,
                     projectIds: selectedProjects.map(p => p.id),
                     projectNames: selectedProjects.map(p => p.name),
                 },
@@ -220,7 +305,21 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                     {/* Controls */}
                     <div className="p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar border-b md:border-b-0 md:border-r border-[var(--section-border)] md:w-[400px] md:shrink-0">
                         <div>
-                            <span className={labelCls}>Projects on this receipt</span>
+                            <label className={labelCls}>Template</label>
+                            <Select
+                                value={template}
+                                onChange={v => setTemplate(v as Template)}
+                                isDark={isDark}
+                                options={[
+                                    { value: 'projects', label: 'Projects summary (light)' },
+                                    { value: 'itemized', label: 'Itemized work log (dark)' },
+                                ]}
+                                aria-label="Receipt template"
+                            />
+                        </div>
+
+                        <div>
+                            <span className={labelCls}>{isItemized ? 'Projects (optional - autofill & history)' : 'Projects on this receipt'}</span>
                             <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto custom-scrollbar pr-1">
                                 {projects.length === 0 && <p className="text-sm text-sec">No projects yet.</p>}
                                 {projects.map(p => {
@@ -252,8 +351,17 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                 <input className={inputCls} value={customerName} onChange={e => { touched.current.name = true; setCustomerName(e.target.value); }} placeholder="Person or company" />
                             </div>
                             <div>
-                                <label className={labelCls}>Currency</label>
-                                <Select value={receiptCurrency} onChange={v => { touched.current.currency = true; setReceiptCurrency(v as Currency); }} isDark={isDark} options={CURRENCIES.map(c => ({ value: c, label: c }))} aria-label="Receipt currency" />
+                                {isItemized ? (
+                                    <>
+                                        <label className={labelCls}>Under the name</label>
+                                        <input className={inputCls} value={customerSubtitle} onChange={e => setCustomerSubtitle(e.target.value)} placeholder="RooleTask project" />
+                                    </>
+                                ) : (
+                                    <>
+                                        <label className={labelCls}>Currency</label>
+                                        <Select value={receiptCurrency} onChange={v => { touched.current.currency = true; setReceiptCurrency(v as Currency); }} isDark={isDark} options={CURRENCIES.map(c => ({ value: c, label: c }))} aria-label="Receipt currency" />
+                                    </>
+                                )}
                             </div>
                         </div>
 
@@ -267,12 +375,115 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                             <DatePicker value={issueDate} onChange={setIssueDate} isDark={isDark} />
                         </div>
 
+                        {isItemized && (
+                            <>
+                                <div>
+                                    <label className={labelCls}>Email subject</label>
+                                    <input className={inputCls} value={subject} onChange={e => setSubject(e.target.value)} placeholder={defaultSubject} />
+                                </div>
+
+                                {/* Work log - the dated "what I shipped" section */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className={labelCls} style={{ margin: 0 }}>Work log</span>
+                                        <button type="button" onClick={() => setWorkLog(w => [...w, emptyLog()])} className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-500 hover:text-blue-400 transition-colors">
+                                            <Plus size={12} /> Add
+                                        </button>
+                                    </div>
+                                    <input className={`${inputCls} mb-2`} value={workLogTitle} onChange={e => setWorkLogTitle(e.target.value)} placeholder="Development fixes - July 2026" />
+                                    <div className="flex flex-col gap-2">
+                                        {workLog.map(w => (
+                                            <div key={w.id} className="flex gap-2 items-start">
+                                                <input
+                                                    className={`${inputCls} w-[76px] shrink-0`}
+                                                    value={w.date}
+                                                    onChange={e => setWorkLog(rows => rows.map(r => r.id === w.id ? { ...r, date: e.target.value } : r))}
+                                                    placeholder="2 Jul"
+                                                />
+                                                <textarea
+                                                    className={`${inputCls} flex-1 min-h-[38px] resize-y`}
+                                                    value={w.text}
+                                                    onChange={e => setWorkLog(rows => rows.map(r => r.id === w.id ? { ...r, text: e.target.value } : r))}
+                                                    placeholder="What you shipped"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setWorkLog(rows => rows.length > 1 ? rows.filter(r => r.id !== w.id) : [emptyLog()])}
+                                                    className="p-2 rounded-lg text-sec hover:text-red-500 transition-colors shrink-0"
+                                                    aria-label="Remove entry"
+                                                ><Trash2 size={14} /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Line items - each carries its own currency */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className={labelCls} style={{ margin: 0 }}>Line items</span>
+                                        <div className="flex items-center gap-3">
+                                            {selectedProjects.length > 0 && (
+                                                <button type="button" onClick={fillFromProjects} className="text-[11px] font-bold text-sec hover:text-primary transition-colors">Use selected</button>
+                                            )}
+                                            <button type="button" onClick={() => setItems(i => [...i, emptyItem(receiptCurrency)])} className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-500 hover:text-blue-400 transition-colors">
+                                                <Plus size={12} /> Add
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col gap-2.5">
+                                        {items.map(it => (
+                                            <div key={it.id} className="rounded-xl border border-[var(--section-border)] p-2.5 flex flex-col gap-2">
+                                                <div className="flex gap-2 items-center">
+                                                    <input
+                                                        className={`${inputCls} flex-1`}
+                                                        value={it.label}
+                                                        onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, label: e.target.value } : r))}
+                                                        placeholder="Development - security fixes"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setItems(rows => rows.length > 1 ? rows.filter(r => r.id !== it.id) : [emptyItem(receiptCurrency)])}
+                                                        className="p-2 rounded-lg text-sec hover:text-red-500 transition-colors shrink-0"
+                                                        aria-label="Remove item"
+                                                    ><Trash2 size={14} /></button>
+                                                </div>
+                                                <input
+                                                    className={inputCls}
+                                                    value={it.caption}
+                                                    onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, caption: e.target.value } : r))}
+                                                    placeholder="RooleTask - July 2026 (optional)"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        className={`${inputCls} flex-1`}
+                                                        inputMode="decimal"
+                                                        value={it.amount}
+                                                        onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, amount: e.target.value } : r))}
+                                                        placeholder="3000"
+                                                    />
+                                                    <div className="w-[96px] shrink-0">
+                                                        <Select
+                                                            value={it.currency}
+                                                            onChange={v => setItems(rows => rows.map(r => r.id === it.id ? { ...r, currency: v as Currency } : r))}
+                                                            isDark={isDark}
+                                                            options={CURRENCIES.map(c => ({ value: c, label: c }))}
+                                                            aria-label="Item currency"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
                         <div>
                             <label className={labelCls}>Note (optional)</label>
                             <textarea className={`${inputCls} min-h-[60px] resize-y`} value={note} onChange={e => setNote(e.target.value)} placeholder="Thanks for your business, payment terms, etc." />
                         </div>
 
-                        <div className="text-[11px] text-sec">Receipt no. <span className="font-mono text-primary">{receiptNo}</span></div>
+                        <div className="text-[11px] text-sec">Receipt no. <span className="font-mono text-primary">{activeNo}</span></div>
                     </div>
 
                     {/* Preview - scaled to fit the panel, no scrollbars */}
@@ -284,7 +495,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                         <div ref={fitRef} className="flex-1 min-h-0 overflow-hidden flex items-center justify-center">
                             {/* The border wraps the receipt itself (sized to the scaled doc), so the
                                 frame IS the receipt and leftover space stays neutral - no empty panel. */}
-                            <div className="overflow-hidden rounded-xl border border-[var(--section-border)] bg-white shadow-sm" style={{ width: NAT_W * scale, height: natH * scale }}>
+                            <div className="overflow-hidden rounded-xl border border-[var(--section-border)] shadow-sm" style={{ width: NAT_W * scale, height: natH * scale, background: isItemized ? '#0a0a0a' : '#fff' }}>
                                 <iframe
                                     ref={iframeRef}
                                     title="Receipt preview"
