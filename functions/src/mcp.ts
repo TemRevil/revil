@@ -524,6 +524,54 @@ const SERVER_TIMESTAMP = () => admin.firestore.FieldValue.serverTimestamp();
 const ok = (obj: unknown): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(obj, null, 2) }] });
 const fail = (msg: string): CallToolResult => ({ content: [{ type: "text", text: msg }], isError: true });
 
+// ── Audit log ──────────────────────────────────────────────────────
+// Every tool call is recorded to the top-level `McpAudit` collection (admin-only via
+// the catch-all rule; the token-locked `MCP/` collection is intentionally left alone).
+// This is the trail the dashboard shows: what the connected AI actually did, and when.
+
+/** The short, PII-light text of a failed tool result. */
+function resultError(r: CallToolResult): string | undefined {
+  const c = r?.content?.[0] as { text?: string } | undefined;
+  return c?.text ? String(c.text).slice(0, 300) : undefined;
+}
+
+/** Compact, redacted snapshot of a tool's args (never full HTML/long strings, but enough
+ *  to see what happened). Long strings are truncated; arrays/objects are collapsed. */
+function summarizeArgs(args: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!args || typeof args !== "object") return out;
+  for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === "string") out[k] = v.length > 80 ? `${v.slice(0, 80)}…` : v;
+    else if (typeof v === "number" || typeof v === "boolean") out[k] = v;
+    else if (Array.isArray(v)) out[k] = `[${v.length}]`;
+    else out[k] = "{…}";
+  }
+  return out;
+}
+
+/** Append one entry to the MCP audit log. Best-effort - never throws into a tool call. */
+async function logAudit(e: {
+  tool: string; write: boolean; ok: boolean; error?: string;
+  args: unknown; sub?: string; iat?: number;
+}): Promise<void> {
+  try {
+    const id = `${now().toString(36)}_${rand(4)}`;
+    await db().doc(`McpAudit/${id}`).set({
+      tool: e.tool,
+      write: e.write,
+      ok: e.ok,
+      ...(e.error ? { error: e.error.slice(0, 300) } : {}),
+      args: summarizeArgs(e.args),
+      at: now(),
+      ...(e.sub ? { sub: e.sub } : {}),
+      ...(e.iat ? { iat: e.iat } : {}),
+    });
+  } catch (err) {
+    console.error("[mcp] audit log write failed:", err);
+  }
+}
+
 /** Pull the `entries` map off a treasury doc into a typed array. */
 function readEntries<T extends object>(s: DocumentSnapshot): Array<T & { id: string }> {
   const map = (s.data()?.entries ?? {}) as Record<string, T>;
@@ -554,7 +602,34 @@ async function readAvailability(): Promise<{ workingDays: number[]; hours: numbe
   return { workingDays, hours };
 }
 
-function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): void {
+function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, session: { sub?: string; iat?: number }): void {
+  // Patch registerTool once so EVERY tool registered below is wrapped with audit logging,
+  // without editing each registration. The clock ping (get_current_time) is skipped - it
+  // touches nothing and is called constantly. Failures in a tool are logged, then rethrown.
+  const origRegister = server.registerTool.bind(server) as (
+    name: string, toolCfg: { annotations?: { readOnlyHint?: boolean } },
+    handler: (a: unknown, x: unknown) => Promise<CallToolResult>,
+  ) => unknown;
+  (server as unknown as { registerTool: unknown }).registerTool = (
+    name: string,
+    toolCfg: { annotations?: { readOnlyHint?: boolean } },
+    handler: (a: unknown, x: unknown) => Promise<CallToolResult>,
+  ): unknown => {
+    const write = !toolCfg?.annotations?.readOnlyHint;
+    const skip = name === "get_current_time";
+    const wrapped = async (a: unknown, x: unknown): Promise<CallToolResult> => {
+      try {
+        const res = await handler(a, x);
+        if (!skip) await logAudit({ tool: name, write, ok: !res?.isError, error: res?.isError ? resultError(res) : undefined, args: a, sub: session.sub, iat: session.iat });
+        return res;
+      } catch (err) {
+        if (!skip) await logAudit({ tool: name, write, ok: false, error: (err as Error)?.message || String(err), args: a, sub: session.sub, iat: session.iat });
+        throw err;
+      }
+    };
+    return origRegister(name, toolCfg, wrapped);
+  };
+
   // Resolve the date to stamp on a treasury entry. The client (an LLM) has no reliable
   // clock and tends to reuse a stale "today", so the SERVER is the source of truth:
   //  - omitted  -> stamp the server's own current local date (time.date), never the
@@ -1476,7 +1551,7 @@ async function handleMcp(req: Request, res: Response): Promise<void> {
     },
     { instructions: buildInstructions(time, cfg) },
   );
-  registerTools(server, cfg, time);
+  registerTools(server, cfg, time, { sub: tokenInfo.sub, iat: tokenInfo.iat });
 
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => { transport.close(); server.close(); });

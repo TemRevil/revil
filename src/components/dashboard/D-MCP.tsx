@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Plug, Copy, Check, ShieldAlert, RotateCcw, ShieldCheck, Power, Sparkles, Bot } from 'lucide-react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
+import { Plug, Copy, Check, ShieldAlert, RotateCcw, ShieldCheck, Power, Sparkles, Bot, Activity, Pencil, Eye, X } from 'lucide-react';
+import { doc, onSnapshot, setDoc, collection, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
@@ -15,6 +15,26 @@ interface McpConfig {
     revokedBefore?: number;
 }
 
+interface AuditEntry {
+    id: string;
+    tool: string;
+    write: boolean;
+    ok: boolean;
+    error?: string;
+    args?: Record<string, unknown>;
+    at: number;
+    iat?: number;
+}
+
+/** "3m ago" / "2h ago" / date for older. */
+function timeAgo(ms: number): string {
+    const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
 // The MCP server's vanity URL - shown by default so the field is never empty.
 const DEFAULT_URL = 'https://mcp.temrevil.com';
 
@@ -26,6 +46,8 @@ const DEFAULT_URL = 'https://mcp.temrevil.com';
 const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
     const [cfg, setCfg] = useState<McpConfig>({ enabled: true, writesEnabled: false, assistantEnabled: true, url: '' });
     const [copied, setCopied] = useState(false);
+    const [audit, setAudit] = useState<AuditEntry[]>([]);
+    const [writesOnly, setWritesOnly] = useState(false);
     const { alert, showAlert, hideAlert } = useSafeAlert();
 
     useEffect(() => {
@@ -42,6 +64,20 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
         }, () => { /* admin-only; ignore */ });
         return () => unsub();
     }, []);
+
+    // Live audit trail of every tool call the connected AI made (newest first).
+    useEffect(() => {
+        const q = query(collection(db, 'McpAudit'), orderBy('at', 'desc'), limit(120));
+        const unsub = onSnapshot(q, (snap) => {
+            setAudit(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AuditEntry, 'id'>) })));
+        }, () => { /* admin-only; ignore */ });
+        return () => unsub();
+    }, []);
+
+    const visibleAudit = useMemo(
+        () => (writesOnly ? audit.filter((a) => a.write) : audit),
+        [audit, writesOnly],
+    );
 
     const effectiveUrl = cfg.url || DEFAULT_URL;
 
@@ -177,6 +213,85 @@ const DMcpPanel = ({ isDark }: { isDark: boolean }) => {
                     <RotateCcw size={16} />
                     Revoke
                 </button>
+            </div>
+
+            {/* Activity log - every tool call the connected AI made. */}
+            <div className="flex flex-col gap-4 pt-6" style={{ borderTop: '1px solid var(--section-border)' }}>
+                <div className="flex items-start gap-4 min-w-0">
+                    <span className="grid place-items-center shrink-0 rounded-2xl" style={{ width: 48, height: 48, background: 'rgba(51,149,255,0.12)', color: '#3395ff' }}>
+                        <Activity size={24} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                        <h3 className="heading-md text-lg sm:text-xl m-0">Activity log</h3>
+                        <p className="text-muted text-xs sm:text-sm leading-relaxed mt-1 max-w-2xl">
+                            Every tool call the connected AI makes, newest first - what it read, what it changed, and whether it worked. The clock check is skipped.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setWritesOnly((v) => !v)}
+                        className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                        style={{ border: '1px solid var(--section-border)', color: writesOnly ? '#3395ff' : 'var(--text-muted)' }}
+                    >
+                        {writesOnly ? <Pencil size={14} /> : <Activity size={14} />}
+                        {writesOnly ? 'Writes only' : 'All calls'}
+                    </button>
+                </div>
+
+                <div className="flex flex-col gap-1.5 max-h-[420px] overflow-y-auto custom-scrollbar pr-1">
+                    {visibleAudit.length === 0 && (
+                        <div className="text-muted text-sm py-6 text-center">
+                            No recorded activity yet. Tool calls will appear here as the AI uses the server.
+                        </div>
+                    )}
+                    {visibleAudit.map((a) => {
+                        const argEntries = Object.entries(a.args || {});
+                        return (
+                            <div key={a.id} className="rounded-xl px-3 py-2.5" style={cardStyle}>
+                                <div className="flex items-start gap-3 min-w-0 w-full">
+                                    <span
+                                        className="grid place-items-center shrink-0 rounded-lg mt-0.5"
+                                        style={{
+                                            width: 30, height: 30,
+                                            background: a.write ? 'rgba(245,158,11,0.14)' : 'rgba(148,163,184,0.14)',
+                                            color: a.write ? '#f59e0b' : 'var(--text-muted)',
+                                        }}
+                                        title={a.write ? 'Write' : 'Read'}
+                                    >
+                                        {a.write ? <Pencil size={14} /> : <Eye size={14} />}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-sm font-bold text-primary font-mono">{a.tool}</span>
+                                            <span
+                                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                                                style={a.ok
+                                                    ? { background: 'rgba(16,185,129,0.14)', color: '#10b981' }
+                                                    : { background: 'rgba(var(--danger-rgb),0.14)', color: 'var(--danger)' }}
+                                            >
+                                                {a.ok ? <Check size={10} /> : <X size={10} />}{a.ok ? 'ok' : 'error'}
+                                            </span>
+                                            <span className="text-muted text-[11px] ml-auto shrink-0">{timeAgo(a.at)}</span>
+                                        </div>
+                                        {argEntries.length > 0 && (
+                                            <div className="text-muted text-xs mt-1 leading-relaxed break-words">
+                                                {argEntries.map(([k, v], i) => (
+                                                    <span key={k}>
+                                                        {i > 0 && <span className="opacity-40"> · </span>}
+                                                        <span className="opacity-60">{k}:</span> {String(v)}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {!a.ok && a.error && (
+                                            <div className="text-xs mt-1 break-words" style={{ color: 'var(--danger)' }}>{a.error}</div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
 
             {/* Dashboard AI assistant (Spark) - the in-dashboard copilot orb. This is a
