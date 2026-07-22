@@ -290,7 +290,7 @@ function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
   return [
     "You are connected to the Revil portfolio's PRIVATE admin MCP. The only user is the portfolio owner (admin); treat every booking, message, project and financial figure as confidential, owner-only data - never expose it to anyone else.",
     "",
-    `CURRENT DATE & TIME: ${t.pretty} (the owner's configured timezone from settings). This is authoritative - use it as "now" instead of your training cutoff. Resolve "today", "yesterday", "this month", etc. from it.`,
+    `CURRENT DATE & TIME (captured the moment you connected): ${t.pretty}, in the owner's configured timezone from settings. Use it instead of your training cutoff - but it AGES as this conversation continues, so re-fetch with get_current_time before acting (see the CLOCK rule below). Never resolve "today"/"yesterday"/"this month" from a value you saw earlier.`,
     "",
     "==================== #1 RULE - THE CLOCK ====================",
     "ALWAYS call get_current_time FIRST, before ANY move - and ALWAYS again right before any create/update that carries a date (add_expense, add_income, add_booking, receipts, etc.). It returns the real current date/time in the owner's configured timezone (settings). That value is the ONLY valid 'now'.",
@@ -574,7 +574,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
 
   // ---- reads ----
   server.registerTool("get_current_time",
-    { title: "Current date & time", description: "The current date and time in the owner's configured timezone. Use this as 'now'.", inputSchema: {}, annotations: { readOnlyHint: true } },
+    { title: "Current date & time", description: "The REAL current date/time in the owner's configured timezone - the authoritative clock. Call this FIRST before any action, and AGAIN right before any write that carries a date. Never reuse a value you saw earlier - it goes stale.", inputSchema: {}, annotations: { readOnlyHint: true } },
     async () => ok({ now: time.pretty, date: time.date, time: time.time, weekday: time.weekday, utcOffset: time.offsetLabel }));
 
   server.registerTool("list_projects",
@@ -705,7 +705,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         "Create a meeting/call booking in the dashboard's Canary inbox. TWO modes: " +
         "WITH a meeting link - pass `meetingLink`, an existing Google Meet / Zoom / etc. URL you already have; " +
         "or WITHOUT a link - omit `meetingLink` (an in-person / phone booking, or a link to be added later). " +
-        "Never invent a link. Pass `date` as YYYY-MM-DD and `time` as 24-hour HH:MM in the owner's timezone (see get_current_time). " +
+        "Never invent a link. ALWAYS call get_current_time first and derive `date` from it - `date` must be today or later (a past date is rejected). " +
+        "Pass `date` as YYYY-MM-DD and `time` as 24-hour HH:MM in the owner's timezone. " +
         "This writes the booking directly to Firestore: it marks the slot busy on the public calendar and emails the admin " +
         "(and the guest, if `email` is given), but it does NOT create a Google Calendar event or auto-generate a Meet link.",
       inputSchema: {
@@ -719,6 +720,11 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       annotations: { destructiveHint: false },
     },
     async (a) => {
+      // Never book a slot in the past - a booking date before the server's current local
+      // date almost always means the client resolved "today" from a stale clock.
+      if (a.date < time.date) {
+        return fail(`That booking date (${a.date}) is in the past - the current date is ${time.date}. Call get_current_time and use today or a future date.`);
+      }
       // Convert to the host-perspective formats the dashboard calendar + the public
       // BookedSlots mirror compare against: Date "DD/MM/YYYY", Time "hh:mm AM/PM".
       const [Y, M, D] = a.date.split("-");
@@ -887,7 +893,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         date: d.date, createdAt: now(),
       };
       await db().doc("Treasury/spendings").set({ entries: { [id]: entry }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
-      return ok({ status: "added", id });
+      // Echo the date actually recorded + the server's clock, so a stale-dated call is visible.
+      return ok({ status: "added", id, date: d.date, serverDate: time.date });
     });
 
   server.registerTool("update_expense",
@@ -900,7 +907,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         amount: z.number().optional(),
         currency: z.enum(["USD", "EGP", "EUR"]).optional(),
         category: z.string().optional(),
-        date: z.string().optional().describe("YYYY-MM-DD"),
+        date: z.string().optional().describe("YYYY-MM-DD - a future date is rejected. Leave out to keep the existing date."),
         recurring: z.boolean().optional(),
         projectId: z.string().optional(),
         accountId: z.string().optional().describe("account it was paid FROM (see list_accounts)"),
@@ -1138,7 +1145,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         { price: 0, paid: 0, balance: 0 },
       );
 
-      const dateStr = a.date || new Date().toISOString().slice(0, 10);
+      // Issue date defaults to the server's own current local date (never a client guess).
+      const dateStr = a.date || time.date;
       const dateLabel = (() => {
         const dt = new Date(`${dateStr}T00:00:00`);
         return isNaN(dt.getTime()) ? dateStr : dt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -1246,7 +1254,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
     },
     async (a) => {
       const to = a.to.trim();
-      const dateStr = a.date || new Date().toISOString().slice(0, 10);
+      // Issue date defaults to the server's own current local date (never a client guess).
+      const dateStr = a.date || time.date;
       const dt = new Date(`${dateStr}T00:00:00`);
       const valid = isNaN(dt.getTime()) ? new Date() : dt;
       const dateLabel = valid.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -1376,7 +1385,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
           );
         }
       }
-      return ok({ status: "added", id, ...(nextPaymentDate ? { nextPaymentDate } : {}) });
+      return ok({ status: "added", id, date, serverDate: time.date, ...(nextPaymentDate ? { nextPaymentDate } : {}) });
     });
 
   server.registerTool("update_income",
@@ -1387,7 +1396,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         id: z.string().min(1).describe("income id (see treasury_overview)"),
         amount: z.number().optional(),
         currency: z.enum(["USD", "EGP", "EUR"]).optional(),
-        date: z.string().optional().describe("YYYY-MM-DD"),
+        date: z.string().optional().describe("YYYY-MM-DD - a future date is rejected. Leave out to keep the existing date."),
         note: z.string().optional(),
         projectId: z.string().optional(),
         accountId: z.string().optional().describe("account it landed IN (see list_accounts)"),
