@@ -290,7 +290,13 @@ function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
   return [
     "You are connected to the Revil portfolio's PRIVATE admin MCP. The only user is the portfolio owner (admin); treat every booking, message, project and financial figure as confidential, owner-only data - never expose it to anyone else.",
     "",
-    `CURRENT DATE & TIME: ${t.pretty}. This is authoritative - use it as "now" instead of your training cutoff. Resolve "today", "yesterday", "this month", etc. from it, and use it for any tool date argument. Call get_current_time to re-check.`,
+    `CURRENT DATE & TIME: ${t.pretty} (the owner's configured timezone from settings). This is authoritative - use it as "now" instead of your training cutoff. Resolve "today", "yesterday", "this month", etc. from it.`,
+    "",
+    "==================== #1 RULE - THE CLOCK ====================",
+    "ALWAYS call get_current_time FIRST, before ANY move - and ALWAYS again right before any create/update that carries a date (add_expense, add_income, add_booking, receipts, etc.). It returns the real current date/time in the owner's configured timezone (settings). That value is the ONLY valid 'now'.",
+    "NEVER guess the date, and NEVER reuse a date/time you saw earlier in this conversation - it goes stale as real time passes. Re-check every single time, even if you called get_current_time moments ago.",
+    "For date-carrying writes, prefer to OMIT the `date` argument entirely so the server stamps its own current date; only pass a `date` to deliberately backdate a real past entry.",
+    "============================================================",
     "",
     "Rules:",
     "- Ground answers in the read tools (list_*, treasury_overview, get_current_time) before stating facts or acting.",
@@ -549,6 +555,23 @@ async function readAvailability(): Promise<{ workingDays: number[]; hours: numbe
 }
 
 function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): void {
+  // Resolve the date to stamp on a treasury entry. The client (an LLM) has no reliable
+  // clock and tends to reuse a stale "today", so the SERVER is the source of truth:
+  //  - omitted  -> stamp the server's own current local date (time.date), never the
+  //    client's guess. This is the common "log it for today" path.
+  //  - provided -> only accepted for BACKDATING a real past entry; a future date (past the
+  //    server's today) is rejected as a stale/guessed clock.
+  // `time.date` is the owner-local date computed fresh when this connection opened.
+  // YYYY-MM-DD compares chronologically as plain strings.
+  const resolveEntryDate = (input?: string): { date?: string; error?: string } => {
+    if (!input) return { date: time.date };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return { error: "date must be in YYYY-MM-DD format." };
+    if (input > time.date) {
+      return { error: `That date (${input}) is in the future - the server's current date is ${time.date}. Omit \`date\` to log it for today, or pass a real past date to backdate.` };
+    }
+    return { date: input };
+  };
+
   // ---- reads ----
   server.registerTool("get_current_time",
     { title: "Current date & time", description: "The current date and time in the owner's configured timezone. Use this as 'now'.", inputSchema: {}, annotations: { readOnlyHint: true } },
@@ -835,13 +858,13 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
   server.registerTool("add_expense",
     {
       title: "Add a treasury expense",
-      description: "Log a spending in the treasury. Pass accountId to deduct it from a specific account (see list_accounts).",
+      description: "Log a spending in the treasury. Pass accountId to deduct it from a specific account (see list_accounts). OMIT `date` to log it for today - the server stamps its own current date; only pass `date` to backdate a real past expense (do not compute 'today' yourself).",
       inputSchema: {
         label: z.string().min(1),
         amount: z.number(),
         currency: z.enum(["USD", "EGP", "EUR"]),
         category: z.string().optional(),
-        date: z.string().optional().describe("YYYY-MM-DD (defaults today)"),
+        date: z.string().optional().describe("YYYY-MM-DD - OMIT for today (server-stamped). Pass only to backdate a past entry; a future date is rejected."),
         recurring: z.boolean().optional(),
         projectId: z.string().optional().describe("link to a treasury project id"),
         accountId: z.string().optional().describe("account it was paid FROM (see list_accounts)"),
@@ -851,6 +874,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       annotations: { destructiveHint: false },
     },
     async (a) => {
+      const d = resolveEntryDate(a.date);
+      if (d.error) return fail(d.error);
       const id = `exp_${rand(6)}`;
       const entry = {
         label: a.label, amount: a.amount, currency: a.currency, recurring: !!a.recurring,
@@ -859,7 +884,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         ...(a.accountId && !a.clientPaid ? { accountId: a.accountId } : {}),
         ...(a.clientPaid ? { clientPaid: true } : {}),
         ...(a.notes ? { notes: a.notes } : {}),
-        date: a.date || new Date().toISOString().slice(0, 10), createdAt: now(),
+        date: d.date, createdAt: now(),
       };
       await db().doc("Treasury/spendings").set({ entries: { [id]: entry }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
       return ok({ status: "added", id });
@@ -888,6 +913,10 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       const snap = await db().doc("Treasury/spendings").get();
       const existing = snap.exists ? (snap.data()?.entries || {})[a.id] : null;
       if (!existing) return fail(`No expense with id ${a.id}. Use treasury_overview to find the right id.`);
+      if (a.date !== undefined) {
+        const d = resolveEntryDate(a.date);
+        if (d.error) return fail(d.error);
+      }
       const src = a as Record<string, unknown>;
       const patch: Record<string, unknown> = {};
       for (const k of ["label", "amount", "currency", "category", "date", "recurring", "projectId", "accountId", "clientPaid", "notes"]) {
@@ -1183,10 +1212,12 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       description:
         "Send the DARK itemized Revil receipt: free-form line items that each carry their own " +
         "currency, optional dated sub-entries nested under a line (what shipped for that project), " +
-        "and one total per currency (never converted). Use this instead of send_treasury_receipt " +
-        "when the receipt needs custom wording, a work log, or mixed currencies. Everything is " +
-        "escaped and rendered server-side. ALWAYS confirm the recipient and every amount with the " +
-        "owner before sending - this sends a real email. The owner is bcc'd a copy.",
+        "and one total per currency. When the receipt mixes currencies it also shows an " +
+        "emphasized grand-total row underneath, converting everything into the treasury's base " +
+        "currency (EGP) at current rates - override with grandTotalCurrency. Use this instead of " +
+        "send_treasury_receipt when the receipt needs custom wording, a work log, or mixed " +
+        "currencies. Everything is escaped and rendered server-side. ALWAYS confirm the recipient " +
+        "and every amount with the owner before sending - this sends a real email. The owner is bcc'd a copy.",
       inputSchema: {
         to: z.string().email().describe("recipient email"),
         customerName: z.string().optional().describe("name shown under 'Bill to'"),
@@ -1207,6 +1238,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         subject: z.string().optional().describe("email subject; defaults to 'Receipt from Revil'"),
         date: z.string().optional().describe("issue date YYYY-MM-DD; defaults today"),
         note: z.string().optional().describe("optional note printed above the footer"),
+        grandTotalCurrency: z.enum(["USD", "EGP", "EUR"]).optional()
+          .describe("if set, append ONE emphasized grand total: every line converted into this currency at current rates (in addition to the per-currency totals)"),
         projectIds: z.array(z.string()).optional().describe("treasury project ids, recorded in the receipt history"),
       },
       annotations: { destructiveHint: false },
@@ -1219,6 +1252,30 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       const dateLabel = valid.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
       const receiptNo = revReceiptNumber(valid);
 
+      // Grand total: one converted figure shown as an emphasized row UNDER the per-currency
+      // totals. Appears automatically whenever the receipt mixes currencies (converted into
+      // the treasury's base currency), or is forced/overridden by grandTotalCurrency.
+      let grandTotal: { currency: string; amount: number; note?: string } | undefined;
+      {
+        const sdoc = await db().doc("Treasury/settings").get();
+        const settings = (sdoc.data() || {}) as TreasurySettings;
+        const rates = settings.rates || DEFAULT_RATES;
+        const distinct = [...new Set(a.lines.map((l) => l.currency))];
+        const baseCur = (typeof settings.defaultCurrency === "string" ? settings.defaultCurrency : "EGP");
+        const gc = a.grandTotalCurrency || (distinct.length > 1 ? baseCur : undefined);
+        if (gc) {
+          const amount = round2(a.lines.reduce((s, l) => s + convert(l.amount || 0, l.currency, gc, rates), 0));
+          const others = distinct.filter((c) => c !== gc);
+          grandTotal = {
+            currency: gc,
+            amount,
+            note: others.length
+              ? `Grand total: ${others.join(", ")} converted to ${gc} at current rates.`
+              : `Grand total in ${gc}.`,
+          };
+        }
+      }
+
       const html = buildItemizedReceiptHtml({
         receiptNo,
         dateLabel,
@@ -1227,6 +1284,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
         workLogTitle: a.workLogTitle,
         workLog: a.workLog,
         lines: a.lines,
+        grandTotal,
         note: a.note,
       });
 
@@ -1279,11 +1337,11 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
   server.registerTool("add_income",
     {
       title: "Add treasury income",
-      description: "Log money received. Pass accountId to add it to an account, and monthlyPayment=true if it's a monthly retainer's payment (advances the project's next-due date).",
+      description: "Log money received. Pass accountId to add it to an account, and monthlyPayment=true if it's a monthly retainer's payment (advances the project's next-due date). OMIT `date` to log it for today - the server stamps its own current date; only pass `date` to backdate a real past payment (do not compute 'today' yourself).",
       inputSchema: {
         amount: z.number(),
         currency: z.enum(["USD", "EGP", "EUR"]),
-        date: z.string().optional().describe("YYYY-MM-DD (defaults today)"),
+        date: z.string().optional().describe("YYYY-MM-DD - OMIT for today (server-stamped). Pass only to backdate a past entry; a future date is rejected."),
         note: z.string().optional(),
         projectId: z.string().optional().describe("link to a treasury project id"),
         accountId: z.string().optional().describe("account it landed IN (see list_accounts)"),
@@ -1292,8 +1350,10 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       annotations: { destructiveHint: false },
     },
     async (a) => {
+      const d = resolveEntryDate(a.date);
+      if (d.error) return fail(d.error);
       const id = `inc_${rand(6)}`;
-      const date = a.date || new Date().toISOString().slice(0, 10);
+      const date = d.date as string;
       const entry = {
         amount: a.amount, currency: a.currency, date, createdAt: now(),
         ...(a.note ? { note: a.note } : {}),
@@ -1339,6 +1399,10 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo): 
       const snap = await db().doc("Treasury/income").get();
       const existing = snap.exists ? (snap.data()?.entries || {})[a.id] : null;
       if (!existing) return fail(`No income with id ${a.id}. Use treasury_overview to find the right id.`);
+      if (a.date !== undefined) {
+        const d = resolveEntryDate(a.date);
+        if (d.error) return fail(d.error);
+      }
       const src = a as Record<string, unknown>;
       const patch: Record<string, unknown> = {};
       for (const k of ["amount", "currency", "date", "note", "projectId", "accountId", "monthlyPayment"]) {

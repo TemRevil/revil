@@ -151,6 +151,12 @@ export function buildReceiptHtml(d: ReceiptData): string {
  * Kept in sync with src/lib/receipt.ts - same markup, so a receipt sent by the AI looks
  * identical to one built in the dashboard. Currency is a plain string here.
  */
+
+/**
+ * Itemized (dark) receipt for the Cloud Functions side (used by the MCP send tool).
+ * Kept in sync with src/lib/receipt.ts - same markup, so a receipt sent by the AI looks
+ * identical to one built in the dashboard. Currency is a plain string here.
+ */
 // ── Itemized (dark) receipt ───────────────────────────────────────────
 // The hand-built style used for issued receipts: a dated work log, free-form
 // line items that each carry their own currency, and one total per currency
@@ -183,6 +189,11 @@ export interface ItemizedReceiptData {
     workLogTitle?: string;
     workLog?: WorkLogEntry[];
     lines: ItemizedLine[];
+    /**
+     * Optional single grand total that converts every line into one currency, shown as an
+     * emphasized row under the per-currency totals. Use when the customer wants one figure.
+     */
+    grandTotal?: { currency: string; amount: number; note?: string };
     /** Optional free-text note above the footer. */
     note?: string;
 }
@@ -248,6 +259,18 @@ export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
             <td style="padding:10px 16px;background:${D_CHIP};border-radius:0 10px 10px 0;font-size:16px;font-weight:800;color:#fff;text-align:right;white-space:nowrap">${esc(itemMoney(byCur.get(cur) || 0, cur))}</td>
           </tr>`).join('');
 
+    // Optional emphasized grand total (accent-filled) after the per-currency rows.
+    const g = d.grandTotal;
+    const grandRow = g ? `
+          <tr><td style="height:10px" colspan="2"></td></tr>
+          <tr>
+            <td style="padding:12px 16px;background:${ACCENT};border-radius:10px 0 0 10px;font-size:13px;color:#fff;font-weight:700">Total (${esc(g.currency)})</td>
+            <td style="padding:12px 16px;background:${ACCENT};border-radius:0 10px 10px 0;font-size:18px;font-weight:800;color:#fff;text-align:right;white-space:nowrap">${esc(itemMoney(g.amount, g.currency))}</td>
+          </tr>` : '';
+    const totalsNote = g
+        ? `<div style="font-size:11px;color:#666;margin-top:14px;text-align:center">${esc(g.note || `Grand total converts all amounts to ${g.currency} at current rates.`)}</div>`
+        : (order.length > 1 ? '<div style="font-size:11px;color:#666;margin-top:14px;text-align:center">Amounts are itemized per currency and not converted.</div>' : '');
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -292,9 +315,9 @@ ${itemRows}
 
       <tr><td style="padding:8px 32px 28px">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-${totalRows}
+${totalRows}${grandRow}
         </table>
-        ${order.length > 1 ? '<div style="font-size:11px;color:#666;margin-top:14px;text-align:center">Amounts are itemized per currency and not converted.</div>' : ''}
+        ${totalsNote}
         ${d.note ? `<div style="font-size:12px;color:#999;margin-top:16px;background:${D_CHIP};border:1px solid ${D_BORDER};border-radius:10px;padding:12px 14px;line-height:1.6">${esc(d.note)}</div>` : ''}
       </td></tr>
 
