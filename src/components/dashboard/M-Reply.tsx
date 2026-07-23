@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { X, Reply, Paperclip, Send, FileText, ImageIcon, Video } from 'lucide-react';
+import { X, Check, Reply, Paperclip, Send, FileText, ImageIcon, Video } from 'lucide-react';
 import app from '../../lib/firebase';
 import { buildReplyHtml, DEFAULT_REPLY_SUBJECT } from '../../lib/replyEmail';
 
@@ -210,7 +210,7 @@ export default function MReply({ email, isDark, onClose, onSent, notify }: MRepl
                         <label className="flex items-center gap-2.5 cursor-pointer select-none">
                             <input type="checkbox" checked={includeQuote} onChange={e => setIncludeQuote(e.target.checked)} className="sr-only peer" />
                             <span className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${includeQuote ? 'bg-blue-500 border-blue-500' : isDark ? 'border-white/25' : 'border-black/25'}`}>
-                                {includeQuote && <X size={11} className="text-white rotate-45" strokeWidth={3} />}
+                                {includeQuote && <Check size={11} className="text-white" strokeWidth={3} />}
                             </span>
                             <span className="text-xs text-sec">Quote their original message</span>
                         </label>

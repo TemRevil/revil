@@ -10,6 +10,8 @@
  * (emailTemplate), so a reply looks like every other Revil email.
  */
 
+import { escapeHtml as esc } from './html';
+
 export interface ReplyEmailData {
   /** Recipient's name, used for the greeting. */
   toName?: string;
@@ -22,11 +24,6 @@ export interface ReplyEmailData {
 }
 
 export const DEFAULT_REPLY_SUBJECT = 'Re: your message to Tem Revil';
-
-const esc = (v: unknown): string =>
-  String(v ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 /** Escaped text -> paragraphs (a blank line starts a new <p>, single newline -> <br>). */
 function toParagraphs(text: string): string {

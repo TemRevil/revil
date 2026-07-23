@@ -1,4 +1,5 @@
 import { Currency, formatMoney } from './treasury';
+import { escapeHtml as esc } from './html';
 
 export interface ReceiptLine {
     name: string;
@@ -25,11 +26,6 @@ export interface ReceiptData {
     /** true when lines were converted from mixed currencies into `currency`. */
     converted?: boolean;
 }
-
-const esc = (s: string): string =>
-    String(s ?? '')
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 /** A stable-ish receipt number: RCP-YYYYMMDD-XXXX. */
 export function receiptNumber(d = new Date()): string {
