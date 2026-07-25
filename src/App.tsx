@@ -81,6 +81,11 @@ const modalErrorFallback = (
 
 type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
+// Sections that live together in the phone single-scroll page (view_link is a home variant).
+const PUBLIC_SCROLL_SECTIONS: Section[] = ['home', 'stack', 'projects', 'view_link'];
+// The three that actually stack in the scroll page, in order.
+const MOBILE_STACK: Exclude<Section, 'secret' | 'dashboard' | 'view_link'>[] = ['home', 'stack', 'projects'];
+
 function App() {
   const [currentSection, setCurrentSection] = useState<Section>(() => {
     if (typeof window === 'undefined') return 'home';
@@ -102,6 +107,46 @@ function App() {
   const [previousSection, setPreviousSection] = useState<Section>('home');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextSection, setNextSection] = useState<Section>('home');
+
+  // Phone layout: instead of swapping full-screen sections with a curtain/slide, the
+  // public sections (home, stack, projects) live in ONE smooth-scrolling page. Desktop
+  // keeps the section switcher. `mobileActiveSection` tracks which one is in view so the
+  // navbar highlight follows the scroll (a scroll-spy sets it below).
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileActiveSection, setMobileActiveSection] = useState<Section>('home');
+  const mobileScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  // True when we should show the single-scroll phone page instead of the switcher.
+  const mobileScroll = isMobile && PUBLIC_SCROLL_SECTIONS.includes(currentSection);
+
+  // Scroll-spy: whichever stacked section straddles the viewport's vertical center is the
+  // "active" one, so the navbar highlight follows the scroll (cheap: 3 rects per scroll).
+  useEffect(() => {
+    if (!mobileScroll) return;
+    const root = mobileScrollRef.current;
+    if (!root) return;
+    const compute = () => {
+      const mid = window.innerHeight / 2;
+      let active: Section = 'home';
+      for (const id of MOBILE_STACK) {
+        const el = document.getElementById(`mobsec-${id}`);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.top <= mid && r.bottom >= mid) { active = id; break; }
+      }
+      setMobileActiveSection((prev) => (prev === active ? prev : active));
+    };
+    compute();
+    root.addEventListener('scroll', compute, { passive: true });
+    return () => root.removeEventListener('scroll', compute);
+  }, [mobileScroll]);
 
   // Always-current section, read inside delayed callbacks (e.g. hero anim complete)
   // to avoid stale-closure races where the user navigated away before the timer fired.
@@ -260,6 +305,18 @@ function App() {
     }
   }, [currentSection, isTransitioning]);
 
+  // Navbar taps: on the phone scroll page, a public-section tap smooth-scrolls to it
+  // (no swap/curtain); everything else (secret, dashboard, or desktop) uses the switcher.
+  const handleNavbarNav = useCallback((section: Section) => {
+    if (isMobile && PUBLIC_SCROLL_SECTIONS.includes(section) && PUBLIC_SCROLL_SECTIONS.includes(currentSectionRef.current)) {
+      const target = section === 'view_link' ? 'home' : section;
+      document.getElementById(`mobsec-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setMobileActiveSection(target as Section);
+    } else {
+      navigateTo(section);
+    }
+  }, [isMobile, navigateTo]);
+
   const handleCurtainCovered = useCallback(() => { }, []);
 
   const handleTransitionComplete = useCallback(() => {
@@ -328,7 +385,8 @@ function App() {
   const touchEndY = useRef(0);
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (currentSection === 'dashboard') return;
+    // On the phone scroll page the browser handles scrolling; no swipe-to-swap.
+    if (mobileScroll || currentSection === 'dashboard') return;
     touchStartX.current = e.targetTouches[0].clientX;
     touchStartY.current = e.targetTouches[0].clientY;
     touchEndX.current = e.targetTouches[0].clientX;
@@ -336,13 +394,13 @@ function App() {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (currentSection === 'dashboard') return;
+    if (mobileScroll || currentSection === 'dashboard') return;
     touchEndX.current = e.targetTouches[0].clientX;
     touchEndY.current = e.targetTouches[0].clientY;
   };
 
   const handleTouchEnd = () => {
-    if (isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') {
+    if (mobileScroll || isContactModalOpen || currentSection === 'dashboard' || document.body.style.overflow === 'hidden') {
       touchStartX.current = 0; touchEndX.current = 0; touchStartY.current = 0; touchEndY.current = 0;
       return;
     }
@@ -540,6 +598,28 @@ function App() {
         </div>
       )}
 
+      {mobileScroll ? (
+        // Phone: Home, Stack and Projects in ONE smooth-scrolling page - no curtain, no
+        // slide, no swipe-swap. `isolate` traps each section's internal z-index (e.g. Hero's
+        // z-[5000]) below the fixed navbar (z-50), same job the motion transform did above.
+        <div
+          ref={mobileScrollRef}
+          id="mobile-scroll"
+          className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden custom-scrollbar isolate"
+        >
+          <ErrorBoundary fallback={sectionErrorFallback}>
+            <section id="mobsec-home" data-mobsec="home" className="relative min-h-screen isolate">
+              <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} onOpenContact={openContactModal} />
+            </section>
+            <section id="mobsec-stack" data-mobsec="stack" className="relative min-h-screen isolate">
+              <Suspense fallback={null}><Stack /></Suspense>
+            </section>
+            <section id="mobsec-projects" data-mobsec="projects" className="relative isolate">
+              <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={false} embedded /></Suspense>
+            </section>
+          </ErrorBoundary>
+        </div>
+      ) : (
       <AnimatePresence initial={false} custom={direction} mode="popLayout">
         <motion.div
           key={currentSection}
@@ -568,6 +648,7 @@ function App() {
           </ErrorBoundary>
         </motion.div>
       </AnimatePresence>
+      )}
       {currentSection !== 'secret' && (
         <button
           onClick={() => navigateTo('secret')}
@@ -609,8 +690,8 @@ function App() {
       <LayoutGroup>
         {(currentSection !== 'dashboard') && (
           <Navbar
-            onNavigate={navigateTo}
-            currentSection={currentSection}
+            onNavigate={handleNavbarNav}
+            currentSection={mobileScroll ? mobileActiveSection : currentSection}
             onOpenContact={openContactModal}
             isContactOpen={isContactModalOpen}
             onOpenCV={openCVModal}

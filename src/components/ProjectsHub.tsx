@@ -21,9 +21,12 @@ export interface ProjectsHubHandle {
 
 interface ProjectsHubProps {
     isTransitioning?: boolean;
+    /** Rendered inside the mobile single-scroll page: the sub-nav sticks within this
+     *  section instead of floating over the whole viewport. */
+    embedded?: boolean;
 }
 
-const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransitioning = false }, ref) => {
+const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransitioning = false, embedded = false }, ref) => {
     const [activeTab, setActiveTab] = useState<SubTab>('projects');
     const [direction, setDirection] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
@@ -113,10 +116,13 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
             <AnimatePresence>
                 {showSubnav && (
                     <div
-                        /* Sits ~10px above the navbar's top edge at each breakpoint:
-                           mobile navbar top ≈ 80px → 90px; desktop top ≈ 96px → 106px.
-                           (md: = 768px, matching the navbar's isMobile threshold.) */
-                        className="fixed bottom-[90px] md:bottom-[106px] left-1/2 -translate-x-1/2 z-50"
+                        /* Fixed mode: sits ~10px above the navbar's top edge at each breakpoint
+                           (mobile ≈ 90px, desktop ≈ 106px; md: = 768px = navbar threshold).
+                           Embedded mode (mobile single-scroll page): sticks to the bottom of the
+                           viewport WITHIN the Projects section instead of floating over everything. */
+                        className={embedded
+                            ? 'sticky bottom-[90px] z-40 mx-auto w-fit mb-4'
+                            : 'fixed bottom-[90px] md:bottom-[106px] left-1/2 -translate-x-1/2 z-50'}
                         onMouseEnter={handleSubnavEnter}
                         onMouseLeave={handleSubnavLeave}
                     >
