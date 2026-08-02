@@ -10,15 +10,11 @@
     "lint": "eslint .",
     "sync:projects": "node scripts/sync-projects.mjs"
   },
+  "_overrides_note": "Targeted security pins. Only keep an entry while its KEY version still appears in the tree - once the dependency naturally resolves higher, a stale pin makes `npm ci` fail (lock resolves X, override demands Y). Removed as obsolete: ajv@6.12.6, brace-expansion@2.0.2, minimatch@3.1.2, minimatch@9.0.5, picomatch@4.0.3 - all now resolve at or above their patched targets on their own.",
   "overrides": {
-    "ajv@6.12.6": "6.14.0",
     "brace-expansion@1.1.12": "1.1.13",
-    "brace-expansion@2.0.2": "2.0.3",
     "flatted@3.3.3": "3.4.2",
     "lodash@4.17.23": "4.18.1",
-    "minimatch@3.1.2": "3.1.4",
-    "minimatch@9.0.5": "9.0.7",
-    "picomatch@4.0.3": "4.0.4",
     "protobufjs": "^7.5.8"
   },
   "dependencies": {
