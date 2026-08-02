@@ -22,16 +22,16 @@
     "protobufjs": "^7.5.8"
   },
   "dependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/postcss": "^4.3.3",
     "animejs": "^3.2.2",
-    "firebase": "^12.6.0",
+    "firebase": "^12.17.0",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.555.0",
-    "motion": "^12.24.7",
-    "next": "^16.2.4",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "react-easy-crop": "^5.5.6",
+    "motion": "^12.43.0",
+    "next": "^16.2.12",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-easy-crop": "^6.2.3",
     "react-markdown": "^10.1.0",
     "recharts": "^2.15.4",
     "remark-gfm": "^4.0.1"
@@ -45,15 +45,15 @@
     "not dead"
   ],
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
+    "@eslint/js": "^9.39.5",
     "@types/animejs": "^3.1.4",
-    "@types/react": "^19.2.5",
-    "@types/react-dom": "^19.2.3",
-    "eslint": "^9.39.1",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "globals": "^16.5.0",
-    "postcss": "^8.5.10",
-    "tailwindcss": "^4.1.17",
-    "typescript-eslint": "^8.48.1"
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.8.0",
+    "postcss": "^8.5.25",
+    "tailwindcss": "^4.3.3",
+    "typescript-eslint": "^8.65.0"
   }
 }
