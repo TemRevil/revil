@@ -518,9 +518,14 @@ const DTreasury = () => {
 
     // -- staged settings (Save / Discard) -------------------------------------
     // Keep the draft in sync with the committed config UNLESS the user is editing.
-    useEffect(() => {
+    // Adjusted during render (React's documented pattern) rather than in an effect, so a
+    // freshly-synced config never renders one frame behind. `settingsDirty` still guards
+    // it, so an in-progress edit is never clobbered by an incoming snapshot.
+    const [syncedConfig, setSyncedConfig] = useState(data.config);
+    if (syncedConfig !== data.config) {
+        setSyncedConfig(data.config);
         if (!settingsDirty) setDraft(data.config);
-    }, [data.config, settingsDirty]);
+    }
 
     const stageConfig = (patch: Partial<TreasuryData['config']>) => { setDraft(d => ({ ...d, ...patch })); setSettingsDirty(true); };
     const saveSettings = async () => {

@@ -126,26 +126,55 @@ function App() {
   // True when we should show the single-scroll phone page instead of the switcher.
   const mobileScroll = isMobile && PUBLIC_SCROLL_SECTIONS.includes(currentSection);
 
-  // Scroll-spy: whichever stacked section straddles the viewport's vertical center is the
-  // "active" one, so the navbar highlight follows the scroll (cheap: 3 rects per scroll).
+  // One scroll pass drives BOTH concerns for the phone page (3 rects per scroll, passive):
+  //   1. Lazy-mount - only Hero renders up front; Stack and Projects mount once they come
+  //      within MOUNT_AHEAD px of the viewport, then stay mounted. Each <section> keeps a
+  //      min-h-screen placeholder, so scroll height is identical mounted or not.
+  //   2. Scroll-spy - whichever section straddles the viewport's vertical center is the
+  //      "active" one, so the navbar highlight follows the scroll.
+  // Deliberately geometry-based rather than IntersectionObserver: one mechanism instead of
+  // two, and it stays correct when the page isn't compositing (IO callbacks don't fire then).
+  const [mountedSections, setMountedSections] = useState<Set<Section>>(() => new Set<Section>(['home']));
   useEffect(() => {
     if (!mobileScroll) return;
     const root = mobileScrollRef.current;
     if (!root) return;
+    const MOUNT_AHEAD = 600;
     const compute = () => {
-      const mid = window.innerHeight / 2;
+      const vh = window.innerHeight;
+      const mid = vh / 2;
       let active: Section = 'home';
+      const reached: Section[] = [];
       for (const id of MOBILE_STACK) {
         const el = document.getElementById(`mobsec-${id}`);
         if (!el) continue;
         const r = el.getBoundingClientRect();
-        if (r.top <= mid && r.bottom >= mid) { active = id; break; }
+        if (r.top <= mid && r.bottom >= mid) active = id;
+        if (r.top <= vh + MOUNT_AHEAD && r.bottom >= -MOUNT_AHEAD) reached.push(id);
       }
-      setMobileActiveSection((prev) => (prev === active ? prev : active));
+      setMobileActiveSection(prev => (prev === active ? prev : active));
+      setMountedSections(prev => {
+        const missing = reached.filter(id => !prev.has(id));
+        if (!missing.length) return prev;
+        const next = new Set(prev);
+        missing.forEach(id => next.add(id));
+        return next;
+      });
     };
     compute();
     root.addEventListener('scroll', compute, { passive: true });
-    return () => root.removeEventListener('scroll', compute);
+    window.addEventListener('resize', compute);
+    // Safety net: once the first paint has settled, mount the rest regardless of scrolling.
+    // Lazy-mounting exists to keep the FIRST render cheap, not to gate content forever - so
+    // a section can never end up permanently blank if a scroll event is missed.
+    const settle = setTimeout(() => setMountedSections(prev => (
+      prev.size === MOBILE_STACK.length ? prev : new Set<Section>(MOBILE_STACK)
+    )), 2000);
+    return () => {
+      clearTimeout(settle);
+      root.removeEventListener('scroll', compute);
+      window.removeEventListener('resize', compute);
+    };
   }, [mobileScroll]);
 
   // Always-current section, read inside delayed callbacks (e.g. hero anim complete)
@@ -612,10 +641,12 @@ function App() {
               <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} onOpenContact={openContactModal} />
             </section>
             <section id="mobsec-stack" data-mobsec="stack" className="relative min-h-screen isolate">
-              <Suspense fallback={null}><Stack /></Suspense>
+              {mountedSections.has('stack') && <Suspense fallback={null}><Stack /></Suspense>}
             </section>
-            <section id="mobsec-projects" data-mobsec="projects" className="relative isolate">
-              <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={false} embedded /></Suspense>
+            <section id="mobsec-projects" data-mobsec="projects" className="relative min-h-screen isolate">
+              {mountedSections.has('projects') && (
+                <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={false} embedded /></Suspense>
+              )}
             </section>
           </ErrorBoundary>
         </div>

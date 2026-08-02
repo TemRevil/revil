@@ -230,12 +230,18 @@ export default function DSettings() {
         return bytes;
     };
 
+    // Clear the measured values the moment the preview changes (including to none), during
+    // render rather than in the effect below - that way stale numbers from the previous
+    // image never show while the new one is being measured asynchronously.
+    const [measuredHeroPreview, setMeasuredHeroPreview] = useState(heroImagePreview);
+    if (measuredHeroPreview !== heroImagePreview) {
+        setMeasuredHeroPreview(heroImagePreview);
+        setHeroImageResolution('');
+        setHeroImageSize('');
+    }
+
     useEffect(() => {
-        if (!heroImagePreview) {
-            setHeroImageResolution('');
-            setHeroImageSize('');
-            return;
-        }
+        if (!heroImagePreview) return;
 
         // resolution check (try without crossOrigin first to avoid noise)
         const checkRes = async () => {
@@ -296,13 +302,16 @@ export default function DSettings() {
         };
     }, [heroImagePreview, heroImageFile]);
 
-    // Dark hero: resolution & size display
+    // Dark hero: resolution & size display (cleared during render, measured in the effect)
+    const [measuredHeroPreviewDark, setMeasuredHeroPreviewDark] = useState(heroImagePreviewDark);
+    if (measuredHeroPreviewDark !== heroImagePreviewDark) {
+        setMeasuredHeroPreviewDark(heroImagePreviewDark);
+        setHeroImageResolutionDark('');
+        setHeroImageSizeDark('');
+    }
+
     useEffect(() => {
-        if (!heroImagePreviewDark) {
-            setHeroImageResolutionDark('');
-            setHeroImageSizeDark('');
-            return;
-        }
+        if (!heroImagePreviewDark) return;
 
         const checkRes = async () => {
             try {
@@ -353,13 +362,16 @@ export default function DSettings() {
         })();
     }, [heroImagePreviewDark, heroImageFileDark]);
 
-    // profile image resolution & size (best-effort size like hero)
+    // profile image resolution & size (cleared during render, measured in the effect)
+    const [measuredProfilePreview, setMeasuredProfilePreview] = useState(profileImagePreview);
+    if (measuredProfilePreview !== profileImagePreview) {
+        setMeasuredProfilePreview(profileImagePreview);
+        setProfileImageResolution('');
+        setProfileImageSize('');
+    }
+
     useEffect(() => {
-        if (!profileImagePreview) {
-            setProfileImageResolution('');
-            setProfileImageSize('');
-            return;
-        }
+        if (!profileImagePreview) return;
 
         // resolution check (try without crossOrigin first to avoid noise)
         const checkRes = async () => {

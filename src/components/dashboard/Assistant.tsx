@@ -208,8 +208,19 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [quiz]);
 
-    // Stop voice when the panel closes or the component unmounts.
-    useEffect(() => { if (!open) { convoRef.current = false; setConvoMode(false); stopVoice(); } }, [open]);
+    // Closing the panel leaves conversation mode. The state flip happens during render so it
+    // lands in the same pass as the close; the imperative teardown (refs + speech synthesis)
+    // stays in the effect below, where side effects belong.
+    const [prevOpen, setPrevOpen] = useState(open);
+    if (prevOpen !== open) {
+        setPrevOpen(open);
+        if (!open) setConvoMode(false);
+    }
+    // Stop voice when the panel closes or the component unmounts. stopVoice() is imperative
+    // teardown (aborts speech recognition + synthesis) that also clears `listening` - correct
+    // to run from an effect, so the state write inside it is expected here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    useEffect(() => { if (!open) { convoRef.current = false; stopVoice(); } }, [open]);
     useEffect(() => () => { convoRef.current = false; stopVoice(); }, []);
 
     // Spark's persistent memory (Firestore: Spark/Memory). Loaded once authed.
@@ -436,6 +447,10 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
     }, [onNavigate]);
 
     // ── chat loop ───────────────────────────────────────────────────────────
+    /* `send` only ever runs from an event handler (the send button / Enter key), never during
+       render, so Date.now() and speechSynthesis calls inside it are fine. The compiler rule
+       can't prove the call site from the declaration, hence the scoped exemption. */
+    /* eslint-disable react-hooks/purity */
     const send = async (override?: string) => {
         const text = (override ?? input).trim();
         if (!text || busy) return;
@@ -510,6 +525,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
             else if (convoRef.current && !speakingRef.current) setTimeout(startListening, 250);
         }
     };
+    /* eslint-enable react-hooks/purity */
 
     // Resolve an ask_user quiz: echo the choice as a user bubble, then continue.
     const answerQuiz = (val: string) => {

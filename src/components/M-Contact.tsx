@@ -177,27 +177,37 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Auto-clear success message when date changes
-  useEffect(() => {
-    // Clear any previous booking success when date changes
+  // Resets below are adjusted during render (React's documented pattern) rather than in
+  // effects, so the stale value never paints for a frame before being cleared. Each guard
+  // compares against the previous value, matching the old effect deps exactly.
+
+  // New day: drop the previous booking success, reset the details column to the top, and
+  // clear the picked time - a slot chosen on one day may be booked/passed on another
+  // (which would otherwise submit an invalid slot).
+  const [prevDate, setPrevDate] = useState(selectedDate);
+  if (prevDate !== selectedDate) {
+    setPrevDate(selectedDate);
     setBookingSuccess(null);
-    setAgendaScrolled(false); // new day → details column starts at the top again
-  }, [selectedDate]);
-
-  // Switching tabs resets the frosted-header state (each panel starts scrolled to top).
-  useEffect(() => {
     setAgendaScrolled(false);
-    setMessageScrolled(false);
-  }, [activeTab]);
-
-  // Clear the selected time whenever the date OR the timezone changes.
-  // Otherwise a slot picked on one day stays "selected" on a day where it's
-  // booked/passed (→ books an invalid slot), and after a timezone switch the
-  // stored time string no longer matches any visible button but is still submitted.
-  useEffect(() => {
     setSelectedTime(null);
     setIsCustomTime(false);
-  }, [selectedDate, userTimezone]);
+  }
+
+  // Timezone switch: the stored time string no longer matches any visible button.
+  const [prevTimezone, setPrevTimezone] = useState(userTimezone);
+  if (prevTimezone !== userTimezone) {
+    setPrevTimezone(userTimezone);
+    setSelectedTime(null);
+    setIsCustomTime(false);
+  }
+
+  // Switching tabs resets the frosted-header state (each panel starts scrolled to top).
+  const [prevTab, setPrevTab] = useState(activeTab);
+  if (prevTab !== activeTab) {
+    setPrevTab(activeTab);
+    setAgendaScrolled(false);
+    setMessageScrolled(false);
+  }
 
   // Calendar Helpers
   const getDaysInMonth = (date: Date) => {
@@ -298,8 +308,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   const hostOffset = getOffsetFromUTCString(hostTimezoneString);
   const offsetDiff = userTimezone - hostOffset;
 
-  // Convert "09:00 AM" strings to User's Perspective
-  const convertTimeToUser = (hostTimeStr: string) => {
+  // Convert "09:00 AM" strings to User's Perspective. Memoized on offsetDiff (its only
+  // dependency) so the derived slot list below has a stable input.
+  const convertTimeToUser = useCallback((hostTimeStr: string) => {
     const [time, period] = hostTimeStr.split(' ');
     const [h, mins] = time.split(':').map(Number);
     let hour = Number.isNaN(h) ? 0 : h;
@@ -316,7 +327,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     const newPeriod = newH >= 12 ? 'PM' : 'AM';
     const displayH = newH % 12 || 12;
     return `${displayH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')} ${newPeriod}`;
-  };
+  }, [offsetDiff]);
 
   // Convert User's Selected Slot back to Host's Perspective for Saving/Checking
   const convertTimeToHost = (userTimeStr: string) => {
@@ -337,7 +348,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     return `${displayH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')} ${newPeriod}`;
   };
 
-  const convertTimeToUserCb = useCallback(convertTimeToUser, [offsetDiff]);
+  const convertTimeToUserCb = convertTimeToUser;
 
   // Converted slots for the UI
   const convertedSlots = useMemo(() => timeSlots.map(convertTimeToUserCb), [timeSlots, convertTimeToUserCb]);
@@ -404,6 +415,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       }
 
       if (found && searchDate.toDateString() !== selectedDate.toDateString()) {
+        // Must stay in an effect: it reacts to availability + booked slots arriving from
+        // Firestore, and runs once (hasAutoMoved). It cannot be derived during render.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedDate(searchDate);
         setCalendarDate(searchDate);
       }

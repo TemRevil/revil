@@ -28,7 +28,6 @@ const DDeveloper = () => {
     const [reposError, setReposError] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [isSaving, setIsSaving] = useState(false);
-    const [hasChanges, setHasChanges] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
     const { alert, showAlert, hideAlert } = useSafeAlert();
     const reduceMotion = useReducedMotion();
@@ -82,9 +81,11 @@ const DDeveloper = () => {
         return () => { ignore = true; controller.abort(); };
     }, [reloadKey]);
 
-    useEffect(() => {
-        setHasChanges(JSON.stringify(repos) !== JSON.stringify(firestoreRepos));
-    }, [repos, firestoreRepos]);
+    // Purely derived from the two lists - no state/effect needed.
+    const hasChanges = useMemo(
+        () => JSON.stringify(repos) !== JSON.stringify(firestoreRepos),
+        [repos, firestoreRepos],
+    );
 
     const toggleRepo = (name: string) => {
         if (repos.includes(name)) {

@@ -458,6 +458,14 @@ const ProjectMediaImage = ({ src }: { src: string }) => {
 
 const MProjectView = ({ project: initialProject, onClose, onContributorClick }: MProjectViewProps) => {
     const [project, setProject] = useState<Project>(initialProject);
+    // Re-sync local project state when a different project is passed in. Adjusting during
+    // render (React's documented pattern) instead of in an effect avoids the extra render
+    // pass where the modal would briefly show the OLD project's data.
+    const [syncedFrom, setSyncedFrom] = useState<Project>(initialProject);
+    if (syncedFrom !== initialProject) {
+        setSyncedFrom(initialProject);
+        setProject(initialProject);
+    }
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const isDark = useTheme();
     const [isHovered, setIsHovered] = useState(false);
@@ -557,11 +565,6 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                 };
             })
         ];
-
-    // Keep internal project state in sync with incoming props
-    useEffect(() => {
-        setProject(initialProject);
-    }, [initialProject]);
 
     // Fetch Global Tags for Icons/Colors
     useEffect(() => {

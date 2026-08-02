@@ -528,6 +528,10 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
                                                         },
                                                         default: { duration: 0.3, delay: staggerDelay, ease: [0.34, 1.56, 0.64, 1] }
                                                     } : { duration: 0.3, delay: staggerDelay, ease: [0.34, 1.56, 0.64, 1] }}
+                                                    // handleCellHover reads containerRef only when the
+                                                    // mouse actually enters a cell - an event handler,
+                                                    // never during render.
+                                                    // eslint-disable-next-line react-hooks/refs
                                                     onMouseEnter={(e) => handleCellHover(day, e)}
                                                     onMouseLeave={handleCellLeave}
                                                     style={{
