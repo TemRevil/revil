@@ -40,6 +40,11 @@ import {
 // Email (Resend SMTP relay) - mirrors index.ts, so the MCP send-receipt tool can email.
 const smtpUser = defineSecret("SMTP_USER");
 const resendKey = defineSecret("RESEND_API_KEY");
+// Google Apps Script endpoint that actually creates/updates/cancels the Google Calendar
+// event (the deployed `syncMeeting` callable is just an App Check-gated proxy to it).
+// Held as a secret, NOT in the repo: this repo is public, and anyone with the URL could
+// manipulate the owner's calendar.
+const meetingSyncUrl = defineSecret("MEETING_SYNC_URL");
 const HELLO_EMAIL = "hello@temrevil.com";
 function createTransporter(): Transporter {
   return nodemailer.createTransport({
@@ -835,6 +840,57 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
     return `${pad2(h24 % 12 || 12)}:${mm} ${h24 >= 12 ? "PM" : "AM"}`;
   };
 
+  // ── Google Calendar sync ──────────────────────────────────────────
+  // The deployed `syncMeeting` callable enforces App Check, which a server has no way to
+  // satisfy - but it is only a proxy that forwards the payload to a Google Apps Script.
+  // So we post the SAME payloads straight to that script, giving MCP cancels/reschedules
+  // the same calendar behaviour the dashboard has.
+
+  /** Stored "DD/MM/YYYY" + "hh:mm AM/PM" (host wall clock) -> real UTC instant. */
+  const storedToUtc = (storedDate: string, storedTime: string, hostOffset: number): Date | null => {
+    const dm = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(storedDate || ""));
+    const tm = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(String(storedTime || "").trim());
+    if (!dm || !tm) return null;
+    const [, D, M, Y] = dm;
+    let h = parseInt(tm[1], 10);
+    const min = parseInt(tm[2], 10);
+    const period = tm[3].toUpperCase();
+    if (period === "PM" && h !== 12) h += 12;
+    if (period === "AM" && h === 12) h = 0;
+    // UTC = host wall clock - host offset.
+    return new Date(Date.UTC(+Y, +M - 1, +D, h, min) - hostOffset * 3600000);
+  };
+
+  interface CalendarPayload {
+    action: "cancel" | "update" | "create";
+    eventId?: string; name?: string; email?: string; reason?: string;
+    startTime?: string; endTime?: string;
+  }
+
+  /** Post to the Apps Script. Best-effort: never throws into a tool call. */
+  const syncCalendar = async (payload: CalendarPayload): Promise<{ ok: boolean; id?: string; error?: string }> => {
+    const url = (meetingSyncUrl.value() || "").trim();
+    if (!url) return { ok: false, error: "MEETING_SYNC_URL is not configured." };
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(20000),
+      });
+      const data = await res.json().catch(() => ({})) as { status?: string; id?: string; message?: string };
+      if (!res.ok || data?.status === "error") {
+        return { ok: false, error: data?.message || `calendar sync failed (HTTP ${res.status})` };
+      }
+      return { ok: true, id: data?.id };
+    } catch (err) {
+      return { ok: false, error: (err as Error)?.message || "calendar sync failed" };
+    }
+  };
+
+  /** One hour, matching every existing booking path (dashboard + public form). */
+  const MEETING_MS = 3600000;
+
   server.registerTool("update_booking",
     {
       title: "Update / reschedule a booking",
@@ -843,9 +899,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         "pass change, anything omitted is left as-is. Use it to reschedule (pass `date` and/or `time`), fix the " +
         "guest's name/email, edit the reason, or attach a meeting link you already have. " +
         "ALWAYS call get_current_time first and derive `date` from it - a past date is rejected. " +
-        "IMPORTANT: this updates the dashboard booking and the public busy-slot calendar, and re-notifies, but it " +
-        "does NOT move an existing Google Calendar event. If this booking has a Google Calendar event or Meet link, " +
-        "tell the owner to reschedule it from the dashboard so the guest's calendar invite is updated too.",
+        "Rescheduling also MOVES the matching Google Calendar event, so the guest's invite follows. " +
+        "Check `calendar` in the result: if it did not succeed, tell the owner to fix that event from the dashboard.",
       inputSchema: {
         id: z.string().min(1).describe("booking id (see list_bookings)"),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("new date, YYYY-MM-DD in the owner's timezone"),
@@ -876,6 +931,37 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       if (a.meetingLink) patch.MeetingLink = a.meetingLink;
       if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
 
+      // Move the calendar event when the slot (or the guest's details) actually changed.
+      const finalDate = String(patch.Date ?? existing.Date);
+      const finalTime = String(patch.Time ?? existing.Time);
+      const finalEmail = String(patch.Email ?? existing.Email ?? "");
+      const finalName = String(patch.Name ?? existing.Name ?? "");
+      const slotMoved = !!(patch.Date || patch.Time);
+      let calendar = "no calendar event attached to this booking";
+
+      if (existing.GoogleEventId && (slotMoved || patch.Name || patch.Email || patch["What For"])) {
+        const start = storedToUtc(finalDate, finalTime, await timezoneOffset());
+        if (!start) {
+          calendar = "Could not read the booking's stored date/time, so the calendar event was left alone.";
+        } else {
+          const r = await syncCalendar({
+            action: "update",
+            eventId: existing.GoogleEventId,
+            name: finalName,
+            email: finalEmail,
+            reason: String(patch["What For"] ?? existing["What For"] ?? ""),
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + MEETING_MS).toISOString(),
+          });
+          calendar = r.ok
+            ? "Google Calendar event updated - the guest's invite now shows the new details."
+            : `Google Calendar event NOT updated (${r.error}). Tell the owner to fix it from the dashboard.`;
+        }
+      } else if (slotMoved && existing.MeetingLink) {
+        // A booking with a link but no stored event id (e.g. added over MCP): nothing to move.
+        calendar = "This booking has a meeting link but no Google Calendar event id, so nothing was moved. Tell the owner to check it in the dashboard.";
+      }
+
       await db().doc("Settings/Canary").set(
         { Meetings: { [a.id]: patch }, lastMeetingWrite: SERVER_TIMESTAMP() },
         { merge: true },
@@ -884,12 +970,9 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         status: "updated",
         id: a.id,
         changed: Object.keys(patch),
-        date: patch.Date ?? existing.Date,
-        time: patch.Time ?? existing.Time,
-        // Surfaced so the model can warn the owner rather than silently leaving a stale invite.
-        googleCalendarEvent: existing.GoogleEventId || existing.MeetingLink
-          ? "This booking has a calendar event / meet link - it was NOT moved. Reschedule it from the dashboard so the guest's invite updates."
-          : "none attached",
+        date: finalDate,
+        time: finalTime,
+        calendar,
       });
     });
 
@@ -897,11 +980,10 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
     {
       title: "Cancel / delete a booking",
       description:
-        "Cancel a booking by id (get ids from list_bookings), removing it from the dashboard and freeing its slot " +
-        "on the public booking calendar. IRREVERSIBLE - always confirm the exact booking (guest, date, time) with " +
-        "the owner before calling. " +
-        "IMPORTANT: this does NOT delete an existing Google Calendar event. If the booking has one (or a Meet link), " +
-        "tell the owner to cancel it from the dashboard so the guest's calendar invite is withdrawn too.",
+        "Cancel a booking by id (get ids from list_bookings): removes it from the dashboard, frees its slot on the " +
+        "public booking calendar, AND cancels the matching Google Calendar event so the guest's invite is withdrawn. " +
+        "IRREVERSIBLE - always confirm the exact booking (guest, date, time) with the owner before calling. " +
+        "Check `calendar` in the result: if it did not succeed, tell the owner to cancel that event from the dashboard.",
       inputSchema: {
         id: z.string().min(1).describe("booking id (see list_bookings)"),
       },
@@ -913,6 +995,23 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       const existing = meetings[a.id];
       if (!existing) return fail(`No booking with id ${a.id}. Use list_bookings to find the right id.`);
 
+      // Cancel the calendar event FIRST (same order as the dashboard): if it fails we have
+      // not yet destroyed the details needed to find the event again.
+      let calendar = "no calendar event attached to this booking";
+      if (existing.GoogleEventId || existing.Email) {
+        const start = storedToUtc(existing.Date, existing.Time, await timezoneOffset());
+        const r = await syncCalendar({
+          action: "cancel",
+          eventId: existing.GoogleEventId,          // preferred: exact event
+          email: existing.Email,                    // fallback: search by guest
+          name: existing.Name,                      // fallback: search by name
+          ...(start ? { startTime: start.toISOString() } : {}),
+        });
+        calendar = r.ok
+          ? "Google Calendar event cancelled - the guest's invite is withdrawn."
+          : `Google Calendar event NOT cancelled (${r.error}). Tell the owner to cancel it from the dashboard.`;
+      }
+
       await db().doc("Settings/Canary").update({
         [`Meetings.${a.id}`]: admin.firestore.FieldValue.delete(),
         lastMeetingWrite: SERVER_TIMESTAMP(),
@@ -922,9 +1021,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         id: a.id,
         // Echo what was removed so the owner sees exactly what went.
         cancelled: { name: existing.Name, date: existing.Date, time: existing.Time, email: existing.Email },
-        googleCalendarEvent: existing.GoogleEventId || existing.MeetingLink
-          ? "This booking had a calendar event / meet link - it was NOT deleted. Cancel it from the dashboard so the guest's invite is withdrawn."
-          : "none attached",
+        calendar,
       });
     });
 
@@ -1667,7 +1764,7 @@ export const mcp = onRequest(
     region: "us-central1",
     cors: false,
     maxInstances: 10,
-    secrets: [smtpUser, resendKey],
+    secrets: [smtpUser, resendKey, meetingSyncUrl],
   },
   async (req, res) => {
     try {
