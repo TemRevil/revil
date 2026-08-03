@@ -826,6 +826,108 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       return ok({ status: "booked", id, date: storedDate, time: storedTime, hasMeetingLink: !!a.meetingLink });
     });
 
+  // Shared by update_booking: turn YYYY-MM-DD / HH:MM into the host-perspective strings the
+  // dashboard calendar and the public BookedSlots mirror compare against.
+  const toStoredDate = (d: string): string => { const [Y, M, D] = d.split("-"); return `${D}/${M}/${Y}`; };
+  const toStoredTime = (t: string): string => {
+    const [hhStr, mm] = t.split(":");
+    const h24 = parseInt(hhStr, 10);
+    return `${pad2(h24 % 12 || 12)}:${mm} ${h24 >= 12 ? "PM" : "AM"}`;
+  };
+
+  server.registerTool("update_booking",
+    {
+      title: "Update / reschedule a booking",
+      description:
+        "Change an existing booking by id (get ids from list_bookings). PARTIAL update: only the fields you " +
+        "pass change, anything omitted is left as-is. Use it to reschedule (pass `date` and/or `time`), fix the " +
+        "guest's name/email, edit the reason, or attach a meeting link you already have. " +
+        "ALWAYS call get_current_time first and derive `date` from it - a past date is rejected. " +
+        "IMPORTANT: this updates the dashboard booking and the public busy-slot calendar, and re-notifies, but it " +
+        "does NOT move an existing Google Calendar event. If this booking has a Google Calendar event or Meet link, " +
+        "tell the owner to reschedule it from the dashboard so the guest's calendar invite is updated too.",
+      inputSchema: {
+        id: z.string().min(1).describe("booking id (see list_bookings)"),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("new date, YYYY-MM-DD in the owner's timezone"),
+        time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional().describe("new time, 24-hour HH:MM in the owner's timezone"),
+        name: z.string().min(1).optional().describe("guest name"),
+        email: z.string().email().optional().describe("guest email"),
+        reason: z.string().optional().describe("what the call is for"),
+        meetingLink: z.string().url().optional().describe("meeting URL you already have - never invent one"),
+      },
+      annotations: { destructiveHint: false },
+    },
+    async (a) => {
+      const snap = await db().doc("Settings/Canary").get();
+      const meetings = (snap.exists ? snap.data()?.Meetings : null) || {};
+      const existing = meetings[a.id];
+      if (!existing) return fail(`No booking with id ${a.id}. Use list_bookings to find the right id.`);
+
+      if (a.date && a.date < time.date) {
+        return fail(`That date (${a.date}) is in the past - the current date is ${time.date}. Call get_current_time and use today or a future date.`);
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (a.date) patch.Date = toStoredDate(a.date);
+      if (a.time) patch.Time = toStoredTime(a.time);
+      if (a.name) patch.Name = a.name;
+      if (a.email) patch.Email = a.email;
+      if (a.reason) patch["What For"] = a.reason;
+      if (a.meetingLink) patch.MeetingLink = a.meetingLink;
+      if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
+
+      await db().doc("Settings/Canary").set(
+        { Meetings: { [a.id]: patch }, lastMeetingWrite: SERVER_TIMESTAMP() },
+        { merge: true },
+      );
+      return ok({
+        status: "updated",
+        id: a.id,
+        changed: Object.keys(patch),
+        date: patch.Date ?? existing.Date,
+        time: patch.Time ?? existing.Time,
+        // Surfaced so the model can warn the owner rather than silently leaving a stale invite.
+        googleCalendarEvent: existing.GoogleEventId || existing.MeetingLink
+          ? "This booking has a calendar event / meet link - it was NOT moved. Reschedule it from the dashboard so the guest's invite updates."
+          : "none attached",
+      });
+    });
+
+  server.registerTool("cancel_booking",
+    {
+      title: "Cancel / delete a booking",
+      description:
+        "Cancel a booking by id (get ids from list_bookings), removing it from the dashboard and freeing its slot " +
+        "on the public booking calendar. IRREVERSIBLE - always confirm the exact booking (guest, date, time) with " +
+        "the owner before calling. " +
+        "IMPORTANT: this does NOT delete an existing Google Calendar event. If the booking has one (or a Meet link), " +
+        "tell the owner to cancel it from the dashboard so the guest's calendar invite is withdrawn too.",
+      inputSchema: {
+        id: z.string().min(1).describe("booking id (see list_bookings)"),
+      },
+      annotations: { destructiveHint: true },
+    },
+    async (a) => {
+      const snap = await db().doc("Settings/Canary").get();
+      const meetings = (snap.exists ? snap.data()?.Meetings : null) || {};
+      const existing = meetings[a.id];
+      if (!existing) return fail(`No booking with id ${a.id}. Use list_bookings to find the right id.`);
+
+      await db().doc("Settings/Canary").update({
+        [`Meetings.${a.id}`]: admin.firestore.FieldValue.delete(),
+        lastMeetingWrite: SERVER_TIMESTAMP(),
+      });
+      return ok({
+        status: "cancelled",
+        id: a.id,
+        // Echo what was removed so the owner sees exactly what went.
+        cancelled: { name: existing.Name, date: existing.Date, time: existing.Time, email: existing.Email },
+        googleCalendarEvent: existing.GoogleEventId || existing.MeetingLink
+          ? "This booking had a calendar event / meet link - it was NOT deleted. Cancel it from the dashboard so the guest's invite is withdrawn."
+          : "none attached",
+      });
+    });
+
   server.registerTool("create_or_update_project",
     {
       title: "Create or update a project",
