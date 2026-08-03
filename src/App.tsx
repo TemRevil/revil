@@ -24,7 +24,6 @@ const MContact = lazy(() => import('./components/M-Contact'));
 const MCV = lazy(() => import('./components/M-CV'));
 const MProjectView = lazy(() => import('./components/M-ProjectView'));
 const MContributorView = lazy(() => import('./components/M-ContributorView'));
-const Guide = lazy(() => import('./components/Guide'));
 const SecretPage = lazy(() => import('./components/SecretPage'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 
@@ -719,18 +718,6 @@ function App() {
           <ChevronRight size={20} />
         </button>
       )}
-
-      {/* Walking guide character. Lazy so it never touches the first paint, and it stays
-          out of the way while a modal is open or the visitor is off the public site. */}
-      <Suspense fallback={null}>
-        <Guide
-          active={
-            PUBLIC_SCROLL_SECTIONS.includes(currentSection)
-            && !isContactModalOpen
-            && !isCVModalOpen
-          }
-        />
-      </Suspense>
       <LayoutGroup>
         {(currentSection !== 'dashboard') && (
           <Navbar
