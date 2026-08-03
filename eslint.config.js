@@ -5,7 +5,7 @@ import tsEslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', '.next', 'functions/lib']),
+  globalIgnores(['dist', '.next', 'functions/lib', 'functions-meeting/lib']),
   // Maintenance scripts are CommonJS and run in Node, not the browser. Lint with Node
   // globals so require/exports/process/console resolve.
   {
@@ -38,9 +38,32 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
+  // The `meeting` codebase (syncMeeting) - its own tsconfig, and looser than the
+  // main functions block: it is a small proxy that catches `any` from axios.
+  {
+    files: ['functions-meeting/**/*.ts'],
+    extends: [
+      js.configs.recommended,
+      ...tsEslint.configs.recommended,
+    ],
+    languageOptions: {
+      parser: tsEslint.parser,
+      parserOptions: {
+        project: ['./functions-meeting/tsconfig.json'],
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+      globals: globals.node,
+    },
+    rules: {
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
   {
     files: ['**/*.{js,jsx}'],
-    ignores: ['functions/**', 'scripts/**'],
+    ignores: ['functions/**', 'functions-meeting/**', 'scripts/**'],
     extends: [
       js.configs.recommended,
       reactHooks.configs.flat.recommended,
@@ -61,7 +84,7 @@ export default defineConfig([
   {
     files: ['**/*.{ts,tsx}'],
     // Cloud Functions .ts have their own block/tsconfig above.
-    ignores: ['functions/**'],
+    ignores: ['functions/**', 'functions-meeting/**'],
     extends: [
       js.configs.recommended,
       ...tsEslint.configs.recommended,

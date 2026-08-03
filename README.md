@@ -111,12 +111,17 @@ browser. Functions in `functions/` deploy from this repo:
 | `llm` | Callable (admin) | Proxies the dashboard assistant so the provider key stays server-side |
 | `mcp` | HTTPS | Remote **MCP server** (OAuth 2.1) letting an AI client read and manage the portfolio, treasury, bookings and receipts |
 
-**`syncMeeting`** is the one exception: it is a callable deployed to the same
-Firebase project from a **separate codebase**, so it is not in this repo. It is a
-thin App Check-gated proxy that forwards to a Google Apps Script, which owns the
-actual Google Calendar event and its Meet link. Both the public booking form and
-the dashboard call it, and the MCP booking tools reach the same script so a
-cancel or reschedule updates the guest's invite too.
+**`syncMeeting`** lives in a **second codebase**, `functions-meeting/`, because it
+runs on a different Node runtime (24) to the main backend (22). It is a thin App
+Check-gated proxy that forwards to a Google Apps Script, which owns the actual
+Google Calendar event and its Meet link. Both the public booking form and the
+dashboard call it, and the MCP booking tools reach the same script so a cancel or
+reschedule updates the guest's invite too.
+
+```bash
+firebase deploy --only functions:meeting   # deploy the syncMeeting codebase
+firebase deploy --only functions:mcp       # deploy one function from `default`
+```
 
 ```text
 Visitor books  ──►  syncMeeting  ──►  Apps Script  ──►  Google Calendar + Meet
@@ -142,11 +147,14 @@ firebase functions:secrets:set MEETING_SYNC_URL # Apps Script calendar endpoint
 create, move or cancel events on the owner's calendar, so it is stored as a
 secret rather than hardcoded.
 
-> **Deploying functions:** always scope the deploy, because `syncMeeting` lives in
-> another codebase and a bare `firebase deploy` would delete it:
+> **Deploying functions:** always scope the deploy. A bare `firebase deploy` also
+> republishes hosting and Firestore/Storage rules, which is rarely what you want:
 > ```bash
-> firebase deploy --only functions:mcp,functions:notifyCanary   # etc.
+> firebase deploy --only functions:mcp,functions:notifyCanary   # named functions
+> firebase deploy --only functions:meeting                      # whole codebase
 > ```
+> If discovery times out with *"Cannot determine backend specification"*, retry
+> with `FUNCTIONS_DISCOVERY_TIMEOUT=120` - the main codebase is slow to load.
 
 ---
 
