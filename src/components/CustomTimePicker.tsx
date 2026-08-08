@@ -15,6 +15,12 @@ interface Props {
     /** Optional guard: return an error string to block (surfaced via onError), or null to allow. */
     validate?: (time: string) => string | null;
     onError?: (msg: string) => void;
+    /**
+     * Optional: return true for a "HH:MM AM/PM" that can no longer be picked (already
+     * passed, or taken). Those choices are greyed out and unselectable in the Hour /
+     * Minute / Period menus, so an invalid time can't be composed in the first place.
+     */
+    isUnavailable?: (time: string) => boolean;
     /** Base z-index for the backdrop; the modal sits at +1. Raise it above a host modal
      *  that stacks higher than the default (e.g. Canary's reschedule modal at z 2000). */
     zIndex?: number;
@@ -31,7 +37,7 @@ const PERIODS = ['AM', 'PM'];
  * Inside it uses the reusable glassy <Select> for Hour / Minute / Period, so there are
  * no native inputs. Reused by the public booking modal and Canary's reschedule modal.
  */
-const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, zIndex = 1500 }: Props) => {
+const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, isUnavailable, zIndex = 1500 }: Props) => {
     const lid = useId(); // unique shared-layout id (safe if two instances ever mount)
     const [open, setOpen] = useState(false);
     const [h, setH] = useState('10');
@@ -66,6 +72,39 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, z
         document.addEventListener('keydown', onKey, true);
         return () => document.removeEventListener('keydown', onKey, true);
     }, [open]);
+
+    // Grey out choices that can no longer produce a valid time. A choice is only disabled
+    // when EVERY time reachable through it is unavailable - so "3" stays pickable while any
+    // of 3:00/3:15/3:30/3:45 is still open, and PM only dies once the whole afternoon has.
+    const at = (hh: string, mm: string, pp: string) => `${hh.padStart(2, '0')}:${mm} ${pp}`;
+    const gone = (hh: string, mm: string, pp: string) => !!isUnavailable?.(at(hh, mm, pp));
+    const hourOpts = HOURS.map(hh => ({
+        value: hh, label: hh,
+        disabled: MINUTES.every(mm => gone(hh, mm, p)),
+    }));
+    const minuteOpts = MINUTES.map(mm => ({
+        value: mm, label: mm,
+        disabled: gone(h, mm, p),
+    }));
+    const periodOpts = PERIODS.map(pp => ({
+        value: pp, label: pp,
+        disabled: HOURS.every(hh => MINUTES.every(mm => gone(hh, mm, pp))),
+    }));
+
+    // Changing one menu can strand the others on a now-dead choice (e.g. flipping PM->AM
+    // when the morning is gone). Snap to the first still-selectable option, adjusted during
+    // render rather than in an effect so a disabled row is never painted as "selected".
+    // One field is corrected per pass and each setter moves to a known-enabled value, so
+    // this converges instead of looping.
+    if (open && isUnavailable) {
+        const firstFree = (o: { value: string; disabled: boolean }[]) => o.find(x => !x.disabled)?.value;
+        const np = periodOpts.find(o => o.value === p)?.disabled ? firstFree(periodOpts) : undefined;
+        const nh = hourOpts.find(o => o.value === h)?.disabled ? firstFree(hourOpts) : undefined;
+        const nm = minuteOpts.find(o => o.value === m)?.disabled ? firstFree(minuteOpts) : undefined;
+        if (np && np !== p) setP(np);
+        else if (nh && nh !== h) setH(nh);
+        else if (nm && nm !== m) setM(nm);
+    }
 
     const apply = () => {
         const t = `${h.padStart(2, '0')}:${m} ${p}`;
@@ -156,15 +195,15 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, z
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                                         <div>
                                             <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Hour</label>
-                                            <Select value={h} onChange={setH} isDark={isDark} searchable={false} aria-label="Hour" options={HOURS} />
+                                            <Select value={h} onChange={setH} isDark={isDark} searchable={false} aria-label="Hour" options={hourOpts} />
                                         </div>
                                         <div>
                                             <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Minute</label>
-                                            <Select value={m} onChange={setM} isDark={isDark} aria-label="Minute" options={MINUTES} />
+                                            <Select value={m} onChange={setM} isDark={isDark} aria-label="Minute" options={minuteOpts} />
                                         </div>
                                         <div>
                                             <label className="input-label font-semibold" style={{ fontSize: '0.72rem' }}>Period</label>
-                                            <Select value={p} onChange={setP} isDark={isDark} aria-label="AM or PM" options={PERIODS} />
+                                            <Select value={p} onChange={setP} isDark={isDark} aria-label="AM or PM" options={periodOpts} />
                                         </div>
                                     </div>
 

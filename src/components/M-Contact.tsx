@@ -595,6 +595,18 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     return null;
   };
 
+  // Same rule as validateCustomTime, as a boolean: the picker greys these out so a passed
+  // or already-booked time can't be composed at all, instead of only being rejected on Set.
+  const isCustomTimeUnavailable = useCallback((t: string): boolean => {
+    if (!selectedDate) return false;
+    const hostT = convertTimeToHost(t);
+    return isTimePassed(selectedDate, hostT)
+      || getMeetingsForDate(selectedDate).some(m => m.Time === hostT);
+    // convertTimeToHost/getMeetingsForDate are recreated each render; the picker only
+    // reads this while open, so the extra identity churn is harmless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, isTimePassed, offsetDiff, existingMeetings]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -1282,6 +1294,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                           active={isCustomTime}
                                           value={selectedTime}
                                           validate={validateCustomTime}
+                                          isUnavailable={isCustomTimeUnavailable}
                                           onError={(msg) => showAlert({ type: 'warning', message: msg })}
                                           onApply={(t) => { setSelectedTime(t); setIsCustomTime(true); }}
                                         />

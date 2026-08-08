@@ -385,7 +385,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                 initial={{ scale: 0.95, opacity: 0, y: 15 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 15 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 350 }}
                 onClick={e => e.stopPropagation()}
-                className={`w-full max-w-5xl max-h-[90vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
+                className={`w-full max-w-[1180px] max-h-[92vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-5 border-b border-[var(--section-border)]">
@@ -398,8 +398,11 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
 
                 {/* Body: controls | preview, side by side on desktop, stacked on mobile */}
                 <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-                    {/* Controls */}
-                    <div className="p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar border-b md:border-b-0 md:border-r border-[var(--section-border)] md:w-[400px] md:shrink-0">
+                    {/* Controls. min-w-0 is load-bearing: without it a flex child defaults to
+                        min-width:auto, so any fixed-width row (qty x price x currency) pushes
+                        this column past its width and the modal's overflow-hidden clips the
+                        labels off the left edge. overflow-x-hidden is the backstop. */}
+                    <div className="p-5 flex flex-col gap-4 overflow-y-auto overflow-x-hidden custom-scrollbar border-b md:border-b-0 md:border-r border-[var(--section-border)] md:w-[452px] md:shrink-0 min-w-0">
                         <div>
                             <label className={labelCls}>Template</label>
                             <Select
@@ -533,15 +536,15 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                     <input className={`${inputCls} mb-2`} value={workLogTitle} onChange={e => setWorkLogTitle(e.target.value)} placeholder="Development fixes - July 2026" />
                                     <div className="flex flex-col gap-2">
                                         {workLog.map(w => (
-                                            <div key={w.id} className="flex gap-2 items-start">
+                                            <div key={w.id} className="flex gap-1.5 items-start min-w-0">
                                                 <input
-                                                    className={`${inputCls} w-[76px] shrink-0`}
+                                                    className={`${inputCls} w-[70px] shrink-0 px-2`}
                                                     value={w.date}
                                                     onChange={e => setWorkLog(rows => rows.map(r => r.id === w.id ? { ...r, date: e.target.value } : r))}
                                                     placeholder="2 Jul"
                                                 />
                                                 <textarea
-                                                    className={`${inputCls} flex-1 min-h-[38px] resize-y`}
+                                                    className={`${inputCls} flex-1 min-w-0 min-h-[38px] resize-y`}
                                                     value={w.text}
                                                     onChange={e => setWorkLog(rows => rows.map(r => r.id === w.id ? { ...r, text: e.target.value } : r))}
                                                     placeholder="What you shipped"
@@ -573,9 +576,9 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                     <div className="flex flex-col gap-2.5">
                                         {items.map(it => (
                                             <div key={it.id} className="rounded-xl border border-[var(--section-border)] p-2.5 flex flex-col gap-2">
-                                                <div className="flex gap-2 items-center">
+                                                <div className="flex gap-1.5 items-center min-w-0">
                                                     <input
-                                                        className={`${inputCls} flex-1`}
+                                                        className={`${inputCls} flex-1 min-w-0`}
                                                         value={it.label}
                                                         onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, label: e.target.value } : r))}
                                                         placeholder="Development - security fixes"
@@ -593,25 +596,25 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                                     onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, caption: e.target.value } : r))}
                                                     placeholder="RooleTask - July 2026 (optional)"
                                                 />
-                                                <div className="flex gap-2">
+                                                <div className="flex gap-1.5 items-center min-w-0">
                                                     <input
-                                                        className={`${inputCls} w-[68px] shrink-0 text-center`}
+                                                        className={`${inputCls} w-[56px] shrink-0 text-center px-1`}
                                                         inputMode="decimal"
                                                         value={it.qty}
                                                         onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, qty: e.target.value } : r))}
                                                         placeholder="1"
                                                         aria-label="Quantity"
                                                     />
-                                                    <span className="self-center text-sec text-sm shrink-0">&times;</span>
+                                                    <span className="text-sec text-xs shrink-0">&times;</span>
                                                     <input
-                                                        className={`${inputCls} flex-1`}
+                                                        className={`${inputCls} flex-1 min-w-0`}
                                                         inputMode="decimal"
                                                         value={it.unitPrice}
                                                         onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, unitPrice: e.target.value } : r))}
                                                         placeholder="50"
                                                         aria-label="Unit price"
                                                     />
-                                                    <div className="w-[96px] shrink-0">
+                                                    <div className="w-[82px] shrink-0">
                                                         <Select
                                                             value={it.currency}
                                                             onChange={v => setItems(rows => rows.map(r => r.id === it.id ? { ...r, currency: v as Currency } : r))}
@@ -641,7 +644,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
 
                         <div>
                             <label className={labelCls}>Note (optional)</label>
-                            <textarea className={`${inputCls} min-h-[60px] resize-y`} value={note} onChange={e => setNote(e.target.value)} placeholder="Thanks for your business, payment terms, etc." />
+                            <textarea className={`${inputCls} min-w-0 min-h-[60px] resize-y`} value={note} onChange={e => setNote(e.target.value)} placeholder="Thanks for your business, payment terms, etc." />
                         </div>
 
                         <div className="text-[11px] text-sec">Receipt no. <span className="font-mono text-primary">{activeNo}</span></div>

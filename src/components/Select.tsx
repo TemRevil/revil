@@ -8,6 +8,8 @@ export interface SelectOption {
     label: string;
     /** Optional muted hint shown to the right of the label. */
     hint?: string;
+    /** Greyed out and unselectable (e.g. a time slot that has already passed). */
+    disabled?: boolean;
 }
 
 interface Props {
@@ -221,12 +223,23 @@ const Select = ({
                                         type="button"
                                         role="option"
                                         aria-selected={o.value === value}
-                                        onClick={() => { onChange(o.value); setOpen(false); }}
-                                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${o.value === value ? 'bg-blue-500/15 text-blue-500 font-semibold' : 'text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}
+                                        aria-disabled={o.disabled || undefined}
+                                        disabled={o.disabled}
+                                        // A disabled option stays visible (so the list doesn't jump around as
+                                        // time passes) but is inert: no click, no hover, and it never closes
+                                        // the menu.
+                                        onClick={() => { if (o.disabled) return; onChange(o.value); setOpen(false); }}
+                                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                                            o.disabled
+                                                ? 'text-sec opacity-40 cursor-not-allowed line-through'
+                                                : o.value === value
+                                                    ? 'bg-blue-500/15 text-blue-500 font-semibold'
+                                                    : 'text-primary hover:bg-black/5 dark:hover:bg-white/10'
+                                        }`}
                                     >
                                         <span className="truncate">{o.label}</span>
                                         {o.hint && <span className="text-sec text-xs flex-shrink-0">{o.hint}</span>}
-                                        {o.value === value && <Check size={15} className="flex-shrink-0" />}
+                                        {!o.disabled && o.value === value && <Check size={15} className="flex-shrink-0" />}
                                     </button>
                                 ))}
                             </div>
