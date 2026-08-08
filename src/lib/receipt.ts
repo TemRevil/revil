@@ -44,6 +44,13 @@ export interface ReceiptData {
     paidOnLabel?: string;
     /** For kind 'due': when it should be settled, e.g. "22 August 2026". Optional. */
     dueByLabel?: string;
+    /**
+     * The individual payments behind the Paid figure, oldest first, straight from the
+     * income log - a project is routinely settled over several dates. Rendered as a dated
+     * breakdown only when there are two or more; a lone payment is already fully described
+     * by the banner's date, and a second table saying the same thing is just noise.
+     */
+    payments?: { dateLabel: string; amount: number; note?: string }[];
 }
 
 /** A stable-ish receipt number: RCP-YYYYMMDD-XXXX. */
@@ -71,6 +78,14 @@ export function buildReceiptHtml(d: ReceiptData): string {
     // the client must be able to tell which one landed in their inbox at a glance.
     const isDue = d.kind === 'due';
 
+    // When the money arrived. One payment is named by its date; several are summarised here
+    // and itemised in the breakdown below, because "received on 3 June, 12 July and 8 August"
+    // in a banner is unreadable.
+    const paid = d.payments || [];
+    const when = paid.length > 1
+        ? `across ${paid.length} payments`
+        : d.paidOnLabel ? `on ${esc(d.paidOnLabel)}` : '';
+
     const banner = isDue
         ? `
         <tr><td style="padding:20px 28px 0">
@@ -89,7 +104,7 @@ export function buildReceiptHtml(d: ReceiptData): string {
             <tr><td style="padding:14px 16px">
               <div style="color:#166534;font-size:14px;font-weight:800">Thank you for your payment</div>
               <div style="color:#15803d;font-size:13px;margin-top:3px">
-                ${money(d.totals.paid)} received${d.paidOnLabel ? ` on ${esc(d.paidOnLabel)}` : ''}.
+                ${money(d.totals.paid)} received${when ? ` ${when}` : ''}.
               </div>
             </td></tr>
           </table>
@@ -105,6 +120,23 @@ export function buildReceiptHtml(d: ReceiptData): string {
           <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:#16a34a;font-size:14px;white-space:nowrap">${money(l.paid)}</td>
           <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:${l.balance && l.balance > 0 ? '#d97706' : MUTE};font-weight:700;font-size:14px;white-space:nowrap">${l.balance === null ? '&ndash;' : money(l.balance)}</td>
         </tr>`).join('');
+
+    // Dated proof of every payment, so a client settling in instalments can reconcile the
+    // Paid figure against their own bank statement line by line.
+    const paymentsBlock = paid.length > 1 ? `
+        <tr><td style="padding:16px 28px 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${LINE};border-radius:12px;overflow:hidden">
+            <tr style="background:#f8fafc">
+              <td style="padding:10px 16px;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Payments received</td>
+              <td style="padding:10px 16px;text-align:right;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Amount</td>
+            </tr>
+            ${paid.map((p) => `
+            <tr>
+              <td style="padding:10px 16px;border-top:1px solid ${LINE};color:${INK};font-size:13px">${esc(p.dateLabel)}${p.note ? `<span style="color:${MUTE}"> &middot; ${esc(p.note)}</span>` : ''}</td>
+              <td style="padding:10px 16px;border-top:1px solid ${LINE};text-align:right;color:#16a34a;font-size:13px;font-weight:700;white-space:nowrap">${money(p.amount)}</td>
+            </tr>`).join('')}
+          </table>
+        </td></tr>` : '';
 
     const totalRow = (label: string, value: string, opts: { strong?: boolean; color?: string } = {}) => `
         <tr>
@@ -173,7 +205,7 @@ ${banner}
             )}
           </table>
         </td></tr>
-
+${paymentsBlock}
         ${d.converted ? `<tr><td style="padding:2px 28px 0"><div style="color:${MUTE};font-size:11px;text-align:right">Amounts converted to ${cur} at current rates.</div></td></tr>` : ''}
         ${d.note ? `<tr><td style="padding:16px 28px 0"><div style="background:#f8fafc;border:1px solid ${LINE};border-radius:12px;padding:14px 16px;color:${INK};font-size:13px;line-height:1.55">${esc(d.note)}</div></td></tr>` : ''}
 

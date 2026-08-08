@@ -318,6 +318,35 @@ export function installmentsPaidCount(p: TreasuryProject, income: TreasuryIncome
 }
 
 /**
+ * The individual income entries behind a project's received total, oldest first. Uses the
+ * SAME filter as projectReceived (a retainer counts only flagged monthly payments), so a
+ * listing of payments can never disagree with the Paid figure sitting next to it. The
+ * legacy per-project paidAmount carries no date, so it deliberately has no entry here -
+ * callers that need the complete total must still use projectReceived.
+ */
+export function projectPayments(p: TreasuryProject, income: TreasuryIncome[]): TreasuryIncome[] {
+    return (income || [])
+        .filter(i => i.projectId === p.id && (!p.monthly || i.monthlyPayment))
+        .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+/**
+ * Clock time of a payment, e.g. "5:00 PM" - or '' when we don't honestly know it.
+ * An income entry stores the DAY the money arrived plus `createdAt`, the moment the entry
+ * was typed in. Those two only describe the same event when it was logged on the day it
+ * arrived; a payment entered three days later would otherwise be stamped with the time of
+ * the data entry. In that case we drop the time rather than print a fiction.
+ */
+export function paymentTimeLabel(i: TreasuryIncome): string {
+    if (!i.date || !i.createdAt) return '';
+    const at = new Date(i.createdAt);
+    if (Number.isNaN(at.getTime())) return '';
+    const loggedDay = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+    if (loggedDay !== i.date) return '';
+    return at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+/**
  * How many monthly-retainer payments have been logged. Unlike an installment plan this is
  * open-ended, so there is no denominator. Only payments flagged `monthlyPayment` count,
  * matching projectReceived's rule for retainers.

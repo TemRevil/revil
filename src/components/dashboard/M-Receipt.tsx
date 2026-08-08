@@ -7,6 +7,7 @@ import {
     Currency, CURRENCIES, TreasuryProject, TreasuryIncome, Rates,
     convert, projectReceived, projectContractTotal, hasInstallments, formatMoney,
     installmentMonthlyAmount, installmentTotal, installmentsPaidCount, retainerPaymentsCount,
+    projectPayments, paymentTimeLabel,
 } from '../../lib/treasury';
 import { buildReceiptHtml, receiptNumber, ReceiptData } from '../../lib/receipt';
 import Select from '../Select';
@@ -25,6 +26,12 @@ interface Props {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** '2026-08-08' -> '8 August 2026'. Falls through unchanged if it isn't a date. */
+const humanDate = (iso: string) => {
+    const d = new Date(`${iso}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+};
 
 /**
  * Receipt builder. Deliberately one template and no free-text line items: you pick the
@@ -47,10 +54,16 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     const [kind, setKind] = useState<'paid' | 'due'>('paid');
     const [paidDate, setPaidDate] = useState(today());
     const [paidTime, setPaidTime] = useState('');
+    // Payment dates come from the income log by default. This is the manual override, for
+    // money that arrived outside the treasury (cash in hand) or a date logged wrong.
+    const [manualDate, setManualDate] = useState(false);
     const [dueDate, setDueDate] = useState('');
     const [note, setNote] = useState('');
     const [sending, setSending] = useState(false);
     const [sentTo, setSentTo] = useState<string | null>(null);
+    // Cleared on unmount so the auto-close a send schedules can never fire into a dead modal.
+    const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
 
     const toggle = (id: string) => setSelected(prev => {
         const next = new Set(prev);
@@ -75,17 +88,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         if (!touched.current.currency) setReceiptCurrency(primary.priceCurrency);
     }, [primary]);
 
-    const humanDate = (iso: string) => {
-        const d = new Date(`${iso}T00:00:00`);
-        return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    };
     const dateLabel = useMemo(() => humanDate(issueDate), [issueDate]);
-
-    // "8 August 2026" or, when a time is given, "8 August 2026, 5:00 PM".
-    const paidOnLabel = useMemo(
-        () => (paidDate ? `${humanDate(paidDate)}${paidTime.trim() ? `, ${paidTime.trim()}` : ''}` : ''),
-        [paidDate, paidTime],
-    );
 
     // Which month a retainer receipt covers, e.g. "August 2026". Defaults to the issue
     // date's month; editable because August's fee is routinely paid in September.
@@ -114,6 +117,61 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             return n;
         });
     }
+
+    /**
+     * The real payments behind this receipt, oldest first, in the receipt's currency - read
+     * straight out of the income log rather than typed. A project is routinely settled over
+     * several dates, so this is a list, not a date.
+     *
+     * A whole-project line lists every payment; a per-payment line (one installment, one
+     * retainer month) lists only the most recent, because that is the payment it confirms.
+     */
+    const loggedPayments = useMemo(() => selectedProjects
+        .flatMap(p => {
+            const all = projectPayments(p, income);
+            // Which payments actually back the Paid figure on this line. A retainer's Paid is
+            // capped at one month's rate whichever scope is chosen (a lifetime total against a
+            // per-month price reads as nonsense), so only ever its latest payment - listing six
+            // months of history beside a one-month Paid would not add up.
+            const onePayment = !!p.monthly || (!!perPayment[p.id] && hasInstallments(p));
+            const rows = (onePayment ? all.slice(-1) : all).map(i => {
+                const time = paymentTimeLabel(i);
+                return {
+                    date: i.date,
+                    dateLabel: `${humanDate(i.date)}${time ? `, ${time}` : ''}`,
+                    amount: convert(i.amount || 0, i.currency, receiptCurrency, rates),
+                    project: p.name,
+                };
+            });
+            // The legacy per-project paidAmount predates the income log and carries no date,
+            // yet projectReceived still counts it - so a whole-project breakdown that ignored
+            // it would not add up to the Paid figure printed right above it. Give it a row.
+            const legacy = p.paidAmount || 0;
+            if (!onePayment && legacy > 0) {
+                rows.unshift({
+                    date: '',
+                    dateLabel: 'Recorded before the payment log',
+                    amount: convert(legacy, p.priceCurrency, receiptCurrency, rates),
+                    project: p.name,
+                });
+            }
+            return rows;
+        })
+        // Undated rows sort to the front, which is where they belong - they are the oldest.
+        .sort((a, b) => (a.date || '').localeCompare(b.date || '')),
+    [selectedProjects, income, perPayment, receiptCurrency, rates]);
+
+    // Nothing DATED means there is nothing to derive a date from, so the manual fields take
+    // over on their own - a receipt for cash in hand still needs a date.
+    const datedCount = loggedPayments.filter(r => r.date).length;
+    const useManualDate = manualDate || datedCount === 0;
+
+    // "8 August 2026", or "8 August 2026, 5:00 PM" when we know the clock time. Only set for
+    // a SINGLE dated payment: several are described by the breakdown table instead.
+    const paidOnLabel = useMemo(() => {
+        if (useManualDate) return paidDate ? `${humanDate(paidDate)}${paidTime.trim() ? `, ${paidTime.trim()}` : ''}` : '';
+        return loggedPayments.length === 1 && loggedPayments[0].date ? loggedPayments[0].dateLabel : '';
+    }, [useManualDate, paidDate, paidTime, loggedPayments]);
 
     /**
      * How ONE project is billed, entirely derived from the treasury - the owner never types
@@ -202,8 +260,15 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             kind,
             paidOnLabel: kind === 'paid' ? paidOnLabel : undefined,
             dueByLabel: kind === 'due' && dueDate ? humanDate(dueDate) : undefined,
+            // The dated breakdown behind the Paid figure. A hand-typed date has no log to
+            // show, so manual mode sends none and the banner carries the date alone.
+            payments: useManualDate ? undefined : loggedPayments.map(r => ({
+                dateLabel: r.dateLabel,
+                amount: r.amount,
+                note: selectedProjects.length > 1 ? r.project : undefined,
+            })),
         };
-    }, [selectedProjects, receiptCurrency, rates, receiptNo, dateLabel, customerName, customerEmail, note, perPayment, describeBilling, kind, paidOnLabel, dueDate]);
+    }, [selectedProjects, receiptCurrency, rates, receiptNo, dateLabel, customerName, customerEmail, note, perPayment, describeBilling, kind, paidOnLabel, dueDate, useManualDate, loggedPayments]);
 
     const html = useMemo(() => buildReceiptHtml(data), [data]);
 
@@ -285,6 +350,10 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             });
             setSentTo(customerEmail.trim());
             onToast?.(`${kind === 'due' ? 'Payment request' : 'Receipt'} sent to ${customerEmail.trim()}`, 'good');
+            // Acknowledge, then get out of the way. The button flips to a green "Sent to ..."
+            // for a beat so the send is visibly confirmed, and closing hands the screen to
+            // the alert - which lives outside this portal and was previously covered by it.
+            closeTimer.current = setTimeout(onClose, 1200);
         } catch (e) {
             onToast?.((e as { message?: string })?.message || 'Failed to send the receipt.', 'warn');
         } finally {
@@ -439,15 +508,37 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                         {/* When the money arrived (confirmation) or when it is wanted by
                             (request). Both editable - a payment is often logged days later. */}
                         {kind === 'paid' ? (
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="min-w-0">
-                                    <label className={labelCls}>Payment date</label>
-                                    <DatePicker value={paidDate} onChange={setPaidDate} isDark={isDark} />
-                                </div>
-                                <div className="min-w-0">
-                                    <label className={labelCls}>Time (optional)</label>
-                                    <input className={inputCls} value={paidTime} onChange={e => setPaidTime(e.target.value)} placeholder="5:00 PM" />
-                                </div>
+                            <div>
+                                <span className={labelCls}>
+                                    {loggedPayments.length > 1 ? 'Payment dates' : 'Payment date'}
+                                    {!useManualDate && <span className="normal-case tracking-normal opacity-70"> · from your income log</span>}
+                                </span>
+                                {useManualDate ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="min-w-0"><DatePicker value={paidDate} onChange={setPaidDate} isDark={isDark} /></div>
+                                        <div className="min-w-0"><input className={inputCls} value={paidTime} onChange={e => setPaidTime(e.target.value)} placeholder="Time (optional)" /></div>
+                                    </div>
+                                ) : (
+                                    <div className={`rounded-xl border divide-y ${isDark ? 'border-white/10 divide-white/10 bg-white/[0.03]' : 'border-black/10 divide-black/5 bg-black/[0.02]'}`}>
+                                        {loggedPayments.map((r, i) => (
+                                            <div key={`${r.date}-${i}`} className="flex items-center justify-between gap-3 px-3.5 py-2 min-w-0">
+                                                <span className={`text-sm truncate ${r.date ? 'text-primary' : 'text-sec italic'}`}>{r.dateLabel}</span>
+                                                <span className="text-sm font-bold text-emerald-500 tnum shrink-0">{formatMoney(r.amount, receiptCurrency)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {datedCount === 0 ? (
+                                    <p className="mt-1.5 text-[11px] text-sec">No dated payment is logged against this project yet, so set the date yourself.</p>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => setManualDate(m => !m)}
+                                        className="mt-1.5 text-[11px] font-bold text-blue-500 hover:underline bg-transparent border-none p-0 cursor-pointer"
+                                    >
+                                        {useManualDate ? 'Use the logged dates' : 'Set the date manually'}
+                                    </button>
+                                )}
                             </div>
                         ) : (
                             <div>
@@ -494,11 +585,11 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                     </button>
                     <button
                         onClick={send}
-                        disabled={!canSend}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        disabled={!canSend || !!sentTo}
+                        className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-colors disabled:cursor-not-allowed ${sentTo ? 'bg-emerald-500 disabled:opacity-100' : 'bg-blue-500 hover:bg-blue-600 disabled:opacity-40'}`}
                     >
-                        {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                        {sending ? 'Sending…' : sentTo ? 'Send again' : (kind === 'due' ? 'Send request' : 'Send receipt')}
+                        {sending ? <Loader2 size={16} className="animate-spin" /> : sentTo ? <Check size={16} strokeWidth={3} /> : <Send size={16} />}
+                        {sending ? 'Sending…' : sentTo ? `Sent to ${sentTo}` : (kind === 'due' ? 'Send request' : 'Send receipt')}
                     </button>
                 </div>
             </motion.div>

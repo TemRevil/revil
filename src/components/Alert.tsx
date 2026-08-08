@@ -81,7 +81,11 @@ export default function Alert({ type, message, onClose, duration = 3000 }: Alert
             ref={alertRef}
             role={type === 'error' || type === 'warning' ? 'alert' : 'status'}
             aria-live={type === 'error' || type === 'warning' ? 'assertive' : 'polite'}
-            className="custom-alert fixed top-6 right-6 z-[9999] flex items-center gap-3 p-4 rounded-md shadow-lg backdrop-blur-md min-w-[300px] max-w-[400px]"
+            /* Above the z-[9999] modals. An alert is almost always ABOUT something that just
+               happened in a modal, and every modal portals to <body> - so at an equal
+               z-index the modal (later in the DOM) covered the alert and every confirmation
+               looked like nothing had happened at all. */
+            className="custom-alert fixed top-6 right-6 z-[10050] flex items-center gap-3 p-4 rounded-md shadow-lg backdrop-blur-md min-w-[300px] max-w-[400px]"
             style={{ backgroundColor: 'var(--card-bg, #ffffff)', borderLeft: `4px solid ${currentStyle.border}` }}
         >
             <div className="flex items-center justify-center" style={{ color: currentStyle.border }}>
