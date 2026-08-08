@@ -283,8 +283,15 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     const [box, setBox] = useState({ w: 0, h: 0 });
 
     const remeasure = useCallback(() => {
-        const doc = iframeRef.current?.contentDocument;
-        if (doc) setNatH(Math.max(200, doc.documentElement.scrollHeight || doc.body.scrollHeight || 560));
+        const body = iframeRef.current?.contentDocument?.body;
+        if (!body) return;
+        // Measure the BODY's own box, never documentElement.scrollHeight: that one is clamped
+        // to the iframe's viewport, and the viewport IS natH - so once the iframe had been
+        // sized for a tall receipt it kept reporting that height for a short one. The
+        // measurement could only ever grow, and the preview then scaled itself down to fit a
+        // document that was mostly empty space. The body has margin:0, so its box is the doc.
+        const h = body.getBoundingClientRect().height || body.scrollHeight;
+        if (h > 0) setNatH(Math.max(200, Math.round(h)));
     }, []);
     // Re-measure whenever the content changes (a srcDoc change reloads the iframe, but this
     // covers it even if onLoad doesn't refire).
@@ -306,8 +313,11 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     // after the box), so the receipt always fits fully instead of clipping a few px, and
     // it reads as breathing room.
     const PAD = 6;
+    // Capped at 1: the receipt is a 600px document rendered in an iframe, and a CSS transform
+    // above 1 rasterises then stretches it, so "bigger" would only mean blurrier. 1 is also
+    // exactly the size the client will see it at.
     const scale = box.w > 0
-        ? Math.max(0.1, Math.min((box.w - PAD) / NAT_W, natH ? (box.h - PAD) / natH : 1))
+        ? Math.max(0.1, Math.min(1, (box.w - PAD) / NAT_W, natH ? (box.h - PAD) / natH : 1))
         : 1;
 
     const emailValid = EMAIL_RE.test(customerEmail.trim());
@@ -375,7 +385,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                 initial={{ scale: 0.95, opacity: 0, y: 15 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 15 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 350 }}
                 onClick={e => e.stopPropagation()}
-                className={`w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
+                className={`w-full max-w-6xl max-h-[92vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-5 border-b border-[var(--section-border)]">
