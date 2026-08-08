@@ -32,6 +32,18 @@ export interface ReceiptData {
      * arithmetic is unchanged, and omitting it keeps today's wording exactly.
      */
     perPayment?: boolean;
+    /**
+     * What this document IS:
+     *   'paid' - money already received. Reads "Thank you for your payment" and states when
+     *            it arrived. This is a confirmation.
+     *   'due'  - money still owed. Reads as a request and leads with the amount due.
+     * Defaults to 'paid', which is how every receipt sent before this existed behaved.
+     */
+    kind?: 'paid' | 'due';
+    /** For kind 'paid': when the money arrived, e.g. "8 August 2026, 5:00 PM". */
+    paidOnLabel?: string;
+    /** For kind 'due': when it should be settled, e.g. "22 August 2026". Optional. */
+    dueByLabel?: string;
 }
 
 /** A stable-ish receipt number: RCP-YYYYMMDD-XXXX. */
@@ -55,6 +67,33 @@ const LINE = '#e6e9ef';
 export function buildReceiptHtml(d: ReceiptData): string {
     const cur = d.currency;
     const money = (n: number) => formatMoney(n, cur);
+    // A receipt confirms money received; a statement asks for money owed. Same table, but
+    // the client must be able to tell which one landed in their inbox at a glance.
+    const isDue = d.kind === 'due';
+
+    const banner = isDue
+        ? `
+        <tr><td style="padding:20px 28px 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px">
+            <tr><td style="padding:14px 16px">
+              <div style="color:#9a3412;font-size:14px;font-weight:800">Payment requested</div>
+              <div style="color:#b45309;font-size:13px;margin-top:3px">
+                ${money(d.totals.balance)} outstanding${d.dueByLabel ? ` &middot; due by ${esc(d.dueByLabel)}` : ''}.
+              </div>
+            </td></tr>
+          </table>
+        </td></tr>`
+        : `
+        <tr><td style="padding:20px 28px 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px">
+            <tr><td style="padding:14px 16px">
+              <div style="color:#166534;font-size:14px;font-weight:800">Thank you for your payment</div>
+              <div style="color:#15803d;font-size:13px;margin-top:3px">
+                ${money(d.totals.paid)} received${d.paidOnLabel ? ` on ${esc(d.paidOnLabel)}` : ''}.
+              </div>
+            </td></tr>
+          </table>
+        </td></tr>`;
 
     const rows = d.lines.map((l) => `
         <tr>
@@ -89,7 +128,7 @@ export function buildReceiptHtml(d: ReceiptData): string {
         <tr><td style="background:${INK};padding:26px 28px">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="color:#fff;font-size:20px;font-weight:800;letter-spacing:.5px">TEM&nbsp;REVIL</td>
-            <td style="text-align:right;color:${ACCENT};font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase">Receipt</td>
+            <td style="text-align:right;color:${ACCENT};font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase">${isDue ? 'Invoice' : 'Receipt'}</td>
           </tr></table>
         </td></tr>
 
@@ -108,6 +147,7 @@ export function buildReceiptHtml(d: ReceiptData): string {
           </tr></table>
         </td></tr>
 
+${banner}
         <!-- line items -->
         <tr><td style="padding:16px 28px 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${LINE};border-radius:12px;overflow:hidden">
@@ -125,8 +165,12 @@ export function buildReceiptHtml(d: ReceiptData): string {
         <tr><td style="padding:14px 28px 4px">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             ${totalRow(d.perPayment ? 'This receipt' : 'Total price', money(d.totals.price))}
-            ${totalRow('Paid', money(d.totals.paid), { color: '#16a34a' })}
-            ${totalRow(d.perPayment ? 'Remaining on plan' : 'Balance due', money(d.totals.balance), { strong: true, color: d.totals.balance > 0 ? '#d97706' : '#16a34a' })}
+            ${totalRow(isDue ? 'Paid to date' : 'Paid', money(d.totals.paid), { color: '#16a34a' })}
+            ${totalRow(
+                isDue ? 'Amount due' : (d.perPayment ? 'Remaining on plan' : 'Balance due'),
+                money(d.totals.balance),
+                { strong: true, color: d.totals.balance > 0 ? '#d97706' : '#16a34a' },
+            )}
           </table>
         </td></tr>
 
@@ -136,7 +180,7 @@ export function buildReceiptHtml(d: ReceiptData): string {
         <!-- footer -->
         <tr><td style="padding:24px 28px 28px">
           <div style="border-top:1px solid ${LINE};padding-top:18px;color:${MUTE};font-size:12px;line-height:1.6">
-            Thank you. Questions about this receipt? Reply to <a href="mailto:hello@temrevil.com" style="color:${ACCENT};text-decoration:none;font-weight:600">hello@temrevil.com</a>.
+            ${isDue ? 'Questions about this invoice?' : 'Thank you. Questions about this receipt?'} Reply to <a href="mailto:hello@temrevil.com" style="color:${ACCENT};text-decoration:none;font-weight:600">hello@temrevil.com</a>.
             <div style="margin-top:6px"><a href="https://temrevil.com" style="color:${MUTE};text-decoration:none">temrevil.com</a> &middot; Tem Revil</div>
           </div>
         </td></tr>

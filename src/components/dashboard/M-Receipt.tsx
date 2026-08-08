@@ -43,6 +43,11 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     // Keyed by project id, defaulted on below for any project that is on a plan.
     const [perPayment, setPerPayment] = useState<Record<string, boolean>>({});
     const [receiptNo] = useState(() => receiptNumber());
+    // 'paid' = confirming money received (thank-you). 'due' = asking for money still owed.
+    const [kind, setKind] = useState<'paid' | 'due'>('paid');
+    const [paidDate, setPaidDate] = useState(today());
+    const [paidTime, setPaidTime] = useState('');
+    const [dueDate, setDueDate] = useState('');
     const [note, setNote] = useState('');
     const [sending, setSending] = useState(false);
     const [sentTo, setSentTo] = useState<string | null>(null);
@@ -70,10 +75,17 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         if (!touched.current.currency) setReceiptCurrency(primary.priceCurrency);
     }, [primary]);
 
-    const dateLabel = useMemo(() => {
-        const d = new Date(`${issueDate}T00:00:00`);
-        return Number.isNaN(d.getTime()) ? issueDate : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    }, [issueDate]);
+    const humanDate = (iso: string) => {
+        const d = new Date(`${iso}T00:00:00`);
+        return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    };
+    const dateLabel = useMemo(() => humanDate(issueDate), [issueDate]);
+
+    // "8 August 2026" or, when a time is given, "8 August 2026, 5:00 PM".
+    const paidOnLabel = useMemo(
+        () => (paidDate ? `${humanDate(paidDate)}${paidTime.trim() ? `, ${paidTime.trim()}` : ''}` : ''),
+        [paidDate, paidTime],
+    );
 
     // Which month a retainer receipt covers, e.g. "August 2026". Defaults to the issue
     // date's month; editable because August's fee is routinely paid in September.
@@ -110,6 +122,10 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     const describeBilling = useCallback((p: TreasuryProject, cvt: (n: number) => number, cur: Currency) => {
         const receivedNative = projectReceived(p, income, rates);
         const single = !!perPayment[p.id] && (hasInstallments(p) || !!p.monthly);
+        // A confirmation says this amount HAS been paid; a request must not - it reports
+        // only what the treasury has actually recorded, or it would thank them for money
+        // that never arrived.
+        const settled = (billed: number, recorded: number) => (kind === 'paid' ? billed : recorded);
 
         // "This payment" mode: the receipt covers ONE installment / ONE month rather than
         // the whole contract, which is what a client actually gets billed month to month.
@@ -120,8 +136,10 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                 // A retainer is open-ended: no denominator, and no balance to owe.
                 subtitle: `Monthly retainer${n ? ` - payment ${n}` : ''}`,
                 price: cvt(p.priceAmount || 0),
-                paid: cvt(p.priceAmount || 0),
-                balance: null as number | null,
+                paid: cvt(settled(p.priceAmount || 0, Math.min(receivedNative, p.priceAmount || 0))),
+                balance: (kind === 'due'
+                    ? cvt(Math.max(0, (p.priceAmount || 0) - Math.min(receivedNative, p.priceAmount || 0)))
+                    : null) as number | null,
             };
         }
         if (single) {
@@ -137,7 +155,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                     ? `Plan total ${formatMoney(cvt(planTotal), cur)} = ${formatMoney(cvt(p.priceAmount || 0), cur)} + ${p.installmentPercent}% fee ${formatMoney(cvt(surcharge), cur)}, over ${months} months`
                     : `Installment ${nth} of ${months} - plan total ${formatMoney(cvt(planTotal), cur)}`,
                 price: cvt(installmentMonthlyAmount(p)),
-                paid: cvt(installmentMonthlyAmount(p)),
+                paid: cvt(settled(installmentMonthlyAmount(p), Math.min(receivedNative, installmentMonthlyAmount(p)))),
                 balance: cvt(Math.max(0, planTotal - receivedNative)) as number | null,
             };
         }
@@ -156,7 +174,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             paid: cvt(p.monthly ? Math.min(receivedNative, priceNative) : receivedNative),
             balance: (p.monthly ? null : cvt(Math.max(0, priceNative - receivedNative))) as number | null,
         };
-    }, [income, rates, perPayment, periodLabel]);
+    }, [income, rates, perPayment, periodLabel, kind]);
 
     const data: ReceiptData = useMemo(() => {
         const lines = selectedProjects.map(p => {
@@ -181,8 +199,11 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             // keeps the plain wording so neither label is wrong for half the rows.
             perPayment: selectedProjects.length > 0
                 && selectedProjects.every(p => perPayment[p.id] && (hasInstallments(p) || p.monthly)),
+            kind,
+            paidOnLabel: kind === 'paid' ? paidOnLabel : undefined,
+            dueByLabel: kind === 'due' && dueDate ? humanDate(dueDate) : undefined,
         };
-    }, [selectedProjects, receiptCurrency, rates, receiptNo, dateLabel, customerName, customerEmail, note, perPayment, describeBilling]);
+    }, [selectedProjects, receiptCurrency, rates, receiptNo, dateLabel, customerName, customerEmail, note, perPayment, describeBilling, kind, paidOnLabel, dueDate]);
 
     const html = useMemo(() => buildReceiptHtml(data), [data]);
 
@@ -248,7 +269,9 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             const fn = httpsCallable(getFunctions(app, 'us-central1'), 'sendReceipt');
             await fn({
                 to: customerEmail.trim(),
-                subject: `Receipt ${receiptNo} from Tem Revil`,
+                subject: kind === 'due'
+                    ? `Payment request ${receiptNo} from Tem Revil`
+                    : `Receipt ${receiptNo} from Tem Revil`,
                 html,
                 // Metadata for the sent-receipts history log (the function stores it).
                 meta: {
@@ -261,7 +284,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                 },
             });
             setSentTo(customerEmail.trim());
-            onToast?.(`Receipt sent to ${customerEmail.trim()}`, 'good');
+            onToast?.(`${kind === 'due' ? 'Payment request' : 'Receipt'} sent to ${customerEmail.trim()}`, 'good');
         } catch (e) {
             onToast?.((e as { message?: string })?.message || 'Failed to send the receipt.', 'warn');
         } finally {
@@ -299,6 +322,27 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                     {/* Controls. min-w-0 keeps a fixed-width child from pushing this column
                         wider than itself, which the modal's overflow-hidden would then clip. */}
                     <div className="p-5 flex flex-col gap-4 overflow-y-auto overflow-x-hidden custom-scrollbar border-b md:border-b-0 md:border-r border-[var(--section-border)] md:w-[400px] md:shrink-0 min-w-0">
+                        {/* Is this confirming money received, or asking for money owed? */}
+                        <div>
+                            <span className={labelCls}>This is</span>
+                            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-black/[0.04] dark:bg-white/[0.06]">
+                                {([
+                                    ['paid', 'Payment received', 'Thank-you receipt'],
+                                    ['due', 'Payment request', 'Reminder of what is owed'],
+                                ] as const).map(([k, title, hint]) => (
+                                    <button
+                                        key={k}
+                                        type="button"
+                                        onClick={() => setKind(k)}
+                                        title={hint}
+                                        className={`px-2 py-2 rounded-lg text-[11px] font-bold transition-colors min-w-0 truncate ${kind === k ? 'bg-blue-500 text-white shadow-sm' : 'text-sec hover:text-primary'}`}
+                                    >
+                                        {title}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
                         <div>
                             <span className={labelCls}>Projects on this receipt</span>
                             <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto custom-scrollbar pr-1">
@@ -392,6 +436,26 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                             )}
                         </div>
 
+                        {/* When the money arrived (confirmation) or when it is wanted by
+                            (request). Both editable - a payment is often logged days later. */}
+                        {kind === 'paid' ? (
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="min-w-0">
+                                    <label className={labelCls}>Payment date</label>
+                                    <DatePicker value={paidDate} onChange={setPaidDate} isDark={isDark} />
+                                </div>
+                                <div className="min-w-0">
+                                    <label className={labelCls}>Time (optional)</label>
+                                    <input className={inputCls} value={paidTime} onChange={e => setPaidTime(e.target.value)} placeholder="5:00 PM" />
+                                </div>
+                            </div>
+                        ) : (
+                            <div>
+                                <label className={labelCls}>Due by (optional)</label>
+                                <DatePicker value={dueDate} onChange={setDueDate} isDark={isDark} />
+                            </div>
+                        )}
+
                         <div>
                             <label className={labelCls}>Note (optional)</label>
                             <textarea className={`${inputCls} min-h-[60px] resize-y`} value={note} onChange={e => setNote(e.target.value)} placeholder="Thanks for your business, payment terms, etc." />
@@ -434,7 +498,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                        {sending ? 'Sending…' : sentTo ? 'Send again' : 'Send receipt'}
+                        {sending ? 'Sending…' : sentTo ? 'Send again' : (kind === 'due' ? 'Send request' : 'Send receipt')}
                     </button>
                 </div>
             </motion.div>
