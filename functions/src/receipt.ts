@@ -147,27 +147,9 @@ export function buildReceiptHtml(d: ReceiptData): string {
 
 
 /**
- * Itemized (dark) receipt for the Cloud Functions side (used by the MCP send tool).
- * Kept in sync with src/lib/receipt.ts - same markup, so a receipt sent by the AI looks
- * identical to one built in the dashboard. Currency is a plain string here.
- */
-
-/**
- * Itemized (dark) receipt for the Cloud Functions side (used by the MCP send tool).
- * Kept in sync with src/lib/receipt.ts - same markup, so a receipt sent by the AI looks
- * identical to one built in the dashboard. Currency is a plain string here.
- */
-
-/**
- * Itemized (dark) receipt for the Cloud Functions side (used by the MCP send tool).
- * Kept in sync with src/lib/receipt.ts - same markup, so a receipt sent by the AI looks
- * identical to one built in the dashboard. Currency is a plain string here.
- */
-
-/**
- * Itemized (dark) receipt for the Cloud Functions side (used by the MCP send tool).
- * Kept in sync with src/lib/receipt.ts - same markup, so a receipt sent by the AI looks
- * identical to one built in the dashboard. Currency is a plain string here.
+ * Itemized (dark) receipt - used ONLY by the MCP send_itemized_receipt tool.
+ * The dashboard builder was simplified to the single light template, so this no longer
+ * mirrors anything on the frontend: this file is now the sole owner of it.
  */
 // ── Itemized (dark) receipt ───────────────────────────────────────────
 // The hand-built style used for issued receipts: a dated work log, free-form

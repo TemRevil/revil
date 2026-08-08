@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { X, Receipt, Send, Download, Loader2, Check, Plus, Trash2 } from 'lucide-react';
+import { X, Receipt, Send, Download, Loader2, Check } from 'lucide-react';
 import app from '../../lib/firebase';
 import {
     Currency, CURRENCIES, TreasuryProject, TreasuryIncome, Rates,
     convert, projectReceived, projectContractTotal, hasInstallments, formatMoney,
     installmentMonthlyAmount, installmentTotal, installmentsPaidCount, retainerPaymentsCount,
 } from '../../lib/treasury';
-import {
-    buildReceiptHtml, receiptNumber, ReceiptData,
-    buildItemizedReceiptHtml, revReceiptNumber, ItemizedReceiptData,
-} from '../../lib/receipt';
+import { buildReceiptHtml, receiptNumber, ReceiptData } from '../../lib/receipt';
 import Select from '../Select';
 import DatePicker from '../DatePicker';
 
@@ -29,21 +26,11 @@ interface Props {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** Which layout the receipt uses. */
-type Template = 'projects' | 'itemized';
-
-interface ItemRow { id: string; label: string; caption: string; qty: string; unitPrice: string; currency: Currency }
-interface LogRow { id: string; date: string; text: string }
-const rid = () => Math.random().toString(36).slice(2, 9);
-// qty defaults to '1' so the field is never blank; a qty of 1 prints no "n x" breakdown.
-const emptyItem = (currency: Currency): ItemRow => ({ id: rid(), label: '', caption: '', qty: '1', unitPrice: '', currency });
-const emptyLog = (): LogRow => ({ id: rid(), date: '', text: '' });
-
 /**
- * Receipt builder: pick one or more projects, set the customer + issue date, preview the
- * exact HTML that will be sent, then email it (via the sendReceipt function) or download
- * it. The preview, the download and the emailed body are all the same buildReceiptHtml()
- * string, so there's no drift between what you see and what the customer gets.
+ * Receipt builder. Deliberately one template and no free-text line items: you pick the
+ * projects, and every figure on the receipt (per-installment amounts, retainer months,
+ * plan totals, balances) is derived from the treasury. The preview, the download and the
+ * emailed body are all the same buildReceiptHtml() string, so nothing can drift.
  */
 const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, isDark, onClose, onToast }: Props) => {
     const initial = projects.find(p => p.id === initialProjectId);
@@ -59,15 +46,6 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     const [note, setNote] = useState('');
     const [sending, setSending] = useState(false);
     const [sentTo, setSentTo] = useState<string | null>(null);
-
-    // Itemized template: free-form line items, a dated work log, per-currency totals.
-    const [template, setTemplate] = useState<Template>('projects');
-    const [customerSubtitle, setCustomerSubtitle] = useState(initial ? `${initial.name} project` : '');
-    const [workLogTitle, setWorkLogTitle] = useState('');
-    const [workLog, setWorkLog] = useState<LogRow[]>([emptyLog()]);
-    const [items, setItems] = useState<ItemRow[]>([emptyItem(initial?.priceCurrency ?? displayCurrency)]);
-    /** Empty = use the derived subject. */
-    const [subject, setSubject] = useState('');
 
     const toggle = (id: string) => setSelected(prev => {
         const next = new Set(prev);
@@ -126,13 +104,8 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     }
 
     /**
-     * How ONE project is billed on a receipt. Both templates run this - the light one
-     * converts everything into the receipt currency, the dark one keeps each project in
-     * its own - so a project can never be described or priced differently depending on
-     * which template is showing.
-     *
-     * `cvt` maps a native amount into the target currency (identity for the dark
-     * template), and `cur` is the currency the returned money is expressed in.
+     * How ONE project is billed, entirely derived from the treasury - the owner never types
+     * an amount. `cvt` maps a native amount into the receipt currency.
      */
     const describeBilling = useCallback((p: TreasuryProject, cvt: (n: number) => number, cur: Currency) => {
         const receivedNative = projectReceived(p, income, rates);
@@ -209,73 +182,15 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             perPayment: selectedProjects.length > 0
                 && selectedProjects.every(p => perPayment[p.id] && (hasInstallments(p) || p.monthly)),
         };
-        // income/periodLabel are read inside describeBilling, which is itself a dep.
     }, [selectedProjects, receiptCurrency, rates, receiptNo, dateLabel, customerName, customerEmail, note, perPayment, describeBilling]);
 
-    // Itemized receipts are numbered REV-YYYY-MMDD off the issue date.
-    const revNo = useMemo(() => {
-        const d = new Date(`${issueDate}T00:00:00`);
-        return revReceiptNumber(Number.isNaN(d.getTime()) ? new Date() : d);
-    }, [issueDate]);
-
-    const itemizedData: ItemizedReceiptData = useMemo(() => ({
-        receiptNo: revNo,
-        dateLabel,
-        customerName: customerName.trim() || undefined,
-        customerSubtitle: customerSubtitle.trim() || undefined,
-        workLogTitle: workLogTitle.trim() || undefined,
-        workLog: workLog
-            .filter(w => w.date.trim() || w.text.trim())
-            .map(w => ({ date: w.date.trim(), text: w.text.trim() })),
-        lines: [
-            // Selected projects are priced AUTOMATICALLY here, exactly as they are in the
-            // light template (same describeBilling), so both templates always agree. Each
-            // keeps its own currency, which is what the per-currency totals are for.
-            ...selectedProjects.map(p => {
-                const d = describeBilling(p, (n) => n, p.priceCurrency);
-                return {
-                    label: d.title,
-                    caption: d.subtitle,
-                    amount: d.price,
-                    currency: p.priceCurrency,
-                };
-            }),
-            // Then any hand-written extras (qty x unit price).
-            ...items
-                .filter(i => i.label.trim() || i.unitPrice.trim())
-                .map(i => {
-                    const q = Number(i.qty);
-                    const unit = Number(i.unitPrice) || 0;
-                    // Only surface the "n x price" breakdown when a real quantity was typed;
-                    // a plain single item stays exactly as it renders today.
-                    const showQty = Number.isFinite(q) && q > 0 && q !== 1;
-                    return {
-                        label: i.label.trim() || 'Item',
-                        caption: i.caption.trim() || undefined,
-                        qty: showQty ? q : undefined,
-                        unitPrice: showQty ? unit : undefined,
-                        // Rounded here because the per-currency totals sum raw values, and
-                        // 3 * 33.33 is 99.99000000000001 in floating point.
-                        amount: Math.round(((showQty ? q : 1) * unit + Number.EPSILON) * 100) / 100,
-                        currency: i.currency,
-                    };
-                }),
-        ],
-        note: note.trim() || undefined,
-    }), [revNo, dateLabel, customerName, customerSubtitle, workLogTitle, workLog, items, note, selectedProjects, describeBilling]);
-
-    const isItemized = template === 'itemized';
-    const html = useMemo(
-        () => (isItemized ? buildItemizedReceiptHtml(itemizedData) : buildReceiptHtml(data)),
-        [isItemized, itemizedData, data],
-    );
+    const html = useMemo(() => buildReceiptHtml(data), [data]);
 
     // Fit-to-frame preview: the receipt is a fixed ~624px-wide document, so instead of
     // scrolling it inside the panel we scale the whole thing down to fit the available box
     // (both axes), showing it whole with no scrollbars. NAT_W is the receipt's natural
     // width (600 card + 12px page padding each side); natH is measured from the iframe.
-    // The itemized doc is wider (640 card + 20px page padding each side).
-    const NAT_W = isItemized ? 680 : 624;
+    const NAT_W = 624;
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const fitRef = useRef<HTMLDivElement>(null);
     const [natH, setNatH] = useState(560);
@@ -310,31 +225,14 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         : 1;
 
     const emailValid = EMAIL_RE.test(customerEmail.trim());
-    const activeNo = isItemized ? revNo : receiptNo;
-    const defaultSubject = isItemized
-        ? `Receipt from Revil${customerSubtitle.trim() ? ` - ${customerSubtitle.trim()}` : ''}`
-        : `Receipt ${receiptNo} from Tem Revil`;
-    // Itemized receipts stand on their line items; project ones need a project picked.
-    const hasContent = isItemized ? itemizedData.lines.length > 0 : selectedProjects.length > 0;
-    const canSend = emailValid && hasContent && !sending;
-
-    // History log needs one headline figure: for a multi-currency itemized receipt that's
-    // the total of the first currency used.
-    const itemizedHeadline = useMemo(() => {
-        const first = itemizedData.lines[0];
-        if (!first) return { currency: receiptCurrency as string, total: 0 };
-        return {
-            currency: first.currency as string,
-            total: itemizedData.lines.filter(l => l.currency === first.currency).reduce((s, l) => s + l.amount, 0),
-        };
-    }, [itemizedData, receiptCurrency]);
+    const canSend = emailValid && selectedProjects.length > 0 && !sending;
 
     const download = () => {
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${activeNo}.html`;
+        a.download = `${receiptNo}.html`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -342,10 +240,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     };
 
     const send = async () => {
-        if (!hasContent) {
-            onToast?.(isItemized ? 'Add at least one line item first.' : 'Pick at least one project first.', 'warn');
-            return;
-        }
+        if (!selectedProjects.length) { onToast?.('Pick at least one project first.', 'warn'); return; }
         if (!emailValid) { onToast?.('Enter a valid customer email.', 'warn'); return; }
         setSending(true);
         try {
@@ -353,14 +248,14 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             const fn = httpsCallable(getFunctions(app, 'us-central1'), 'sendReceipt');
             await fn({
                 to: customerEmail.trim(),
-                subject: subject.trim() || defaultSubject,
+                subject: `Receipt ${receiptNo} from Tem Revil`,
                 html,
                 // Metadata for the sent-receipts history log (the function stores it).
                 meta: {
-                    receiptNo: activeNo,
-                    currency: isItemized ? itemizedHeadline.currency : receiptCurrency,
-                    total: isItemized ? itemizedHeadline.total : data.totals.price,
-                    balance: isItemized ? 0 : data.totals.balance,
+                    receiptNo,
+                    currency: receiptCurrency,
+                    total: data.totals.price,
+                    balance: data.totals.balance,
                     projectIds: selectedProjects.map(p => p.id),
                     projectNames: selectedProjects.map(p => p.name),
                 },
@@ -375,12 +270,8 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     };
 
     const labelCls = 'block text-[11px] font-bold uppercase tracking-wider text-sec mb-1.5';
-    // inputBase deliberately has NO width. Appending `w-[56px]` to a class string that
-    // already contains `w-full` does NOT win - which class applies is decided by CSS source
-    // order, not attribute order, so the narrow fields silently rendered full width and
-    // pushed their rows out of the column. Width is now always set explicitly.
-    const inputBase = `rounded-xl border px-3.5 py-2.5 text-sm outline-none transition-colors ${isDark ? 'bg-white/5 border-white/10 focus:border-blue-400/60' : 'bg-black/[0.03] border-black/10 focus:border-blue-400/60'} text-primary`;
-    const inputCls = `w-full ${inputBase}`;
+    const inputCls = `w-full rounded-xl border px-3.5 py-2.5 text-sm outline-none transition-colors ${isDark ? 'bg-white/5 border-white/10 focus:border-blue-400/60' : 'bg-black/[0.03] border-black/10 focus:border-blue-400/60'} text-primary`;
+    const showPeriod = selectedProjects.some(p => p.monthly && perPayment[p.id]);
 
     return createPortal(
         <motion.div
@@ -392,7 +283,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                 initial={{ scale: 0.95, opacity: 0, y: 15 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0, y: 15 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 350 }}
                 onClick={e => e.stopPropagation()}
-                className={`w-full max-w-[1180px] max-h-[92vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
+                className={`w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${isDark ? 'bg-[#0f0f14] border-white/10' : 'bg-white border-black/5'}`}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-5 border-b border-[var(--section-border)]">
@@ -403,30 +294,14 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                     <button onClick={onClose} className="p-2 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-all"><X size={18} /></button>
                 </div>
 
-                {/* Body: controls | preview, side by side on desktop, stacked on mobile */}
+                {/* Body: controls | preview */}
                 <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-                    {/* Controls. min-w-0 is load-bearing: without it a flex child defaults to
-                        min-width:auto, so any fixed-width row (qty x price x currency) pushes
-                        this column past its width and the modal's overflow-hidden clips the
-                        labels off the left edge. overflow-x-hidden is the backstop. */}
-                    <div className="p-5 flex flex-col gap-4 overflow-y-auto overflow-x-hidden custom-scrollbar border-b md:border-b-0 md:border-r border-[var(--section-border)] md:w-[452px] md:shrink-0 min-w-0">
+                    {/* Controls. min-w-0 keeps a fixed-width child from pushing this column
+                        wider than itself, which the modal's overflow-hidden would then clip. */}
+                    <div className="p-5 flex flex-col gap-4 overflow-y-auto overflow-x-hidden custom-scrollbar border-b md:border-b-0 md:border-r border-[var(--section-border)] md:w-[400px] md:shrink-0 min-w-0">
                         <div>
-                            <label className={labelCls}>Template</label>
-                            <Select
-                                value={template}
-                                onChange={v => setTemplate(v as Template)}
-                                isDark={isDark}
-                                options={[
-                                    { value: 'projects', label: 'Projects summary (light)' },
-                                    { value: 'itemized', label: 'Itemized work log (dark)' },
-                                ]}
-                                aria-label="Receipt template"
-                            />
-                        </div>
-
-                        <div>
-                            <span className={labelCls}>{isItemized ? 'Projects (optional - autofill & history)' : 'Projects on this receipt'}</span>
-                            <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                            <span className={labelCls}>Projects on this receipt</span>
+                            <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto custom-scrollbar pr-1">
                                 {projects.length === 0 && <p className="text-sm text-sec">No projects yet.</p>}
                                 {projects.map(p => {
                                     const on = selected.has(p.id);
@@ -449,10 +324,10 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                                 <span className="text-xs font-bold text-sec tnum shrink-0">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}</span>
                                             </button>
 
-                                            {/* Installment plans and retainers get a scope choice: bill the whole
-                                                contract, or just this month's payment. */}
+                                            {/* Installment plans and retainers get a scope choice: bill the
+                                                whole contract, or just this month's payment. */}
                                             {on && onPlan && (
-                                                <div className="flex items-center gap-1 px-2.5 pb-2.5 -mt-0.5">
+                                                <div className="flex items-center gap-1 px-2.5 pb-2.5 -mt-0.5 min-w-0">
                                                     {([['payment', p.monthly ? 'This month' : 'One installment'], ['full', 'Whole project']] as const).map(([mode, text]) => {
                                                         const active = (mode === 'payment') === single;
                                                         return (
@@ -460,14 +335,14 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                                                 key={mode}
                                                                 type="button"
                                                                 onClick={() => setPerPayment(prev => ({ ...prev, [p.id]: mode === 'payment' }))}
-                                                                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${active ? 'bg-blue-500 text-white' : 'text-sec hover:text-primary bg-black/[0.04] dark:bg-white/[0.06]'}`}
+                                                                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors shrink-0 ${active ? 'bg-blue-500 text-white' : 'text-sec hover:text-primary bg-black/[0.04] dark:bg-white/[0.06]'}`}
                                                             >
                                                                 {text}
                                                             </button>
                                                         );
                                                     })}
                                                     {single && (
-                                                        <span className="text-[10px] text-sec tnum ml-auto shrink-0">
+                                                        <span className="text-[10px] text-sec tnum ml-auto shrink-0 truncate">
                                                             {p.monthly
                                                                 ? formatMoney(p.priceAmount || 0, p.priceCurrency)
                                                                 : `${formatMoney(installmentMonthlyAmount(p), p.priceCurrency)} x ${p.installmentMonths}`}
@@ -482,22 +357,13 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
-                            <div>
+                            <div className="min-w-0">
                                 <label className={labelCls}>Customer name</label>
                                 <input className={inputCls} value={customerName} onChange={e => { touched.current.name = true; setCustomerName(e.target.value); }} placeholder="Person or company" />
                             </div>
-                            <div>
-                                {isItemized ? (
-                                    <>
-                                        <label className={labelCls}>Under the name</label>
-                                        <input className={inputCls} value={customerSubtitle} onChange={e => setCustomerSubtitle(e.target.value)} placeholder="RooleTask project" />
-                                    </>
-                                ) : (
-                                    <>
-                                        <label className={labelCls}>Currency</label>
-                                        <Select value={receiptCurrency} onChange={v => { touched.current.currency = true; setReceiptCurrency(v as Currency); }} isDark={isDark} options={CURRENCIES.map(c => ({ value: c, label: c }))} aria-label="Receipt currency" />
-                                    </>
-                                )}
+                            <div className="min-w-0">
+                                <label className={labelCls}>Currency</label>
+                                <Select value={receiptCurrency} onChange={v => { touched.current.currency = true; setReceiptCurrency(v as Currency); }} isDark={isDark} options={CURRENCIES.map(c => ({ value: c, label: c }))} aria-label="Receipt currency" />
                             </div>
                         </div>
 
@@ -506,152 +372,32 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                             <input className={inputCls} type="email" value={customerEmail} onChange={e => { touched.current.email = true; setCustomerEmail(e.target.value); setSentTo(null); }} placeholder="name@example.com" />
                         </div>
 
-                        <div>
-                            <label className={labelCls}>Issue date</label>
-                            <DatePicker value={issueDate} onChange={setIssueDate} isDark={isDark} />
-                        </div>
-
-                        {/* Only meaningful when a retainer is billed for a single month, and
-                            editable because August's fee often gets paid in September. */}
-                        {selectedProjects.some(p => p.monthly && perPayment[p.id]) && (
-                            <div>
-                                <label className={labelCls}>Period covered</label>
-                                <input
-                                    className={inputCls}
-                                    value={periodLabel}
-                                    onChange={e => { setPeriodTouched(true); setPeriodLabel(e.target.value); }}
-                                    placeholder="August 2026"
-                                />
+                        <div className={showPeriod ? 'grid grid-cols-2 gap-3' : ''}>
+                            <div className="min-w-0">
+                                <label className={labelCls}>Issue date</label>
+                                <DatePicker value={issueDate} onChange={setIssueDate} isDark={isDark} />
                             </div>
-                        )}
-
-                        {isItemized && (
-                            <>
-                                <div>
-                                    <label className={labelCls}>Email subject</label>
-                                    <input className={inputCls} value={subject} onChange={e => setSubject(e.target.value)} placeholder={defaultSubject} />
+                            {/* Only meaningful when a retainer is billed for a single month, and
+                                editable because August's fee often gets paid in September. */}
+                            {showPeriod && (
+                                <div className="min-w-0">
+                                    <label className={labelCls}>Period covered</label>
+                                    <input
+                                        className={inputCls}
+                                        value={periodLabel}
+                                        onChange={e => { setPeriodTouched(true); setPeriodLabel(e.target.value); }}
+                                        placeholder="August 2026"
+                                    />
                                 </div>
-
-                                {/* Work log - the dated "what I shipped" section */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <span className={labelCls} style={{ margin: 0 }}>Work log</span>
-                                        <button type="button" onClick={() => setWorkLog(w => [...w, emptyLog()])} className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-500 hover:text-blue-400 transition-colors">
-                                            <Plus size={12} /> Add
-                                        </button>
-                                    </div>
-                                    <input className={`${inputCls} mb-2`} value={workLogTitle} onChange={e => setWorkLogTitle(e.target.value)} placeholder="Development fixes - July 2026" />
-                                    <div className="flex flex-col gap-2">
-                                        {workLog.map(w => (
-                                            <div key={w.id} className="flex gap-1.5 items-start min-w-0">
-                                                <input
-                                                    className={`${inputBase} w-[72px] shrink-0 px-2`}
-                                                    value={w.date}
-                                                    onChange={e => setWorkLog(rows => rows.map(r => r.id === w.id ? { ...r, date: e.target.value } : r))}
-                                                    placeholder="2 Jul"
-                                                />
-                                                <textarea
-                                                    className={`${inputCls} flex-1 min-w-0 min-h-[38px] resize-y`}
-                                                    value={w.text}
-                                                    onChange={e => setWorkLog(rows => rows.map(r => r.id === w.id ? { ...r, text: e.target.value } : r))}
-                                                    placeholder="What you shipped"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setWorkLog(rows => rows.length > 1 ? rows.filter(r => r.id !== w.id) : [emptyLog()])}
-                                                    className="p-2 rounded-lg text-sec hover:text-red-500 transition-colors shrink-0"
-                                                    aria-label="Remove entry"
-                                                ><Trash2 size={14} /></button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Line items - each carries its own currency */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <span className={labelCls} style={{ margin: 0 }}>Line items</span>
-                                        <div className="flex items-center gap-3">
-                                            <button type="button" onClick={() => setItems(i => [...i, emptyItem(receiptCurrency)])} className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-500 hover:text-blue-400 transition-colors">
-                                                <Plus size={12} /> Add
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col gap-2.5">
-                                        {items.map(it => (
-                                            <div key={it.id} className="rounded-xl border border-[var(--section-border)] p-2.5 flex flex-col gap-2">
-                                                <div className="flex gap-1.5 items-center min-w-0">
-                                                    <input
-                                                        className={`${inputCls} flex-1 min-w-0`}
-                                                        value={it.label}
-                                                        onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, label: e.target.value } : r))}
-                                                        placeholder="Development - security fixes"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setItems(rows => rows.length > 1 ? rows.filter(r => r.id !== it.id) : [emptyItem(receiptCurrency)])}
-                                                        className="p-2 rounded-lg text-sec hover:text-red-500 transition-colors shrink-0"
-                                                        aria-label="Remove item"
-                                                    ><Trash2 size={14} /></button>
-                                                </div>
-                                                <input
-                                                    className={inputCls}
-                                                    value={it.caption}
-                                                    onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, caption: e.target.value } : r))}
-                                                    placeholder="RooleTask - July 2026 (optional)"
-                                                />
-                                                <div className="flex gap-1.5 items-center min-w-0">
-                                                    <input
-                                                        className={`${inputBase} w-[58px] shrink-0 text-center px-2`}
-                                                        inputMode="decimal"
-                                                        value={it.qty}
-                                                        onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, qty: e.target.value } : r))}
-                                                        placeholder="1"
-                                                        aria-label="Quantity"
-                                                    />
-                                                    <span className="text-sec text-xs shrink-0">&times;</span>
-                                                    <input
-                                                        className={`${inputCls} flex-1 min-w-0`}
-                                                        inputMode="decimal"
-                                                        value={it.unitPrice}
-                                                        onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, unitPrice: e.target.value } : r))}
-                                                        placeholder="50"
-                                                        aria-label="Unit price"
-                                                    />
-                                                    <div className="w-[82px] shrink-0">
-                                                        <Select
-                                                            value={it.currency}
-                                                            onChange={v => setItems(rows => rows.map(r => r.id === it.id ? { ...r, currency: v as Currency } : r))}
-                                                            isDark={isDark}
-                                                            options={CURRENCIES.map(c => ({ value: c, label: c }))}
-                                                            aria-label="Item currency"
-                                                        />
-                                                    </div>
-                                                </div>
-                                                {/* Show the multiplication before it reaches the preview. */}
-                                                {(() => {
-                                                    const q = Number(it.qty);
-                                                    const u = Number(it.unitPrice) || 0;
-                                                    if (!Number.isFinite(q) || q <= 0 || q === 1 || !u) return null;
-                                                    return (
-                                                        <div className="text-[11px] text-sec text-right tnum">
-                                                            {q} &times; {formatMoney(u, it.currency)} = <span className="font-bold text-primary">{formatMoney(Math.round((q * u + Number.EPSILON) * 100) / 100, it.currency)}</span>
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </>
-                        )}
+                            )}
+                        </div>
 
                         <div>
                             <label className={labelCls}>Note (optional)</label>
-                            <textarea className={`${inputCls} min-w-0 min-h-[60px] resize-y`} value={note} onChange={e => setNote(e.target.value)} placeholder="Thanks for your business, payment terms, etc." />
+                            <textarea className={`${inputCls} min-h-[60px] resize-y`} value={note} onChange={e => setNote(e.target.value)} placeholder="Thanks for your business, payment terms, etc." />
                         </div>
 
-                        <div className="text-[11px] text-sec">Receipt no. <span className="font-mono text-primary">{activeNo}</span></div>
+                        <div className="text-[11px] text-sec">Receipt no. <span className="font-mono text-primary">{receiptNo}</span></div>
                     </div>
 
                     {/* Preview - scaled to fit the panel, no scrollbars */}
@@ -663,7 +409,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                         <div ref={fitRef} className="flex-1 min-h-0 overflow-hidden flex items-center justify-center">
                             {/* The border wraps the receipt itself (sized to the scaled doc), so the
                                 frame IS the receipt and leftover space stays neutral - no empty panel. */}
-                            <div className="overflow-hidden rounded-xl border border-[var(--section-border)] shadow-sm" style={{ width: NAT_W * scale, height: natH * scale, background: isItemized ? '#0a0a0a' : '#fff' }}>
+                            <div className="overflow-hidden rounded-xl border border-[var(--section-border)] bg-white shadow-sm" style={{ width: NAT_W * scale, height: natH * scale }}>
                                 <iframe
                                     ref={iframeRef}
                                     title="Receipt preview"
