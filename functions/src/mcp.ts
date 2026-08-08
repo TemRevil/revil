@@ -1494,7 +1494,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       description:
         "Send the DARK itemized Revil receipt: free-form line items that each carry their own " +
         "currency, optional dated sub-entries nested under a line (what shipped for that project), " +
-        "and one total per currency. When the receipt mixes currencies it also shows an " +
+        "and one total per currency. For repeated units pass qty + unitPrice and omit amount - the receipt then prints '3 x $50.00' under the label. " +
+        "When the receipt mixes currencies it also shows an " +
         "emphasized grand-total row underneath, converting everything into the treasury's base " +
         "currency (EGP) at current rates - override with grandTotalCurrency. Use this instead of " +
         "send_treasury_receipt when the receipt needs custom wording, a work log, or mixed " +
@@ -1507,7 +1508,9 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         lines: z.array(z.object({
           label: z.string().min(1),
           caption: z.string().optional().describe("small muted line under the label"),
-          amount: z.number(),
+          qty: z.number().positive().optional().describe("how many units - omit for a single-amount line"),
+          unitPrice: z.number().optional().describe("price of ONE unit; required when qty is set"),
+          amount: z.number().optional().describe("line total; omit when qty + unitPrice are given (they get multiplied)"),
           currency: z.enum(["USD", "EGP", "EUR"]),
           details: z.array(z.object({
             date: z.string().describe("short date chip, e.g. '2 Jul'"),
@@ -1535,6 +1538,15 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       const dateLabel = valid.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
       const receiptNo = revReceiptNumber(valid);
 
+      // Resolve every line's total ONCE, so the four places that consume it below cannot
+      // disagree: a line is either an explicit `amount`, or qty x unitPrice.
+      const lines = a.lines.map((l) => ({
+        ...l,
+        amount: round2(l.amount ?? ((l.qty ?? 1) * (l.unitPrice ?? 0))),
+      }));
+      const badLine = lines.find((l) => !Number.isFinite(l.amount));
+      if (badLine) return fail(`Line "${badLine.label}" needs either an amount, or both qty and unitPrice.`);
+
       // Grand total: one converted figure shown as an emphasized row UNDER the per-currency
       // totals. Appears automatically whenever the receipt mixes currencies (converted into
       // the treasury's base currency), or is forced/overridden by grandTotalCurrency.
@@ -1543,11 +1555,11 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         const sdoc = await db().doc("Treasury/settings").get();
         const settings = (sdoc.data() || {}) as TreasurySettings;
         const rates = settings.rates || DEFAULT_RATES;
-        const distinct = [...new Set(a.lines.map((l) => l.currency))];
+        const distinct = [...new Set(lines.map((l) => l.currency))];
         const baseCur = (typeof settings.defaultCurrency === "string" ? settings.defaultCurrency : "EGP");
         const gc = a.grandTotalCurrency || (distinct.length > 1 ? baseCur : undefined);
         if (gc) {
-          const amount = round2(a.lines.reduce((s, l) => s + convert(l.amount || 0, l.currency, gc, rates), 0));
+          const amount = round2(lines.reduce((s, l) => s + convert(l.amount || 0, l.currency, gc, rates), 0));
           const others = distinct.filter((c) => c !== gc);
           grandTotal = {
             currency: gc,
@@ -1566,14 +1578,14 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         customerSubtitle: a.customerSubtitle,
         workLogTitle: a.workLogTitle,
         workLog: a.workLog,
-        lines: a.lines,
+        lines,
         grandTotal,
         note: a.note,
       });
 
       // Headline figure for the history log: the total of the first currency used.
-      const headCur = a.lines[0].currency;
-      const headTotal = round2(a.lines
+      const headCur = lines[0].currency;
+      const headTotal = round2(lines
         .filter((l) => l.currency === headCur)
         .reduce((s, l) => s + (l.amount || 0), 0));
 
@@ -1614,7 +1626,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         console.error("[mcp] itemized receipt sent but history log failed:", logErr);
       }
 
-      return ok({ status: "sent", to, receiptNo, lines: a.lines.length, headline: { currency: headCur, total: headTotal } });
+      return ok({ status: "sent", to, receiptNo, lines: lines.length, headline: { currency: headCur, total: headTotal } });
     });
 
   server.registerTool("add_income",

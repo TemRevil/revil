@@ -6,6 +6,7 @@ import app from '../../lib/firebase';
 import {
     Currency, CURRENCIES, TreasuryProject, TreasuryIncome, Rates,
     convert, projectReceived, projectContractTotal, hasInstallments, formatMoney,
+    installmentMonthlyAmount, installmentTotal, installmentsPaidCount, retainerPaymentsCount,
 } from '../../lib/treasury';
 import {
     buildReceiptHtml, receiptNumber, ReceiptData,
@@ -31,10 +32,11 @@ const today = () => new Date().toISOString().slice(0, 10);
 /** Which layout the receipt uses. */
 type Template = 'projects' | 'itemized';
 
-interface ItemRow { id: string; label: string; caption: string; amount: string; currency: Currency }
+interface ItemRow { id: string; label: string; caption: string; qty: string; unitPrice: string; currency: Currency }
 interface LogRow { id: string; date: string; text: string }
 const rid = () => Math.random().toString(36).slice(2, 9);
-const emptyItem = (currency: Currency): ItemRow => ({ id: rid(), label: '', caption: '', amount: '', currency });
+// qty defaults to '1' so the field is never blank; a qty of 1 prints no "n x" breakdown.
+const emptyItem = (currency: Currency): ItemRow => ({ id: rid(), label: '', caption: '', qty: '1', unitPrice: '', currency });
 const emptyLog = (): LogRow => ({ id: rid(), date: '', text: '' });
 
 /**
@@ -50,6 +52,9 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     const [customerName, setCustomerName] = useState(initial?.client ?? '');
     const [customerEmail, setCustomerEmail] = useState(initial?.clientEmail ?? '');
     const [issueDate, setIssueDate] = useState(today());
+    // Per-project: bill ONE installment / ONE month instead of the whole contract.
+    // Keyed by project id, defaulted on below for any project that is on a plan.
+    const [perPayment, setPerPayment] = useState<Record<string, boolean>>({});
     const [receiptNo] = useState(() => receiptNumber());
     const [note, setNote] = useState('');
     const [sending, setSending] = useState(false);
@@ -92,12 +97,74 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         return Number.isNaN(d.getTime()) ? issueDate : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     }, [issueDate]);
 
+    // Which month a retainer receipt covers, e.g. "August 2026". Defaults to the issue
+    // date's month; editable because August's fee is routinely paid in September.
+    const monthOf = (iso: string) => {
+        const d = new Date(`${iso}T00:00:00`);
+        return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    };
+    const [periodTouched, setPeriodTouched] = useState(false);
+    const [periodLabel, setPeriodLabel] = useState(() => monthOf(today()));
+    const derivedPeriod = monthOf(issueDate);
+    const [syncedPeriodFrom, setSyncedPeriodFrom] = useState(derivedPeriod);
+    if (syncedPeriodFrom !== derivedPeriod) {
+        setSyncedPeriodFrom(derivedPeriod);
+        if (!periodTouched && derivedPeriod) setPeriodLabel(derivedPeriod);
+    }
+
+    // Default any plan/retainer project to per-payment billing the first time it is
+    // selected - that is the common case - while leaving a manual choice alone.
+    const [scopedIds, setScopedIds] = useState<Set<string>>(() => new Set());
+    const unscoped = selectedProjects.filter(p => !scopedIds.has(p.id));
+    if (unscoped.length) {
+        setScopedIds(prev => { const n = new Set(prev); unscoped.forEach(p => n.add(p.id)); return n; });
+        setPerPayment(prev => {
+            const n = { ...prev };
+            unscoped.forEach(p => { if (hasInstallments(p) || p.monthly) n[p.id] = true; });
+            return n;
+        });
+    }
+
     const data: ReceiptData = useMemo(() => {
         const lines = selectedProjects.map(p => {
             const cvt = (n: number) => convert(n, p.priceCurrency, receiptCurrency, rates);
+            const receivedNative = projectReceived(p, income, rates);
+
+            // "This payment" mode: the receipt covers ONE installment / ONE month rather
+            // than the whole contract, which is what a client actually gets billed for
+            // month to month. Whole-project mode keeps the original behaviour.
+            if (perPayment[p.id] && (hasInstallments(p) || p.monthly)) {
+                if (p.monthly) {
+                    const n = retainerPaymentsCount(p, income);
+                    return {
+                        name: `${p.name} - ${periodLabel}`,
+                        // A retainer is open-ended: no denominator, and no balance to owe.
+                        note: `Monthly retainer${n ? ` - payment ${n}` : ''}`,
+                        price: cvt(p.priceAmount || 0),
+                        paid: cvt(p.priceAmount || 0),
+                        balance: null,
+                    };
+                }
+                const months = p.installmentMonths || 0;
+                const perMonth = installmentMonthlyAmount(p);
+                const paidCount = installmentsPaidCount(p, income, rates);
+                const planTotal = installmentTotal(p);
+                const surcharge = planTotal - (p.priceAmount || 0);
+                return {
+                    name: `${p.name} - installment ${Math.min(months, paidCount || 1)} of ${months}`,
+                    // Spell the surcharge out in MONEY: "(+6%)" alone doesn't let a client
+                    // reconcile 6 x 1,413.33 against the 8,000 they agreed to.
+                    note: surcharge > 0
+                        ? `Plan total ${formatMoney(cvt(planTotal), receiptCurrency)} = ${formatMoney(cvt(p.priceAmount || 0), receiptCurrency)} + ${p.installmentPercent}% fee ${formatMoney(cvt(surcharge), receiptCurrency)}, over ${months} months`
+                        : `Installment ${Math.min(months, paidCount || 1)} of ${months} - plan total ${formatMoney(cvt(planTotal), receiptCurrency)}`,
+                    price: cvt(perMonth),
+                    paid: cvt(perMonth),
+                    balance: cvt(Math.max(0, planTotal - receivedNative)),
+                };
+            }
+
             const priceNative = p.monthly ? (p.priceAmount || 0) : projectContractTotal(p);
-            const paidNative = projectReceived(p, income, rates);
-            const balNative = p.monthly ? null : Math.max(0, priceNative - paidNative);
+            const balNative = p.monthly ? null : Math.max(0, priceNative - receivedNative);
             return {
                 name: p.name,
                 note: p.monthly
@@ -106,7 +173,9 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                         ? `${p.installmentMonths} installments${p.installmentPercent ? ` (+${p.installmentPercent}%)` : ''}`
                         : undefined,
                 price: cvt(priceNative),
-                paid: cvt(paidNative),
+                // A retainer's lifetime total is not "paid" against one month's rate -
+                // showing it made a 6-month retainer read as Price 3,000 / Paid 18,000.
+                paid: cvt(p.monthly ? Math.min(receivedNative, priceNative) : receivedNative),
                 balance: balNative === null ? null : cvt(balNative),
             };
         });
@@ -124,8 +193,12 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             totals,
             note: note.trim() || undefined,
             converted: selectedProjects.some(p => p.priceCurrency !== receiptCurrency),
+            // Only relabel the totals when EVERY line is a single payment; a mixed receipt
+            // keeps the plain wording so neither label is wrong for half the rows.
+            perPayment: selectedProjects.length > 0
+                && selectedProjects.every(p => perPayment[p.id] && (hasInstallments(p) || p.monthly)),
         };
-    }, [selectedProjects, receiptCurrency, income, rates, receiptNo, dateLabel, customerName, customerEmail, note]);
+    }, [selectedProjects, receiptCurrency, income, rates, receiptNo, dateLabel, customerName, customerEmail, note, perPayment, periodLabel]);
 
     // Itemized receipts are numbered REV-YYYY-MMDD off the issue date.
     const revNo = useMemo(() => {
@@ -143,13 +216,24 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             .filter(w => w.date.trim() || w.text.trim())
             .map(w => ({ date: w.date.trim(), text: w.text.trim() })),
         lines: items
-            .filter(i => i.label.trim() || i.amount.trim())
-            .map(i => ({
-                label: i.label.trim() || 'Item',
-                caption: i.caption.trim() || undefined,
-                amount: Number(i.amount) || 0,
-                currency: i.currency,
-            })),
+            .filter(i => i.label.trim() || i.unitPrice.trim())
+            .map(i => {
+                const q = Number(i.qty);
+                const unit = Number(i.unitPrice) || 0;
+                // Only surface the "n x price" breakdown when a real quantity was typed;
+                // a plain single item stays exactly as it renders today.
+                const showQty = Number.isFinite(q) && q > 0 && q !== 1;
+                return {
+                    label: i.label.trim() || 'Item',
+                    caption: i.caption.trim() || undefined,
+                    qty: showQty ? q : undefined,
+                    unitPrice: showQty ? unit : undefined,
+                    // Rounded here because the per-currency totals sum raw values, and
+                    // 3 * 33.33 is 99.99000000000001 in floating point.
+                    amount: Math.round(((showQty ? q : 1) * unit + Number.EPSILON) * 100) / 100,
+                    currency: i.currency,
+                };
+            }),
         note: note.trim() || undefined,
     }), [revNo, dateLabel, customerName, customerSubtitle, workLogTitle, workLog, items, note]);
 
@@ -220,15 +304,27 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
 
     /** Append the currently selected projects as line items (keeps anything already typed). */
     const fillFromProjects = () => {
-        const rows: ItemRow[] = selectedProjects.map(p => ({
-            id: rid(),
-            label: p.name,
-            caption: p.client || '',
-            amount: String(p.monthly ? (p.priceAmount || 0) : projectContractTotal(p)),
-            currency: p.priceCurrency,
-        }));
+        const rows: ItemRow[] = selectedProjects.map(p => {
+            // Respect the same per-payment choice the projects template uses, so pulling a
+            // plan in as a line item bills one installment/month, not the whole contract.
+            const single = !!perPayment[p.id] && (hasInstallments(p) || !!p.monthly);
+            const amount = single
+                ? (p.monthly ? (p.priceAmount || 0) : installmentMonthlyAmount(p))
+                : (p.monthly ? (p.priceAmount || 0) : projectContractTotal(p));
+            const caption = single
+                ? (p.monthly ? `Monthly retainer - ${periodLabel}` : `Installment ${Math.min(p.installmentMonths || 0, installmentsPaidCount(p, income, rates) || 1)} of ${p.installmentMonths}`)
+                : (p.client || '');
+            return {
+                id: rid(),
+                label: p.name,
+                caption,
+                qty: '1',
+                unitPrice: String(amount),
+                currency: p.priceCurrency,
+            };
+        });
         if (!rows.length) return;
-        setItems(prev => [...prev.filter(r => r.label.trim() || r.amount.trim()), ...rows]);
+        setItems(prev => [...prev.filter(r => r.label.trim() || r.unitPrice.trim()), ...rows]);
     };
 
     const download = () => {
@@ -324,22 +420,52 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                 {projects.length === 0 && <p className="text-sm text-sec">No projects yet.</p>}
                                 {projects.map(p => {
                                     const on = selected.has(p.id);
+                                    const onPlan = hasInstallments(p) || !!p.monthly;
+                                    const single = !!perPayment[p.id];
                                     return (
-                                        <button
-                                            key={p.id}
-                                            type="button"
-                                            onClick={() => toggle(p.id)}
-                                            className={`flex items-center gap-3 p-2.5 rounded-xl border text-left transition-colors ${on ? 'border-blue-400/60 bg-blue-500/[0.06]' : 'border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]'}`}
-                                        >
-                                            <span className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${on ? 'bg-blue-500 text-white' : 'border border-black/20 dark:border-white/20'}`}>
-                                                {on && <Check size={13} strokeWidth={3} />}
-                                            </span>
-                                            <span className="min-w-0 flex-1">
-                                                <span className="block text-sm font-semibold text-primary truncate">{p.name}</span>
-                                                {p.client && <span className="block text-[11px] text-sec truncate">{p.client}</span>}
-                                            </span>
-                                            <span className="text-xs font-bold text-sec tnum shrink-0">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}</span>
-                                        </button>
+                                        <div key={p.id} className={`rounded-xl border transition-colors ${on ? 'border-blue-400/60 bg-blue-500/[0.06]' : 'border-transparent hover:bg-black/[0.03] dark:hover:bg-white/[0.04]'}`}>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggle(p.id)}
+                                                className="w-full flex items-center gap-3 p-2.5 text-left bg-transparent border-none cursor-pointer"
+                                            >
+                                                <span className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${on ? 'bg-blue-500 text-white' : 'border border-black/20 dark:border-white/20'}`}>
+                                                    {on && <Check size={13} strokeWidth={3} />}
+                                                </span>
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block text-sm font-semibold text-primary truncate">{p.name}</span>
+                                                    {p.client && <span className="block text-[11px] text-sec truncate">{p.client}</span>}
+                                                </span>
+                                                <span className="text-xs font-bold text-sec tnum shrink-0">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}</span>
+                                            </button>
+
+                                            {/* Installment plans and retainers get a scope choice: bill the whole
+                                                contract, or just this month's payment. */}
+                                            {on && onPlan && (
+                                                <div className="flex items-center gap-1 px-2.5 pb-2.5 -mt-0.5">
+                                                    {([['payment', p.monthly ? 'This month' : 'One installment'], ['full', 'Whole project']] as const).map(([mode, text]) => {
+                                                        const active = (mode === 'payment') === single;
+                                                        return (
+                                                            <button
+                                                                key={mode}
+                                                                type="button"
+                                                                onClick={() => setPerPayment(prev => ({ ...prev, [p.id]: mode === 'payment' }))}
+                                                                className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors ${active ? 'bg-blue-500 text-white' : 'text-sec hover:text-primary bg-black/[0.04] dark:bg-white/[0.06]'}`}
+                                                            >
+                                                                {text}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                    {single && (
+                                                        <span className="text-[10px] text-sec tnum ml-auto shrink-0">
+                                                            {p.monthly
+                                                                ? formatMoney(p.priceAmount || 0, p.priceCurrency)
+                                                                : `${formatMoney(installmentMonthlyAmount(p), p.priceCurrency)} x ${p.installmentMonths}`}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>
@@ -374,6 +500,20 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                             <label className={labelCls}>Issue date</label>
                             <DatePicker value={issueDate} onChange={setIssueDate} isDark={isDark} />
                         </div>
+
+                        {/* Only meaningful when a retainer is billed for a single month, and
+                            editable because August's fee often gets paid in September. */}
+                        {selectedProjects.some(p => p.monthly && perPayment[p.id]) && (
+                            <div>
+                                <label className={labelCls}>Period covered</label>
+                                <input
+                                    className={inputCls}
+                                    value={periodLabel}
+                                    onChange={e => { setPeriodTouched(true); setPeriodLabel(e.target.value); }}
+                                    placeholder="August 2026"
+                                />
+                            </div>
+                        )}
 
                         {isItemized && (
                             <>
@@ -455,11 +595,21 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                                 />
                                                 <div className="flex gap-2">
                                                     <input
+                                                        className={`${inputCls} w-[68px] shrink-0 text-center`}
+                                                        inputMode="decimal"
+                                                        value={it.qty}
+                                                        onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, qty: e.target.value } : r))}
+                                                        placeholder="1"
+                                                        aria-label="Quantity"
+                                                    />
+                                                    <span className="self-center text-sec text-sm shrink-0">&times;</span>
+                                                    <input
                                                         className={`${inputCls} flex-1`}
                                                         inputMode="decimal"
-                                                        value={it.amount}
-                                                        onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, amount: e.target.value } : r))}
-                                                        placeholder="3000"
+                                                        value={it.unitPrice}
+                                                        onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, unitPrice: e.target.value } : r))}
+                                                        placeholder="50"
+                                                        aria-label="Unit price"
                                                     />
                                                     <div className="w-[96px] shrink-0">
                                                         <Select
@@ -471,6 +621,17 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                                         />
                                                     </div>
                                                 </div>
+                                                {/* Show the multiplication before it reaches the preview. */}
+                                                {(() => {
+                                                    const q = Number(it.qty);
+                                                    const u = Number(it.unitPrice) || 0;
+                                                    if (!Number.isFinite(q) || q <= 0 || q === 1 || !u) return null;
+                                                    return (
+                                                        <div className="text-[11px] text-sec text-right tnum">
+                                                            {q} &times; {formatMoney(u, it.currency)} = <span className="font-bold text-primary">{formatMoney(Math.round((q * u + Number.EPSILON) * 100) / 100, it.currency)}</span>
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                         ))}
                                     </div>

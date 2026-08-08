@@ -300,6 +300,28 @@ export function projectBalance(p: TreasuryProject, income: TreasuryIncome[], rat
     return Math.max(0, projectContractTotal(p) - projectReceived(p, income, rates));
 }
 
+/**
+ * How many whole installments the money received so far covers - i.e. the "3" in
+ * "installment 3 of 6". Mirrors the figure the Projects tab already shows, so a receipt
+ * and the dashboard can never disagree. Returns 0 when the project isn't on a plan.
+ */
+export function installmentsPaidCount(p: TreasuryProject, income: TreasuryIncome[], rates: Rates): number {
+    if (!hasInstallments(p)) return 0;
+    const perMonth = installmentMonthlyAmount(p);
+    if (perMonth <= 0) return 0;
+    return Math.min(p.installmentMonths || 0, Math.floor(projectReceived(p, income, rates) / perMonth));
+}
+
+/**
+ * How many monthly-retainer payments have been logged. Unlike an installment plan this is
+ * open-ended, so there is no denominator. Only payments flagged `monthlyPayment` count,
+ * matching projectReceived's rule for retainers.
+ */
+export function retainerPaymentsCount(p: TreasuryProject, income: TreasuryIncome[]): number {
+    if (!p.monthly) return 0;
+    return income.filter(i => i.projectId === p.id && i.monthlyPayment).length;
+}
+
 export function derivePaymentStatus(p: Pick<TreasuryProject, 'priceAmount' | 'paidAmount'>): PaymentStatus {
     if (!p.priceAmount) return 'unpaid';
     if (p.paidAmount >= p.priceAmount) return 'paid';
