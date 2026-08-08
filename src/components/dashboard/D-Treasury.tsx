@@ -22,7 +22,7 @@ import {
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
     projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome, convert,
     nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
-    hasInstallments, installmentMonthlyAmount, projectContractTotal,
+    hasInstallments, installmentMonthlyAmount, installmentsPaidCount, projectContractTotal,
 } from '../../lib/treasury';
 import RollingNumber from '../RollingNumber';
 import MTreasuryEntry from './M-TreasuryEntry';
@@ -968,8 +968,9 @@ const DTreasury = () => {
                                                     const onPlan = hasInstallments(focusedProject);
                                                     const months = focusedProject.installmentMonths || 0;
                                                     const perMonth = installmentMonthlyAmount(focusedProject);
-                                                    // How many whole installments the money received covers.
-                                                    const paidCount = onPlan && perMonth > 0 ? Math.min(months, Math.floor(received / perMonth)) : 0;
+                                                    // Shared with the receipt builder so the two never disagree (it also
+                                                    // carries the rounding tolerance a bare floor() got wrong).
+                                                    const paidCount = installmentsPaidCount(focusedProject, data.income, data.config.rates);
                                                     return (
                                                         <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5">
                                                             <div className="flex items-center justify-between text-xs font-bold text-sec">

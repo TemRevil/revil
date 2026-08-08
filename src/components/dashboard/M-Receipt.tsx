@@ -125,59 +125,70 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         });
     }
 
+    /**
+     * How ONE project is billed on a receipt. Both templates run this - the light one
+     * converts everything into the receipt currency, the dark one keeps each project in
+     * its own - so a project can never be described or priced differently depending on
+     * which template is showing.
+     *
+     * `cvt` maps a native amount into the target currency (identity for the dark
+     * template), and `cur` is the currency the returned money is expressed in.
+     */
+    const describeBilling = useCallback((p: TreasuryProject, cvt: (n: number) => number, cur: Currency) => {
+        const receivedNative = projectReceived(p, income, rates);
+        const single = !!perPayment[p.id] && (hasInstallments(p) || !!p.monthly);
+
+        // "This payment" mode: the receipt covers ONE installment / ONE month rather than
+        // the whole contract, which is what a client actually gets billed month to month.
+        if (single && p.monthly) {
+            const n = retainerPaymentsCount(p, income);
+            return {
+                title: `${p.name} - ${periodLabel}`,
+                // A retainer is open-ended: no denominator, and no balance to owe.
+                subtitle: `Monthly retainer${n ? ` - payment ${n}` : ''}`,
+                price: cvt(p.priceAmount || 0),
+                paid: cvt(p.priceAmount || 0),
+                balance: null as number | null,
+            };
+        }
+        if (single) {
+            const months = p.installmentMonths || 0;
+            const nth = Math.min(months, installmentsPaidCount(p, income, rates) || 1);
+            const planTotal = installmentTotal(p);
+            const surcharge = planTotal - (p.priceAmount || 0);
+            return {
+                title: `${p.name} - installment ${nth} of ${months}`,
+                // Spell the surcharge out in MONEY: "(+6%)" alone doesn't let a client
+                // reconcile 6 x 1,413.33 against the 8,000 they agreed to.
+                subtitle: surcharge > 0
+                    ? `Plan total ${formatMoney(cvt(planTotal), cur)} = ${formatMoney(cvt(p.priceAmount || 0), cur)} + ${p.installmentPercent}% fee ${formatMoney(cvt(surcharge), cur)}, over ${months} months`
+                    : `Installment ${nth} of ${months} - plan total ${formatMoney(cvt(planTotal), cur)}`,
+                price: cvt(installmentMonthlyAmount(p)),
+                paid: cvt(installmentMonthlyAmount(p)),
+                balance: cvt(Math.max(0, planTotal - receivedNative)) as number | null,
+            };
+        }
+
+        const priceNative = p.monthly ? (p.priceAmount || 0) : projectContractTotal(p);
+        return {
+            title: p.name,
+            subtitle: p.monthly
+                ? 'Monthly retainer'
+                : hasInstallments(p)
+                    ? `${p.installmentMonths} installments${p.installmentPercent ? ` (+${p.installmentPercent}%)` : ''}`
+                    : undefined,
+            price: cvt(priceNative),
+            // A retainer's lifetime total is not "paid" against one month's rate - showing
+            // it made a 6-month retainer read as Price 3,000 / Paid 18,000.
+            paid: cvt(p.monthly ? Math.min(receivedNative, priceNative) : receivedNative),
+            balance: (p.monthly ? null : cvt(Math.max(0, priceNative - receivedNative))) as number | null,
+        };
+    }, [income, rates, perPayment, periodLabel]);
+
     const data: ReceiptData = useMemo(() => {
         const lines = selectedProjects.map(p => {
-            const cvt = (n: number) => convert(n, p.priceCurrency, receiptCurrency, rates);
-            const receivedNative = projectReceived(p, income, rates);
-
-            // "This payment" mode: the receipt covers ONE installment / ONE month rather
-            // than the whole contract, which is what a client actually gets billed for
-            // month to month. Whole-project mode keeps the original behaviour.
-            if (perPayment[p.id] && (hasInstallments(p) || p.monthly)) {
-                if (p.monthly) {
-                    const n = retainerPaymentsCount(p, income);
-                    return {
-                        name: `${p.name} - ${periodLabel}`,
-                        // A retainer is open-ended: no denominator, and no balance to owe.
-                        note: `Monthly retainer${n ? ` - payment ${n}` : ''}`,
-                        price: cvt(p.priceAmount || 0),
-                        paid: cvt(p.priceAmount || 0),
-                        balance: null,
-                    };
-                }
-                const months = p.installmentMonths || 0;
-                const perMonth = installmentMonthlyAmount(p);
-                const paidCount = installmentsPaidCount(p, income, rates);
-                const planTotal = installmentTotal(p);
-                const surcharge = planTotal - (p.priceAmount || 0);
-                return {
-                    name: `${p.name} - installment ${Math.min(months, paidCount || 1)} of ${months}`,
-                    // Spell the surcharge out in MONEY: "(+6%)" alone doesn't let a client
-                    // reconcile 6 x 1,413.33 against the 8,000 they agreed to.
-                    note: surcharge > 0
-                        ? `Plan total ${formatMoney(cvt(planTotal), receiptCurrency)} = ${formatMoney(cvt(p.priceAmount || 0), receiptCurrency)} + ${p.installmentPercent}% fee ${formatMoney(cvt(surcharge), receiptCurrency)}, over ${months} months`
-                        : `Installment ${Math.min(months, paidCount || 1)} of ${months} - plan total ${formatMoney(cvt(planTotal), receiptCurrency)}`,
-                    price: cvt(perMonth),
-                    paid: cvt(perMonth),
-                    balance: cvt(Math.max(0, planTotal - receivedNative)),
-                };
-            }
-
-            const priceNative = p.monthly ? (p.priceAmount || 0) : projectContractTotal(p);
-            const balNative = p.monthly ? null : Math.max(0, priceNative - receivedNative);
-            return {
-                name: p.name,
-                note: p.monthly
-                    ? 'Monthly retainer'
-                    : hasInstallments(p)
-                        ? `${p.installmentMonths} installments${p.installmentPercent ? ` (+${p.installmentPercent}%)` : ''}`
-                        : undefined,
-                price: cvt(priceNative),
-                // A retainer's lifetime total is not "paid" against one month's rate -
-                // showing it made a 6-month retainer read as Price 3,000 / Paid 18,000.
-                paid: cvt(p.monthly ? Math.min(receivedNative, priceNative) : receivedNative),
-                balance: balNative === null ? null : cvt(balNative),
-            };
+            const d = describeBilling(p, (n) => convert(n, p.priceCurrency, receiptCurrency, rates), receiptCurrency);
+            return { name: d.title, note: d.subtitle, price: d.price, paid: d.paid, balance: d.balance };
         });
         const totals = lines.reduce(
             (a, l) => ({ price: a.price + l.price, paid: a.paid + l.paid, balance: a.balance + (l.balance || 0) }),
@@ -198,7 +209,8 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             perPayment: selectedProjects.length > 0
                 && selectedProjects.every(p => perPayment[p.id] && (hasInstallments(p) || p.monthly)),
         };
-    }, [selectedProjects, receiptCurrency, income, rates, receiptNo, dateLabel, customerName, customerEmail, note, perPayment, periodLabel]);
+        // income/periodLabel are read inside describeBilling, which is itself a dep.
+    }, [selectedProjects, receiptCurrency, rates, receiptNo, dateLabel, customerName, customerEmail, note, perPayment, describeBilling]);
 
     // Itemized receipts are numbered REV-YYYY-MMDD off the issue date.
     const revNo = useMemo(() => {
@@ -215,27 +227,42 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         workLog: workLog
             .filter(w => w.date.trim() || w.text.trim())
             .map(w => ({ date: w.date.trim(), text: w.text.trim() })),
-        lines: items
-            .filter(i => i.label.trim() || i.unitPrice.trim())
-            .map(i => {
-                const q = Number(i.qty);
-                const unit = Number(i.unitPrice) || 0;
-                // Only surface the "n x price" breakdown when a real quantity was typed;
-                // a plain single item stays exactly as it renders today.
-                const showQty = Number.isFinite(q) && q > 0 && q !== 1;
+        lines: [
+            // Selected projects are priced AUTOMATICALLY here, exactly as they are in the
+            // light template (same describeBilling), so both templates always agree. Each
+            // keeps its own currency, which is what the per-currency totals are for.
+            ...selectedProjects.map(p => {
+                const d = describeBilling(p, (n) => n, p.priceCurrency);
                 return {
-                    label: i.label.trim() || 'Item',
-                    caption: i.caption.trim() || undefined,
-                    qty: showQty ? q : undefined,
-                    unitPrice: showQty ? unit : undefined,
-                    // Rounded here because the per-currency totals sum raw values, and
-                    // 3 * 33.33 is 99.99000000000001 in floating point.
-                    amount: Math.round(((showQty ? q : 1) * unit + Number.EPSILON) * 100) / 100,
-                    currency: i.currency,
+                    label: d.title,
+                    caption: d.subtitle,
+                    amount: d.price,
+                    currency: p.priceCurrency,
                 };
             }),
+            // Then any hand-written extras (qty x unit price).
+            ...items
+                .filter(i => i.label.trim() || i.unitPrice.trim())
+                .map(i => {
+                    const q = Number(i.qty);
+                    const unit = Number(i.unitPrice) || 0;
+                    // Only surface the "n x price" breakdown when a real quantity was typed;
+                    // a plain single item stays exactly as it renders today.
+                    const showQty = Number.isFinite(q) && q > 0 && q !== 1;
+                    return {
+                        label: i.label.trim() || 'Item',
+                        caption: i.caption.trim() || undefined,
+                        qty: showQty ? q : undefined,
+                        unitPrice: showQty ? unit : undefined,
+                        // Rounded here because the per-currency totals sum raw values, and
+                        // 3 * 33.33 is 99.99000000000001 in floating point.
+                        amount: Math.round(((showQty ? q : 1) * unit + Number.EPSILON) * 100) / 100,
+                        currency: i.currency,
+                    };
+                }),
+        ],
         note: note.trim() || undefined,
-    }), [revNo, dateLabel, customerName, customerSubtitle, workLogTitle, workLog, items, note]);
+    }), [revNo, dateLabel, customerName, customerSubtitle, workLogTitle, workLog, items, note, selectedProjects, describeBilling]);
 
     const isItemized = template === 'itemized';
     const html = useMemo(
@@ -302,31 +329,6 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
         };
     }, [itemizedData, receiptCurrency]);
 
-    /** Append the currently selected projects as line items (keeps anything already typed). */
-    const fillFromProjects = () => {
-        const rows: ItemRow[] = selectedProjects.map(p => {
-            // Respect the same per-payment choice the projects template uses, so pulling a
-            // plan in as a line item bills one installment/month, not the whole contract.
-            const single = !!perPayment[p.id] && (hasInstallments(p) || !!p.monthly);
-            const amount = single
-                ? (p.monthly ? (p.priceAmount || 0) : installmentMonthlyAmount(p))
-                : (p.monthly ? (p.priceAmount || 0) : projectContractTotal(p));
-            const caption = single
-                ? (p.monthly ? `Monthly retainer - ${periodLabel}` : `Installment ${Math.min(p.installmentMonths || 0, installmentsPaidCount(p, income, rates) || 1)} of ${p.installmentMonths}`)
-                : (p.client || '');
-            return {
-                id: rid(),
-                label: p.name,
-                caption,
-                qty: '1',
-                unitPrice: String(amount),
-                currency: p.priceCurrency,
-            };
-        });
-        if (!rows.length) return;
-        setItems(prev => [...prev.filter(r => r.label.trim() || r.unitPrice.trim()), ...rows]);
-    };
-
     const download = () => {
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
@@ -373,7 +375,12 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
     };
 
     const labelCls = 'block text-[11px] font-bold uppercase tracking-wider text-sec mb-1.5';
-    const inputCls = `w-full rounded-xl border px-3.5 py-2.5 text-sm outline-none transition-colors ${isDark ? 'bg-white/5 border-white/10 focus:border-blue-400/60' : 'bg-black/[0.03] border-black/10 focus:border-blue-400/60'} text-primary`;
+    // inputBase deliberately has NO width. Appending `w-[56px]` to a class string that
+    // already contains `w-full` does NOT win - which class applies is decided by CSS source
+    // order, not attribute order, so the narrow fields silently rendered full width and
+    // pushed their rows out of the column. Width is now always set explicitly.
+    const inputBase = `rounded-xl border px-3.5 py-2.5 text-sm outline-none transition-colors ${isDark ? 'bg-white/5 border-white/10 focus:border-blue-400/60' : 'bg-black/[0.03] border-black/10 focus:border-blue-400/60'} text-primary`;
+    const inputCls = `w-full ${inputBase}`;
 
     return createPortal(
         <motion.div
@@ -538,7 +545,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                         {workLog.map(w => (
                                             <div key={w.id} className="flex gap-1.5 items-start min-w-0">
                                                 <input
-                                                    className={`${inputCls} w-[70px] shrink-0 px-2`}
+                                                    className={`${inputBase} w-[72px] shrink-0 px-2`}
                                                     value={w.date}
                                                     onChange={e => setWorkLog(rows => rows.map(r => r.id === w.id ? { ...r, date: e.target.value } : r))}
                                                     placeholder="2 Jul"
@@ -565,9 +572,6 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                     <div className="flex items-center justify-between mb-1.5">
                                         <span className={labelCls} style={{ margin: 0 }}>Line items</span>
                                         <div className="flex items-center gap-3">
-                                            {selectedProjects.length > 0 && (
-                                                <button type="button" onClick={fillFromProjects} className="text-[11px] font-bold text-sec hover:text-primary transition-colors">Use selected</button>
-                                            )}
                                             <button type="button" onClick={() => setItems(i => [...i, emptyItem(receiptCurrency)])} className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-500 hover:text-blue-400 transition-colors">
                                                 <Plus size={12} /> Add
                                             </button>
@@ -598,7 +602,7 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                                 />
                                                 <div className="flex gap-1.5 items-center min-w-0">
                                                     <input
-                                                        className={`${inputCls} w-[56px] shrink-0 text-center px-1`}
+                                                        className={`${inputBase} w-[58px] shrink-0 text-center px-2`}
                                                         inputMode="decimal"
                                                         value={it.qty}
                                                         onChange={e => setItems(rows => rows.map(r => r.id === it.id ? { ...r, qty: e.target.value } : r))}

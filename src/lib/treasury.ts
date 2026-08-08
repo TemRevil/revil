@@ -309,7 +309,12 @@ export function installmentsPaidCount(p: TreasuryProject, income: TreasuryIncome
     if (!hasInstallments(p)) return 0;
     const perMonth = installmentMonthlyAmount(p);
     if (perMonth <= 0) return 0;
-    return Math.min(p.installmentMonths || 0, Math.floor(projectReceived(p, income, rates) / perMonth));
+    // Tolerance of 0.1% of one installment. A plan of 8,480 over 6 is 1,413.3333 a month,
+    // but the client pays a rounded 1,413.33 - so two real payments divide to 1.99998 and a
+    // bare floor() would report "installment 1 of 6" after they had paid two. The tolerance
+    // is relative, so it scales across currencies and still refuses a genuinely short month.
+    const received = projectReceived(p, income, rates) + perMonth * 0.001;
+    return Math.min(p.installmentMonths || 0, Math.floor(received / perMonth));
 }
 
 /**
