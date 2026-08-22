@@ -13,10 +13,21 @@ interface AlertProps {
 
 export default function Alert({ type, message, onClose, duration = 3000 }: AlertProps) {
     const alertRef = useRef<HTMLDivElement>(null);
+    const closingRef = useRef(false);
+    /* Every call site passes an inline `() => hideAlert()`, so `onClose` is a new function
+       on each parent render. Holding it in a ref keeps handleClose stable, which keeps the
+       auto-dismiss effect below from tearing down and restarting its timer on renders that
+       have nothing to do with this toast. */
+    const onCloseRef = useRef(onClose);
+    // Written in an effect, not during render: the repo's react-hooks rules forbid touching a
+    // ref while rendering, and the dismiss timer only reads this long after the commit.
+    useEffect(() => { onCloseRef.current = onClose; });
 
     const handleClose = useCallback(() => {
-        if (!alertRef.current) return;
-        // Exit animation
+        if (!alertRef.current || closingRef.current) return;
+        // Exit animation. `opacity: [1, 0]` forces opacity back to 1 on the first frame, so
+        // running this a second time on an already-faded toast reads as a flash.
+        closingRef.current = true;
         anime({
             targets: alertRef.current,
             translateY: [0, -20],
@@ -24,12 +35,16 @@ export default function Alert({ type, message, onClose, duration = 3000 }: Alert
             scale: [1, 0.95],
             duration: 250,
             easing: 'easeInQuad',
-            complete: onClose
+            complete: () => onCloseRef.current()
         });
-    }, [onClose]);
+    }, []);
 
     useEffect(() => {
         if (!alertRef.current) return;
+        // Keyed on the content, not just on mount: call sites reuse this one instance for the
+        // next toast, and without this a second message would inherit the faded-out element
+        // and a closingRef still stuck at true - visible as nothing at all.
+        closingRef.current = false;
         // Entrance animation
         anime({
             targets: alertRef.current,
@@ -39,7 +54,7 @@ export default function Alert({ type, message, onClose, duration = 3000 }: Alert
             duration: 500,
             easing: 'easeOutQuart'
         });
-    }, []);
+    }, [message, type]);
 
     useEffect(() => {
         if (duration > 0) {

@@ -1469,7 +1469,10 @@ const DCanary = () => {
             }
 
             {/* Confirmation & Feedback */}
-            {alert && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
+            {/* Guard on .show, not on the object: useSafeAlert keeps the last alert in state
+                and only flips `show` to false, so `{alert && ...}` left the toast mounted for
+                good - and a mounted toast keeps re-running its own exit animation. */}
+            {alert?.show && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
             <MConfirmModal
                 isOpen={!!confirmDelete}
                 title={activeSection === 'mails' ? "Delete Message" : "Cancel Session"}
