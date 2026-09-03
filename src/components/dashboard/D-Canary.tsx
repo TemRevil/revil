@@ -90,6 +90,18 @@ const getOffsetFromUTCString = (tzStr: string) => {
     return hours + (minutes / 60) * (hours < 0 ? -1 : 1);
 };
 
+// True when `d` falls on a day that has already passed (midnight-to-midnight, local).
+// Rescheduling into one is allowed here - a session can genuinely be logged after the
+// fact - but it goes through a confirmation first, since it is never what a misclick
+// on the month arrows was meant to do.
+const isPastDay = (d: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const day = new Date(d);
+    day.setHours(0, 0, 0, 0);
+    return day < today;
+};
+
 const DCanary = () => {
     const [isDark, setIsDark] = useState(false);
     const [viewDate, setViewDate] = useState(new Date());
@@ -107,6 +119,9 @@ const DCanary = () => {
     const [hostTimezoneString, setHostTimezoneString] = useState('');
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+    // Set when a reschedule lands on a day that has already passed: holds the save until
+    // the owner confirms it, so a stray click on a past day can't silently move a session.
+    const [confirmPastSave, setConfirmPastSave] = useState(false);
     const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
 
     // Section state
@@ -350,7 +365,7 @@ const DCanary = () => {
         }
     };
 
-    const handleSaveMeeting = async () => {
+    const handleSaveMeeting = async (pastConfirmed = false) => {
         if (!editingMeeting) return;
 
         const originalMeeting = meetings.find(m => m.id === editingMeeting.id);
@@ -374,6 +389,14 @@ const DCanary = () => {
 
             if (isOccupied) {
                 showAlert({ type: 'warning', message: 'This time slot is already occupied.' });
+                return;
+            }
+
+            // Moving the session onto a day that is already over: legitimate (recording a
+            // call that happened, fixing a wrong date) but always deliberate, so ask once.
+            // Confirming re-enters here with pastConfirmed and falls straight through.
+            if (!pastConfirmed && isPastDay(editingMeeting.date)) {
+                setConfirmPastSave(true);
                 return;
             }
         }
@@ -1388,14 +1411,18 @@ const DCanary = () => {
                                                         >
                                                             {modalCalendarDays.map((date, idx) => {
                                                                 const isSelected = date?.toDateString() === editingMeeting.date.toDateString();
+                                                                // Past days stay selectable (unlike the public booking calendar) - they
+                                                                // just sit back visually, and saving onto one asks for confirmation.
+                                                                const isPast = !!date && isPastDay(date);
                                                                 return (
                                                                     <div
                                                                         key={idx}
                                                                         onClick={() => date && setEditingMeeting({ ...editingMeeting, date })}
+                                                                        title={isPast ? 'This day has already passed' : undefined}
                                                                         style={{
                                                                             aspectRatio: '1', borderRadius: '12px', cursor: 'pointer', position: 'relative',
                                                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                            opacity: date ? 1 : 0
+                                                                            opacity: date ? (isPast && !isSelected ? 0.45 : 1) : 0
                                                                         }}
                                                                         className={date && !isSelected ? 'hover:bg-black/5 dark:hover:bg-white/5' : ''}
                                                                     >
@@ -1451,7 +1478,7 @@ const DCanary = () => {
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <button
-                                                onClick={handleSaveMeeting}
+                                                onClick={() => handleSaveMeeting()}
                                                 className="px-5 md:px-6 py-2 md:py-2.5 rounded-xl text-white font-bold text-xs md:text-sm shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2"
                                                 style={{ background: 'linear-gradient(135deg, #1A1A1A 0%, #333333 100%)' }}
                                             >
@@ -1495,6 +1522,22 @@ const DCanary = () => {
                     }
                 }}
                 onClose={() => setConfirmDelete(null)}
+            />
+
+            {/* Rescheduling backwards in time - allowed, but never by accident. */}
+            <MConfirmModal
+                isOpen={confirmPastSave}
+                title="Reschedule to a past date"
+                message={editingMeeting
+                    ? `${editingMeeting.date.toLocaleDateString('default', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} at ${editingMeeting.time} has already passed. Save this session there anyway?`
+                    : ''}
+                type="warning"
+                confirmText="Reschedule anyway"
+                onConfirm={() => {
+                    setConfirmPastSave(false);
+                    handleSaveMeeting(true);
+                }}
+                onClose={() => setConfirmPastSave(false)}
             />
 
             {/* Specialized Booking Modal */}

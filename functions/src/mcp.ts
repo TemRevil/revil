@@ -318,6 +318,7 @@ function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
           "    • WITH a meeting link: pass `meetingLink`, an existing Google Meet / Zoom / etc. URL. Never invent or guess a link - if the owner wants one but hasn't given a URL, ask for it first.",
           "    • WITHOUT a meeting link: omit `meetingLink` (an in-person / phone booking, or a link to be added later).",
           "  Pass date as YYYY-MM-DD and time as 24-hour HH:MM in the owner's timezone. add_booking marks the slot busy on the public calendar and emails the admin (and the guest, if an email is given), but it does NOT create a Google Calendar event or auto-generate a link. Check list_bookings first to avoid double-booking a slot.",
+          "- PAST DATES (add_booking / update_booking): a date before today is refused by default. Recording a meeting that already happened - or correcting one onto a past day - is possible ONLY here over MCP, and ONLY with the owner's explicit go-ahead: state the exact past date back to them, wait for a clear yes, and only then repeat the call with allowPast: true. Never set allowPast just to clear an error, and never assume a past date was intended - it is far more often a stale clock, so re-check get_current_time first. The public booking form on the site can never book a past slot.",
           "- Working hours & days (get_availability / update_availability): the public booking calendar only offers the owner's selected working days and picked hours. update_availability REPLACES the entire list you send - read get_availability first, then send the FULL new list (workingDays: 0=Sun … 6=Sat; hours: 24-hour 0–23). Confirm with the owner before changing.",
         ]
       : []),
@@ -785,7 +786,9 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         "Create a meeting/call booking in the dashboard's Canary inbox. TWO modes: " +
         "WITH a meeting link - pass `meetingLink`, an existing Google Meet / Zoom / etc. URL you already have; " +
         "or WITHOUT a link - omit `meetingLink` (an in-person / phone booking, or a link to be added later). " +
-        "Never invent a link. ALWAYS call get_current_time first and derive `date` from it - `date` must be today or later (a past date is rejected). " +
+        "Never invent a link. ALWAYS call get_current_time first and derive `date` from it - a date before today is rejected unless you pass `allowPast`. " +
+        "BACKDATING (logging a meeting that already took place): owner-authorised only. Confirm the exact past date with the owner, get a clear yes, THEN call again with allowPast: true - never set it yourself to clear an error. " +
+        "On a backdated booking, omit `email`: a guest address makes the site email them a confirmation for a meeting that is already over. " +
         "Pass `date` as YYYY-MM-DD and `time` as 24-hour HH:MM in the owner's timezone. " +
         "This writes the booking directly to Firestore: it marks the slot busy on the public calendar and emails the admin " +
         "(and the guest, if `email` is given), but it does NOT create a Google Calendar event or auto-generate a Meet link.",
@@ -796,14 +799,24 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         email: z.string().email().optional().describe("Guest email - if given, they get a confirmation email"),
         reason: z.string().optional().describe("What the call is for"),
         meetingLink: z.string().url().optional().describe("Meeting URL (Google Meet / Zoom / etc.). Omit for a booking WITHOUT a link."),
+        allowPast: z.boolean().optional().describe("Set true ONLY to record a meeting that already happened, and ONLY after the owner has confirmed that exact past date. Ignored for today/future dates."),
       },
       annotations: { destructiveHint: false },
     },
     async (a) => {
-      // Never book a slot in the past - a booking date before the server's current local
-      // date almost always means the client resolved "today" from a stale clock.
-      if (a.date < time.date) {
-        return fail(`That booking date (${a.date}) is in the past - the current date is ${time.date}. Call get_current_time and use today or a future date.`);
+      // A booking date before the server's current local date is usually a stale clock, so it
+      // stays refused by default. Deliberately recording a meeting that already happened is a
+      // real need though, so it is allowed behind an opt-in the caller may only set once the
+      // owner has confirmed the date - which is exactly what the error below asks for.
+      // This escape hatch is MCP-only: the public booking form (M-Contact) never offers a past
+      // day, so a visitor still cannot book one.
+      const backdated = a.date < time.date;
+      if (backdated && !a.allowPast) {
+        return fail(
+          `That booking date (${a.date}) is in the past - the current date is ${time.date}. ` +
+          "If you meant an upcoming meeting, call get_current_time and use today or a later date. " +
+          "If you really are recording a meeting that already happened, confirm that exact date with the owner first, then call again with allowPast: true.",
+        );
       }
       // Convert to the host-perspective formats the dashboard calendar + the public
       // BookedSlots mirror compare against: Date "DD/MM/YYYY", Time "hh:mm AM/PM".
@@ -828,7 +841,10 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         { Meetings: { [id]: payload }, lastMeetingWrite: SERVER_TIMESTAMP() },
         { merge: true },
       );
-      return ok({ status: "booked", id, date: storedDate, time: storedTime, hasMeetingLink: !!a.meetingLink });
+      return ok({
+        status: "booked", id, date: storedDate, time: storedTime, hasMeetingLink: !!a.meetingLink,
+        ...(backdated ? { backdated: true, note: `Recorded on ${storedDate}, which is in the past (today is ${time.date}).` } : {}),
+      });
     });
 
   // Shared by update_booking: turn YYYY-MM-DD / HH:MM into the host-perspective strings the
@@ -898,7 +914,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         "Change an existing booking by id (get ids from list_bookings). PARTIAL update: only the fields you " +
         "pass change, anything omitted is left as-is. Use it to reschedule (pass `date` and/or `time`), fix the " +
         "guest's name/email, edit the reason, or attach a meeting link you already have. " +
-        "ALWAYS call get_current_time first and derive `date` from it - a past date is rejected. " +
+        "ALWAYS call get_current_time first and derive `date` from it - a date before today is rejected unless you pass `allowPast`. " +
+        "Moving a booking onto a day that has already passed is owner-authorised only: confirm the exact date with the owner, get a clear yes, THEN call again with allowPast: true. " +
         "Rescheduling also MOVES the matching Google Calendar event, so the guest's invite follows. " +
         "Check `calendar` in the result: if it did not succeed, tell the owner to fix that event from the dashboard.",
       inputSchema: {
@@ -909,6 +926,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         email: z.string().email().optional().describe("guest email"),
         reason: z.string().optional().describe("what the call is for"),
         meetingLink: z.string().url().optional().describe("meeting URL you already have - never invent one"),
+        allowPast: z.boolean().optional().describe("Set true ONLY to move this booking onto a day that has already passed, and ONLY after the owner has confirmed that exact date. Ignored for today/future dates."),
       },
       annotations: { destructiveHint: false },
     },
@@ -918,8 +936,14 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       const existing = meetings[a.id];
       if (!existing) return fail(`No booking with id ${a.id}. Use list_bookings to find the right id.`);
 
-      if (a.date && a.date < time.date) {
-        return fail(`That date (${a.date}) is in the past - the current date is ${time.date}. Call get_current_time and use today or a future date.`);
+      // Same rule as add_booking: the past is refused unless the owner confirmed it. Moving a
+      // booking backwards drags its Google Calendar event back with it, so it needs the nod too.
+      if (a.date && a.date < time.date && !a.allowPast) {
+        return fail(
+          `That date (${a.date}) is in the past - the current date is ${time.date}. ` +
+          "If you meant an upcoming slot, call get_current_time and use today or a later date. " +
+          "If you really are moving this booking onto a day that has already passed, confirm that exact date with the owner first, then call again with allowPast: true.",
+        );
       }
 
       const patch: Record<string, unknown> = {};
@@ -973,6 +997,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         date: finalDate,
         time: finalTime,
         calendar,
+        ...(a.date && a.date < time.date ? { backdated: true, note: `Moved to ${finalDate}, which is in the past (today is ${time.date}).` } : {}),
       });
     });
 
