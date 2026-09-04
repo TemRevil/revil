@@ -724,13 +724,20 @@ textarea,
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
-  /* Canary specific split */
+  /* Canary specific split.
+     minmax(0, ...) rather than a bare fr: an fr track refuses to shrink below its own
+     content, so a single long booking title or email subject widened its column and
+     squeezed the panel beside it - the split visibly moved between a day with sessions
+     and an empty one, and the wider (therefore taller, the cells are square) calendar
+     that produced pushed a page scrollbar in and out. With the floor gone the ratio
+     holds whatever is inside, and long text truncates the way it was always meant to.
+     1.4fr keeps the month at a size that fits a laptop viewport without scrolling. */
   .lg\:grid-cols-canary {
-    grid-template-columns: 1.8fr 1fr;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   }
 
   .lg\:grid-cols-mail {
-    grid-template-columns: 1fr 2fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   }
 }
 

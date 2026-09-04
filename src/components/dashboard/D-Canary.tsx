@@ -1154,7 +1154,12 @@ const DCanary = () => {
                                             <div
                                                 key={idx}
                                                 onClick={() => date && setSelectedDate(date)}
-                                                className={`relative aspect-square rounded-xl md:rounded-2xl transition-all duration-200 cursor-pointer flex flex-col items-center justify-center gap-0.5 md:gap-1
+                                                // Slightly landscape rather than square: six rows of square cells at
+                                                // this column width made the month taller than a laptop viewport, so
+                                                // the whole page picked up a scrollbar and clipped the button below.
+                                                // The ratio still scales with the panel, so nothing is hard-coded.
+                                                style={{ aspectRatio: '1 / 0.82' }}
+                                                className={`relative rounded-xl md:rounded-2xl transition-all duration-200 cursor-pointer flex flex-col items-center justify-center gap-0.5 md:gap-1
                                                 ${date ? 'hover:scale-[1.02] active:scale-95' : 'opacity-0 pointer-events-none'}
                                                 ${!isSelected ? 'hover:bg-black/5 dark:hover:bg-white/5' : ''}
                                             `}
