@@ -17,6 +17,7 @@ import MConfirmModal from './M-ConfirmModal';
 import MContact from '../M-Contact';
 import MReply from './M-Reply';
 import CustomTimePicker from '../CustomTimePicker';
+import Select from '../Select';
 import Loader from '../reactbits/Loader';
 
 interface Attachment {
@@ -105,6 +106,30 @@ const isPastDay = (d: Date) => {
     day.setHours(0, 0, 0, 0);
     return day < today;
 };
+
+/** The colour picker shared by the add and rename rows of the categories panel. */
+const ColorSwatches = ({ value, onPick, isDark }: { value: string; onPick: (c: string) => void; isDark: boolean }) => (
+    <div className="flex items-center gap-1.5 flex-wrap" role="radiogroup" aria-label="Category colour">
+        {CATEGORY_COLORS.map(c => {
+            const on = value === c;
+            return (
+                <button
+                    key={c}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    aria-label={`Colour ${c}`}
+                    onClick={() => onPick(c)}
+                    // The ring sits outside the dot so picking one doesn't resize it.
+                    className="w-7 h-7 grid place-items-center rounded-full cursor-pointer transition-shadow"
+                    style={{ boxShadow: on ? `0 0 0 2px ${isDark ? '#0b0b0f' : '#fff'}, 0 0 0 4px ${c}` : 'none' }}
+                >
+                    <span className="w-5 h-5 rounded-full" style={{ background: c }} />
+                </button>
+            );
+        })}
+    </div>
+);
 
 /** Small coloured pill naming a booking's category - list rows and details view. */
 const CategoryBadge = ({ cat, size = 'sm' }: { cat: MeetingCategory; size?: 'sm' | 'md' }) => (
@@ -355,6 +380,16 @@ const DCanary = () => {
         setEditingMeeting({ ...meeting, date: new Date(meeting.date) });
         setModalViewDate(new Date(meeting.date.getFullYear(), meeting.date.getMonth(), 1));
     };
+
+    // What the booking looked like before this edit - drives the modal's summary line
+    // and keeps Save inert until something actually changed.
+    const editOriginal = editingMeeting ? meetings.find(m => m.id === editingMeeting.id) : undefined;
+    const editDirty = !!(editingMeeting && editOriginal && (
+        editingMeeting.title !== editOriginal.title
+        || editingMeeting.time !== editOriginal.time
+        || editingMeeting.date.toDateString() !== editOriginal.date.toDateString()
+        || (editingMeeting.category || '') !== (editOriginal.category || '')
+    ));
 
     const handleDelete = async (id: string, meeting?: Meeting) => {
         setIsLoading(true);
@@ -748,7 +783,7 @@ const DCanary = () => {
 
     const categoriesEditor = (
         <div
-            className="canary-panel w-full max-w-2xl flex flex-col gap-6 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
+            className="canary-panel w-full flex flex-col gap-6 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
             style={{ backgroundColor: containerBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
         >
             <div className="flex items-start gap-4">
@@ -756,118 +791,115 @@ const DCanary = () => {
                     <Tags size={24} />
                 </span>
                 <div>
-                    <h3 className="text-lg sm:text-xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>Meeting categories</h3>
-                    <p className="text-sm mt-1 max-w-xl" style={{ color: 'var(--text-muted)' }}>
-                        Buckets you sort bookings into - a company, a client, a side project. Assign one when you edit a booking, or over MCP. Guests never see them: anything booked from the site arrives as Personal.
+                    <h3 className="text-lg sm:text-xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>Categories</h3>
+                    <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                        Sort bookings into buckets of your own. You set them when you edit a booking, or the assistant does over MCP - guests are never asked, so anything booked from the site arrives as Personal.
                     </p>
                 </div>
             </div>
 
-            {/* Existing categories */}
-            <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
-                    <span className="w-3 h-3 rounded-full shrink-0" style={{ background: PERSONAL_CATEGORY.color }} />
+            <div className="flex flex-col gap-1.5">
+                {/* Personal is the floor of the list, not an entry you can act on. */}
+                <div className="flex items-center gap-3 px-3.5 h-12 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: PERSONAL_CATEGORY.color }} />
                     <span className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>{PERSONAL_CATEGORY.name}</span>
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Built-in - where anything uncategorised lands</span>
+                    <span className="ml-auto text-[11px] font-bold px-2 py-1 rounded-md shrink-0" style={{ background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}>
+                        Default
+                    </span>
                 </div>
 
-                {categories.map(cat => (
-                    editingCatId === cat.id ? (
-                        <div key={cat.id} className="flex flex-col gap-3 px-3 py-3 rounded-xl border" style={{ borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)' }}>
+                {categories.map(cat => {
+                    const used = meetings.filter(m => m.category === cat.id).length;
+                    return editingCatId === cat.id ? (
+                        <div key={cat.id} className="flex flex-col gap-3 p-3 rounded-xl border" style={{ borderColor: '#3b82f6', background: isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)' }}>
                             <input
                                 type="text"
+                                autoFocus
                                 value={editCatName}
                                 maxLength={MAX_CATEGORY_NAME}
                                 onChange={(e) => setEditCatName(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') saveCategoryEdit(); if (e.key === 'Escape') setEditingCatId(null); }}
-                                className="w-full h-10 rounded-xl border px-3 text-sm font-medium outline-none focus:border-blue-500 transition-colors"
-                                style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
+                                className="w-full h-10 rounded-lg border px-3 text-sm font-semibold outline-none focus:border-blue-500 transition-colors"
+                                style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
                             />
                             <div className="flex items-center justify-between gap-3 flex-wrap">
-                                <div className="flex items-center gap-1.5">
-                                    {CATEGORY_COLORS.map(c => (
-                                        <button
-                                            key={c}
-                                            type="button"
-                                            aria-label={`Colour ${c}`}
-                                            onClick={() => setEditCatColor(c)}
-                                            className="w-6 h-6 rounded-full cursor-pointer transition-transform hover:scale-110"
-                                            style={{ background: c, border: editCatColor === c ? `2px solid ${isDark ? '#fff' : '#000'}` : '2px solid transparent' }}
-                                        />
-                                    ))}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button type="button" onClick={() => setEditingCatId(null)} className="px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer" style={{ color: 'var(--text-muted)' }}>Cancel</button>
-                                    <button type="button" onClick={saveCategoryEdit} disabled={catBusy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50" style={{ background: '#3b82f6', color: '#fff' }}>
+                                <ColorSwatches value={editCatColor} onPick={setEditCatColor} isDark={isDark} />
+                                <div className="flex items-center gap-1 ml-auto">
+                                    <button type="button" onClick={() => setEditingCatId(null)} className="px-3 h-9 rounded-lg text-xs font-bold cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+                                    <button type="button" onClick={saveCategoryEdit} disabled={catBusy} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-bold cursor-pointer transition-colors disabled:opacity-50" style={{ background: '#3b82f6', color: '#fff' }}>
                                         <Check size={14} /> Save
                                     </button>
                                 </div>
                             </div>
                         </div>
                     ) : (
-                        <div key={cat.id} className="group flex items-center gap-2.5 px-3 py-2.5 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
-                            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: cat.color }} />
+                        <div
+                            key={cat.id}
+                            className="group flex items-center gap-3 px-3.5 h-12 rounded-xl transition-colors"
+                            style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}
+                        >
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cat.color }} />
                             <span className="text-sm font-bold truncate" style={{ color: isDark ? '#fff' : '#000' }}>{cat.name}</span>
                             <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
-                                {meetings.filter(m => m.category === cat.id).length} booking{meetings.filter(m => m.category === cat.id).length === 1 ? '' : 's'}
+                                {used === 0 ? 'unused' : `${used} booking${used === 1 ? '' : 's'}`}
                             </span>
-                            <div className="ml-auto flex items-center gap-1 shrink-0">
-                                <button type="button" onClick={() => startEditCategory(cat)} aria-label={`Rename ${cat.name}`} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                            {/* Actions stay reachable by keyboard; the mouse only reveals them. */}
+                            <div className="ml-auto flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                <button type="button" onClick={() => startEditCategory(cat)} aria-label={`Rename ${cat.name}`} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer" style={{ color: 'var(--text-muted)' }}>
                                     <Edit2 size={14} />
                                 </button>
-                                <button type="button" onClick={() => setConfirmDeleteCat(cat)} aria-label={`Delete ${cat.name}`} className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer text-red-500/70 hover:text-red-500">
+                                <button type="button" onClick={() => setConfirmDeleteCat(cat)} aria-label={`Delete ${cat.name}`} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer text-red-500/70 hover:text-red-500">
                                     <Trash2 size={14} />
                                 </button>
                             </div>
                         </div>
-                    )
-                ))}
+                    );
+                })}
+
+                {categories.length === 0 && (
+                    <p className="text-sm px-1 pt-1" style={{ color: 'var(--text-muted)' }}>
+                        No categories yet. Add one below and it becomes pickable on every booking.
+                    </p>
+                )}
             </div>
 
-            {/* Add a new one */}
+            {/* New category */}
             <div className="flex flex-col gap-3 pt-1">
-                <label className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>Add a category</label>
-                <div className="flex flex-col min-[560px]:flex-row gap-3 min-[560px]:items-center">
+                <label htmlFor="new-category" className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>New category</label>
+                <div className="flex items-center gap-2">
                     <input
+                        id="new-category"
                         type="text"
                         value={newCatName}
                         maxLength={MAX_CATEGORY_NAME}
-                        placeholder="O.B.D"
+                        placeholder="Category name"
                         onChange={(e) => setNewCatName(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter') addCategory(); }}
-                        className="flex-1 h-11 rounded-xl border px-4 text-sm font-medium outline-none focus:border-blue-500 transition-colors"
+                        className="flex-1 min-w-0 h-11 rounded-xl border px-4 text-sm font-medium outline-none focus:border-blue-500 transition-colors"
                         style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
                     />
                     <button
                         type="button"
                         onClick={addCategory}
                         disabled={catBusy || !newCatName.trim()}
-                        className="inline-flex items-center justify-center gap-2 px-5 h-11 rounded-xl text-sm font-bold cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                        className="inline-flex items-center justify-center gap-2 px-5 h-11 rounded-xl text-sm font-bold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                         style={{ background: '#3b82f6', color: '#fff' }}
                     >
                         <Plus size={16} /> Add
                     </button>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                    {CATEGORY_COLORS.map(c => (
-                        <button
-                            key={c}
-                            type="button"
-                            aria-label={`Colour ${c}`}
-                            onClick={() => setNewCatColor(c)}
-                            className="w-7 h-7 rounded-full cursor-pointer transition-transform hover:scale-110"
-                            style={{ background: c, border: newCatColor === c ? `2px solid ${isDark ? '#fff' : '#000'}` : '2px solid transparent' }}
-                        />
-                    ))}
-                </div>
+                <ColorSwatches value={newCatColor} onPick={setNewCatColor} isDark={isDark} />
             </div>
         </div>
     );
 
     const hoursEditor = (
-        <div className="canary-section w-full flex flex-col gap-6">
+        // auto-fit rather than a breakpoint: the two panels pair up as soon as there is
+        // room for both and fall back to one column when there isn't, with no dead rail
+        // down the side of the tab at any width.
+        <div className="canary-section w-full" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
             <div
-                className="canary-panel w-full max-w-2xl flex flex-col gap-7 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
+                className="canary-panel w-full flex flex-col gap-7 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
                 style={{ backgroundColor: containerBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
             >
                 <div className="flex items-start gap-4">
@@ -915,7 +947,7 @@ const DCanary = () => {
                         <label className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>Working hours</label>
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{availDraft.hours.length} selected</span>
                     </div>
-                    <div className="grid grid-cols-3 min-[460px]:grid-cols-4 sm:grid-cols-6 gap-2">
+                    <div className="gap-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))' }}>
                         {ALL_HOURS.map(h => {
                             const on = availDraft.hours.includes(h);
                             return (
@@ -1578,80 +1610,100 @@ const DCanary = () => {
                                     initial={{ scale: 0.9, opacity: 0, y: 20 }}
                                     animate={{ scale: 1, opacity: 1, y: 0 }}
                                     exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                                    className="relative w-full max-w-2xl rounded-2xl md:rounded-[32px] overflow-hidden flex flex-col shadow-2xl max-h-[95vh]"
-                                    style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.95)' : 'rgba(255,255,255,0.95)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}
+                                    className="relative w-full max-w-3xl rounded-2xl md:rounded-[28px] overflow-hidden flex flex-col shadow-2xl max-h-[92vh]"
+                                    style={{ backgroundColor: isDark ? 'rgba(10,10,14,0.97)' : 'rgba(255,255,255,0.97)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}` }}
                                 >
-                                    <div className="p-4 md:p-6 border-b flex items-center justify-end" style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>
-                                        <button onClick={() => setEditingMeeting(null)} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors" style={{ color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' }}>
-                                            <X size={20} />
+                                    {/* Header: says what this is and which booking, so the fields
+                                        below don't have to carry that job on their own. */}
+                                    <div className="px-5 md:px-7 py-4 md:py-5 border-b flex items-start justify-between gap-3" style={{ borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)' }}>
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <span className="grid place-items-center shrink-0 rounded-2xl" style={{ width: 42, height: 42, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                                                <Edit2 size={20} />
+                                            </span>
+                                            <div className="min-w-0">
+                                                <h3 className="text-base md:text-lg font-bold m-0 leading-tight" style={{ color: isDark ? '#fff' : '#000' }}>Edit booking</h3>
+                                                <p className="text-xs m-0 mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                                                    {editOriginal
+                                                        ? `Booked for ${editOriginal.date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at ${editOriginal.time}`
+                                                        : 'Booking details'}
+                                                    {editingMeeting.email ? ` · ${editingMeeting.email}` : ''}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => setEditingMeeting(null)} aria-label="Close" className="w-9 h-9 grid place-items-center shrink-0 hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors cursor-pointer" style={{ color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)' }}>
+                                            <X size={18} />
                                         </button>
                                     </div>
 
-                                    <div className="p-4 md:p-8 flex flex-col gap-6 md:gap-8 overflow-y-auto" style={{
-                                        scrollbarWidth: 'thin',
-                                        scrollbarColor: isDark ? 'rgba(255,255,255,0.2) transparent' : 'rgba(0,0,0,0.2) transparent'
-                                    }}>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                                            <div className="flex flex-col gap-6 md:gap-8">
+                                    <div className="px-5 md:px-7 py-5 md:py-6 overflow-y-auto custom-scrollbar">
+                                        {/* Explicit columns rather than a md: variant: responsive grid-cols
+                                            variants do not survive this file's class ordering (the base
+                                            grid-cols wins), and windowWidth is already tracked here. */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: windowWidth >= 820 ? '1fr 264px' : '1fr', gap: windowWidth >= 820 ? '2rem' : '1.5rem' }}>
+                                            {/* Left: what the booking IS */}
+                                            <div className="flex flex-col gap-5 min-w-0">
                                                 <div className="flex flex-col gap-2">
-                                                    <label className="text-[10px] md:text-xs font-bold uppercase tracking-widest opacity-60" style={{ color: isDark ? '#fff' : '#000' }}>Session Title</label>
+                                                    <label htmlFor="booking-title" className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Booked by</label>
                                                     <input
+                                                        id="booking-title"
                                                         type="text"
-                                                        className="w-full h-10 md:h-12 rounded-xl border px-3 md:px-4 font-medium transition-all focus:border-blue-500 outline-none text-sm md:text-base"
-                                                        style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
+                                                        className="w-full h-11 rounded-xl border px-3.5 text-sm font-medium transition-colors focus:border-blue-500 outline-none"
+                                                        style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
                                                         value={editingMeeting.title}
                                                         onChange={(e) => setEditingMeeting({ ...editingMeeting, title: e.target.value })}
-                                                        placeholder="Meeting purpose..."
+                                                        placeholder="Guest or meeting name"
                                                     />
                                                 </div>
 
                                                 <div className="flex flex-col gap-2">
-                                                    <label className="text-[10px] md:text-xs font-bold uppercase tracking-widest opacity-60" style={{ color: isDark ? '#fff' : '#000' }}>Category</label>
-                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                        {allCategories.map(cat => {
-                                                            // Personal is stored as no category at all, hence the undefined.
-                                                            const on = (editingMeeting.category || PERSONAL_CATEGORY.id) === cat.id;
-                                                            return (
-                                                                <button
-                                                                    key={cat.id}
-                                                                    type="button"
-                                                                    onClick={() => setEditingMeeting({ ...editingMeeting, category: cat.id === PERSONAL_CATEGORY.id ? undefined : cat.id })}
-                                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer border transition-colors"
-                                                                    style={on
-                                                                        ? { background: `${cat.color}1f`, color: cat.color, borderColor: cat.color }
-                                                                        : { background: 'transparent', color: 'var(--text-muted)', borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)' }}
-                                                                >
-                                                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cat.color }} />
-                                                                    {cat.name}
-                                                                </button>
-                                                            );
-                                                        })}
+                                                    <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Category</label>
+                                                    <div className="flex items-center gap-2">
+                                                        {/* The swatch is the only place the colour appears in this
+                                                            modal, so the pick reads at a glance next to the name. */}
+                                                        <span className="w-11 h-11 grid place-items-center rounded-xl shrink-0" style={{ background: `${categoryOf(editingMeeting).color}1f` }}>
+                                                            <span className="w-3 h-3 rounded-full" style={{ background: categoryOf(editingMeeting).color }} />
+                                                        </span>
+                                                        <div className="flex-1 min-w-0">
+                                                            <Select
+                                                                value={editingMeeting.category || PERSONAL_CATEGORY.id}
+                                                                options={allCategories.map(c => ({
+                                                                    value: c.id,
+                                                                    label: c.name,
+                                                                    hint: c.id === PERSONAL_CATEGORY.id ? 'Default' : undefined,
+                                                                }))}
+                                                                // Personal is stored as no category at all, hence the undefined.
+                                                                onChange={(v) => setEditingMeeting({ ...editingMeeting, category: v === PERSONAL_CATEGORY.id ? undefined : v })}
+                                                                isDark={isDark}
+                                                                aria-label="Booking category"
+                                                            />
+                                                        </div>
                                                     </div>
                                                 </div>
 
-                                                <div className="flex flex-col gap-3">
-                                                    <h3 className="text-[10px] md:text-xs font-bold uppercase tracking-widest opacity-60 flex items-center gap-2" style={{ color: isDark ? '#fff' : '#000' }}><Clock size={14} /> Available Slots</h3>
-                                                    <div className="grid grid-cols-2 gap-2">
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex items-baseline justify-between gap-3">
+                                                        <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Time</label>
+                                                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>host time</span>
+                                                    </div>
+                                                    <div className="gap-1.5" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(88px, 1fr))' }}>
                                                         {TIME_OPTIONS.map((time) => {
                                                             const isTaken = meetings.some(m =>
                                                                 m.id !== editingMeeting.id &&
                                                                 m.date.toDateString() === editingMeeting.date.toDateString() &&
                                                                 m.time === time
                                                             );
+                                                            const on = editingMeeting.time === time;
                                                             return (
                                                                 <button
                                                                     key={time}
+                                                                    type="button"
                                                                     disabled={isTaken}
                                                                     onClick={() => setEditingMeeting({ ...editingMeeting, time })}
-                                                                    style={{
-                                                                        padding: '8px', borderRadius: '12px',
-                                                                        border: `1px solid ${editingMeeting.time === time ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`,
-                                                                        background: editingMeeting.time === time ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-                                                                        color: editingMeeting.time === time ? 'rgb(59, 130, 246)' : (isDark ? '#fff' : '#000'),
-                                                                        fontSize: '0.7rem', fontWeight: 600, cursor: isTaken ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
-                                                                        opacity: isTaken ? 0.3 : 1
-                                                                    }}
-                                                                    title={isTaken ? 'This slot is already booked' : ''}
+                                                                    className="h-9 rounded-lg text-[11px] font-bold border transition-colors disabled:cursor-not-allowed cursor-pointer"
+                                                                    style={on
+                                                                        ? { background: '#3b82f6', color: '#fff', borderColor: '#3b82f6' }
+                                                                        : { background: 'transparent', color: isTaken ? 'var(--text-muted)' : (isDark ? '#fff' : '#000'), borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)', opacity: isTaken ? 0.35 : 1 }}
+                                                                    title={isTaken ? 'Already booked' : undefined}
                                                                 >
                                                                     {time}
                                                                 </button>
@@ -1679,22 +1731,30 @@ const DCanary = () => {
                                                         />
                                                     </div>
                                                 </div>
+
+                                                {editingMeeting.reason && (
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>What it&apos;s for</span>
+                                                        <p className="text-sm leading-relaxed m-0" style={{ color: isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.7)' }}>{editingMeeting.reason}</p>
+                                                    </div>
+                                                )}
                                             </div>
 
-                                            <div className="flex flex-col gap-4">
-                                                <div className="flex items-center justify-between pb-2">
-                                                    <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: isDark ? '#fff' : '#000', margin: 0 }}>
+                                            {/* Right: when */}
+                                            <div className="flex flex-col gap-3 min-w-0">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>
                                                         {modalViewDate.toLocaleDateString('default', { month: 'long', year: 'numeric' })}
-                                                    </h3>
-                                                    <div style={{ display: 'flex', gap: '4px' }}>
-                                                        <button onClick={() => changeModalMonth(-1)} style={{ padding: '6px', borderRadius: '8px', border: 'none', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', color: isDark ? '#fff' : '#000', cursor: 'pointer' }}><ChevronLeft size={14} /></button>
-                                                        <button onClick={() => changeModalMonth(1)} style={{ padding: '6px', borderRadius: '8px', border: 'none', background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', color: isDark ? '#fff' : '#000', cursor: 'pointer' }}><ChevronRight size={14} /></button>
+                                                    </span>
+                                                    <div className="flex items-center gap-1">
+                                                        <button type="button" onClick={() => changeModalMonth(-1)} aria-label="Previous month" className="w-7 h-7 grid place-items-center rounded-lg cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)' }}><ChevronLeft size={15} /></button>
+                                                        <button type="button" onClick={() => changeModalMonth(1)} aria-label="Next month" className="w-7 h-7 grid place-items-center rounded-lg cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: isDark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)' }}><ChevronRight size={15} /></button>
                                                     </div>
                                                 </div>
 
-                                                <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                                                <div className="grid grid-cols-7 gap-1 text-center">
                                                     {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
-                                                        <div key={idx} style={{ fontSize: '0.65rem', fontWeight: 600, color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' }}>{d}</div>
+                                                        <div key={idx} className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>{d}</div>
                                                     ))}
                                                 </div>
 
@@ -1708,83 +1768,88 @@ const DCanary = () => {
                                                             animate="center"
                                                             exit="exit"
                                                             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                                                            className="grid grid-cols-7 gap-1 md:gap-2"
+                                                            className="grid grid-cols-7 gap-1"
                                                         >
                                                             {modalCalendarDays.map((date, idx) => {
                                                                 const isSelected = date?.toDateString() === editingMeeting.date.toDateString();
+                                                                const isToday = date?.toDateString() === new Date().toDateString();
                                                                 // Past days stay selectable (unlike the public booking calendar) - they
                                                                 // just sit back visually, and saving onto one asks for confirmation.
                                                                 const isPast = !!date && isPastDay(date);
                                                                 return (
-                                                                    <div
+                                                                    <button
                                                                         key={idx}
+                                                                        type="button"
+                                                                        disabled={!date}
                                                                         onClick={() => date && setEditingMeeting({ ...editingMeeting, date })}
                                                                         title={isPast ? 'This day has already passed' : undefined}
-                                                                        style={{
-                                                                            aspectRatio: '1', borderRadius: '12px', cursor: 'pointer', position: 'relative',
-                                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                            opacity: date ? (isPast && !isSelected ? 0.45 : 1) : 0
-                                                                        }}
-                                                                        className={date && !isSelected ? 'hover:bg-black/5 dark:hover:bg-white/5' : ''}
+                                                                        className={`relative grid place-items-center aspect-square rounded-lg border-none bg-transparent p-0 ${date ? 'cursor-pointer' : 'pointer-events-none'} ${date && !isSelected ? 'hover:bg-black/5 dark:hover:bg-white/10' : ''}`}
+                                                                        style={{ opacity: date ? (isPast && !isSelected ? 0.4 : 1) : 0 }}
                                                                     >
                                                                         {isSelected && date && (
-                                                                            <motion.div
+                                                                            <motion.span
                                                                                 layoutId="modal-selected-day-bg"
                                                                                 initial={false}
                                                                                 transition={{ type: "spring", stiffness: 500, damping: 40, mass: 1 }}
-                                                                                style={{
-                                                                                    position: 'absolute', inset: 0,
-                                                                                    borderRadius: 12,
-                                                                                    backgroundColor: 'rgb(59, 130, 246)',
-                                                                                    boxShadow: '0 8px 20px -4px rgba(59, 130, 246, 0.5)',
-                                                                                    zIndex: 0
-                                                                                }}
+                                                                                style={{ position: 'absolute', inset: 0, borderRadius: 8, backgroundColor: '#3b82f6', zIndex: 0 }}
                                                                             />
                                                                         )}
-                                                                        <span style={{
-                                                                            position: 'relative', zIndex: 1,
-                                                                            color: isSelected ? 'white' : (isDark ? '#fff' : '#000'),
-                                                                            fontWeight: isSelected ? 700 : 500,
-                                                                            fontSize: '0.8rem'
+                                                                        <span className="relative z-10 text-xs" style={{
+                                                                            color: isSelected ? '#fff' : (isToday ? '#3b82f6' : (isDark ? '#fff' : '#000')),
+                                                                            fontWeight: isSelected || isToday ? 700 : 500,
                                                                         }}>
                                                                             {date?.getDate()}
                                                                         </span>
-                                                                    </div>
+                                                                    </button>
                                                                 );
                                                             })}
                                                         </motion.div>
                                                     </AnimatePresence>
                                                 </div>
+
+                                                {/* Where this edit actually lands, spelled out. */}
+                                                <div className="rounded-xl px-3 py-2.5 mt-auto" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+                                                    <div className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>Moving to</div>
+                                                    <div className="text-sm font-bold leading-snug" style={{ color: isDark ? '#fff' : '#000' }}>
+                                                        {editingMeeting.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                    </div>
+                                                    <div className="text-sm font-semibold" style={{ color: '#3b82f6' }}>{editingMeeting.time}</div>
+                                                    {isPastDay(editingMeeting.date) && (
+                                                        <div className="text-[11px] font-semibold mt-1.5" style={{ color: '#f59e0b' }}>That day has already passed.</div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Modal Footer */}
-                                    <div className="p-4 md:p-6 border-t flex items-center justify-between" style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
-                                        <div className="flex items-center gap-3">
+                                    {/* Footer: the destructive action kept apart from the two safe ones. */}
+                                    <div className="px-5 md:px-7 py-4 border-t flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setConfirmDelete(editingMeeting.id)}
+                                            className="inline-flex items-center gap-2 px-3 h-10 rounded-xl text-sm font-bold cursor-pointer transition-colors text-red-500 hover:bg-red-500/10"
+                                        >
+                                            <Trash2 size={16} />
+                                            Cancel session
+                                        </button>
+                                        <div className="flex items-center gap-2 ml-auto">
                                             <button
-                                                onClick={() => setConfirmDelete(editingMeeting.id)}
-                                                className="px-4 md:px-5 py-2 md:py-2.5 rounded-xl transition-all text-xs md:text-sm font-bold flex items-center gap-2 text-red-500 hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
-                                            >
-                                                <Trash2 size={16} />
-                                                Cancel
-                                            </button>
-                                            <button
+                                                type="button"
                                                 onClick={() => setEditingMeeting(null)}
-                                                className="px-4 md:px-5 py-2 md:py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all hover:bg-black/5 dark:hover:bg-white/5"
-                                                style={{ color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' }}
+                                                className="px-4 h-10 rounded-xl font-bold text-sm cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                                                style={{ color: 'var(--text-muted)' }}
                                             >
-                                                Close
+                                                Discard
                                             </button>
-                                        </div>
-                                        <div className="flex items-center gap-4">
                                             <button
+                                                type="button"
                                                 onClick={() => handleSaveMeeting()}
-                                                className="px-5 md:px-6 py-2 md:py-2.5 rounded-xl text-white font-bold text-xs md:text-sm shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2"
-                                                style={{ background: 'linear-gradient(135deg, #1A1A1A 0%, #333333 100%)' }}
+                                                disabled={!editDirty}
+                                                className="inline-flex items-center gap-2 px-5 h-10 rounded-xl text-white font-bold text-sm cursor-pointer transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                                                style={{ background: '#3b82f6' }}
                                             >
-                                                <Check size={18} strokeWidth={2.5} />
-                                                Reschedule
+                                                <Check size={17} strokeWidth={2.5} />
+                                                Save changes
                                             </button>
                                         </div>
                                     </div>

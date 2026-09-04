@@ -1,6 +1,6 @@
 /**
- * Meeting categories - the bucket a booking belongs to: a company (O.B.D), a
- * client, a side project. The owner defines the list from the dashboard
+ * Meeting categories - the bucket a booking belongs to: a company, a client, a
+ * side project. The owner defines the list from the dashboard
  * (D-Canary → Options) and assigns one there or over MCP; guests never see or
  * pick a category, so anything booked through the public form arrives Personal.
  *
