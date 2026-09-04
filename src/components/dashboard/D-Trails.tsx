@@ -4,12 +4,12 @@ import {
     Copy, Check, MoreVertical, Edit2, Trash2, Activity, Plus, Briefcase,
     MousePointer2, Eye, Globe, ChevronLeft, ChevronRight, Trophy, Github, ExternalLink,
     Download, Footprints, Link2, Radio, Users, Mail, FileText, BellRing, BellOff,
-    Search, Filter, ArrowRight, PackageOpen, Archive,
+    Search, Filter, ArrowRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps } from 'recharts';
-import { doc, getDoc, onSnapshot, updateDoc, collection, getDocs, setDoc, deleteDoc, query, orderBy, limit as fsLimit, where } from 'firebase/firestore';
-import app, { db } from '../../lib/firebase';
+import { doc, onSnapshot, updateDoc, collection, getDocs, setDoc, deleteDoc, query, orderBy, limit as fsLimit, where } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import FileImage from '../FileImage';
 import Loader from '../reactbits/Loader';
 import Alert from '../Alert';
@@ -53,15 +53,6 @@ interface SocialRow {
     name: string;
     Clicks: number;
     AwayMs: number;
-}
-
-/** What migrateAnalytics hands back, so the banner can say what it moved. */
-interface MigrationReport {
-    days: number;
-    links: number;
-    legacySessions: number;
-    socials: number;
-    purged: string[];
 }
 
 type StoryFilter = 'all' | 'live' | 'links' | 'contacted';
@@ -755,11 +746,6 @@ const DTrails = () => {
     const [editingLink, setEditingLink] = useState<LinkRow | null>(null);
     const [draft, setDraft] = useState<{ Name: string; For: string; Notify: boolean; AutoCv: boolean; Greeting: string; Pinned: string[] } | null>(null);
 
-    // The pre-rewrite pipeline's leftovers, if any are still sitting in
-    // Settings/Views. Once they are brought over and cleared this never renders again.
-    const [legacyFound, setLegacyFound] = useState<{ links: number; days: number; socials: number } | null>(null);
-    const [migrationReport, setMigrationReport] = useState<MigrationReport | null>(null);
-
     const [confirmConfig, setConfirmConfig] = useState<{
         isOpen: boolean; title: string; message: string; onConfirm: () => void; type?: ConfirmType;
     }>({ isOpen: false, title: '', message: '', onConfirm: () => { } });
@@ -846,47 +832,6 @@ const DTrails = () => {
 
         return () => { stories(); days(); totalsUnsub(); linksUnsub(); socialsUnsub(); projectsUnsub(); };
     }, [showAlert]);
-
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            try {
-                const [oldLinks, oldDaily, oldSocials] = await Promise.all([
-                    getDocs(collection(db, 'Settings', 'Views', 'Links')),
-                    getDoc(doc(db, 'Settings', 'Views', 'Analysis', 'Daily')),
-                    getDocs(collection(db, 'Settings', 'Views', 'Socials')),
-                ]);
-                const days = oldDaily.exists()
-                    ? Object.keys(oldDaily.data()).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).length
-                    : 0;
-                if (cancelled) return;
-                const found = { links: oldLinks.size, days, socials: oldSocials.size };
-                if (found.links || found.days || found.socials) setLegacyFound(found);
-            } catch { /* nothing left there, which is the goal */ }
-        })();
-        return () => { cancelled = true; };
-    }, []);
-
-    const runMigration = async (purge: boolean) => {
-        setIsLoading(true);
-        try {
-            const { httpsCallable, getFunctions } = await import('firebase/functions');
-            const fn = httpsCallable(getFunctions(app, 'us-central1'), 'migrateAnalytics');
-            const res = await fn({ purge });
-            const report = res.data as MigrationReport;
-            setMigrationReport(report);
-            if (purge) {
-                setLegacyFound(null);
-                showAlert({ type: 'success', message: 'Old copies removed. Everything lives under Analytics now.' });
-            } else {
-                showAlert({ type: 'success', message: `Brought over ${report.days} days, ${report.links} links, ${report.socials} socials.` });
-            }
-        } catch {
-            showAlert({ type: 'error', message: 'Migration failed. Nothing was changed.' });
-        } finally {
-            setIsLoading(false);
-        }
-    };
 
     // Claim the parked id so a refresh does not reopen the same story forever.
     useEffect(() => {
@@ -1186,35 +1131,6 @@ const DTrails = () => {
                     </button>
                 )}
             </div>
-
-            {legacyFound && (
-                <div className="rounded-2xl border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4"
-                    style={{
-                        background: isDark ? 'rgba(245,158,11,0.07)' : 'rgba(245,158,11,0.06)',
-                        borderColor: 'rgba(245,158,11,0.3)',
-                    }}>
-                    <span className="w-10 h-10 rounded-xl grid place-items-center shrink-0"
-                        style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
-                        <PackageOpen size={19} />
-                    </span>
-                    <div className="flex flex-col flex-1 min-w-0">
-                        <span className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>
-                            {migrationReport ? 'Old data is now in both places' : 'There is older data to bring over'}
-                        </span>
-                        <span className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                            {migrationReport
-                                ? `${migrationReport.days} days, ${migrationReport.links} links (${migrationReport.legacySessions} rebuilt as stories) and ${migrationReport.socials} socials are under Analytics. The originals are still in Settings/Views until you clear them.`
-                                : `${legacyFound.days} days, ${legacyFound.links} links and ${legacyFound.socials} socials still sit under Settings/Views. Nothing is deleted by bringing them over.`}
-                        </span>
-                    </div>
-                    <button
-                        onClick={() => runMigration(!!migrationReport)}
-                        className="btn btn-primary !px-5 !py-2.5 shrink-0 inline-flex items-center gap-2"
-                    >
-                        {migrationReport ? <><Archive size={15} /> Clear the old copies</> : <>Bring it over</>}
-                    </button>
-                </div>
-            )}
 
             <div className="flex-1 min-h-0">
                 <AnimatePresence mode="wait" initial={false}>

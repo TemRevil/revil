@@ -259,10 +259,9 @@ async function sendGuestAck(
 //  1. Visit recording - see ./analytics.ts
 //     `trackSession` replaced the old `syncSession`, which merged every visit
 //     through a link into one string field and was never actually App Check
-//     enforced (onRequest ignores that option). Delete the old deployment with:
-//       firebase functions:delete syncSession
+//     enforced (onRequest ignores that option). syncSession is gone.
 // =====================================================================
-export { trackSession, migrateAnalytics } from "./analytics.js";
+export { trackSession } from "./analytics.js";
 
 // =====================================================================
 //  2. notifyCanary - Firestore trigger on Settings/Canary
