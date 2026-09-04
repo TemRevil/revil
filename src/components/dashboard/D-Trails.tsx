@@ -1140,325 +1140,378 @@ const DTrails = () => {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
                         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                        className="h-full overflow-y-auto custom-scrollbar pr-1"
+                        className="h-full min-h-0 flex flex-col"
                     >
                         {view === 'stories' && (
-                            <div className="flex flex-col gap-5 pb-12">
-                                <div className="flex flex-col gap-1">
-                                    <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Stories</h1>
-                                    <p className="text-muted text-sm">Every visit, in the order it happened</p>
+                            <div className="flex flex-col h-full min-h-0">
+                                {/* The title, the filters and the search stay put. Only the
+                                    rows underneath move, which is the thing you are reading. */}
+                                <div className="shrink-0 flex flex-col gap-5 pb-5">
+                                    <div className="flex flex-col gap-1">
+                                        <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Stories</h1>
+                                        <p className="text-muted text-sm">Every visit, in the order it happened</p>
+                                    </div>
+
+                                    {/* filters */}
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            {STORY_FILTERS.map(f => (
+                                                <button
+                                                    key={f.id}
+                                                    onClick={() => setStoryFilter(f.id)}
+                                                    className="px-3 h-9 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                                                    style={{
+                                                        background: storyFilter === f.id
+                                                            ? (isDark ? 'rgba(59,130,246,0.18)' : 'rgba(59,130,246,0.1)')
+                                                            : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'),
+                                                        color: storyFilter === f.id ? '#3b82f6' : 'var(--text-muted)',
+                                                    }}
+                                                >
+                                                    {f.label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        <div className="relative flex-1 min-w-[180px]">
+                                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                                            <input
+                                                type="text"
+                                                value={search}
+                                                onChange={e => setSearch(e.target.value)}
+                                                placeholder="Country, browser, link…"
+                                                aria-label="Search visits"
+                                                className="w-full h-9 rounded-xl border pl-9 pr-3 text-xs outline-none transition-colors focus:border-blue-500"
+                                                style={{
+                                                    backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#fff',
+                                                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                                                    color: isDark ? '#fff' : '#000',
+                                                }}
+                                            />
+                                        </div>
+
+                                        {linkFilter && (
+                                            <button
+                                                onClick={() => setLinkFilter(null)}
+                                                className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-bold cursor-pointer"
+                                                style={{ background: 'rgba(168,85,247,0.14)', color: '#a855f7' }}
+                                            >
+                                                <Filter size={13} />
+                                                {links.find(l => l.id === linkFilter)?.Name || 'Link'}
+                                                <Plus size={13} className="rotate-45" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
 
-                                {/* filters */}
-                                <div className="flex items-center gap-3 flex-wrap">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                        {STORY_FILTERS.map(f => (
-                                            <button
-                                                key={f.id}
-                                                onClick={() => setStoryFilter(f.id)}
-                                                className="px-3 h-9 rounded-xl text-xs font-bold cursor-pointer transition-colors"
-                                                style={{
-                                                    background: storyFilter === f.id
-                                                        ? (isDark ? 'rgba(59,130,246,0.18)' : 'rgba(59,130,246,0.1)')
-                                                        : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'),
-                                                    color: storyFilter === f.id ? '#3b82f6' : 'var(--text-muted)',
-                                                }}
-                                            >
-                                                {f.label}
-                                            </button>
-                                        ))}
-                                    </div>
+                                {/* the list - the only part that scrolls */}
+                                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-12">
+                                    {visibleStories.length === 0 ? (
+                                        <div className="glass-surface rounded-3xl border-dashed p-12 text-center text-sec">
+                                            {sessions.length === 0
+                                                ? 'No visits recorded yet. The first one shows up here the moment it happens.'
+                                                : 'Nothing matches that filter.'}
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col gap-2">
+                                            {visibleStories.map(story => {
+                                                const live = isLive(story);
+                                                const flag = flagOf(story.Geo?.Code);
+                                                const when = story.StartedAt
+                                                    ? new Date(story.StartedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                                                    : 'Before the rewrite';
+                                                const projectCount = Object.keys(story.Projects || {}).length;
+                                                const socialCount = Object.keys(story.Socials || {}).length;
+                                                const deepest = Math.round(
+                                                    Object.values(story.Scroll || {}).reduce((top, pct) => Math.max(top, pct), 0),
+                                                );
+                                                // What they actually did. These used to be crammed into the
+                                                // subtitle; as chips they fill the middle of the row, which
+                                                // was dead space between the name and the duration.
+                                                const did: { label: string; tint: string }[] = [];
+                                                if (projectCount) did.push({ label: `${projectCount} project${projectCount === 1 ? '' : 's'}`, tint: '16,185,129' });
+                                                if (story.Cv?.Opens) did.push({ label: 'CV', tint: '245,158,11' });
+                                                if (story.Contact?.Sent) {
+                                                    did.push({ label: story.Contact.Sent === 'meeting' ? 'booked a meeting' : 'sent a message', tint: '236,72,153' });
+                                                } else if (story.Contact?.Opens) {
+                                                    did.push({ label: 'opened contact', tint: '236,72,153' });
+                                                }
+                                                if (socialCount) did.push({ label: `${socialCount} social${socialCount === 1 ? '' : 's'}`, tint: '139,92,246' });
 
-                                    <div className="relative flex-1 min-w-[180px]">
-                                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-                                        <input
-                                            type="text"
-                                            value={search}
-                                            onChange={e => setSearch(e.target.value)}
-                                            placeholder="Country, browser, link…"
-                                            aria-label="Search visits"
-                                            className="w-full h-9 rounded-xl border pl-9 pr-3 text-xs outline-none transition-colors focus:border-blue-500"
-                                            style={{
-                                                backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#fff',
-                                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                                                color: isDark ? '#fff' : '#000',
-                                            }}
-                                        />
-                                    </div>
+                                                return (
+                                                    <button
+                                                        key={story.Id}
+                                                        onClick={() => setOpenStoryId(story.Id)}
+                                                        className="w-full text-left flex items-center gap-3 sm:gap-4 px-4 py-3.5 rounded-2xl border cursor-pointer transition-colors"
+                                                        style={{
+                                                            background: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                                                            borderColor: live ? 'rgba(34,197,94,0.35)' : 'var(--card-border)',
+                                                        }}
+                                                        onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'; }}
+                                                        onMouseLeave={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.02)' : '#fff'; }}
+                                                    >
+                                                        <span className="w-9 h-9 rounded-xl grid place-items-center shrink-0 text-base"
+                                                            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', color: 'var(--text-muted)' }}>
+                                                            {flag || <DeviceIcon type={story.Device?.Type} size={16} />}
+                                                        </span>
 
-                                    {linkFilter && (
-                                        <button
-                                            onClick={() => setLinkFilter(null)}
-                                            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-xl text-xs font-bold cursor-pointer"
-                                            style={{ background: 'rgba(168,85,247,0.14)', color: '#a855f7' }}
-                                        >
-                                            <Filter size={13} />
-                                            {links.find(l => l.id === linkFilter)?.Name || 'Link'}
-                                            <Plus size={13} className="rotate-45" />
-                                        </button>
+                                                        <span className="flex flex-col min-w-0 gap-0.5" style={{ flex: '1 1 200px' }}>
+                                                            <span className="flex items-center gap-2 min-w-0">
+                                                                <span className="text-sm font-bold truncate" style={{ color: isDark ? '#fff' : '#000' }}>
+                                                                    {story.Geo?.Country || 'Somewhere'}
+                                                                </span>
+                                                                {story.Link && (
+                                                                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black tracking-wide shrink-0"
+                                                                        style={{ background: 'rgba(168,85,247,0.14)', color: '#a855f7' }}>
+                                                                        {story.Link.Name.toUpperCase()}
+                                                                    </span>
+                                                                )}
+                                                                {live && (
+                                                                    <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: '#22c55e' }} />
+                                                                )}
+                                                            </span>
+                                                            <span className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                                                                {when} · {story.Entry?.Ref ? `from ${story.Entry.Ref}` : 'direct'}
+                                                            </span>
+                                                        </span>
+
+                                                        <span className="hidden xl:flex items-center gap-1.5 min-w-0 overflow-hidden" style={{ flex: '1 1 240px' }}>
+                                                            {did.length ? did.map(chip => (
+                                                                <span
+                                                                    key={chip.label}
+                                                                    className="px-2 h-6 inline-flex items-center rounded-md text-[10px] font-bold whitespace-nowrap shrink-0"
+                                                                    style={{ background: `rgba(${chip.tint},0.14)`, color: `rgb(${chip.tint})` }}
+                                                                >
+                                                                    {chip.label}
+                                                                </span>
+                                                            )) : (
+                                                                <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>just looked around</span>
+                                                            )}
+                                                        </span>
+
+                                                        {/* how far down the page they actually got */}
+                                                        <span className="hidden 2xl:flex items-center gap-2 shrink-0 w-[86px]"
+                                                            title={deepest > 0 ? `Read ${deepest}% of the way down` : undefined}>
+                                                            {deepest > 0 && (
+                                                                <>
+                                                                    <span className="h-1.5 flex-1 rounded-full overflow-hidden"
+                                                                        style={{ background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
+                                                                        <span className="block h-full rounded-full"
+                                                                            style={{ width: `${Math.min(100, deepest)}%`, background: '#3b82f6' }} />
+                                                                    </span>
+                                                                    <span className="text-[10px] font-bold tabular-nums w-7 text-right" style={{ color: 'var(--text-muted)' }}>
+                                                                        {deepest}%
+                                                                    </span>
+                                                                </>
+                                                            )}
+                                                        </span>
+
+                                                        <span className="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold shrink-0" style={{ color: 'var(--text-muted)' }}>
+                                                            <DeviceIcon type={story.Device?.Type} size={13} />
+                                                            {story.Device?.Browser || '?'}
+                                                        </span>
+
+                                                        <span className="text-xs font-black tabular-nums shrink-0 w-14 text-right"
+                                                            style={{ color: story.ActiveMs > 60_000 ? '#22c55e' : 'var(--text-muted)' }}>
+                                                            {formatMs(story.ActiveMs || 0)}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     )}
                                 </div>
-
-                                {/* the list */}
-                                {visibleStories.length === 0 ? (
-                                    <div className="glass-surface rounded-3xl border-dashed p-12 text-center text-sec">
-                                        {sessions.length === 0
-                                            ? 'No visits recorded yet. The first one shows up here the moment it happens.'
-                                            : 'Nothing matches that filter.'}
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-2">
-                                        {visibleStories.map(story => {
-                                            const live = isLive(story);
-                                            const flag = flagOf(story.Geo?.Code);
-                                            const when = story.StartedAt
-                                                ? new Date(story.StartedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-                                                : 'Before the rewrite';
-                                            const projectCount = Object.keys(story.Projects || {}).length;
-                                            const trail = [
-                                                story.Entry?.Ref ? `from ${story.Entry.Ref}` : 'direct',
-                                                projectCount ? `${projectCount} project${projectCount === 1 ? '' : 's'}` : null,
-                                                story.Cv?.Opens ? 'CV' : null,
-                                                story.Contact?.Sent
-                                                    ? `sent a ${story.Contact.Sent === 'meeting' ? 'booking' : 'message'}`
-                                                    : story.Contact?.Opens ? 'opened contact' : null,
-                                            ].filter(Boolean).join(' · ');
-
-                                            return (
-                                                <button
-                                                    key={story.Id}
-                                                    onClick={() => setOpenStoryId(story.Id)}
-                                                    className="w-full text-left flex items-center gap-3 sm:gap-4 px-4 py-3.5 rounded-2xl border cursor-pointer transition-colors"
-                                                    style={{
-                                                        background: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
-                                                        borderColor: live ? 'rgba(34,197,94,0.35)' : 'var(--card-border)',
-                                                    }}
-                                                    onMouseEnter={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'; }}
-                                                    onMouseLeave={e => { e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.02)' : '#fff'; }}
-                                                >
-                                                    <span className="w-9 h-9 rounded-xl grid place-items-center shrink-0 text-base"
-                                                        style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', color: 'var(--text-muted)' }}>
-                                                        {flag || <DeviceIcon type={story.Device?.Type} size={16} />}
-                                                    </span>
-
-                                                    <span className="flex flex-col min-w-0 flex-1 gap-0.5">
-                                                        <span className="flex items-center gap-2 min-w-0">
-                                                            <span className="text-sm font-bold truncate" style={{ color: isDark ? '#fff' : '#000' }}>
-                                                                {story.Geo?.Country || 'Somewhere'}
-                                                            </span>
-                                                            {story.Link && (
-                                                                <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black tracking-wide shrink-0"
-                                                                    style={{ background: 'rgba(168,85,247,0.14)', color: '#a855f7' }}>
-                                                                    {story.Link.Name.toUpperCase()}
-                                                                </span>
-                                                            )}
-                                                            {live && (
-                                                                <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: '#22c55e' }} />
-                                                            )}
-                                                        </span>
-                                                        <span className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                                                            {when} · {trail}
-                                                        </span>
-                                                    </span>
-
-                                                    <span className="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold shrink-0" style={{ color: 'var(--text-muted)' }}>
-                                                        <DeviceIcon type={story.Device?.Type} size={13} />
-                                                        {story.Device?.Browser || '?'}
-                                                    </span>
-
-                                                    <span className="text-xs font-black tabular-nums shrink-0 w-14 text-right"
-                                                        style={{ color: story.ActiveMs > 60_000 ? '#22c55e' : 'var(--text-muted)' }}>
-                                                        {formatMs(story.ActiveMs || 0)}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                )}
                             </div>
                         )}
 
                         {view === 'overview' && (
-                            <div className="flex flex-col gap-8 pb-12 w-full">
-                                <div className="flex flex-col gap-1">
+                            <div className="flex flex-col h-full min-h-0 w-full">
+                                <div className="shrink-0 flex flex-col gap-1 pb-8">
                                     <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Overview</h1>
                                     <p className="text-muted text-sm">
                                         {dailySeries.length ? `Since ${dailySeries[0].date}` : 'Nothing recorded yet'}
                                     </p>
                                 </div>
 
-                                <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${windowWidth < 520 ? 140 : 180}px, 1fr))` }}>
-                                    {counters.map(c => (
-                                        <div key={c.label} className="rounded-[24px] border p-5 flex flex-col gap-3"
-                                            style={{
-                                                background: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
-                                                borderColor: 'var(--card-border)',
-                                            }}>
-                                            <span className="w-9 h-9 rounded-xl grid place-items-center"
-                                                style={{ background: `${c.tint}1f`, color: c.tint }}>
-                                                {c.icon}
-                                            </span>
-                                            <div className="flex flex-col">
-                                                <RollingNumber
-                                                    text={c.value.toLocaleString()}
-                                                    className="text-3xl font-black tracking-tight tabular-nums"
-                                                    style={{ color: isDark ? '#fff' : '#0f172a' }}
-                                                />
-                                                <span className="text-[9px] font-bold uppercase tracking-[0.2em] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                                    {c.label}
+                                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-12 flex flex-col gap-8">
+
+                                    <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${windowWidth < 520 ? 140 : 180}px, 1fr))` }}>
+                                        {counters.map(c => (
+                                            <div key={c.label} className="rounded-[24px] border p-5 flex flex-col gap-3"
+                                                style={{
+                                                    background: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                                                    borderColor: 'var(--card-border)',
+                                                }}>
+                                                <span className="w-9 h-9 rounded-xl grid place-items-center"
+                                                    style={{ background: `${c.tint}1f`, color: c.tint }}>
+                                                    {c.icon}
                                                 </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <AnalyticsChart
-                                    data={chartData}
-                                    filter={chartFilter}
-                                    setFilter={setChartFilter}
-                                    isDark={isDark}
-                                    windowWidth={windowWidth}
-                                />
-
-                                <ProjectRankings projects={rankProjects} isDark={isDark} />
-
-                                {socials.length > 0 && (
-                                    <div className={`w-full ${isDark ? 'bg-[#0C0C0C] border-white/[0.06]' : 'bg-white border-black/[0.06] shadow-sm'} rounded-[28px] p-5 sm:p-8 border`}>
-                                        <div className="flex items-center gap-3 mb-6">
-                                            <div className={`${isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-100 text-purple-600'} w-10 h-10 flex items-center justify-center rounded-xl`}>
-                                                <Globe size={20} />
-                                            </div>
-                                            <div>
-                                                <h3 className={`${isDark ? 'text-white' : 'text-slate-900'} text-xl sm:text-2xl font-black tracking-[-0.02em] leading-none`}>
-                                                    Where they went next
-                                                </h3>
-                                                <p className={`${isDark ? 'text-[#666]' : 'text-slate-400'} text-[10px] font-bold uppercase tracking-[0.15em] mt-1.5`}>
-                                                    Social links, and how long they stayed away
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col gap-2">
-                                            {socials.map(s => (
-                                                <div key={s.name} className={`flex items-center justify-between gap-4 px-4 py-3 rounded-2xl border ${isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-slate-50 border-black/[0.04]'}`}>
-                                                    <span className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{s.name}</span>
-                                                    <span className="flex items-center gap-4 shrink-0 text-[11px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                                                        <span>{(s.Clicks || 0).toLocaleString()} clicks</span>
-                                                        <span style={{ color: '#8b5cf6' }}>{formatMs(s.AwayMs || 0)} away</span>
+                                                <div className="flex flex-col">
+                                                    <RollingNumber
+                                                        text={c.value.toLocaleString()}
+                                                        className="text-3xl font-black tracking-tight tabular-nums"
+                                                        style={{ color: isDark ? '#fff' : '#0f172a' }}
+                                                    />
+                                                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                                        {c.label}
                                                     </span>
                                                 </div>
-                                            ))}
-                                        </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                )}
+
+                                    <AnalyticsChart
+                                        data={chartData}
+                                        filter={chartFilter}
+                                        setFilter={setChartFilter}
+                                        isDark={isDark}
+                                        windowWidth={windowWidth}
+                                    />
+
+                                    <ProjectRankings projects={rankProjects} isDark={isDark} />
+
+                                    {socials.length > 0 && (
+                                        <div className={`w-full ${isDark ? 'bg-[#0C0C0C] border-white/[0.06]' : 'bg-white border-black/[0.06] shadow-sm'} rounded-[28px] p-5 sm:p-8 border`}>
+                                            <div className="flex items-center gap-3 mb-6">
+                                                <div className={`${isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-100 text-purple-600'} w-10 h-10 flex items-center justify-center rounded-xl`}>
+                                                    <Globe size={20} />
+                                                </div>
+                                                <div>
+                                                    <h3 className={`${isDark ? 'text-white' : 'text-slate-900'} text-xl sm:text-2xl font-black tracking-[-0.02em] leading-none`}>
+                                                        Where they went next
+                                                    </h3>
+                                                    <p className={`${isDark ? 'text-[#666]' : 'text-slate-400'} text-[10px] font-bold uppercase tracking-[0.15em] mt-1.5`}>
+                                                        Social links, and how long they stayed away
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                {socials.map(s => (
+                                                    <div key={s.name} className={`flex items-center justify-between gap-4 px-4 py-3 rounded-2xl border ${isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-slate-50 border-black/[0.04]'}`}>
+                                                        <span className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{s.name}</span>
+                                                        <span className="flex items-center gap-4 shrink-0 text-[11px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                            <span>{(s.Clicks || 0).toLocaleString()} clicks</span>
+                                                            <span style={{ color: '#8b5cf6' }}>{formatMs(s.AwayMs || 0)} away</span>
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
                         {view === 'links' && (
-                            <div className="flex flex-col gap-8 pb-12">
-                                <div className="flex flex-col gap-1">
+                            <div className="flex flex-col h-full min-h-0">
+                                <div className="shrink-0 flex flex-col gap-1 pb-8">
                                     <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Links</h1>
                                     <p className="text-muted text-sm">Private doors into the portfolio, one per person</p>
                                 </div>
 
-                                <div className="grid gap-6 items-start" style={{
-                                    gridTemplateColumns: windowWidth >= 1100 ? 'minmax(0, 320px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
-                                }}>
-                                    <div className="glass-panel p-6 sm:p-7">
-                                        <h3 className="heading-sm mb-5">New link</h3>
-                                        <div className="flex flex-col gap-4">
-                                            <div className="flex flex-col gap-2">
-                                                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }} htmlFor="trails-link-name">Who it is for</label>
-                                                <input id="trails-link-name" type="text" className="input-field" value={name}
-                                                    onChange={e => setName(e.target.value)} placeholder="e.g. Google" />
-                                            </div>
-                                            <div className="flex flex-col gap-2">
-                                                <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }} htmlFor="trails-link-for">What it is about</label>
-                                                <input id="trails-link-for" type="text" className="input-field" value={forField}
-                                                    onChange={e => setForField(e.target.value)} placeholder="e.g. Frontend role" />
-                                            </div>
-                                            <button onClick={createLink} disabled={!name.trim() || !forField.trim()}
-                                                className="btn btn-primary w-full py-3.5 mt-1">
-                                                Create link
-                                            </button>
-                                            <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                                                New links email you the moment they are opened, with a button
-                                                straight to that visit.
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid gap-4" style={{
-                                        gridTemplateColumns: windowWidth >= 720 ? 'repeat(auto-fit, minmax(320px, 1fr))' : 'minmax(0, 1fr)',
+                                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-12">
+                                    <div className="grid gap-6 items-start" style={{
+                                        gridTemplateColumns: windowWidth >= 1100 ? 'minmax(0, 320px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
                                     }}>
-                                        {links.length === 0 ? (
-                                            <div className="glass-surface rounded-3xl border-dashed p-12 text-center text-sec">
-                                                No links yet.
+                                        {/* Pinned once there are two columns: you can keep making links
+                                            without scrolling back up past everything you already made. */}
+                                        <div className="glass-panel p-6 sm:p-7"
+                                            style={windowWidth >= 1100 ? { position: 'sticky', top: 0 } : undefined}>
+                                            <h3 className="heading-sm mb-5">New link</h3>
+                                            <div className="flex flex-col gap-4">
+                                                <div className="flex flex-col gap-2">
+                                                    <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }} htmlFor="trails-link-name">Who it is for</label>
+                                                    <input id="trails-link-name" type="text" className="input-field" value={name}
+                                                        onChange={e => setName(e.target.value)} placeholder="e.g. Google" />
+                                                </div>
+                                                <div className="flex flex-col gap-2">
+                                                    <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }} htmlFor="trails-link-for">What it is about</label>
+                                                    <input id="trails-link-for" type="text" className="input-field" value={forField}
+                                                        onChange={e => setForField(e.target.value)} placeholder="e.g. Frontend role" />
+                                                </div>
+                                                <button onClick={createLink} disabled={!name.trim() || !forField.trim()}
+                                                    className="btn btn-primary w-full py-3.5 mt-1">
+                                                    Create link
+                                                </button>
+                                                <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                                                    New links email you the moment they are opened, with a button
+                                                    straight to that visit.
+                                                </p>
                                             </div>
-                                        ) : links.map(link => (
-                                            <motion.div key={link.id} layout className="glass-panel p-5 sm:p-6 flex flex-col gap-4">
-                                                <div className="flex justify-between items-start gap-3">
-                                                    <div className="flex flex-col min-w-0">
-                                                        <h3 className="font-bold text-lg leading-tight truncate">{link.Name}</h3>
-                                                        <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{link.For}</p>
+                                        </div>
+
+                                        <div className="grid gap-4" style={{
+                                            gridTemplateColumns: windowWidth >= 720 ? 'repeat(auto-fit, minmax(320px, 1fr))' : 'minmax(0, 1fr)',
+                                        }}>
+                                            {links.length === 0 ? (
+                                                <div className="glass-surface rounded-3xl border-dashed p-12 text-center text-sec">
+                                                    No links yet.
+                                                </div>
+                                            ) : links.map(link => (
+                                                <motion.div key={link.id} layout className="glass-panel p-5 sm:p-6 flex flex-col gap-4">
+                                                    <div className="flex justify-between items-start gap-3">
+                                                        <div className="flex flex-col min-w-0">
+                                                            <h3 className="font-bold text-lg leading-tight truncate">{link.Name}</h3>
+                                                            <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{link.For}</p>
+                                                        </div>
+                                                        <button onClick={e => openMenu(e, link.id)} aria-label={`Options for ${link.Name}`}
+                                                            className="p-1 shrink-0 cursor-pointer transition-colors hover:text-blue-500" style={{ color: 'var(--text-muted)' }}>
+                                                            <MoreVertical size={18} />
+                                                        </button>
                                                     </div>
-                                                    <button onClick={e => openMenu(e, link.id)} aria-label={`Options for ${link.Name}`}
-                                                        className="p-1 shrink-0 cursor-pointer transition-colors hover:text-blue-500" style={{ color: 'var(--text-muted)' }}>
-                                                        <MoreVertical size={18} />
-                                                    </button>
-                                                </div>
 
-                                                <div className="flex items-center gap-3 p-3 rounded-xl border"
-                                                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.03)', borderColor: 'var(--card-border)' }}>
-                                                    <code className="text-[10px] font-mono flex-1 truncate" style={{ color: 'var(--text-muted)' }}>{link.url}</code>
-                                                    <button onClick={() => copyToClipboard(link.url, link.id)} aria-label="Copy link"
-                                                        className="cursor-pointer transition-colors hover:text-blue-500" style={{ color: 'var(--text-muted)' }}>
-                                                        {copied === link.id ? <Check size={15} className="text-green-500" /> : <Copy size={15} />}
-                                                    </button>
-                                                </div>
+                                                    <div className="flex items-center gap-3 p-3 rounded-xl border"
+                                                        style={{ background: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.03)', borderColor: 'var(--card-border)' }}>
+                                                        <code className="text-[10px] font-mono flex-1 truncate" style={{ color: 'var(--text-muted)' }}>{link.url}</code>
+                                                        <button onClick={() => copyToClipboard(link.url, link.id)} aria-label="Copy link"
+                                                            className="cursor-pointer transition-colors hover:text-blue-500" style={{ color: 'var(--text-muted)' }}>
+                                                            {copied === link.id ? <Check size={15} className="text-green-500" /> : <Copy size={15} />}
+                                                        </button>
+                                                    </div>
 
-                                                <div className="flex items-center gap-4 text-[11px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                                                    <span className="flex items-center gap-1.5"><Eye size={13} />{link.Opens || 0} opens</span>
-                                                    <span className="flex items-center gap-1.5"><Footprints size={13} />{link.Sessions || 0} visits</span>
-                                                    {link.LastOpenAt ? (
-                                                        <span className="truncate">{new Date(link.LastOpenAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-                                                    ) : null}
-                                                </div>
+                                                    <div className="flex items-center gap-4 text-[11px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                        <span className="flex items-center gap-1.5"><Eye size={13} />{link.Opens || 0} opens</span>
+                                                        <span className="flex items-center gap-1.5"><Footprints size={13} />{link.Sessions || 0} visits</span>
+                                                        {link.LastOpenAt ? (
+                                                            <span className="truncate">{new Date(link.LastOpenAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                                                        ) : null}
+                                                    </div>
 
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <button
-                                                        onClick={() => patchLink(link.id, { Notify: link.Notify === false }, link.Notify === false ? 'You will be emailed on every open.' : 'Notifications off for this link.')}
-                                                        className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
-                                                        style={{
-                                                            background: link.Notify !== false ? 'rgba(59,130,246,0.14)' : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
-                                                            color: link.Notify !== false ? '#3b82f6' : 'var(--text-muted)',
-                                                        }}
-                                                    >
-                                                        {link.Notify !== false ? <BellRing size={13} /> : <BellOff size={13} />}
-                                                        {link.Notify !== false ? 'Emails on' : 'Emails off'}
-                                                    </button>
-                                                    {link.Tailor?.AutoCv && (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-[10px] font-bold"
-                                                            style={{ background: 'rgba(245,158,11,0.14)', color: '#f59e0b' }}>
-                                                            <FileText size={13} /> CV opens itself
-                                                        </span>
-                                                    )}
-                                                    {(link.Tailor?.Pinned?.length || 0) > 0 && (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-[10px] font-bold"
-                                                            style={{ background: 'rgba(16,185,129,0.14)', color: '#10b981' }}>
-                                                            <Briefcase size={13} /> {link.Tailor.Pinned.length} pinned
-                                                        </span>
-                                                    )}
-                                                    <button
-                                                        onClick={() => { setLinkFilter(link.id); setStoryFilter('all'); setView('stories'); }}
-                                                        disabled={!link.Sessions}
-                                                        className="ml-auto inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-[10px] font-bold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-default"
-                                                        style={{ background: 'rgba(168,85,247,0.14)', color: '#a855f7' }}
-                                                    >
-                                                        See visits <ArrowRight size={12} />
-                                                    </button>
-                                                </div>
-                                            </motion.div>
-                                        ))}
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <button
+                                                            onClick={() => patchLink(link.id, { Notify: link.Notify === false }, link.Notify === false ? 'You will be emailed on every open.' : 'Notifications off for this link.')}
+                                                            className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                                                            style={{
+                                                                background: link.Notify !== false ? 'rgba(59,130,246,0.14)' : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
+                                                                color: link.Notify !== false ? '#3b82f6' : 'var(--text-muted)',
+                                                            }}
+                                                        >
+                                                            {link.Notify !== false ? <BellRing size={13} /> : <BellOff size={13} />}
+                                                            {link.Notify !== false ? 'Emails on' : 'Emails off'}
+                                                        </button>
+                                                        {link.Tailor?.AutoCv && (
+                                                            <span className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-[10px] font-bold"
+                                                                style={{ background: 'rgba(245,158,11,0.14)', color: '#f59e0b' }}>
+                                                                <FileText size={13} /> CV opens itself
+                                                            </span>
+                                                        )}
+                                                        {(link.Tailor?.Pinned?.length || 0) > 0 && (
+                                                            <span className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-[10px] font-bold"
+                                                                style={{ background: 'rgba(16,185,129,0.14)', color: '#10b981' }}>
+                                                                <Briefcase size={13} /> {link.Tailor.Pinned.length} pinned
+                                                            </span>
+                                                        )}
+                                                        <button
+                                                            onClick={() => { setLinkFilter(link.id); setStoryFilter('all'); setView('stories'); }}
+                                                            disabled={!link.Sessions}
+                                                            className="ml-auto inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-[10px] font-bold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-default"
+                                                            style={{ background: 'rgba(168,85,247,0.14)', color: '#a855f7' }}
+                                                        >
+                                                            See visits <ArrowRight size={12} />
+                                                        </button>
+                                                    </div>
+                                                </motion.div>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>

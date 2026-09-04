@@ -253,7 +253,9 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                     ${isExtraSmall ? 'p-3' : isSmall ? 'p-4' : 'p-8'}
                 `}
             >
-                <div className="max-w-[1200px] mx-auto h-full flex flex-col">
+                {/* Wide screens get a wider page: at 1200px the dashboard left a few hundred
+                    pixels of dead margin on either side that no panel could reach. */}
+                <div className="max-w-[1200px] xl:max-w-[1440px] 2xl:max-w-[1600px] mx-auto h-full flex flex-col w-full">
                     {/* Header */}
                     <div
                         className={`
