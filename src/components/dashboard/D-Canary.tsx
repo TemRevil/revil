@@ -710,6 +710,11 @@ const DCanary = () => {
     // category is never something you want held hostage by an unsaved hours edit.
     const canaryRef = () => doc(db, 'Settings', 'Canary');
 
+    /** Shared by every category row so the renamed one and its neighbours move together. */
+    const rowLayoutTransition = reduceMotion
+        ? { duration: 0 }
+        : { layout: { type: 'spring' as const, stiffness: 460, damping: 40, mass: 0.8 } };
+
     /** Rejects blanks, over-long names, and anything colliding with an existing name. */
     const validateCatName = (name: string, ignoreId?: string): string | null => {
         const trimmed = name.trim();
@@ -800,15 +805,15 @@ const DCanary = () => {
                 </div>
             </div>
 
-            <motion.div layout={!reduceMotion} className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5">
                 {/* Personal is the floor of the list, not an entry you can act on. */}
-                <div className="flex items-center gap-3 px-3.5 h-12 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+                <motion.div layout={!reduceMotion} transition={rowLayoutTransition} className="flex items-center gap-3 px-3.5 h-12 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: PERSONAL_CATEGORY.color }} />
                     <span className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>{PERSONAL_CATEGORY.name}</span>
                     <span className="ml-auto text-[11px] font-bold px-2 py-1 rounded-md shrink-0" style={{ background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}>
                         Default
                     </span>
-                </div>
+                </motion.div>
 
                 {categories.map(cat => {
                     const used = meetings.filter(m => m.category === cat.id).length;
@@ -820,8 +825,8 @@ const DCanary = () => {
                         // appearing in its place.
                         <motion.div
                             key={cat.id}
-                            layout
-                            transition={reduceMotion ? { duration: 0 } : { layout: { type: 'spring', stiffness: 460, damping: 40, mass: 0.8 } }}
+                            layout={!reduceMotion}
+                            transition={rowLayoutTransition}
                             className="rounded-xl overflow-hidden"
                             style={{
                                 background: editing
@@ -897,7 +902,7 @@ const DCanary = () => {
                         No categories yet. Add one below and it becomes pickable on every booking.
                     </p>
                 )}
-            </motion.div>
+            </div>
 
             {/* New category */}
             <div className="flex flex-col gap-3 pt-1">
