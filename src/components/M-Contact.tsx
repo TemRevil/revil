@@ -202,6 +202,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   }
 
   // Switching tabs resets the frosted-header state (each panel starts scrolled to top).
+  // How far into the contact funnel they got, whether or not they send anything.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('revil:contact_tab', { detail: { tab: activeTab } }));
+  }, [activeTab]);
+
   const [prevTab, setPrevTab] = useState(activeTab);
   if (prevTab !== activeTab) {
     setPrevTab(activeTab);
@@ -544,6 +549,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
       try {
         await updateDoc(docRef, { [`Meetings.${meetingId}`]: payload, lastMeetingWrite: serverTimestamp() });
+        window.dispatchEvent(new CustomEvent('revil:contact_sent', { detail: { kind: 'meeting' } }));
       } catch (writeErr) {
         // The calendar event + guest invite already exist, but persisting the meeting
         // to Firestore failed - most commonly the rules' 300s global booking cooldown
@@ -719,6 +725,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       };
 
       await updateDoc(docRef, { [`Emails.${emailId}`]: payload, lastEmailWrite: serverTimestamp() });
+      window.dispatchEvent(new CustomEvent('revil:contact_sent', { detail: { kind: 'message' } }));
 
       showAlert({ type: 'success', message: "Message sent! I'll get back to you soon." });
       setFormData({

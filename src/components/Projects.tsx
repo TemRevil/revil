@@ -10,6 +10,7 @@ import MProjectView from './M-ProjectView';
 import MContributorView, { Contributor } from './M-ContributorView';
 import { ProjectData as Project, TagData as Tag, ContributorData } from '../types';
 import { getStackIcon, getTechColor, isVideoFile } from '../utils/projectUtils';
+import { useTailor } from '../lib/analytics/useTailor';
 
 interface RawContributorData {
     Name?: string;
@@ -498,6 +499,9 @@ const Projects = () => {
         return matrix[b.length][a.length];
     };
 
+    // A share link can ask for particular projects to lead the grid.
+    const { Pinned } = useTailor();
+
     const filteredProjects = useMemo(() => {
         let results = projectsData;
         if (selectedTags.length > 0) {
@@ -510,7 +514,17 @@ const Projects = () => {
             });
         }
         if (debouncedSearch.length < 2) {
+            // Pinned first, in the order they were pinned; everything else keeps the
+            // owner's own listing order. Searching ignores pinning - a search is a
+            // question about the whole grid.
+            const rank = (id: string | number | undefined) => {
+                const at = Pinned.indexOf(String(id ?? ''));
+                return at === -1 ? Infinity : at;
+            };
             return [...results].sort((a, b) => {
+                const aPin = rank(a.id);
+                const bPin = rank(b.id);
+                if (aPin !== bPin) return aPin - bPin;
                 const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
                 const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
                 if (aVal !== bVal) return aVal - bVal;
@@ -548,7 +562,7 @@ const Projects = () => {
             .filter(item => item.minDistance <= 2)
             .sort((a, b) => a.minDistance - b.minDistance)
             .map(item => item.project);
-    }, [debouncedSearch, projectsData, selectedTags]);
+    }, [debouncedSearch, projectsData, selectedTags, Pinned]);
 
     const toggleTag = (tagName: string) => {
         setSelectedTags(prev =>

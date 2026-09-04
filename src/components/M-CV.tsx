@@ -48,6 +48,12 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
         return trimmed;
     };
 
+    // Opening the CV is the strongest intent signal the site has; the visit
+    // recorder wants it on the timeline.
+    useEffect(() => {
+        window.dispatchEvent(new CustomEvent('revil:cv_open'));
+    }, []);
+
     // Fetch Contributors
     useEffect(() => {
         const unsubDoc = onSnapshot(doc(db, 'Tags', 'Contributors'), (docSnap) => {

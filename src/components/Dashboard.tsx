@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import anime from 'animejs';
-import { Layout, Eye, Settings, Bird, LogOut, Tag, User, GitBranch, Landmark } from 'lucide-react';
+import { Layout, Footprints, Settings, Bird, LogOut, Tag, User, GitBranch, Landmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import DProjects from './dashboard/D-Projects';
 import DTags from './dashboard/D-Tags';
-import DLinks from './dashboard/D-Links';
+import DTrails from './dashboard/D-Trails';
 import DSettings from './dashboard/D-Settings';
 import DCanary from './dashboard/D-Canary';
 import DDeveloper from './dashboard/D-Developer';
@@ -100,7 +100,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const menuItems = [
         { id: 'projects', label: 'Projects', icon: Layout },
         { id: 'tags', label: 'Tags', icon: Tag },
-        { id: 'views', label: 'Views', icon: Eye },
+        { id: 'trails', label: 'Trails', icon: Footprints },
         { id: 'developer', label: 'Developer', icon: GitBranch },
         { id: 'treasury', label: 'Treasury', icon: Landmark },
         { id: 'settings', label: 'Settings', icon: Settings },
@@ -293,8 +293,8 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                                     <DProjects />
                                 ) : activeTab === 'tags' ? (
                                     <DTags />
-                                ) : activeTab === 'views' ? (
-                                    <DLinks />
+                                ) : activeTab === 'trails' ? (
+                                    <DTrails />
                                 ) : activeTab === 'developer' ? (
                                     <DDeveloper />
                                 ) : activeTab === 'treasury' ? (

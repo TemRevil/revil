@@ -7,7 +7,9 @@
     "node": "22"
   },
   "scripts": {
+    "prebuild": "node scripts/refresh-geoip.mjs --if-missing",
     "build": "tsc",
+    "refresh-geoip": "node scripts/refresh-geoip.mjs",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "npm run build && firebase deploy --only functions"

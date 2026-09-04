@@ -191,7 +191,7 @@ export async function listModels(): Promise<string[]> {
 export const TOOLS: ToolDef[] = [
     {
         name: 'navigate',
-        description: 'Switch the dashboard to a page. Valid pages: projects, tags, views, developer, treasury, settings, canary.',
+        description: 'Switch the dashboard to a page. Valid pages: projects, tags, trails, developer, treasury, settings, canary.',
         params: { type: 'object', properties: { page: { type: 'string', description: 'one of the valid pages' } }, required: ['page'] },
     },
     {
@@ -269,7 +269,11 @@ FIRESTORE STRUCTURE (you are admin and can read everything; paths are case-sensi
     • Treasury/settings  - { defaultCurrency, displayCurrency, rates, ratesUpdatedAt }.
 - Settings/HandledProjects - PUBLIC, sanitized mirror of Treasury/projects shown on the homepage: { projects: { id: { name, status, description, order } } }. It has NO money fields and is auto-written from Treasury - don't edit it directly; change Treasury/projects instead.
 - Settings/Developer, Settings/"Tech Stack" - developer info and tech-stack items.
-- Settings/Views (+ Settings/Views/Analysis/Main, Settings/Views/Analysis/Daily) and subcollections Settings/Views/Links/{id}, Settings/Views/Socials/{name} - site analytics.
+- Analytics/ - visit analytics, READ-ONLY for you and for every client: only the trackSession Cloud Function may write here.
+    - Analytics/Sessions/Items/{id} - one document per visit: Geo, Device, Entry, Sections, Projects, Socials, Contact, Events (an ordered timeline), ActiveMs vs OpenMs.
+    - Analytics/Days/Items/{YYYY-MM-DD} - per-day rollups; Analytics/Totals - lifetime counters.
+    - Analytics/Links/Items/{id} - share links: { Code, Name, For, Opens, Sessions, Notify, Tailor{AutoCv,Greeting,Pinned} }. This one IS writable by the owner.
+    - Analytics/Socials/Items/{name} - social click totals.
 - Settings/Canary - PRIVATE visitor PII (emails, meetings).
 Note: the id-keyed maps live UNDER an "entries" field (Treasury) or "projects" field (HandledProjects), as objects-of-objects, NOT arrays. To change one entry: read_data the doc, edit that one key inside entries, then write_data with merge:true. The projects I handle = Treasury/projects (private, with prices); Settings/HandledProjects is just its public name/status shadow. Still read_data before assuming exact field names.
 STRICT DATA RULES (critical):

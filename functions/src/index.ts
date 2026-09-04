@@ -1,4 +1,4 @@
-import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import admin from "firebase-admin";
 import nodemailer, { type Transporter } from "nodemailer";
@@ -252,72 +252,17 @@ async function sendGuestAck(
 //
 // If you redeploy this functions folder, run with `--only` flags to avoid
 // removing syncMeeting:
-//   firebase deploy --only functions:syncSession,functions:notifyCanary,functions:notifyLogin
+//   firebase deploy --only functions:trackSession,functions:notifyCanary,functions:notifyLogin
 // =====================================================================
 
 // =====================================================================
-//  1. syncSession - HTTP endpoint for Algorithm.tsx session recording
+//  1. Visit recording - see ./analytics.ts
+//     `trackSession` replaced the old `syncSession`, which merged every visit
+//     through a link into one string field and was never actually App Check
+//     enforced (onRequest ignores that option). Delete the old deployment with:
+//       firebase functions:delete syncSession
 // =====================================================================
-export const syncSession = onRequest(
-  {
-    region: "us-central1",
-    cors: [
-      "https://temrevil.com",
-      "https://www.temrevil.com",
-      /localhost/,
-    ],
-    maxInstances: 10,
-    // NOTE: onRequest (HttpsOptions) does NOT support `enforceAppCheck` - that option
-    // is only honored by onCall (CallableOptions). The previous JS passed it here, but
-    // it was silently ignored, so this endpoint was never App Check-enforced by it.
-    // To actually enforce, verify the X-Firebase-AppCheck header manually with
-    // admin.appCheck().verifyToken() (the client already sends it - see
-    // src/lib/firebase.ts). Left as a follow-up to avoid changing runtime behavior here.
-  },
-  async (req, res) => {
-    if (req.method !== "POST") {
-      res.status(405).json({ error: "Method not allowed" });
-      return;
-    }
-
-    const { linkId, recCli } = req.body;
-
-    // Reject path separators / Firestore-illegal chars so a crafted linkId can't
-    // escape the Settings/Views/Links/{id} document path.
-    if (!linkId || typeof linkId !== "string" || linkId.length > 100 || /[/.]/.test(linkId)) {
-      res.status(400).json({ error: "Invalid linkId" });
-      return;
-    }
-    if (!recCli || typeof recCli !== "string") {
-      res.status(400).json({ error: "Invalid recCli" });
-      return;
-    }
-    if (recCli.length > 60000) {
-      res.status(400).json({ error: "recCli too large" });
-      return;
-    }
-
-    try {
-      const linkRef = db.doc(`Settings/Views/Links/${linkId}`);
-      const linkSnap = await linkRef.get();
-
-      if (!linkSnap.exists) {
-        res.status(404).json({ error: "Link not found" });
-        return;
-      }
-
-      await linkRef.update({
-        Rec_CLI: recCli,
-        lastWrite: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      res.status(200).json({ ok: true });
-    } catch (err) {
-      console.error("syncSession error:", err);
-      res.status(500).json({ error: "Internal error" });
-    }
-  },
-);
+export { trackSession, migrateAnalytics } from "./analytics.js";
 
 // =====================================================================
 //  2. notifyCanary - Firestore trigger on Settings/Canary

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
-import { doc, onSnapshot, updateDoc, increment } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { sanitizeSvg } from '../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor } from '../utils/projectUtils';
@@ -511,34 +511,30 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         onClose();
     };
 
-    const handleGithubClick = async () => {
+    // Outbound clicks are announced, not written. The visit recorder puts them on
+    // the session timeline and the Cloud Function rolls the totals into
+    // Projects/{id}.Views - the counts shown below still come from that same map,
+    // but a visitor's browser can no longer write to it.
+    const outbound = (kind: 'live' | 'github' | 'download') => {
+        if (!project.id) return;
+        window.dispatchEvent(new CustomEvent('revil:project_outbound', {
+            detail: { id: project.id.toString(), kind },
+        }));
+    };
+
+    const handleGithubClick = () => {
         if (!project.repoLink || !project.id) return;
-        try {
-            const projectRef = doc(db, 'Projects', project.id.toString());
-            await updateDoc(projectRef, { "Views.Github": increment(1) });
-        } catch (err) {
-            console.warn("Could not increment github views:", err);
-        }
+        outbound('github');
     };
 
-    const handleLiveClick = async () => {
+    const handleLiveClick = () => {
         if ((!project.liveLink && !project.demoLink) || !project.id) return;
-        try {
-            const projectRef = doc(db, 'Projects', project.id.toString());
-            await updateDoc(projectRef, { "Views.Live": increment(1) });
-        } catch (err) {
-            console.warn("Could not increment live views:", err);
-        }
+        outbound('live');
     };
 
-    const handleDownloadClick = async () => {
+    const handleDownloadClick = () => {
         if (!project.downloadLink || !project.id) return;
-        try {
-            const projectRef = doc(db, 'Projects', project.id.toString());
-            await updateDoc(projectRef, { "Views.Download": increment(1) });
-        } catch (err) {
-            console.warn("Could not increment download views:", err);
-        }
+        outbound('download');
     };
 
 
@@ -650,10 +646,9 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
             }
         });
 
-        // Atomically increment project views on mount
-        updateDoc(projectRef, { "Views.Project": increment(1) }).catch(err =>
-            console.warn("Could not increment views:", err)
-        );
+        // The open itself is counted by the visit recorder: Projects.tsx dispatches
+        // revil:project_open as this modal is mounted, and the Cloud Function raises
+        // Views.Project from the session. Nothing to write from here.
 
         return () => unsub();
     }, [project.id, project.name, project.title]);

@@ -7,20 +7,6 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.admin == true;
     }
 
-    // Rate-limit helper: ensures at least `cooldownSecs` seconds have elapsed
-    // since the document's last `lastWrite` server timestamp.
-    // The client MUST include `lastWrite: serverTimestamp()` in every write.
-    // Usage: isRateLimited(resource, request, 30) -> true if too soon
-    function notRateLimited(cooldownSecs) {
-      // New document: no prior timestamp - allow (first write)
-      let lastWrite = resource == null
-        ? request.time - duration.value(cooldownSecs + 1, 's')
-        : resource.data.get('lastWrite', request.time - duration.value(cooldownSecs + 1, 's'));
-      // Incoming write must declare lastWrite == request.time (server-verified)
-      return request.resource.data.lastWrite == request.time
-        && request.time >= lastWrite + duration.value(cooldownSecs, 's');
-    }
-
     // Rate-limit helper for a named timestamp field (Canary uses separate fields)
     function notRateLimitedField(fieldName, cooldownSecs) {
       let lastWrite = resource == null
@@ -30,24 +16,14 @@ service cloud.firestore {
         && request.time >= lastWrite + duration.value(cooldownSecs, 's');
     }
 
-    // Allow public read access to core portfolio data
+    // Allow public read access to core portfolio data.
+    // The Views map stays publicly READABLE (the project modal shows those counts)
+    // but is no longer publicly writable: the trackSession Cloud Function raises it
+    // from the visit it just recorded, using the Admin SDK. That removed the whole
+    // anti-wipe/size dance a public increment rule needed.
     match /Projects/{projectId} {
       allow read: if true;
-      allow create, delete: if isAdmin();
-      // Admin can update anything; public users can only increment Views sub-fields
-      allow update: if isAdmin() || (
-         // Only the 'Views' top-level key can change
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['Views'])
-         // Views must remain a map
-         && request.resource.data.Views is map
-         // Anti-wipe: existing view sub-counters (Project/Github/Live/Download) must
-         // all survive the write. A public caller can add/raise counters but never
-         // drop them — blocks overwriting the whole map with {} to zero the counts.
-         && request.resource.data.Views.keys().hasAll(resource.data.get('Views', {}).keys())
-         // Bound document growth (Firestore per-doc cap is 1MB; a views map is tiny).
-         // Stops a caller padding the doc with a huge map as a write-cost vector.
-         && request.resource.size() < 64 * 1024
-      );
+      allow write: if isAdmin();
     }
     
     match /Tags/{document=**} {
@@ -57,13 +33,6 @@ service cloud.firestore {
     
     // Settings Collection Handling
     match /Settings/Account {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // Settings/Views parent document — read-only for public, admin-writable.
-    // All public analytics writes go to subcollections (Analysis/, Links/, Socials/).
-    match /Settings/Views {
       allow read: if true;
       allow write: if isAdmin();
     }
@@ -113,80 +82,6 @@ service cloud.firestore {
       );
     }
 
-    // Settings/Views subcollections - analytics written by public visitors
-    // Daily & Main analytics (Algorithm.tsx uses setDoc with merge)
-    match /Settings/Views/Analysis/{docId} {
-      allow read: if true;
-      allow delete: if isAdmin();
-
-      // Admin can always write
-      allow create, update: if isAdmin();
-
-      // Public create: allowed so setDoc(merge:true) works on first-ever write.
-      // Restricted to the single known doc ID to prevent bots from spamming garbage
-      // docs. (The legacy 'Main' aggregate doc was removed — all lifetime/today
-      // totals are derived from the Daily series on read.)
-      allow create: if
-        docId == 'Daily'
-        && request.resource.data.lastWrite == request.time
-        && request.resource.size() < 64 * 1024;
-
-      // Public update on Daily: dynamic date keys (e.g. "2026-05-04") can't
-      // be enumerated in an allowlist, so we enforce rate-limit + size cap only.
-      allow update: if docId == 'Daily' && (
-        notRateLimited(5)
-        && request.resource.size() < 64 * 1024
-        // Ensure no keys are deleted to prevent wiping
-        && request.resource.data.keys().hasAll(resource.data.keys())
-        // Allow updating only lastWrite and at most one date key
-        && request.resource.data.diff(resource.data).affectedKeys().size() <= 2
-      );
-    }
-
-    // Link tracking (Algorithm.tsx increments Views + patches Rec_CLI)
-    match /Settings/Views/Links/{linkId} {
-      allow read: if true;
-      allow create, delete: if isAdmin();
-      // Public update: rate-limited to 1 write per 60s per link,
-      // and only the Views counter or Rec_CLI string may change.
-      allow update: if isAdmin() || (
-        notRateLimited(60)
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['Views', 'Rec_CLI', 'lastWrite'])
-        // Views must only increase
-        && (!('Views' in request.resource.data.diff(resource.data).affectedKeys())
-            || request.resource.data.Views >= resource.data.Views)
-        // Rec_CLI must be a string if present
-        && (!('Rec_CLI' in request.resource.data.diff(resource.data).affectedKeys())
-            || request.resource.data.Rec_CLI is string)
-        && request.resource.size() < 100 * 1024
-      );
-    }
-
-    // Social click tracking (useSocialTracker.ts uses setDoc merge + updateDoc)
-    match /Settings/Views/Socials/{socialName} {
-      allow read: if true;
-      allow delete: if isAdmin();
-      // Admin can always write
-      allow create, update: if isAdmin();
-      // Public create: first click on a new social link.
-      // socialName is constrained to safe chars + length so bots can't spam garbage / Unicode bombs.
-      allow create: if
-        socialName.matches('^[a-zA-Z0-9_-]{1,40}$')
-        && request.resource.data.lastWrite == request.time
-        && request.resource.size() < 100 * 1024;
-      // Public update: rate-limited to 1 write per 30s per social document,
-      // document capped at 100KB to prevent unbounded growth.
-      allow update: if (
-        notRateLimited(30)
-        && request.resource.size() < 100 * 1024
-        // Ensure no keys are deleted to prevent wiping
-        && request.resource.data.keys().hasAll(resource.data.keys())
-        // Allow updating only lastWrite and at most one click key
-        && request.resource.data.diff(resource.data).affectedKeys().size() <= 2
-      );
-    }
-
     // Treasury — private finances, split into documents:
     //   Treasury/projects   the projects I handle (with prices/earnings)
     //   Treasury/spendings  expenses
@@ -221,10 +116,32 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Any deeper Settings subcollection docs without an explicit rule default to
-    // admin-only (the named analytics subcollections above grant their own public read).
+    // Any deeper Settings subcollection docs default to admin-only. Nothing public
+    // lives under Settings any more - visit analytics moved to /Analytics below.
     match /Settings/{document=**} {
       allow read, write: if isAdmin();
+    }
+
+    // Visit analytics. Everything under here is written ONLY by the trackSession
+    // Cloud Function through the Admin SDK, which bypasses these rules - so no
+    // client, authenticated or not, may create or update a session, a daily rollup
+    // or the lifetime totals. That is the fix for the old design, where visitors
+    // wrote their own analytics and a rules-level rate limit silently ate them.
+    match /Analytics/{document=**} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Share links are the exception: the owner creates and edits them in the
+    // dashboard. Their Opens/Sessions counters are still only raised by the function.
+    match /Analytics/Links/Items/{linkId} {
+      allow read, write: if isAdmin();
+    }
+
+    // A story can be thrown away, never forged or edited.
+    match /Analytics/Sessions/Items/{sessionId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if false;
     }
 
     // Secure everything else (require admin access)

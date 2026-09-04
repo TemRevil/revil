@@ -6,6 +6,7 @@ import PageTransition from './components/PageTransition';
 import { ChevronRight } from 'lucide-react';
 import Loader from './components/reactbits/Loader';
 import { Algorithm } from './components/Algorithm';
+import TailorNote from './components/TailorNote';
 import type { ProjectsHubHandle } from './components/ProjectsHub';
 import type { Contributor as ContributorViewData } from './components/M-ContributorView';
 import { ProjectData as Project, ContributorData as Contributor } from './types';
@@ -615,6 +616,7 @@ function App() {
     >
       <Loader isOpen={appLoading} isFullScreen={true} />
       <Algorithm currentSection={currentSection} isContactOpen={isContactModalOpen} onNavigate={navigateTo} />
+      <TailorNote />
 
       {(currentSection === 'home' || currentSection === 'view_link' || currentSection === 'dashboard' || currentSection === 'secret') && (
         <div className="blob-container" style={{ zIndex: 0 }}>

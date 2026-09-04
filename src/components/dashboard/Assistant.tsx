@@ -45,7 +45,7 @@ type NativeMsg = any;
 // Minimal Web Speech typing (vendor-prefixed, not in lib.dom everywhere).
 type SpeechRec = { start: () => void; stop: () => void; lang: string; interimResults: boolean; continuous: boolean; onresult: ((e: { results: { 0: { transcript: string } }[] }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null; };
 
-const PAGES = ['projects', 'tags', 'views', 'developer', 'treasury', 'settings', 'canary'];
+const PAGES = ['projects', 'tags', 'trails', 'developer', 'treasury', 'settings', 'canary'];
 
 // Spark's own persistent memory (separate admin-only collection): the user's
 // name, her editable standing instructions, and saved facts.
@@ -56,7 +56,7 @@ interface SparkMemory { userName?: string; instructions?: string; facts?: string
 // can "see" whatever the user is currently looking at.
 const PAGE_SOURCES: Record<string, string[]> = {
     treasury: ['Treasury/projects', 'Treasury/income', 'Treasury/spendings', 'Treasury/settings'],
-    views: ['Settings/Views/Analysis/Main', 'Settings/Views/Analysis/Daily', 'Settings/Views/Links', 'Settings/Views/Socials'],
+    trails: ['Analytics/Totals', 'Analytics/Days/Items', 'Analytics/Links/Items', 'Analytics/Socials/Items', 'Analytics/Sessions/Items'],
     projects: ['Projects'],
     tags: ['Tags'],
     developer: ['Settings/Developer'],
@@ -64,7 +64,7 @@ const PAGE_SOURCES: Record<string, string[]> = {
     canary: ['Settings/Canary'],
 };
 const PAGE_LABEL: Record<string, string> = {
-    treasury: 'Treasury', views: 'Views & analytics', projects: 'Projects', tags: 'Tags',
+    treasury: 'Treasury', trails: 'Trails (who visited and what they did)', projects: 'Projects', tags: 'Tags',
     developer: 'Developer', settings: 'Settings', canary: 'Canary (visitor inbox)',
 };
 

@@ -65,3 +65,10 @@ AUDIT.ar.md
 
 # Internal docs (playbooks, setup notes — not for the public repo)
 docs/
+
+# Generated IP -> country tables (~7MB of CC0 data from ip-location-db).
+# Rebuilt automatically by functions/scripts/refresh-geoip.mjs on the prebuild
+# step, so they never need to live in git history. geoip-meta.json IS tracked:
+# it records which snapshot the last deploy shipped.
+functions/data/geoip-v4.bin
+functions/data/geoip-v6.bin

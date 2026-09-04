@@ -1,9 +1,8 @@
-import { useEffect, useRef, useCallback } from 'react';
-import { doc, getDoc, updateDoc, increment, collection, getDocs, setDoc, serverTimestamp, query, where, limit, type QueryDocumentSnapshot } from 'firebase/firestore';
+import { useEffect, useRef } from 'react';
 import { getToken } from 'firebase/app-check';
-import { db, appCheck } from '../lib/firebase';
-import Alert from './Alert';
-import useSafeAlert from '../hooks/useSafeAlert';
+import { appCheck } from '../lib/firebase';
+import { analytics } from '../lib/analytics/collector';
+import type { LinkTailor } from '../lib/analytics/types';
 
 interface AlgorithmProps {
     currentSection: string;
@@ -12,487 +11,134 @@ interface AlgorithmProps {
     onNavigate: (_section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
 }
 
-interface ProjectStats {
-    views: number;
-    duration: number; // seconds
-}
+/** Where a story deep-link from an email parks its id until the dashboard opens. */
+export const STORY_KEY = 'revil_open_story';
+/** The per-link tailoring the server sent back for this visit. */
+export const TAILOR_KEY = 'revil_tailor';
 
-// Analytics writes hit rate-limited Firestore docs. A `permission-denied` (rule
-// rejected the write because the cooldown hasn't elapsed) or an offline failure is
-// expected and harmless - analytics are best-effort. Treat those as benign so they
-// don't show up as scary console errors; real bugs still surface.
-const isBenignAnalyticsError = (error: unknown): boolean => {
-    const code = (error as { code?: string } | null)?.code ?? '';
-    const msg = error instanceof Error ? error.message : String(error ?? '');
-    return code === 'permission-denied'
-        || code === 'unavailable'
-        || /permission|insufficient|offline|unavailable/i.test(msg);
-};
-
+/**
+ * The bridge between the app and the visit recorder.
+ *
+ * Everything about *how* a visit is recorded lives in lib/analytics/collector.ts.
+ * This component only translates the app's own vocabulary - section changes, the
+ * custom events project cards and social links already dispatch - into calls on it,
+ * and hands back the per-link tailoring the server resolves from the URL code.
+ */
 export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: AlgorithmProps) => {
-    const { alert, showAlert, hideAlert } = useSafeAlert(4000);
+    const started = useRef(false);
+    // Held in a ref so the boot effect below can navigate without re-running when
+    // App re-creates the callback. Refs may not be written during render.
+    const navigateRef = useRef(onNavigate);
+    useEffect(() => { navigateRef.current = onNavigate; }, [onNavigate]);
 
-    // Session Start
-    const sessionStart = useRef(0);
-
-    // Cached App Check token. syncSession is an HTTP function with enforceAppCheck,
-    // so its raw fetch() must send an X-Firebase-AppCheck header. We can't reliably
-    // await getToken() during page-unload, so we keep a fresh token here and attach
-    // it synchronously. Refreshed on mount + every 20 min (tokens last ~1h).
-    const appCheckToken = useRef('');
-
-    // Metrics Refs
-    const metrics = useRef({
-        stackTime: 0, // seconds
-        contactOpens: 0,
-        projectStats: {} as Record<string, ProjectStats>,
-        activeProjectId: null as string | null,
-        projectOpenTime: 0,
-        socialStats: {} as Record<string, { views: number; duration: number }>,
-        isSyncing: false,
-        baseMetrics: null as string | null,
-    });
-
-    // Tracking active section time
-    const lastSectionCheck = useRef(0);
-
-    // Initialize time refs on mount (avoids calling Date.now() during render)
+    // ── boot ─────────────────────────────────────────────────────────────
     useEffect(() => {
-        sessionStart.current = Date.now();
-        lastSectionCheck.current = Date.now();
-    }, []);
+        if (started.current) return;
+        started.current = true;
 
-    // Warm + refresh the App Check token for the syncSession HTTP call. App Check is
-    // initialized eagerly in lib/firebase.ts (required before the first Firestore
-    // read under enforcement), so we just read the token here on mount + every 20 min.
-    useEffect(() => {
-        const ac = appCheck;
-        if (!ac) return;
-        let active = true;
-        const refresh = async () => {
-            try {
-                const { token } = await getToken(ac, false);
-                if (active) appCheckToken.current = token;
-            } catch { /* offline / reCAPTCHA hiccup - fetch just omits the header */ }
-        };
-        refresh();
-        const id = setInterval(refresh, 20 * 60 * 1000);
-        return () => { active = false; clearInterval(id); };
-    }, []);
-
-    // Contact Open Tracking
-    const prevContactOpen = useRef(isContactOpen);
-
-    // 1. Track Section Time & Contact Clicks
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const now = Date.now();
-            const elapsed = (now - lastSectionCheck.current) / 1000;
-
-            if (currentSection === 'stack') {
-                metrics.current.stackTime += elapsed;
+        // A story link from a "someone opened your link" email: park the id and send
+        // the owner through the normal login. The dashboard picks it up from there.
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const story = params.get('s');
+            if (story && /^[a-z0-9-]{6,40}$/.test(story)) {
+                sessionStorage.setItem(STORY_KEY, story);
+                params.delete('s');
+                const rest = params.toString();
+                window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
+                navigateRef.current('secret');
+                return;   // the owner's own visit is never a tracked session
             }
+        } catch { /* no sessionStorage - fall through and just track the visit */ }
 
-            // Update project time if one is open
-            if (metrics.current.activeProjectId) {
-                const pid = metrics.current.activeProjectId;
-                if (!metrics.current.projectStats[pid]) {
-                    metrics.current.projectStats[pid] = { views: 0, duration: 0 };
-                }
-                metrics.current.projectStats[pid].duration += elapsed;
-            }
+        // The admin half of the site is not a visit worth recording.
+        if (currentSection === 'dashboard' || currentSection === 'secret') return;
 
-            lastSectionCheck.current = now;
-        }, 1000);
+        // A trailing path segment is a share link code; the server resolves it,
+        // so no visitor ever downloads the list of who links were made for.
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const code = parts.length ? parts[parts.length - 1] : '';
 
-        // Stop tracking if we enter admin sections
-        if (currentSection === 'dashboard' || currentSection === 'secret') {
-            sessionStorage.removeItem('revil_link_id');
-            metrics.current.baseMetrics = null;
+        analytics.start({
+            section: currentSection,
+            code: /^[A-Za-z0-9_-]{4,32}$/.test(code) ? code : '',
+            getToken: async () => {
+                if (!appCheck) return '';
+                const { token } = await getToken(appCheck, false);
+                return token;
+            },
+            onTailor: (tailor: LinkTailor, link) => {
+                try {
+                    sessionStorage.setItem(TAILOR_KEY, JSON.stringify(tailor));
+                    // Kept for the hero's CV auto-open, which reads this key directly.
+                    if (tailor.AutoCv) sessionStorage.setItem('revil_interviewer_mode', 'true');
+                    else sessionStorage.removeItem('revil_interviewer_mode');
+                } catch { /* private mode - tailoring is skipped, the visit still records */ }
+                window.dispatchEvent(new CustomEvent('revil:tailor', { detail: { tailor, link } }));
+                // Recognised code: drop the visitor onto the real page.
+                if (code) setTimeout(() => navigateRef.current('home'), 400);
+            },
+        });
+
+        // An unrecognised trailing segment should still land somewhere sensible.
+        if (code) {
+            const bail = setTimeout(() => navigateRef.current('home'), 2500);
+            return () => clearTimeout(bail);
         }
-
-        return () => clearInterval(interval);
     }, [currentSection]);
 
-    // Track Contact Opens
+    // Keep the App Check token warm: the final flush fires during unload, where
+    // there is no room to await one.
     useEffect(() => {
-        if (isContactOpen && !prevContactOpen.current) {
-            metrics.current.contactOpens += 1;
+        if (!appCheck) return;
+        analytics.warmToken();
+        const id = setInterval(() => analytics.warmToken(), 20 * 60 * 1000);
+        return () => clearInterval(id);
+    }, []);
+
+    // ── the app's own vocabulary ─────────────────────────────────────────
+    useEffect(() => {
+        if (currentSection === 'dashboard' || currentSection === 'secret') {
+            // This browser belongs to the owner. Close the visit and stop counting
+            // their own traffic from here on.
+            analytics.stop('owner');
+            return;
         }
+        analytics.setSection(currentSection);
+    }, [currentSection]);
+
+    const prevContactOpen = useRef(isContactOpen);
+    useEffect(() => {
+        if (isContactOpen && !prevContactOpen.current) analytics.contactOpen();
         prevContactOpen.current = isContactOpen;
     }, [isContactOpen]);
 
-    // 1.5 Helper to increment specific daily stats in Firestore
-    const incrementDailyStat = useCallback(async (field: 'projectViews' | 'socialClicks') => {
-        try {
-            const today = new Date().toISOString().split('T')[0];
-            const dailyRef = doc(db, 'Settings', 'Views', 'Analysis', 'Daily');
+    useEffect(() => {
+        const detail = <T,>(e: Event): T => (e as CustomEvent).detail as T;
 
-            // Update Daily (lastWrite satisfies rate-limit rule). The per-day series
-            // is the single source of truth; lifetime/today totals are derived from it
-            // on read, so there is no separate Main aggregate doc to keep in sync.
-            await setDoc(dailyRef, {
-                [today]: {
-                    [field]: increment(1)
-                },
-                lastWrite: serverTimestamp()
-            }, { merge: true });
+        const handlers: Array<[string, EventListener]> = [
+            ['revil:project_open', e => analytics.projectOpen(detail<{ id: string }>(e)?.id)],
+            ['revil:project_close', () => analytics.projectClose()],
+            ['revil:project_outbound', e => {
+                const d = detail<{ id: string; kind: 'live' | 'github' | 'download' }>(e);
+                if (d?.id && d?.kind) analytics.projectOutbound(d.id, d.kind);
+            }],
+            ['revil:social_click', e => analytics.socialClick(detail<{ name: string }>(e)?.name)],
+            ['revil:social_return', e => {
+                const d = detail<{ name: string; duration?: number }>(e);
+                if (d?.name) analytics.socialReturn(d.name, d.duration);
+            }],
+            ['revil:cv_open', () => analytics.cvOpen()],
+            ['revil:contact_tab', e => analytics.contactTabChange(detail<{ tab: string }>(e)?.tab)],
+            ['revil:contact_sent', e => {
+                const d = detail<{ kind: 'meeting' | 'message' }>(e);
+                if (d?.kind) analytics.contactSubmit(d.kind);
+            }],
+        ];
 
-        } catch (error) {
-            // permission-denied here is benign: the analytics docs are rate-limited by
-            // Firestore rules (1 write / cooldown). When the app writes again inside that
-            // window (e.g. visit + a quick project click), the rule rejects it. Analytics
-            // are best-effort, so swallow that case quietly and only surface real errors.
-            if (!isBenignAnalyticsError(error)) {
-                console.error(`Error incrementing daily ${field}:`, error);
-            }
-        }
+        handlers.forEach(([name, fn]) => window.addEventListener(name, fn));
+        return () => handlers.forEach(([name, fn]) => window.removeEventListener(name, fn));
     }, []);
 
-    // 2. Listen for Project Events & Social Events
-    useEffect(() => {
-        const handleProjectOpen = (e: CustomEvent) => {
-            const { id } = e.detail;
-            metrics.current.activeProjectId = id;
-            metrics.current.projectOpenTime = Date.now();
-
-            if (!metrics.current.projectStats[id]) {
-                metrics.current.projectStats[id] = { views: 0, duration: 0 };
-            }
-            metrics.current.projectStats[id].views += 1;
-            incrementDailyStat('projectViews');
-        };
-
-        const handleProjectClose = () => {
-            metrics.current.activeProjectId = null;
-        };
-
-        const handleSocialClick = (e: CustomEvent) => {
-            const { name } = e.detail;
-            if (!metrics.current.socialStats[name]) {
-                metrics.current.socialStats[name] = { views: 0, duration: 0 };
-            }
-            metrics.current.socialStats[name].views += 1;
-            incrementDailyStat('socialClicks');
-        };
-
-        const handleSocialReturn = (e: CustomEvent) => {
-            const { name, duration } = e.detail;
-            // duration comes in ms from hook, convert to seconds
-            const durationSec = duration / 1000;
-            if (!metrics.current.socialStats[name]) {
-                metrics.current.socialStats[name] = { views: 0, duration: 0 };
-            }
-            metrics.current.socialStats[name].duration += durationSec;
-        };
-
-        window.addEventListener('revil:project_open', handleProjectOpen as EventListener);
-        window.addEventListener('revil:project_close', handleProjectClose as EventListener);
-        window.addEventListener('revil:social_click', handleSocialClick as EventListener);
-        window.addEventListener('revil:social_return', handleSocialReturn as EventListener);
-
-        return () => {
-            window.removeEventListener('revil:project_open', handleProjectOpen as EventListener);
-            window.removeEventListener('revil:project_close', handleProjectClose as EventListener);
-            window.removeEventListener('revil:social_click', handleSocialClick as EventListener);
-            window.removeEventListener('revil:social_return', handleSocialReturn as EventListener);
-        };
-    }, [incrementDailyStat]);
-
-    // 2.5 Global Analytics Tracking
-    const hasTrackedVisit = useRef(false);
-    useEffect(() => {
-        const trackGlobalVisit = async () => {
-            if (hasTrackedVisit.current || currentSection === 'dashboard' || currentSection === 'secret') return;
-            hasTrackedVisit.current = true;
-
-            try {
-                const dailyRef = doc(db, 'Settings', 'Views', 'Analysis', 'Daily');
-                const today = new Date().toISOString().split('T')[0];
-
-                const hasVisitedToday = localStorage.getItem(`revil_visitor_today_${today}`);
-
-                // Read today's running totals from the Daily doc (the single source of
-                // truth). Lifetime/today aggregates are derived from this series on the
-                // dashboard, so there is no separate Main doc to update here.
-                const dailySnap = await getDoc(dailyRef);
-                const dailyData = dailySnap.exists() ? dailySnap.data() : {};
-
-                const todayData = dailyData[today] || { total: 0, unique: 0 };
-                const newTodayTotal = (todayData.total || 0) + 1;
-
-                // Calculate Daily Unique
-                let newUniqueToday = todayData.unique || 0;
-                if (!hasVisitedToday) {
-                    newUniqueToday += 1;
-                    localStorage.setItem(`revil_visitor_today_${today}`, 'true');
-                }
-
-                // Update Daily map in Daily document
-                await setDoc(dailyRef, {
-                    [today]: {
-                        total: newTodayTotal,
-                        unique: newUniqueToday,
-                        // Initialize these if it's the first visit of the day
-                        projectViews: todayData.projectViews || 0,
-                        socialClicks: todayData.socialClicks || 0
-                    },
-                    lastWrite: serverTimestamp()
-                }, { merge: true });
-            } catch (error) {
-                // Benign rate-limit rejection (see incrementDailyStat note) - analytics
-                // are best-effort, so don't spam the console with permission-denied.
-                if (!isBenignAnalyticsError(error)) {
-                    console.error("Global Analytics Error:", error);
-                }
-            }
-        };
-
-        trackGlobalVisit();
-    }, [currentSection]);
-
-    // 2.6 Initial Link Recording & Verification
-    const hasRecordedRef = useRef(false);
-    useEffect(() => {
-        const recordLink = async () => {
-            if (hasRecordedRef.current) return;
-
-            const path = window.location.pathname;
-            const pathParts = path.split('/').filter(Boolean);
-            const baseParts = "/".split('/').filter(Boolean);
-            const code = pathParts.length > baseParts.length ? pathParts[pathParts.length - 1] : '';
-
-            if (!code) return;
-            hasRecordedRef.current = true;
-
-            try {
-                // Resolve the short code with an INDEXED equality query instead of
-                // downloading the whole Links collection (which also shipped every
-                // link's multi-KB Rec_CLI session blob to every visitor). The common
-                // path is a single 1-doc read on the indexed `Code` field. Rec_CLI can
-                // hold a ~60KB blob (often index-exempt), so its legacy fallback still
-                // scans - but only when the Code lookup misses.
-                const linksCol = collection(db, 'Settings', 'Views', 'Links');
-                let linkDoc: QueryDocumentSnapshot | null = null;
-
-                const byCode = await getDocs(query(linksCol, where('Code', '==', code), limit(1)));
-                if (!byCode.empty) {
-                    linkDoc = byCode.docs[0];
-                } else {
-                    const allLinks = await getDocs(linksCol);
-                    linkDoc = allLinks.docs.find(d => {
-                        const rec = (d.data() as Record<string, unknown>)['Rec_CLI'];
-                        return typeof rec === 'string' && rec === code;
-                    }) || null;
-                }
-
-                if (!linkDoc) {
-                    return;
-                }
-
-                const foundId = linkDoc.id;
-                const linkData = linkDoc.data() as Record<string, unknown>;
-                const existingRec = typeof linkData['Rec_CLI'] === 'string' ? String(linkData['Rec_CLI']) : '';
-
-                sessionStorage.setItem('revil_link_id', foundId);
-                metrics.current.baseMetrics = existingRec;
-
-                // Check for Interviewer Mode
-                const isInterviewer = linkData['Interviewer'] === true;
-                if (isInterviewer) {
-                    sessionStorage.setItem('revil_interviewer_mode', 'true');
-                } else {
-                    sessionStorage.removeItem('revil_interviewer_mode');
-                }
-
-                // Increment view count in Settings/Views/Links/{foundId}
-                const docRef = doc(db, 'Settings', 'Views', 'Links', foundId);
-                await updateDoc(docRef, {
-                    Views: increment(1),
-                    lastWrite: serverTimestamp()
-                });
-
-                // Always redirect home after processing code
-                if (onNavigate) {
-                    setTimeout(() => onNavigate('home'), 500);
-                }
-            } catch {
-                showAlert({ type: 'error', message: 'Failed to record link activity.' });
-                if (onNavigate) {
-                    setTimeout(() => onNavigate('home'), 500);
-                }
-            }
-        };
-
-        recordLink();
-    }, [onNavigate, showAlert]);
-
-    // Only Sync at the very end - using keepalive fetch for reliability
-    useEffect(() => {
-        const handleFinalSync = () => {
-            const linkId = sessionStorage.getItem('revil_link_id');
-            if (!linkId || metrics.current.isSyncing) return;
-
-            const totalSessionSeconds = Math.floor((Date.now() - sessionStart.current) / 1000);
-            const m = metrics.current;
-
-            // Skip if no meaningful activity
-            if (totalSessionSeconds < 5 && m.contactOpens === 0 && Object.keys(m.projectStats).length === 0 && Object.keys(m.socialStats).length === 0) {
-                return;
-            }
-
-            metrics.current.isSyncing = true;
-
-            // Build the rec string synchronously
-            const formatTime = (s: number) => {
-                const mins = Math.floor(s / 60);
-                const secs = Math.floor(s % 60);
-                return `${mins}m ${secs}s`;
-            };
-
-            const parseToSecs = (raw: string | null, label: string) => {
-                if (!raw) return 0;
-                try {
-                    const regex = new RegExp(`${label}:\\s*(.*?)(?:,|]|$)`);
-                    const match = raw.match(regex);
-                    if (!match) return 0;
-                    const timeStr = match[1];
-                    const msMatch = timeStr.match(/(\d+)m\s*(\d+)s/);
-                    if (msMatch) return (parseInt(msMatch[1]) * 60) + parseInt(msMatch[2]);
-                    const mMatch = timeStr.match(/([\d.]+)m/);
-                    if (mMatch) return Math.floor(parseFloat(mMatch[1]) * 60);
-                } catch { /* swallow */ }
-                return 0;
-            };
-
-            const parseProjects = (raw: string | null) => {
-                const pMap: Record<string, { seconds: number; views: number }> = {};
-                if (!raw) return pMap;
-                try {
-                    const pStr = raw.match(/Projects:\[(.*?)\]/)?.[1] || raw.match(/P:\[(.*?)\]/)?.[1] || '';
-                    if (pStr) {
-                        pStr.split('|').forEach(item => {
-                            const parts = item.split(':');
-                            if (parts.length >= 2) {
-                                const id = parts[0];
-                                const timePart = parts[1];
-                                const viewsMatch = item.match(/\((\d+)x\)$/) || item.match(/:(\d+)v$/);
-                                const views = viewsMatch ? parseInt(viewsMatch[1]) : 0;
-                                let seconds = 0;
-                                const msM = timePart.match(/(\d+)m\s*(\d+)s/);
-                                const mM = timePart.match(/([\d.]+)m/);
-                                if (msM) seconds = (parseInt(msM[1]) * 60) + parseInt(msM[2]);
-                                else if (mM) seconds = Math.floor(parseFloat(mM[1]) * 60);
-                                pMap[id] = { seconds, views };
-                            }
-                        });
-                    }
-                } catch { /* swallow */ }
-                return pMap;
-            };
-
-            const parseSocials = (raw: string | null) => {
-                const sMap: Record<string, { seconds: number; views: number }> = {};
-                if (!raw) return sMap;
-                try {
-                    const sStr = raw.match(/Socials:\[(.*?)\]/)?.[1] || '';
-                    if (sStr) {
-                        sStr.split('|').forEach(item => {
-                            const parts = item.split(':');
-                            if (parts.length >= 2) {
-                                const id = parts[0];
-                                const timePart = parts[1];
-                                const viewsMatch = item.match(/\((\d+)x\)$/);
-                                const views = viewsMatch ? parseInt(viewsMatch[1]) : 0;
-                                let seconds = 0;
-                                const msM = timePart.match(/(\d+)m\s*(\d+)s/);
-                                if (msM) seconds = (parseInt(msM[1]) * 60) + parseInt(msM[2]);
-                                sMap[id] = { seconds, views };
-                            }
-                        });
-                    }
-                } catch { /* swallow */ }
-                return sMap;
-            };
-
-            const baseTotalSecs = parseToSecs(m.baseMetrics, 'Session') || parseToSecs(m.baseMetrics, 'T');
-            const baseStackSecs = parseToSecs(m.baseMetrics, 'Stack') || parseToSecs(m.baseMetrics, 'S');
-            const baseContact = parseInt(m.baseMetrics?.match(/Contact:(\d+)/)?.[1] || m.baseMetrics?.match(/C:(\d+)/)?.[1] || '0');
-            const baseProjects = parseProjects(m.baseMetrics);
-            const baseSocials = parseSocials(m.baseMetrics);
-
-            const finalTotalSecs = baseTotalSecs + totalSessionSeconds;
-            const finalStackSecs = baseStackSecs + m.stackTime;
-            const finalContact = baseContact + m.contactOpens;
-
-            const mergedProjects = { ...baseProjects };
-            Object.entries(m.projectStats).forEach(([id, stats]) => {
-                if (!mergedProjects[id]) mergedProjects[id] = { seconds: 0, views: 0 };
-                mergedProjects[id].seconds += stats.duration;
-                mergedProjects[id].views += stats.views;
-            });
-            const projStr = Object.entries(mergedProjects).map(([id, stats]) => `${id}:${formatTime(stats.seconds)}(${stats.views}x)`).join('|');
-
-            const mergedSocials = { ...baseSocials };
-            Object.entries(m.socialStats).forEach(([id, stats]) => {
-                if (!mergedSocials[id]) mergedSocials[id] = { seconds: 0, views: 0 };
-                mergedSocials[id].seconds += stats.duration;
-                mergedSocials[id].views += stats.views;
-            });
-            const socialStr = Object.entries(mergedSocials).map(([id, stats]) => `${id}:${formatTime(stats.seconds)}(${stats.views}x)`).join('|');
-
-            const recString = `Session:${formatTime(finalTotalSecs)}, Stack:${formatTime(finalStackSecs)}, Contact:${finalContact}, Projects:[${projStr}], Socials:[${socialStr}]`;
-            
-            // Truncate to avoid 64KB keepalive limit
-            const finalRecString = new Blob([recString]).size > 60000 
-                ? recString.substring(0, Math.floor(60000 / 4)) + "...(truncated)"
-                : recString;
-
-            // Use Cloud Function with keepalive: true for reliable delivery on page unload.
-            // The function validates server-side and writes with admin privileges.
-            // Configurable via NEXT_PUBLIC_SYNC_SESSION_URL (defaults to the temrevil1 prod URL).
-            const cfUrl = process.env.NEXT_PUBLIC_SYNC_SESSION_URL
-                || 'https://us-central1-temrevil1.cloudfunctions.net/syncSession';
-            const body = JSON.stringify({ linkId, recCli: finalRecString });
-
-            // syncSession enforces App Check, so attach the X-Firebase-AppCheck header
-            // from the token warmed on mount (can't await getToken() during unload).
-            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-            if (appCheckToken.current) headers['X-Firebase-AppCheck'] = appCheckToken.current;
-
-            fetch(cfUrl, {
-                method: 'POST',
-                headers,
-                body,
-                keepalive: true
-            }).catch(() => {
-                // Silent fail - page is already closing
-            });
-
-            // Do NOT reset isSyncing - this is a one-shot per page lifetime. Resetting it
-            // synchronously let both `beforeunload` and `pagehide` (which commonly both fire
-            // on close/navigation) send the session POST twice, double-counting the visit.
-        };
-
-        window.addEventListener('beforeunload', handleFinalSync);
-        window.addEventListener('pagehide', handleFinalSync);
-
-        return () => {
-            window.removeEventListener('beforeunload', handleFinalSync);
-            window.removeEventListener('pagehide', handleFinalSync);
-        };
-    }, []);
-
-    return (
-        <>
-            {alert?.show && (
-                <Alert
-                    type={alert.type}
-                    message={alert.message}
-                    onClose={() => hideAlert()}
-                    duration={alert.duration ?? 4000}
-                />
-            )}
-        </>
-    );
+    return null;
 };
