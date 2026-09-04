@@ -319,6 +319,7 @@ function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
           "    • WITHOUT a meeting link: omit `meetingLink` (an in-person / phone booking, or a link to be added later).",
           "  Pass date as YYYY-MM-DD and time as 24-hour HH:MM in the owner's timezone. add_booking marks the slot busy on the public calendar and emails the admin (and the guest, if an email is given), but it does NOT create a Google Calendar event or auto-generate a link. Check list_bookings first to avoid double-booking a slot.",
           "- PAST DATES (add_booking / update_booking): a date before today is refused by default. Recording a meeting that already happened - or correcting one onto a past day - is possible ONLY here over MCP, and ONLY with the owner's explicit go-ahead: state the exact past date back to them, wait for a clear yes, and only then repeat the call with allowPast: true. Never set allowPast just to clear an error, and never assume a past date was intended - it is far more often a stale clock, so re-check get_current_time first. The public booking form on the site can never book a past slot.",
+          "- CATEGORIES (list_categories): every booking sits in one - the owner's own buckets (a company, a client, a side project) or the built-in \"Personal\", which is where anything booked from the public site lands. Read list_categories before setting one and pass an EXACT name from it; never invent a category, and never guess which one a meeting belongs to - ask the owner. Creating, renaming and deleting categories happens in the dashboard (Canary → Options) only, so if the one they want does not exist, say so and let them add it there.",
           "- Working hours & days (get_availability / update_availability): the public booking calendar only offers the owner's selected working days and picked hours. update_availability REPLACES the entire list you send - read get_availability first, then send the FULL new list (workingDays: 0=Sun … 6=Sat; hours: 24-hour 0–23). Confirm with the owner before changing.",
         ]
       : []),
@@ -608,6 +609,62 @@ async function readAvailability(): Promise<{ workingDays: number[]; hours: numbe
   return { workingDays, hours };
 }
 
+/** One of the owner's meeting categories, as stored under Settings/Canary.Categories. */
+interface CategoryRow { id: string; name: string; color: string; created: number }
+
+/**
+ * The built-in bucket. It is never stored: a booking is Personal exactly when it
+ * carries no `Category` field. Mirrors src/utils/categories.ts on the dashboard side.
+ */
+const PERSONAL_CATEGORY_ID = "personal";
+const PERSONAL_CATEGORY_NAME = "Personal";
+
+/** The owner's categories, oldest first - the same order the dashboard shows. */
+async function readCategories(): Promise<CategoryRow[]> {
+  const snap = await db().doc("Settings/Canary").get();
+  const raw = (snap.exists ? snap.data()?.Categories : null) || {};
+  const rows: CategoryRow[] = [];
+  for (const [id, val] of Object.entries(raw as Record<string, { Name?: string; Color?: string; Created?: number }>)) {
+    const name = typeof val?.Name === "string" ? val.Name.trim() : "";
+    if (!id || id === PERSONAL_CATEGORY_ID || !name) continue;
+    rows.push({
+      id,
+      name,
+      color: typeof val?.Color === "string" ? val.Color : "#3b82f6",
+      created: typeof val?.Created === "number" ? val.Created : 0,
+    });
+  }
+  return rows.sort((a, b) => a.created - b.created || a.name.localeCompare(b.name));
+}
+
+/** Name of a stored category id, for read tools. Unknown/absent reads as Personal. */
+function categoryName(cats: CategoryRow[], id: unknown): string {
+  if (typeof id !== "string" || !id || id === PERSONAL_CATEGORY_ID) return PERSONAL_CATEGORY_NAME;
+  return cats.find((c) => c.id === id)?.name || PERSONAL_CATEGORY_NAME;
+}
+
+/**
+ * Resolve what the caller passed - an exact name or the raw id, case-insensitive.
+ * `id: null` means Personal (store nothing). An unknown value is an ERROR rather
+ * than a silently-created category: the owner makes those in the dashboard, so
+ * inventing one here would put a booking in a bucket that does not exist.
+ */
+async function resolveCategory(input: string): Promise<{ id?: string | null; name?: string; error?: string }> {
+  const want = input.trim().toLowerCase();
+  if (!want || want === PERSONAL_CATEGORY_ID) return { id: null, name: PERSONAL_CATEGORY_NAME };
+  const cats = await readCategories();
+  const hit = cats.find((c) => c.id.toLowerCase() === want || c.name.toLowerCase() === want);
+  if (!hit) {
+    const list = cats.length ? cats.map((c) => `"${c.name}"`).join(", ") : "none yet";
+    return {
+      error: `No category called "${input}". The owner's categories are: ${list} (plus the built-in "Personal"). ` +
+        "Call list_categories to see them. Categories are created in the dashboard (Canary → Options), not from here - " +
+        "if this one should exist, tell the owner to add it there first.",
+    };
+  }
+  return { id: hit.id, name: hit.name };
+}
+
 function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, session: { sub?: string; iat?: number }): void {
   // Patch registerTool once so EVERY tool registered below is wrapped with audit logging,
   // without editing each registration. The clock ping (get_current_time) is skipped - it
@@ -670,7 +727,32 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
     async () => {
       const snap = await db().doc("Settings/Canary").get();
       const meetings = snap.exists ? (snap.data()?.Meetings || {}) : {};
-      return ok(Object.entries(meetings).map(([id, m]) => ({ id, ...(m as object) })));
+      const cats = await readCategories();
+      return ok(Object.entries(meetings).map(([id, m]) => {
+        const entry = m as Record<string, unknown>;
+        return { id, ...entry, category: categoryName(cats, entry.Category) };
+      }));
+    });
+
+  server.registerTool("list_categories",
+    {
+      title: "List meeting categories",
+      description:
+        "The owner's meeting categories - the buckets a booking can be filed under (a company, a client, a side project), " +
+        "plus the built-in \"Personal\" that every uncategorised booking falls into. Read this before setting a category on " +
+        "a booking and use an EXACT name from the result. The list is managed in the dashboard (Canary → Options); it cannot " +
+        "be added to from here.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const cats = await readCategories();
+      return ok({
+        categories: [
+          { id: PERSONAL_CATEGORY_ID, name: PERSONAL_CATEGORY_NAME, builtIn: true, note: "Default - where guest bookings land" },
+          ...cats.map((c) => ({ id: c.id, name: c.name, color: c.color, builtIn: false })),
+        ],
+      });
     });
 
   server.registerTool("list_messages",
@@ -789,6 +871,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         "Never invent a link. ALWAYS call get_current_time first and derive `date` from it - a date before today is rejected unless you pass `allowPast`. " +
         "BACKDATING (logging a meeting that already took place): owner-authorised only. Confirm the exact past date with the owner, get a clear yes, THEN call again with allowPast: true - never set it yourself to clear an error. " +
         "On a backdated booking, omit `email`: a guest address makes the site email them a confirmation for a meeting that is already over. " +
+        "`category` files the booking under one of the owner's categories - call list_categories first and pass an EXACT name from it; omit it for Personal. " +
         "Pass `date` as YYYY-MM-DD and `time` as 24-hour HH:MM in the owner's timezone. " +
         "This writes the booking directly to Firestore: it marks the slot busy on the public calendar and emails the admin " +
         "(and the guest, if `email` is given), but it does NOT create a Google Calendar event or auto-generate a Meet link.",
@@ -800,6 +883,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         reason: z.string().optional().describe("What the call is for"),
         meetingLink: z.string().url().optional().describe("Meeting URL (Google Meet / Zoom / etc.). Omit for a booking WITHOUT a link."),
         allowPast: z.boolean().optional().describe("Set true ONLY to record a meeting that already happened, and ONLY after the owner has confirmed that exact past date. Ignored for today/future dates."),
+        category: z.string().optional().describe("Category name (exactly as list_categories returns it) or its id. Omit - or pass \"Personal\" - for the built-in default. An unknown name is rejected: the owner adds categories in the dashboard."),
       },
       annotations: { destructiveHint: false },
     },
@@ -818,6 +902,17 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
           "If you really are recording a meeting that already happened, confirm that exact date with the owner first, then call again with allowPast: true.",
         );
       }
+      // Resolve the bucket before writing anything: a name the owner never created is
+      // a refusal, not a new category (only the dashboard creates those).
+      let categoryId: string | null = null;
+      let categoryLabel = PERSONAL_CATEGORY_NAME;
+      if (a.category) {
+        const r = await resolveCategory(a.category);
+        if (r.error) return fail(r.error);
+        categoryId = r.id ?? null;
+        categoryLabel = r.name || PERSONAL_CATEGORY_NAME;
+      }
+
       // Convert to the host-perspective formats the dashboard calendar + the public
       // BookedSlots mirror compare against: Date "DD/MM/YYYY", Time "hh:mm AM/PM".
       const [Y, M, D] = a.date.split("-");
@@ -835,6 +930,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         ...(a.email ? { Email: a.email } : {}),
         ...(a.reason ? { "What For": a.reason } : {}),
         ...(a.meetingLink ? { MeetingLink: a.meetingLink } : {}),
+        // Personal is the absence of the field, so only a real category is written.
+        ...(categoryId ? { Category: categoryId } : {}),
         timestamp: now(),
       };
       await db().doc("Settings/Canary").set(
@@ -842,7 +939,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         { merge: true },
       );
       return ok({
-        status: "booked", id, date: storedDate, time: storedTime, hasMeetingLink: !!a.meetingLink,
+        status: "booked", id, date: storedDate, time: storedTime, hasMeetingLink: !!a.meetingLink, category: categoryLabel,
         ...(backdated ? { backdated: true, note: `Recorded on ${storedDate}, which is in the past (today is ${time.date}).` } : {}),
       });
     });
@@ -916,6 +1013,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         "guest's name/email, edit the reason, or attach a meeting link you already have. " +
         "ALWAYS call get_current_time first and derive `date` from it - a date before today is rejected unless you pass `allowPast`. " +
         "Moving a booking onto a day that has already passed is owner-authorised only: confirm the exact date with the owner, get a clear yes, THEN call again with allowPast: true. " +
+        "`category` refiles the booking - call list_categories first and pass an EXACT name from it, or \"Personal\" to clear it. " +
         "Rescheduling also MOVES the matching Google Calendar event, so the guest's invite follows. " +
         "Check `calendar` in the result: if it did not succeed, tell the owner to fix that event from the dashboard.",
       inputSchema: {
@@ -927,6 +1025,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         reason: z.string().optional().describe("what the call is for"),
         meetingLink: z.string().url().optional().describe("meeting URL you already have - never invent one"),
         allowPast: z.boolean().optional().describe("Set true ONLY to move this booking onto a day that has already passed, and ONLY after the owner has confirmed that exact date. Ignored for today/future dates."),
+        category: z.string().optional().describe("Category name (exactly as list_categories returns it) or its id; \"Personal\" clears it back to the default. An unknown name is rejected."),
       },
       annotations: { destructiveHint: false },
     },
@@ -946,7 +1045,16 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         );
       }
 
+      // Same resolution rule as add_booking; "Personal" deletes the stored field so
+      // there is only ever one representation of "uncategorised".
+      let categoryLabel: string | null = null;
       const patch: Record<string, unknown> = {};
+      if (a.category) {
+        const r = await resolveCategory(a.category);
+        if (r.error) return fail(r.error);
+        patch.Category = r.id ?? admin.firestore.FieldValue.delete();
+        categoryLabel = r.name || PERSONAL_CATEGORY_NAME;
+      }
       if (a.date) patch.Date = toStoredDate(a.date);
       if (a.time) patch.Time = toStoredTime(a.time);
       if (a.name) patch.Name = a.name;
@@ -997,6 +1105,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         date: finalDate,
         time: finalTime,
         calendar,
+        ...(categoryLabel ? { category: categoryLabel } : {}),
         ...(a.date && a.date < time.date ? { backdated: true, note: `Moved to ${finalDate}, which is in the past (today is ${time.date}).` } : {}),
       });
     });

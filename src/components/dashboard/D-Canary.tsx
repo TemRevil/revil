@@ -2,11 +2,12 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, Phone, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, Phone, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply, Tags } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField, setDoc } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app, { db } from '../../lib/firebase';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, WEEKDAY_LABELS, ALL_HOURS, parseAvailabilityConfig, buildHostSlots, formatHourSlot } from '../../utils/availability';
+import { MeetingCategory, PERSONAL_CATEGORY, CATEGORY_COLORS, MAX_CATEGORY_NAME, categoryKey, parseCategories, findCategory } from '../../utils/categories';
 // Local Functions handle (lazy Dashboard chunk) - keeps firebase/functions out of eager.
 const functions = getFunctions(app);
 
@@ -33,6 +34,8 @@ interface Meeting {
     reason?: string;
     userTimezone?: number;
     googleEventId?: string;
+    /** Category id. Absent = Personal, which is where every guest booking lands. */
+    category?: string;
 }
 
 interface Email {
@@ -56,6 +59,7 @@ interface MeetingData {
     "What For"?: string;
     UserTimezone?: number;
     GoogleEventId?: string;
+    Category?: string;
 }
 
 interface EmailData {
@@ -102,6 +106,17 @@ const isPastDay = (d: Date) => {
     return day < today;
 };
 
+/** Small coloured pill naming a booking's category - list rows and details view. */
+const CategoryBadge = ({ cat, size = 'sm' }: { cat: MeetingCategory; size?: 'sm' | 'md' }) => (
+    <span
+        className={`inline-flex items-center gap-1.5 rounded-md font-semibold ${size === 'md' ? 'px-2.5 py-1 text-xs' : 'p-1 px-1.5 text-[11px]'}`}
+        style={{ background: `${cat.color}1f`, color: cat.color }}
+    >
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cat.color }} />
+        {cat.name}
+    </span>
+);
+
 const DCanary = () => {
     const [isDark, setIsDark] = useState(false);
     const [viewDate, setViewDate] = useState(new Date());
@@ -119,6 +134,17 @@ const DCanary = () => {
     const [hostTimezoneString, setHostTimezoneString] = useState('');
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+    // Owner-defined meeting categories (Options tab) + the filter over the bookings
+    // list. Personal is not in here - it's the built-in fallback for an unset one.
+    const [categories, setCategories] = useState<MeetingCategory[]>([]);
+    const [categoryFilter, setCategoryFilter] = useState<string>('all');
+    const [newCatName, setNewCatName] = useState('');
+    const [newCatColor, setNewCatColor] = useState<string>(CATEGORY_COLORS[1]);
+    const [editingCatId, setEditingCatId] = useState<string | null>(null);
+    const [editCatName, setEditCatName] = useState('');
+    const [editCatColor, setEditCatColor] = useState<string>(CATEGORY_COLORS[1]);
+    const [catBusy, setCatBusy] = useState(false);
+    const [confirmDeleteCat, setConfirmDeleteCat] = useState<MeetingCategory | null>(null);
     // Set when a reschedule lands on a day that has already passed: holds the save until
     // the owner confirms it, so a stray click on a past day can't silently move a session.
     const [confirmPastSave, setConfirmPastSave] = useState(false);
@@ -165,7 +191,8 @@ const DCanary = () => {
                             link: m.MeetingLink,
                             reason: m["What For"],
                             userTimezone: m.UserTimezone || -(new Date().getTimezoneOffset() / 60),
-                            googleEventId: m.GoogleEventId
+                            googleEventId: m.GoogleEventId,
+                            category: typeof m.Category === 'string' ? m.Category : undefined
                         };
                     })
                     .filter((m): m is Meeting => m !== null);
@@ -184,6 +211,8 @@ const DCanary = () => {
                     repliedAt: e.RepliedAt
                 })).sort((a, b) => b.timestamp - a.timestamp);
                 setEmails(emailsList);
+
+                setCategories(parseCategories(data.Categories));
             }
         }, (err) => {
             console.warn("[Connection] Canary sync error:", err);
@@ -304,9 +333,23 @@ const DCanary = () => {
         setModalViewDate(new Date(modalViewDate.getFullYear(), modalViewDate.getMonth() + delta, 1));
     };
 
+    // Personal first, then the owner's own, in the order they were added.
+    const allCategories = useMemo(() => [PERSONAL_CATEGORY, ...categories], [categories]);
+    const categoryOf = (m: Meeting) => findCategory(categories, m.category);
+
+    // The filter drives BOTH the calendar dots and the day list, so a filtered month
+    // reads honestly. It falls back to 'all' on its own if the category it points at
+    // was just deleted, rather than showing an empty calendar with no explanation.
+    const activeFilter = categoryFilter !== 'all' && !allCategories.some(c => c.id === categoryFilter) ? 'all' : categoryFilter;
+    const visibleMeetings = useMemo(() => (
+        activeFilter === 'all'
+            ? meetings
+            : meetings.filter(m => (m.category || PERSONAL_CATEGORY.id) === activeFilter)
+    ), [meetings, activeFilter]);
+
     const selectedDayMeetings = useMemo(() => {
-        return meetings.filter(m => m.date.toDateString() === selectedDate.toDateString());
-    }, [meetings, selectedDate]);
+        return visibleMeetings.filter(m => m.date.toDateString() === selectedDate.toDateString());
+    }, [visibleMeetings, selectedDate]);
 
     const handleReschedule = (meeting: Meeting) => {
         setEditingMeeting({ ...meeting, date: new Date(meeting.date) });
@@ -374,8 +417,9 @@ const DCanary = () => {
         const isTimeChanged = editingMeeting.time !== originalMeeting.time;
         const isDateChanged = editingMeeting.date.toDateString() !== originalMeeting.date.toDateString();
         const isTitleChanged = editingMeeting.title !== originalMeeting.title;
+        const isCategoryChanged = (editingMeeting.category || '') !== (originalMeeting.category || '');
 
-        if (!isTimeChanged && !isDateChanged && !isTitleChanged) {
+        if (!isTimeChanged && !isDateChanged && !isTitleChanged && !isCategoryChanged) {
             setEditingMeeting(null);
             return;
         }
@@ -465,11 +509,17 @@ const DCanary = () => {
             const y = editingMeeting.date.getFullYear();
             const dateStr = `${day}/${mon}/${y}`;
 
-            const updatePayload: Record<string, string> = {
+            const updatePayload: Record<string, unknown> = {
                 [`Meetings.${editingMeeting.id}.Date`]: dateStr,
                 [`Meetings.${editingMeeting.id}.Time`]: editingMeeting.time,
                 [`Meetings.${editingMeeting.id}.Name`]: editingMeeting.title
             };
+
+            // Personal is the absence of a category, so picking it deletes the field
+            // rather than storing the sentinel id - keeps one representation, not two.
+            if (isCategoryChanged) {
+                updatePayload[`Meetings.${editingMeeting.id}.Category`] = editingMeeting.category ?? deleteField();
+            }
 
             if (newGoogleId) {
                 updatePayload[`Meetings.${editingMeeting.id}.GoogleEventId`] = newGoogleId;
@@ -617,8 +667,205 @@ const DCanary = () => {
     };
     const previewSlots = buildHostSlots(availDraft);
 
+    // ── Categories ────────────────────────────────────────────────────────
+    // Written straight through on every add/rename/delete rather than batched behind
+    // a Save: they're independent of the working-hours draft above, and a half-typed
+    // category is never something you want held hostage by an unsaved hours edit.
+    const canaryRef = () => doc(db, 'Settings', 'Canary');
+
+    /** Rejects blanks, over-long names, and anything colliding with an existing name. */
+    const validateCatName = (name: string, ignoreId?: string): string | null => {
+        const trimmed = name.trim();
+        if (!trimmed) return 'Give the category a name first.';
+        if (trimmed.length > MAX_CATEGORY_NAME) return `Keep it under ${MAX_CATEGORY_NAME} characters.`;
+        const key = categoryKey(trimmed);
+        if (key === categoryKey(PERSONAL_CATEGORY.name)) return 'Personal is the built-in category - pick another name.';
+        if (categories.some(c => c.id !== ignoreId && categoryKey(c.name) === key)) return 'You already have a category with that name.';
+        return null;
+    };
+
+    const addCategory = async () => {
+        const problem = validateCatName(newCatName);
+        if (problem) { showAlert({ type: 'warning', message: problem }); return; }
+        setCatBusy(true);
+        try {
+            const id = `cat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+            await updateDoc(canaryRef(), {
+                [`Categories.${id}`]: { Name: newCatName.trim(), Color: newCatColor, Created: Date.now() },
+            });
+            setNewCatName('');
+            showAlert({ type: 'success', message: 'Category added' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to add the category - are you signed in as admin?' });
+        } finally {
+            setCatBusy(false);
+        }
+    };
+
+    const startEditCategory = (cat: MeetingCategory) => {
+        setEditingCatId(cat.id);
+        setEditCatName(cat.name);
+        setEditCatColor(cat.color);
+    };
+
+    const saveCategoryEdit = async () => {
+        if (!editingCatId) return;
+        const problem = validateCatName(editCatName, editingCatId);
+        if (problem) { showAlert({ type: 'warning', message: problem }); return; }
+        setCatBusy(true);
+        try {
+            await updateDoc(canaryRef(), {
+                [`Categories.${editingCatId}.Name`]: editCatName.trim(),
+                [`Categories.${editingCatId}.Color`]: editCatColor,
+            });
+            setEditingCatId(null);
+            showAlert({ type: 'success', message: 'Category updated' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to update the category' });
+        } finally {
+            setCatBusy(false);
+        }
+    };
+
+    /** Deleting a category also clears it off its bookings, which drop back to Personal. */
+    const deleteCategory = async (cat: MeetingCategory) => {
+        setCatBusy(true);
+        try {
+            const payload: Record<string, unknown> = { [`Categories.${cat.id}`]: deleteField() };
+            meetings.filter(m => m.category === cat.id).forEach(m => {
+                payload[`Meetings.${m.id}.Category`] = deleteField();
+            });
+            await updateDoc(canaryRef(), payload);
+            if (editingCatId === cat.id) setEditingCatId(null);
+            if (categoryFilter === cat.id) setCategoryFilter('all');
+            showAlert({ type: 'success', message: 'Category deleted' });
+        } catch {
+            showAlert({ type: 'error', message: 'Failed to delete the category' });
+        } finally {
+            setCatBusy(false);
+        }
+    };
+
+    const categoriesEditor = (
+        <div
+            className="canary-panel w-full max-w-2xl flex flex-col gap-6 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
+            style={{ backgroundColor: containerBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
+        >
+            <div className="flex items-start gap-4">
+                <span className="grid place-items-center shrink-0 rounded-2xl" style={{ width: 48, height: 48, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                    <Tags size={24} />
+                </span>
+                <div>
+                    <h3 className="text-lg sm:text-xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>Meeting categories</h3>
+                    <p className="text-sm mt-1 max-w-xl" style={{ color: 'var(--text-muted)' }}>
+                        Buckets you sort bookings into - a company, a client, a side project. Assign one when you edit a booking, or over MCP. Guests never see them: anything booked from the site arrives as Personal.
+                    </p>
+                </div>
+            </div>
+
+            {/* Existing categories */}
+            <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+                    <span className="w-3 h-3 rounded-full shrink-0" style={{ background: PERSONAL_CATEGORY.color }} />
+                    <span className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>{PERSONAL_CATEGORY.name}</span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Built-in - where anything uncategorised lands</span>
+                </div>
+
+                {categories.map(cat => (
+                    editingCatId === cat.id ? (
+                        <div key={cat.id} className="flex flex-col gap-3 px-3 py-3 rounded-xl border" style={{ borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)' }}>
+                            <input
+                                type="text"
+                                value={editCatName}
+                                maxLength={MAX_CATEGORY_NAME}
+                                onChange={(e) => setEditCatName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') saveCategoryEdit(); if (e.key === 'Escape') setEditingCatId(null); }}
+                                className="w-full h-10 rounded-xl border px-3 text-sm font-medium outline-none focus:border-blue-500 transition-colors"
+                                style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
+                            />
+                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                    {CATEGORY_COLORS.map(c => (
+                                        <button
+                                            key={c}
+                                            type="button"
+                                            aria-label={`Colour ${c}`}
+                                            onClick={() => setEditCatColor(c)}
+                                            className="w-6 h-6 rounded-full cursor-pointer transition-transform hover:scale-110"
+                                            style={{ background: c, border: editCatColor === c ? `2px solid ${isDark ? '#fff' : '#000'}` : '2px solid transparent' }}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button type="button" onClick={() => setEditingCatId(null)} className="px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+                                    <button type="button" onClick={saveCategoryEdit} disabled={catBusy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50" style={{ background: '#3b82f6', color: '#fff' }}>
+                                        <Check size={14} /> Save
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div key={cat.id} className="group flex items-center gap-2.5 px-3 py-2.5 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+                            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: cat.color }} />
+                            <span className="text-sm font-bold truncate" style={{ color: isDark ? '#fff' : '#000' }}>{cat.name}</span>
+                            <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
+                                {meetings.filter(m => m.category === cat.id).length} booking{meetings.filter(m => m.category === cat.id).length === 1 ? '' : 's'}
+                            </span>
+                            <div className="ml-auto flex items-center gap-1 shrink-0">
+                                <button type="button" onClick={() => startEditCategory(cat)} aria-label={`Rename ${cat.name}`} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                                    <Edit2 size={14} />
+                                </button>
+                                <button type="button" onClick={() => setConfirmDeleteCat(cat)} aria-label={`Delete ${cat.name}`} className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer text-red-500/70 hover:text-red-500">
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )
+                ))}
+            </div>
+
+            {/* Add a new one */}
+            <div className="flex flex-col gap-3 pt-1">
+                <label className="text-sm font-bold" style={{ color: isDark ? '#fff' : '#000' }}>Add a category</label>
+                <div className="flex flex-col min-[560px]:flex-row gap-3 min-[560px]:items-center">
+                    <input
+                        type="text"
+                        value={newCatName}
+                        maxLength={MAX_CATEGORY_NAME}
+                        placeholder="O.B.D"
+                        onChange={(e) => setNewCatName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') addCategory(); }}
+                        className="flex-1 h-11 rounded-xl border px-4 text-sm font-medium outline-none focus:border-blue-500 transition-colors"
+                        style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
+                    />
+                    <button
+                        type="button"
+                        onClick={addCategory}
+                        disabled={catBusy || !newCatName.trim()}
+                        className="inline-flex items-center justify-center gap-2 px-5 h-11 rounded-xl text-sm font-bold cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                        style={{ background: '#3b82f6', color: '#fff' }}
+                    >
+                        <Plus size={16} /> Add
+                    </button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                    {CATEGORY_COLORS.map(c => (
+                        <button
+                            key={c}
+                            type="button"
+                            aria-label={`Colour ${c}`}
+                            onClick={() => setNewCatColor(c)}
+                            className="w-7 h-7 rounded-full cursor-pointer transition-transform hover:scale-110"
+                            style={{ background: c, border: newCatColor === c ? `2px solid ${isDark ? '#fff' : '#000'}` : '2px solid transparent' }}
+                        />
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+
     const hoursEditor = (
-        <div className="canary-section w-full">
+        <div className="canary-section w-full flex flex-col gap-6">
             <div
                 className="canary-panel w-full max-w-2xl flex flex-col gap-7 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
                 style={{ backgroundColor: containerBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
@@ -718,6 +965,8 @@ const DCanary = () => {
                     </button>
                 </div>
             </div>
+
+            {categoriesEditor}
         </div>
     );
 
@@ -759,7 +1008,7 @@ const DCanary = () => {
                     `}
                 >
                     <Clock size={16} />
-                    <span className="hidden sm:inline">Hours</span>
+                    <span className="hidden sm:inline">Options</span>
                 </button>
             </div>
 
@@ -820,7 +1069,7 @@ const DCanary = () => {
                                     {calendarDays.map((date, idx) => {
                                         const isSelected = date?.toDateString() === selectedDate.toDateString();
                                         const isToday = date?.toDateString() === new Date().toDateString();
-                                        const dayMeetings = date ? meetings.filter(m => m.date.toDateString() === date.toDateString()) : [];
+                                        const dayMeetings = date ? visibleMeetings.filter(m => m.date.toDateString() === date.toDateString()) : [];
 
                                         return (
                                             <div
@@ -856,7 +1105,7 @@ const DCanary = () => {
                                                                 <div
                                                                     key={m.id}
                                                                     className="w-1 h-1 rounded-full"
-                                                                    style={{ backgroundColor: isSelected ? 'rgba(255,255,255,0.5)' : 'rgb(59, 130, 246)' }}
+                                                                    style={{ backgroundColor: isSelected ? 'rgba(255,255,255,0.5)' : categoryOf(m).color }}
                                                                 />
                                                             ))}
                                                         </div>
@@ -877,11 +1126,34 @@ const DCanary = () => {
                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                             backdropFilter: 'blur(20px)'
                         }}>
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-3">
 
                             <h3 className="text-2xl font-bold m-0" style={{ color: isDark ? '#fff' : '#000' }}>
                                 {selectedDate.toLocaleDateString('default', { weekday: 'long', day: 'numeric', month: 'short' })}
                             </h3>
+
+                            {/* Only worth showing once there's something to filter BY. */}
+                            {categories.length > 0 && (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    {[{ id: 'all', name: 'All', color: PERSONAL_CATEGORY.color }, ...allCategories].map(c => {
+                                        const on = activeFilter === c.id;
+                                        return (
+                                            <button
+                                                key={c.id}
+                                                type="button"
+                                                onClick={() => setCategoryFilter(c.id)}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-colors"
+                                                style={on
+                                                    ? { background: `${c.color}26`, color: c.color }
+                                                    : { background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', color: 'var(--text-muted)' }}
+                                            >
+                                                {c.id !== 'all' && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.color }} />}
+                                                {c.name}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-2" style={{
@@ -922,6 +1194,7 @@ const DCanary = () => {
                                                             <span className="font-semibold">Meet link</span>
                                                         </div>
                                                     )}
+                                                    {meeting.category && <CategoryBadge cat={categoryOf(meeting)} />}
                                                 </div>
                                                 <span className="text-[11px] opacity-40 italic font-normal line-clamp-1">{meeting.reason || 'No description'}</span>
                                             </div>
@@ -1244,6 +1517,10 @@ const DCanary = () => {
                                                 <span className="text-sm font-semibold inline-flex items-center gap-2" style={{ color: isDark ? '#fff' : '#000' }}><Clock size={14} className="opacity-60 shrink-0" />{viewingMeeting.time}</span>
                                             </div>
                                         </div>
+                                        <div className="flex flex-col gap-1.5 items-start">
+                                            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Category</span>
+                                            <CategoryBadge cat={categoryOf(viewingMeeting)} size="md" />
+                                        </div>
                                         <div className="flex flex-col gap-1">
                                             <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>What it&apos;s for</span>
                                             <span className="text-sm leading-relaxed" style={{ color: isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)' }}>{viewingMeeting.reason || 'No description provided.'}</span>
@@ -1326,6 +1603,30 @@ const DCanary = () => {
                                                         onChange={(e) => setEditingMeeting({ ...editingMeeting, title: e.target.value })}
                                                         placeholder="Meeting purpose..."
                                                     />
+                                                </div>
+
+                                                <div className="flex flex-col gap-2">
+                                                    <label className="text-[10px] md:text-xs font-bold uppercase tracking-widest opacity-60" style={{ color: isDark ? '#fff' : '#000' }}>Category</label>
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        {allCategories.map(cat => {
+                                                            // Personal is stored as no category at all, hence the undefined.
+                                                            const on = (editingMeeting.category || PERSONAL_CATEGORY.id) === cat.id;
+                                                            return (
+                                                                <button
+                                                                    key={cat.id}
+                                                                    type="button"
+                                                                    onClick={() => setEditingMeeting({ ...editingMeeting, category: cat.id === PERSONAL_CATEGORY.id ? undefined : cat.id })}
+                                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer border transition-colors"
+                                                                    style={on
+                                                                        ? { background: `${cat.color}1f`, color: cat.color, borderColor: cat.color }
+                                                                        : { background: 'transparent', color: 'var(--text-muted)', borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)' }}
+                                                                >
+                                                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cat.color }} />
+                                                                    {cat.name}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
 
                                                 <div className="flex flex-col gap-3">
@@ -1522,6 +1823,21 @@ const DCanary = () => {
                     }
                 }}
                 onClose={() => setConfirmDelete(null)}
+            />
+
+            <MConfirmModal
+                isOpen={!!confirmDeleteCat}
+                title="Delete category"
+                message={confirmDeleteCat
+                    ? `Delete "${confirmDeleteCat.name}"? ${meetings.filter(m => m.category === confirmDeleteCat.id).length} booking(s) using it will go back to Personal. The bookings themselves are kept.`
+                    : ''}
+                type="danger"
+                confirmText="Delete category"
+                onConfirm={() => {
+                    if (confirmDeleteCat) deleteCategory(confirmDeleteCat);
+                    setConfirmDeleteCat(null);
+                }}
+                onClose={() => setConfirmDeleteCat(null)}
             />
 
             {/* Rescheduling backwards in time - allowed, but never by accident. */}
