@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, Phone, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply, Tags } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField, setDoc } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
@@ -143,6 +143,8 @@ const CategoryBadge = ({ cat, size = 'sm' }: { cat: MeetingCategory; size?: 'sm'
 );
 
 const DCanary = () => {
+    // Everything below that animates layout falls back to an instant change here.
+    const reduceMotion = useReducedMotion();
     const [isDark, setIsDark] = useState(false);
     const [viewDate, setViewDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -798,7 +800,7 @@ const DCanary = () => {
                 </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <motion.div layout={!reduceMotion} className="flex flex-col gap-1.5">
                 {/* Personal is the floor of the list, not an entry you can act on. */}
                 <div className="flex items-center gap-3 px-3.5 h-12 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: PERSONAL_CATEGORY.color }} />
@@ -810,49 +812,83 @@ const DCanary = () => {
 
                 {categories.map(cat => {
                     const used = meetings.filter(m => m.category === cat.id).length;
-                    return editingCatId === cat.id ? (
-                        <div key={cat.id} className="flex flex-col gap-3 p-3 rounded-xl border" style={{ borderColor: '#3b82f6', background: isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)' }}>
-                            <input
-                                type="text"
-                                autoFocus
-                                value={editCatName}
-                                maxLength={MAX_CATEGORY_NAME}
-                                onChange={(e) => setEditCatName(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter') saveCategoryEdit(); if (e.key === 'Escape') setEditingCatId(null); }}
-                                className="w-full h-10 rounded-lg border px-3 text-sm font-semibold outline-none focus:border-blue-500 transition-colors"
-                                style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
-                            />
-                            <div className="flex items-center justify-between gap-3 flex-wrap">
-                                <ColorSwatches value={editCatColor} onPick={setEditCatColor} isDark={isDark} />
-                                <div className="flex items-center gap-1 ml-auto">
-                                    <button type="button" onClick={() => setEditingCatId(null)} className="px-3 h-9 rounded-lg text-xs font-bold cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: 'var(--text-muted)' }}>Cancel</button>
-                                    <button type="button" onClick={saveCategoryEdit} disabled={catBusy} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-bold cursor-pointer transition-colors disabled:opacity-50" style={{ background: '#3b82f6', color: '#fff' }}>
-                                        <Check size={14} /> Save
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <div
+                    const editing = editingCatId === cat.id;
+                    return (
+                        // One box per category that MORPHS: layout animates the row growing
+                        // into the editor (and back), while the two contents cross-fade
+                        // inside it - rather than one element vanishing and another
+                        // appearing in its place.
+                        <motion.div
                             key={cat.id}
-                            className="group flex items-center gap-3 px-3.5 h-12 rounded-xl transition-colors"
-                            style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}
+                            layout
+                            transition={reduceMotion ? { duration: 0 } : { layout: { type: 'spring', stiffness: 460, damping: 40, mass: 0.8 } }}
+                            className="rounded-xl overflow-hidden"
+                            style={{
+                                background: editing
+                                    ? (isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)')
+                                    : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)'),
+                                border: `1px solid ${editing ? '#3b82f6' : 'transparent'}`,
+                            }}
                         >
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cat.color }} />
-                            <span className="text-sm font-bold truncate" style={{ color: isDark ? '#fff' : '#000' }}>{cat.name}</span>
-                            <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
-                                {used === 0 ? 'unused' : `${used} booking${used === 1 ? '' : 's'}`}
-                            </span>
-                            {/* Actions stay reachable by keyboard; the mouse only reveals them. */}
-                            <div className="ml-auto flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                                <button type="button" onClick={() => startEditCategory(cat)} aria-label={`Rename ${cat.name}`} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer" style={{ color: 'var(--text-muted)' }}>
-                                    <Edit2 size={14} />
-                                </button>
-                                <button type="button" onClick={() => setConfirmDeleteCat(cat)} aria-label={`Delete ${cat.name}`} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer text-red-500/70 hover:text-red-500">
-                                    <Trash2 size={14} />
-                                </button>
-                            </div>
-                        </div>
+                            <AnimatePresence mode="popLayout" initial={false}>
+                                {editing ? (
+                                    <motion.div
+                                        key="edit"
+                                        layout="position"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ duration: reduceMotion ? 0 : 0.14 }}
+                                        className="flex flex-col gap-3 p-3"
+                                    >
+                                        <input
+                                            type="text"
+                                            autoFocus
+                                            value={editCatName}
+                                            maxLength={MAX_CATEGORY_NAME}
+                                            onChange={(e) => setEditCatName(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') saveCategoryEdit(); if (e.key === 'Escape') setEditingCatId(null); }}
+                                            className="w-full h-10 rounded-lg border px-3 text-sm font-semibold outline-none focus:border-blue-500 transition-colors"
+                                            style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#fff', borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)', color: isDark ? '#fff' : '#000' }}
+                                        />
+                                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                                            <ColorSwatches value={editCatColor} onPick={setEditCatColor} isDark={isDark} />
+                                            <div className="flex items-center gap-1 ml-auto">
+                                                <button type="button" onClick={() => setEditingCatId(null)} className="px-3 h-9 rounded-lg text-xs font-bold cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ color: 'var(--text-muted)' }}>Cancel</button>
+                                                <button type="button" onClick={saveCategoryEdit} disabled={catBusy} className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs font-bold cursor-pointer transition-colors disabled:opacity-50" style={{ background: '#3b82f6', color: '#fff' }}>
+                                                    <Check size={14} /> Save
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key="view"
+                                        layout="position"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ duration: reduceMotion ? 0 : 0.14 }}
+                                        className="group flex items-center gap-3 px-3.5 h-12"
+                                    >
+                                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cat.color }} />
+                                        <span className="text-sm font-bold truncate" style={{ color: isDark ? '#fff' : '#000' }}>{cat.name}</span>
+                                        <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
+                                            {used === 0 ? 'unused' : `${used} booking${used === 1 ? '' : 's'}`}
+                                        </span>
+                                        {/* Actions stay reachable by keyboard; the mouse only reveals them. */}
+                                        <div className="ml-auto flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                            <button type="button" onClick={() => startEditCategory(cat)} aria-label={`Rename ${cat.name}`} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+                                                <Edit2 size={14} />
+                                            </button>
+                                            <button type="button" onClick={() => setConfirmDeleteCat(cat)} aria-label={`Delete ${cat.name}`} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-red-500/10 transition-colors cursor-pointer text-red-500/70 hover:text-red-500">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </motion.div>
                     );
                 })}
 
@@ -861,7 +897,7 @@ const DCanary = () => {
                         No categories yet. Add one below and it becomes pickable on every booking.
                     </p>
                 )}
-            </div>
+            </motion.div>
 
             {/* New category */}
             <div className="flex flex-col gap-3 pt-1">
@@ -1045,7 +1081,13 @@ const DCanary = () => {
             </div>
 
             {activeSection === 'hours' ? hoursEditor : activeSection === 'bookings' ? (
-                <div className="canary-section grid grid-cols-1 lg:grid-cols-canary gap-8 items-start lg:items-stretch">
+                // alignItems is set here rather than through lg:items-stretch so the
+                // bookings column always matches the calendar beside it. The calendar is
+                // a fixed 6-row month, so that height never moves - which is what stops
+                // the panel growing and shrinking as you step between an empty day and a
+                // busy one. Inline because this file's responsive variants lose to their
+                // own base class (see the grid-cols note in the modal).
+                <div className="canary-section grid grid-cols-1 lg:grid-cols-canary gap-8" style={{ alignItems: windowWidth >= 1024 ? 'stretch' : 'start' }}>
                     {/* Left: Calendar Component */}
                     <div className="canary-panel w-full h-fit flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm relative overflow-visible"
                         style={{
@@ -1152,7 +1194,7 @@ const DCanary = () => {
                     </div>
 
                     {/* Meeting List - Right Panel */}
-                    <div className="canary-panel flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm lg:h-full h-fit"
+                    <div className="canary-panel flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm min-h-0"
                         style={{
                             backgroundColor: containerBg,
                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -1188,7 +1230,7 @@ const DCanary = () => {
                             )}
                         </div>
 
-                        <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-2" style={{
+                        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 pr-2" style={{
                             scrollbarWidth: 'thin',
                             scrollbarColor: isDark ? 'rgba(255,255,255,0.2) transparent' : 'rgba(0,0,0,0.1) transparent'
                         }}>
