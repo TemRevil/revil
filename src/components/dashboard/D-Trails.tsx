@@ -1332,71 +1332,72 @@ const DTrails = () => {
                                     </p>
                                 </div>
 
-                                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-12 flex flex-col gap-8">
-
-                                    <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${windowWidth < 520 ? 140 : 180}px, 1fr))` }}>
-                                        {counters.map(c => (
-                                            <div key={c.label} className="rounded-[24px] border p-5 flex flex-col gap-3"
-                                                style={{
-                                                    background: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
-                                                    borderColor: 'var(--card-border)',
-                                                }}>
-                                                <span className="w-9 h-9 rounded-xl grid place-items-center"
-                                                    style={{ background: `${c.tint}1f`, color: c.tint }}>
-                                                    {c.icon}
-                                                </span>
-                                                <div className="flex flex-col">
-                                                    <RollingNumber
-                                                        text={c.value.toLocaleString()}
-                                                        className="text-3xl font-black tracking-tight tabular-nums"
-                                                        style={{ color: isDark ? '#fff' : '#0f172a' }}
-                                                    />
-                                                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                                        {c.label}
+                                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-12">
+                                    <div className="flex flex-col gap-8 w-full">
+                                        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${windowWidth < 520 ? 140 : 180}px, 1fr))` }}>
+                                            {counters.map(c => (
+                                                <div key={c.label} className="rounded-[24px] border p-5 flex flex-col gap-3"
+                                                    style={{
+                                                        background: isDark ? 'rgba(255,255,255,0.02)' : '#fff',
+                                                        borderColor: 'var(--card-border)',
+                                                    }}>
+                                                    <span className="w-9 h-9 rounded-xl grid place-items-center"
+                                                        style={{ background: `${c.tint}1f`, color: c.tint }}>
+                                                        {c.icon}
                                                     </span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    <AnalyticsChart
-                                        data={chartData}
-                                        filter={chartFilter}
-                                        setFilter={setChartFilter}
-                                        isDark={isDark}
-                                        windowWidth={windowWidth}
-                                    />
-
-                                    <ProjectRankings projects={rankProjects} isDark={isDark} />
-
-                                    {socials.length > 0 && (
-                                        <div className={`w-full ${isDark ? 'bg-[#0C0C0C] border-white/[0.06]' : 'bg-white border-black/[0.06] shadow-sm'} rounded-[28px] p-5 sm:p-8 border`}>
-                                            <div className="flex items-center gap-3 mb-6">
-                                                <div className={`${isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-100 text-purple-600'} w-10 h-10 flex items-center justify-center rounded-xl`}>
-                                                    <Globe size={20} />
-                                                </div>
-                                                <div>
-                                                    <h3 className={`${isDark ? 'text-white' : 'text-slate-900'} text-xl sm:text-2xl font-black tracking-[-0.02em] leading-none`}>
-                                                        Where they went next
-                                                    </h3>
-                                                    <p className={`${isDark ? 'text-[#666]' : 'text-slate-400'} text-[10px] font-bold uppercase tracking-[0.15em] mt-1.5`}>
-                                                        Social links, and how long they stayed away
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <div className="flex flex-col gap-2">
-                                                {socials.map(s => (
-                                                    <div key={s.name} className={`flex items-center justify-between gap-4 px-4 py-3 rounded-2xl border ${isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-slate-50 border-black/[0.04]'}`}>
-                                                        <span className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{s.name}</span>
-                                                        <span className="flex items-center gap-4 shrink-0 text-[11px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                                                            <span>{(s.Clicks || 0).toLocaleString()} clicks</span>
-                                                            <span style={{ color: '#8b5cf6' }}>{formatMs(s.AwayMs || 0)} away</span>
+                                                    <div className="flex flex-col">
+                                                        <RollingNumber
+                                                            text={c.value.toLocaleString()}
+                                                            className="text-3xl font-black tracking-tight tabular-nums"
+                                                            style={{ color: isDark ? '#fff' : '#0f172a' }}
+                                                        />
+                                                        <span className="text-[9px] font-bold uppercase tracking-[0.2em] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                                            {c.label}
                                                         </span>
                                                     </div>
-                                                ))}
-                                            </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    )}
+
+                                        <AnalyticsChart
+                                            data={chartData}
+                                            filter={chartFilter}
+                                            setFilter={setChartFilter}
+                                            isDark={isDark}
+                                            windowWidth={windowWidth}
+                                        />
+
+                                        <ProjectRankings projects={rankProjects} isDark={isDark} />
+
+                                        {socials.length > 0 && (
+                                            <div className={`w-full ${isDark ? 'bg-[#0C0C0C] border-white/[0.06]' : 'bg-white border-black/[0.06] shadow-sm'} rounded-[28px] p-5 sm:p-8 border`}>
+                                                <div className="flex items-center gap-3 mb-6">
+                                                    <div className={`${isDark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-100 text-purple-600'} w-10 h-10 flex items-center justify-center rounded-xl`}>
+                                                        <Globe size={20} />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className={`${isDark ? 'text-white' : 'text-slate-900'} text-xl sm:text-2xl font-black tracking-[-0.02em] leading-none`}>
+                                                            Where they went next
+                                                        </h3>
+                                                        <p className={`${isDark ? 'text-[#666]' : 'text-slate-400'} text-[10px] font-bold uppercase tracking-[0.15em] mt-1.5`}>
+                                                            Social links, and how long they stayed away
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col gap-2">
+                                                    {socials.map(s => (
+                                                        <div key={s.name} className={`flex items-center justify-between gap-4 px-4 py-3 rounded-2xl border ${isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-slate-50 border-black/[0.04]'}`}>
+                                                            <span className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{s.name}</span>
+                                                            <span className="flex items-center gap-4 shrink-0 text-[11px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                                <span>{(s.Clicks || 0).toLocaleString()} clicks</span>
+                                                                <span style={{ color: '#8b5cf6' }}>{formatMs(s.AwayMs || 0)} away</span>
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
