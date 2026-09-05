@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, HardDrive, ZoomIn, Link, Sun, Moon, Plug } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,6 +11,7 @@ import app, { db } from '../../lib/firebase';
 // Local Storage handle (lazy Dashboard chunk) - keeps firebase/storage out of eager.
 const storage = getStorage(app);
 import Alert, { AlertType } from '../Alert';
+import { timezoneOptions } from '../../utils/timezones';
 import MStackItem, { StackItemData } from './M-StackItem';
 import DMcpPanel from './D-MCP';
 import Select from '../Select';
@@ -26,35 +27,6 @@ interface StackItem {
     icon: string;
 }
 
-
-const timezones = [
-    { label: 'UTC-12:00', value: -12 },
-    { label: 'UTC-11:00', value: -11 },
-    { label: 'UTC-10:00', value: -10 },
-    { label: 'UTC-09:00', value: -9 },
-    { label: 'UTC-08:00 (PST)', value: -8 },
-    { label: 'UTC-07:00 (MST)', value: -7 },
-    { label: 'UTC-06:00 (CST)', value: -6 },
-    { label: 'UTC-05:00 (EST)', value: -5 },
-    { label: 'UTC-04:00', value: -4 },
-    { label: 'UTC-03:00', value: -3 },
-    { label: 'UTC-02:00', value: -2 },
-    { label: 'UTC-01:00', value: -1 },
-    { label: 'UTC+00:00 (GMT)', value: 0 },
-    { label: 'UTC+01:00 (CET)', value: 1 },
-    { label: 'UTC+02:00 (EET)', value: 2 },
-    { label: 'UTC+03:00 (MSK)', value: 3 },
-    { label: 'UTC+04:00', value: 4 },
-    { label: 'UTC+05:00', value: 5 },
-    { label: 'UTC+05:30 (IST)', value: 5.5 },
-    { label: 'UTC+06:00', value: 6 },
-    { label: 'UTC+07:00', value: 7 },
-    { label: 'UTC+08:00 (CST)', value: 8 },
-    { label: 'UTC+09:00 (JST)', value: 9 },
-    { label: 'UTC+10:00 (AEST)', value: 10 },
-    { label: 'UTC+11:00', value: 11 },
-    { label: 'UTC+12:00 (NZST)', value: 12 },
-];
 
 // Helper to create the cropped image
 const createImage = (url: string, useCrossOrigin: boolean = true): Promise<HTMLImageElement> =>
@@ -512,9 +484,14 @@ export default function DSettings() {
     // Track unsaved changes
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+    // Your own offset is named after your city; the rest keep their abbreviation.
+    // The saved "Current Time" string still starts "UTC+HH:MM", which is the only
+    // part anything parses.
+    const tzOptions = useMemo(() => timezoneOptions(), []);
+
     const handleSaveAvailability = async () => {
         try {
-            const selectedTz = timezones.find(tz => tz.value === selectedTimezone);
+            const selectedTz = tzOptions.find(tz => tz.value === selectedTimezone);
 
             // Calculate timezone offset string correctly (handling .5 offsets)
             const absOffset = Math.abs(selectedTimezone);
@@ -1276,7 +1253,7 @@ export default function DSettings() {
                                         <div className="flex-1 min-w-[140px]">
                                             <Select
                                                 value={String(selectedTimezone)}
-                                                options={timezones.map(tz => ({ value: String(tz.value), label: tz.label }))}
+                                                options={tzOptions.map(tz => ({ value: String(tz.value), label: tz.label }))}
                                                 onChange={(v) => { setSelectedTimezone(Number(v)); setHasUnsavedChanges(true); }}
                                                 isDark={isDark}
                                                 searchable

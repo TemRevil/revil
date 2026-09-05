@@ -11,6 +11,7 @@ import app, { db } from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, buildHostSlots, isWorkingDay } from '../utils/availability';
+import { timezoneOptions, localOffset } from '../utils/timezones';
 import Select from './Select';
 import CustomTimePicker from './CustomTimePicker';
 import HintTooltip from './HintTooltip';
@@ -42,35 +43,6 @@ interface MeetingFunctionResponse {
   link?: string;
   id?: string;
 }
-
-const timezones = [
-  { label: 'UTC-12:00', value: -12 },
-  { label: 'UTC-11:00', value: -11 },
-  { label: 'UTC-10:00', value: -10 },
-  { label: 'UTC-09:00', value: -9 },
-  { label: 'UTC-08:00 (PST)', value: -8 },
-  { label: 'UTC-07:00 (MST)', value: -7 },
-  { label: 'UTC-06:00 (CST)', value: -6 },
-  { label: 'UTC-05:00 (EST)', value: -5 },
-  { label: 'UTC-04:00', value: -4 },
-  { label: 'UTC-03:00', value: -3 },
-  { label: 'UTC-02:00', value: -2 },
-  { label: 'UTC-01:00', value: -1 },
-  { label: 'UTC+00:00 (GMT)', value: 0 },
-  { label: 'UTC+01:00 (CET)', value: 1 },
-  { label: 'UTC+02:00 (EET)', value: 2 },
-  { label: 'UTC+03:00 (MSK)', value: 3 },
-  { label: 'UTC+04:00', value: 4 },
-  { label: 'UTC+05:00', value: 5 },
-  { label: 'UTC+05:30 (IST)', value: 5.5 },
-  { label: 'UTC+06:00', value: 6 },
-  { label: 'UTC+07:00', value: 7 },
-  { label: 'UTC+08:00 (CST)', value: 8 },
-  { label: 'UTC+09:00 (JST)', value: 9 },
-  { label: 'UTC+10:00 (AEST)', value: 10 },
-  { label: 'UTC+11:00', value: 11 },
-  { label: 'UTC+12:00 (NZST)', value: 12 },
-];
 
 interface MContactProps {
   isOpen: boolean;
@@ -166,10 +138,10 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
   // Timezone States
   const [hostTimezoneString, setHostTimezoneString] = useState('UTC+02:00 (EET)'); // Default
-  const [userTimezone, setUserTimezone] = useState<number>(() => {
-    // Detect system timezone offset in hours
-    return -(new Date().getTimezoneOffset() / 60);
-  });
+  const [userTimezone, setUserTimezone] = useState<number>(localOffset);
+  // The visitor's own row is named after their city rather than a stand-in
+  // abbreviation, so someone in Cairo is not told they are on Moscow time.
+  const tzOptions = useMemo(() => timezoneOptions(), []);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -1249,7 +1221,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
                                       <Select
                                         value={String(userTimezone)}
-                                        options={timezones.map(t => ({ value: String(t.value), label: t.label }))}
+                                        options={tzOptions.map(t => ({ value: String(t.value), label: t.label }))}
                                         onChange={(v) => setUserTimezone(Number(v))}
                                         isDark={isDark}
                                         searchable
@@ -1303,7 +1275,15 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                           validate={validateCustomTime}
                                           isUnavailable={isCustomTimeUnavailable}
                                           onError={(msg) => showAlert({ type: 'warning', message: msg })}
-                                          onApply={(t) => { setSelectedTime(t); setIsCustomTime(true); }}
+                                          onApply={(t) => {
+                                            setSelectedTime(t);
+                                            // Composing a time the host already offers is just picking
+                                            // that slot. Calling it custom lit up the matching button AND
+                                            // left the same time on the chip - the hour appearing twice in
+                                            // one grid - besides waiving the "must be a slot on offer"
+                                            // check for a time that plainly is one.
+                                            setIsCustomTime(!convertedSlots.includes(t));
+                                          }}
                                         />
                                       </div>
                                     </div>
