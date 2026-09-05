@@ -78,6 +78,32 @@ function safeKey(v: unknown): string | null {
   return s;
 }
 
+/**
+ * One spelling per social network.
+ *
+ * The name reaches us from whatever the site had stored for that link, and the two
+ * places that render social links read it from different documents - so the same
+ * network arrived as both "GitHub" and "Github", and as both "LinkedIn" and
+ * "Linkedin". Each spelling opened its own counter document and the real click
+ * count was split between them. Folding case here, at the one point every writer
+ * passes through, means it cannot happen again whatever a caller sends.
+ */
+const SOCIAL_NAMES: Record<string, string> = {
+  github: "GitHub", gitlab: "GitLab", linkedin: "LinkedIn", instagram: "Instagram",
+  facebook: "Facebook", threads: "Threads", tiktok: "TikTok", youtube: "YouTube",
+  twitter: "Twitter", x: "X", behance: "Behance", dribbble: "Dribbble",
+  medium: "Medium", whatsapp: "WhatsApp", telegram: "Telegram", discord: "Discord",
+  pinterest: "Pinterest", reddit: "Reddit", twitch: "Twitch", spotify: "Spotify",
+  email: "Email", mail: "Email",
+};
+
+function canonicalSocial(name: string): string {
+  const known = SOCIAL_NAMES[name.trim().toLowerCase()];
+  if (known) return known;
+  // Unknown network: Title Case it so at least one casing wins consistently.
+  return name.trim().toLowerCase().replace(/(^|[\s-])([a-z])/g, (_m, sep, ch) => sep + ch.toUpperCase());
+}
+
 /** A non-negative integer, clamped. Anything else becomes 0. */
 function num(v: unknown, max: number): number {
   const n = typeof v === "number" ? v : Number(v);
@@ -396,11 +422,16 @@ async function applyFlush(ctx: {
     let n = 0;
     for (const [rawKey, rawVal] of Object.entries(add.socials)) {
       if (n >= MAX_KEYS) break;
-      const key = safeKey(rawKey);
-      if (!key || !isObj(rawVal)) continue;
+      const safe = safeKey(rawKey);
+      if (!safe || !isObj(rawVal)) continue;
+      // One document per network, not one per spelling.
+      const key = canonicalSocial(safe);
       const row = { Clicks: num(rawVal.clicks, 500), AwayMs: num(rawVal.awayMs, 6 * HOUR_MS) };
       if (!row.Clicks && !row.AwayMs) continue;
-      socials[key] = row;
+      const prev = socials[key];
+      socials[key] = prev
+        ? { Clicks: prev.Clicks + row.Clicks, AwayMs: prev.AwayMs + row.AwayMs }
+        : row;
       n++;
     }
   }
