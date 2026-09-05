@@ -2,7 +2,7 @@ import { initializeApp } from "firebase/app";
 import {
     initializeFirestore,
     persistentLocalCache,
-    persistentMultipleTabManager
+    persistentSingleTabManager
 } from 'firebase/firestore';
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, type AppCheck } from 'firebase/app-check';
 
@@ -43,14 +43,27 @@ if (typeof window !== 'undefined') {
 }
 export { appCheck };
 
-// Initialize Firestore with modern multi-tab persistence settings. Firestore is the
+// Initialize Firestore with on-disk persistence, ONE TAB AT A TIME. Firestore is the
 // only Firebase SDK (besides App Check) kept in the eager bundle - the public site
 // reads data on first paint. Auth / Storage / Functions are split into on-demand
 // chunks (see the lazy accessors used by the contact form, SecretPage, and the
 // admin dashboard) so they never block initial load.
+//
+// The tab manager is SINGLE, never multiple, and that is a correctness fix rather
+// than a preference. Under the multi-tab manager only one tab talks to the network:
+// it runs every other tab's queries too, signed in as whoever THAT tab is. Sign-in
+// here is browserSessionPersistence (see appAuth) - deliberately per-tab - so a
+// portfolio tab open beside the dashboard is always a different, signed-out user.
+// Whenever the portfolio tab held the lease it re-issued the dashboard's /Analytics
+// listeners anonymously, the rules refused all five (they are admin-only), and the
+// dashboard showed "Could not load visits." while the refusals piled up in the
+// PORTFOLIO tab's console for queries that page never made. Per-tab auth and shared
+// cross-tab credentials cannot both be true. Each tab now owns its own connection
+// and reads as itself; the second tab simply keeps its cache in memory instead of
+// on disk, which is invisible next to being denied outright.
 export const db = initializeFirestore(app, {
     localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
+        tabManager: persistentSingleTabManager({ forceOwnership: false })
     }),
     // Drop `undefined` fields instead of throwing - optional fields (e.g. a
     // project's notes/client/endDate) are commonly undefined and Firestore would

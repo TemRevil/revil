@@ -768,10 +768,22 @@ const DTrails = () => {
 
     // ── data ─────────────────────────────────────────────────────────────
     useEffect(() => {
+        // Every listener below reads /Analytics, which the rules open to the admin
+        // alone - so they are refused together or not at all. Say it once instead of
+        // five times, and say it at all: four of these had no error callback, so a
+        // refusal surfaced only as a wall of uncaught "Error in snapshot listener" in
+        // the console while the page sat there looking merely empty.
+        let told = false;
+        const onDenied = () => {
+            if (told) return;
+            told = true;
+            showAlert({ type: 'error', message: 'Could not load visits.' });
+        };
+
         const stories = onSnapshot(
             query(collection(db, 'Analytics', 'Sessions', 'Items'), orderBy('StartedAt', 'desc'), fsLimit(300)),
             snap => setSessions(snap.docs.map(d => ({ ...(d.data() as SessionDoc), Id: d.id }))),
-            () => showAlert({ type: 'error', message: 'Could not load visits.' }),
+            onDenied,
         );
 
         const days = onSnapshot(collection(db, 'Analytics', 'Days', 'Items'), snap => {
@@ -788,11 +800,11 @@ const DTrails = () => {
                 })
                 .sort((a, b) => a.date.localeCompare(b.date));
             setDailySeries(rows);
-        });
+        }, onDenied);
 
         const totalsUnsub = onSnapshot(doc(db, 'Analytics', 'Totals'), snap => {
             setTotals(snap.exists() ? (snap.data() as TotalsDoc) : null);
-        });
+        }, onDenied);
 
         const linksUnsub = onSnapshot(collection(db, 'Analytics', 'Links', 'Items'), snap => {
             const rows: LinkRow[] = snap.docs.map(d => {
@@ -806,13 +818,13 @@ const DTrails = () => {
             });
             rows.sort((a, b) => (b.LastOpenAt || 0) - (a.LastOpenAt || 0) || Number(b.id) - Number(a.id));
             setLinks(rows);
-        });
+        }, onDenied);
 
         const socialsUnsub = onSnapshot(collection(db, 'Analytics', 'Socials', 'Items'), snap => {
             setSocials(snap.docs
                 .map(d => ({ name: d.id, ...(d.data() as { Clicks: number; AwayMs: number }) }))
                 .sort((a, b) => (b.Clicks || 0) - (a.Clicks || 0)));
-        });
+        }, onDenied);
 
         const projectsUnsub = onSnapshot(collection(db, 'Projects'), snap => {
             setRankProjects(snap.docs.map(d => {
