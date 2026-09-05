@@ -330,7 +330,7 @@ const MStory = ({ story, isDark, windowWidth, onClose, onDelete }: MStoryProps) 
                             <Fact label="Window" value={device.Viewport} isDark={isDark} />
                             <Fact label="Language" value={device.Language} isDark={isDark} />
                             <Fact label="Theme" value={device.Theme} isDark={isDark} />
-                            <Fact label="Came from" value={entry.Ref || (entry.Referrer ? entry.Referrer : 'Direct')} isDark={isDark} />
+                            <Fact label="Came from" value={story.Source?.Name || entry.Ref || 'Direct'} isDark={isDark} />
                             <Fact label="Landed on" value={entry.Section} isDark={isDark} />
                             <Fact label="Left from" value={story.Exit?.Section || ''} isDark={isDark} />
                             <Fact label="Idle" value={formatMs(story.IdleMs || 0)} isDark={isDark} />

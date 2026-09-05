@@ -4,7 +4,7 @@ import {
     Copy, Check, MoreVertical, Edit2, Trash2, Activity, Plus, Briefcase,
     MousePointer2, Eye, Globe, ChevronLeft, ChevronRight, Trophy, Github, ExternalLink,
     Download, Footprints, Link2, Radio, Users, Mail, FileText, BellRing, BellOff,
-    Search, Filter, ArrowRight,
+    Search, Filter, ArrowRight, Compass,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps } from 'recharts';
@@ -54,6 +54,24 @@ interface SocialRow {
     Clicks: number;
     AwayMs: number;
 }
+
+interface SourceRow {
+    name: string;
+    Name?: string;
+    Kind?: string;
+    Sessions?: number;
+    LastAt?: number;
+}
+
+/** What each kind is called on screen, and the colour it wears. */
+const SOURCE_KINDS: Record<string, { label: string; color: string }> = {
+    ai: { label: 'Assistant', color: '#a855f7' },
+    search: { label: 'Search', color: '#3b82f6' },
+    social: { label: 'Social', color: '#ec4899' },
+    mail: { label: 'Email', color: '#f59e0b' },
+    referral: { label: 'Link', color: '#10b981' },
+    direct: { label: 'Typed in', color: '#64748b' },
+};
 
 type StoryFilter = 'all' | 'live' | 'links' | 'contacted';
 type TrailsView = 'stories' | 'overview' | 'links';
@@ -723,6 +741,7 @@ const DTrails = () => {
     const [totals, setTotals] = useState<TotalsDoc | null>(null);
     const [links, setLinks] = useState<LinkRow[]>([]);
     const [socials, setSocials] = useState<SocialRow[]>([]);
+    const [sources, setSources] = useState<SourceRow[]>([]);
     const [rankProjects, setRankProjects] = useState<RankInput[]>([]);
 
     const [storyFilter, setStoryFilter] = useState<StoryFilter>('all');
@@ -826,6 +845,12 @@ const DTrails = () => {
                 .sort((a, b) => (b.Clicks || 0) - (a.Clicks || 0)));
         }, onDenied);
 
+        const sourcesUnsub = onSnapshot(collection(db, 'Analytics', 'Sources', 'Items'), snap => {
+            setSources(snap.docs
+                .map(d => ({ name: d.id, ...(d.data() as Omit<SourceRow, 'name'>) }))
+                .sort((a, b) => (b.Sessions || 0) - (a.Sessions || 0)));
+        }, onDenied);
+
         const projectsUnsub = onSnapshot(collection(db, 'Projects'), snap => {
             setRankProjects(snap.docs.map(d => {
                 const data = d.data();
@@ -842,7 +867,7 @@ const DTrails = () => {
             }));
         });
 
-        return () => { stories(); days(); totalsUnsub(); linksUnsub(); socialsUnsub(); projectsUnsub(); };
+        return () => { stories(); days(); totalsUnsub(); linksUnsub(); socialsUnsub(); sourcesUnsub(); projectsUnsub(); };
     }, [showAlert]);
 
     // Claim the parked id so a refresh does not reopen the same story forever.
@@ -1380,6 +1405,49 @@ const DTrails = () => {
                                         />
 
                                         <ProjectRankings projects={rankProjects} isDark={isDark} />
+
+                                        {sources.length > 0 && (
+                                            <div className={`w-full ${isDark ? 'bg-[#0C0C0C] border-white/[0.06]' : 'bg-white border-black/[0.06] shadow-sm'} rounded-[28px] p-5 sm:p-8 border`}>
+                                                <div className="flex items-center gap-3 mb-6">
+                                                    <div className={`${isDark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-100 text-emerald-600'} w-10 h-10 flex items-center justify-center rounded-xl`}>
+                                                        <Compass size={20} />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className={`${isDark ? 'text-white' : 'text-slate-900'} text-xl sm:text-2xl font-black tracking-[-0.02em] leading-none`}>
+                                                            How they found you
+                                                        </h3>
+                                                        <p className={`${isDark ? 'text-[#666]' : 'text-slate-400'} text-[10px] font-bold uppercase tracking-[0.15em] mt-1.5`}>
+                                                            {(() => {
+                                                                const ai = sources.filter(s => s.Kind === 'ai').reduce((t, s) => t + (s.Sessions || 0), 0);
+                                                                const all = sources.reduce((t, s) => t + (s.Sessions || 0), 0);
+                                                                return ai
+                                                                    ? `${ai} of ${all} sent by an assistant`
+                                                                    : 'Search, assistants, links and typed-in visits';
+                                                            })()}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col gap-2">
+                                                    {sources.map(s => {
+                                                        const kind = SOURCE_KINDS[s.Kind || 'referral'] || SOURCE_KINDS.referral;
+                                                        return (
+                                                            <div key={s.name} className={`flex items-center justify-between gap-4 px-4 py-3 rounded-2xl border ${isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-slate-50 border-black/[0.04]'}`}>
+                                                                <span className="flex items-center gap-2.5 min-w-0">
+                                                                    <span className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>{s.Name || s.name}</span>
+                                                                    <span className="text-[9px] font-black uppercase tracking-[0.12em] px-2 py-0.5 rounded-full shrink-0"
+                                                                        style={{ color: kind.color, background: `${kind.color}1f` }}>
+                                                                        {kind.label}
+                                                                    </span>
+                                                                </span>
+                                                                <span className="shrink-0 text-[11px] font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                                                                    {(s.Sessions || 0).toLocaleString()} {(s.Sessions || 0) === 1 ? 'visit' : 'visits'}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {socials.length > 0 && (
                                             <div className={`w-full ${isDark ? 'bg-[#0C0C0C] border-white/[0.06]' : 'bg-white border-black/[0.06] shadow-sm'} rounded-[28px] p-5 sm:p-8 border`}>

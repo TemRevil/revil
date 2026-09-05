@@ -57,6 +57,13 @@ export interface SessionEntry {
     Utm?: Record<string, string>;
 }
 
+/** Where the visit came from, resolved server-side from the referrer + query tags. */
+export interface SessionSource {
+    Name: string;
+    /** 'ai' means an assistant sent them: the one worth watching on its own. */
+    Kind: 'ai' | 'search' | 'social' | 'mail' | 'referral' | 'direct';
+}
+
 export interface SessionDevice {
     Type: 'phone' | 'tablet' | 'desktop';
     OS: string;
@@ -107,6 +114,7 @@ export interface SessionDoc {
     IdleMs: number;
     Link?: SessionLink | null;
     Entry: SessionEntry;
+    Source?: SessionSource;
     Exit?: { Section: string };
     Device: SessionDevice;
     Geo?: { Country: string; Code: string };

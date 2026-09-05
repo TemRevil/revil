@@ -140,6 +140,13 @@ function readEntry(section: string): Record<string, unknown> {
         const v = params.get(k);
         if (v) utm[k.replace('utm_', '')] = v.slice(0, 80);
     });
+    // Not everyone tags a link the same way. A bare ?ref= or ?source= is common, and
+    // an ad click often carries nothing BUT its click id - which still says who sent
+    // them. Collected raw; the server is what decides any of it means.
+    ['ref', 'source', 'gclid', 'fbclid'].forEach(k => {
+        const v = params.get(k);
+        if (v && !utm[k]) utm[k] = v.slice(0, 80);
+    });
 
     let ref = '';
     try {
