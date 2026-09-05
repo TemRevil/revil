@@ -397,6 +397,13 @@ class Collector {
 
         if (this.idle || this.hidden) {
             this.buf.idleMs += delta;
+            // Someone still in front of the page counts as present even with the input
+            // clock stopped - reading is precisely when nobody touches the mouse. Without
+            // this the flush timer (which only fires on a dirty buffer) went quiet after a
+            // minute, LastSeenAt froze, and a reader dropped out of "Reading now" while
+            // they were still reading. A HIDDEN tab is genuinely nobody, so it stays silent
+            // and correctly leaves the live list.
+            if (!this.hidden) this.dirty = true;
             return;
         }
 
