@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { getToken } from 'firebase/app-check';
 import { appCheck } from '../lib/firebase';
 import { analytics } from '../lib/analytics/collector';
-import type { LinkTailor } from '../lib/analytics/types';
+import { EMPTY_TAILOR, type LinkTailor } from '../lib/analytics/types';
 
 interface AlgorithmProps {
     currentSection: string;
@@ -58,6 +58,21 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         // so no visitor ever downloads the list of who links were made for.
         const parts = window.location.pathname.split('/').filter(Boolean);
         const code = parts.length ? parts[parts.length - 1] : '';
+
+        // A visit with no code is not a tailored visit, and must be scrubbed of the
+        // last one. Tailoring is kept in sessionStorage, which belongs to the TAB
+        // rather than the page, so it outlives the link that set it: open a share
+        // link and then type temrevil.com in the same tab and the greeting meant for
+        // someone else was still there, addressing you by their name. Clearing the
+        // store is not enough on its own - anything already mounted has read it - so
+        // the empty tailoring is announced the same way a real one would be.
+        if (!code) {
+            try {
+                sessionStorage.removeItem(TAILOR_KEY);
+                sessionStorage.removeItem('revil_interviewer_mode');
+            } catch { /* private mode - nothing was ever stored */ }
+            window.dispatchEvent(new CustomEvent('revil:tailor', { detail: { tailor: EMPTY_TAILOR, link: null } }));
+        }
 
         analytics.start({
             section: currentSection,
