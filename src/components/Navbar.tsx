@@ -178,8 +178,16 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         return () => window.removeEventListener('revil:subnav_hover', handler);
     }, []);
 
+    // A tooltip floats directly above the navbar, which on a phone is exactly where the
+    // projects sub-navbar sits - so it covered the thing the reader was reaching for. A
+    // touch screen has no hover to explain an icon by anyway, so below the breakpoint
+    // there are simply no tooltips: this gates every one of them, and the auto-cycle
+    // below never starts.
+    const tip = (visible: boolean) => visible && !isMobile;
+
     // Auto-show tooltips logic: Projects (3s) -> Contact (3s) -> 10s wait
     useEffect(() => {
+        if (isMobile) return;
         let cycleTimeout: NodeJS.Timeout;
 
         const runCycle = () => {
@@ -223,7 +231,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         return () => {
             clearTimeout(cycleTimeout);
         };
-    }, [currentSection, isContactOpen, isHoveringNav, isSubnavHovered]);
+    }, [currentSection, isContactOpen, isHoveringNav, isSubnavHovered, isMobile]);
 
     // Helper to get button class string based on state
     const getButtonClass = (tabName: string) => {
@@ -272,7 +280,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <Home size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="Home" icon={<Home size={14} strokeWidth={2} />} show={hoveredTab === 'home' && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Home" icon={<Home size={14} strokeWidth={2} />} show={tip(hoveredTab === 'home' && !isSubnavHovered)} isDark={isDark} />
                     </div>
 
                     <div className="relative">
@@ -285,7 +293,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <Layers size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="Stack" icon={<Zap size={14} strokeWidth={2} />} show={hoveredTab === 'stack' && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Stack" icon={<Zap size={14} strokeWidth={2} />} show={tip(hoveredTab === 'stack' && !isSubnavHovered)} isDark={isDark} />
                     </div>
 
                     <div className="relative">
@@ -298,7 +306,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         >
                             <FolderKanban size={iconSize} strokeWidth={2} />
                         </button>
-                        <Tooltip text="Projects" icon={<Rocket size={14} strokeWidth={2} />} show={(hoveredTab === 'projects' || autoTooltip === 'projects') && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Projects" icon={<Rocket size={14} strokeWidth={2} />} show={tip((hoveredTab === 'projects' || autoTooltip === 'projects') && !isSubnavHovered)} isDark={isDark} />
                     </div>
 
                     <div
@@ -328,7 +336,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 </motion.div>
                             )}
                         </motion.button>
-                        <Tooltip text="Digital CV" icon={<FileText size={14} strokeWidth={2} />} show={hoveredTab === 'cv' && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Digital CV" icon={<FileText size={14} strokeWidth={2} />} show={tip(hoveredTab === 'cv' && !isSubnavHovered)} isDark={isDark} />
 
                         {isCVOpen && (
                             <div className={`
@@ -380,7 +388,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                                 </motion.div>
                             )}
                         </motion.button>
-                        <Tooltip text="Contact" icon={<Mail size={14} strokeWidth={2} />} show={(hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)) && !isSubnavHovered} isDark={isDark} />
+                        <Tooltip text="Contact" icon={<Mail size={14} strokeWidth={2} />} show={tip((hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)) && !isSubnavHovered)} isDark={isDark} />
 
                         {isContactOpen && (
                             <div className={`

@@ -26,8 +26,14 @@ interface ProjectsHubProps {
     embedded?: boolean;
 }
 
+// The phone page and the desktop switcher are different trees, so crossing the
+// breakpoint remounts this and would otherwise snap a reader reading Developer back
+// to Projects. Module-level, not storage: it outlives the remount and nothing else,
+// so a fresh load still opens on Projects.
+let lastTab: SubTab = 'projects';
+
 const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransitioning = false, embedded = false }, ref) => {
-    const [activeTab, setActiveTab] = useState<SubTab>('projects');
+    const [activeTab, setActiveTab] = useState<SubTab>(() => lastTab);
     const [direction, setDirection] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
     const [showSubnav, setShowSubnav] = useState(false);
@@ -41,6 +47,7 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
         setIsAnimating(true);
         setDirection(index > activeIndex ? 1 : -1);
         setActiveTab(next.key);
+        lastTab = next.key;
         return true;
     }, [activeTab, activeIndex, isAnimating]);
 

@@ -184,6 +184,25 @@ function App() {
     };
   }, [mobileScroll]);
 
+  // Widening past the phone breakpoint hands the reader back to the section switcher,
+  // which only knows `currentSection` - and the phone page leaves that on whatever it
+  // started as while the reader scrolls. So resizing mid-page threw them back to the top
+  // of home from wherever they had got to. Carry the scroll-spy's answer over as they
+  // cross, and only as they cross: `mobileScroll` also drops on its own when the reader
+  // opens the dashboard, which must not drag them back to a public section.
+  // Adjusted during render rather than in an effect, so the switcher never paints home
+  // for a frame before correcting itself.
+  const [wasMobile, setWasMobile] = useState(false);
+  if (wasMobile !== isMobile) {
+    setWasMobile(isMobile);
+    if (wasMobile
+      && PUBLIC_SCROLL_SECTIONS.includes(currentSection)
+      && !sameView(currentSection, mobileActiveSection)) {
+      setCurrentSection(mobileActiveSection);
+      setNextSection(mobileActiveSection);
+    }
+  }
+
   // Always-current section, read inside delayed callbacks (e.g. hero anim complete)
   // to avoid stale-closure races where the user navigated away before the timer fired.
   const currentSectionRef = useRef<Section>(currentSection);
@@ -631,7 +650,10 @@ function App() {
       onTouchEnd={handleTouchEnd}
     >
       <Loader isOpen={appLoading} isFullScreen={true} />
-      <Algorithm currentSection={currentSection} isContactOpen={isContactModalOpen} onNavigate={navigateTo} />
+      {/* The phone page never changes the current section - it scrolls - so the recorder
+          has to be told what the scroll-spy sees, or every phone visit reads as though
+          the reader never left home no matter how far down they got. */}
+      <Algorithm currentSection={mobileScroll ? mobileActiveSection : currentSection} isContactOpen={isContactModalOpen} onNavigate={navigateTo} />
       <TailorNote />
 
       {(currentSection === 'home' || currentSection === 'view_link' || currentSection === 'dashboard' || currentSection === 'secret') && (
