@@ -84,6 +84,12 @@ type Section = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_li
 
 // Sections that live together in the phone single-scroll page (view_link is a home variant).
 const PUBLIC_SCROLL_SECTIONS: Section[] = ['home', 'stack', 'projects', 'view_link'];
+
+// 'view_link' is where a share link lands, and it draws the identical hero as 'home' -
+// one view under two labels. The switcher keys off this instead of the raw section, so
+// moving between them doesn't tear the hero down and build it again.
+const viewKey = (s: Section): Section => (s === 'view_link' ? 'home' : s);
+const sameView = (a: Section, b: Section): boolean => viewKey(a) === viewKey(b);
 // The three that actually stack in the scroll page, in order.
 const MOBILE_STACK: Exclude<Section, 'secret' | 'dashboard' | 'view_link'>[] = ['home', 'stack', 'projects'];
 
@@ -310,6 +316,16 @@ function App() {
 
   const navigateTo = useCallback((section: Section) => {
     if (section !== currentSection && !isTransitioning) {
+      // The recorder switches 'view_link' -> 'home' once the server resolves the share
+      // code. Same hero on screen either way, so that is a relabel, not a journey:
+      // running the curtain for it replayed the whole entrance unprompted, as though
+      // the visitor had scrolled. Swap the label and stop.
+      if (sameView(section, currentSection)) {
+        setNextSection(section);
+        setCurrentSection(section);
+        return;
+      }
+
       const order: Section[] = ['home', 'stack', 'projects'];
       const currIdx = order.indexOf(currentSection);
       const nextIdx = order.indexOf(section);
@@ -655,7 +671,7 @@ function App() {
       ) : (
       <AnimatePresence initial={false} custom={direction} mode="popLayout">
         <motion.div
-          key={currentSection}
+          key={viewKey(currentSection)}
           id={`section-${currentSection}`}
           custom={direction}
           variants={variants}

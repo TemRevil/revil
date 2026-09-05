@@ -596,9 +596,19 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
         const wrapperEl = wrapperRef.current;
         const imageEl = imageRef.current;
 
-        // Step 2: Animate name (typing effect)
+        // Step 2: Animate name (typing effect).
+        // Scoped to THIS hero's letters, never the '.name-char' selector: the section
+        // switcher (AnimatePresence mode="popLayout") keeps the outgoing section mounted
+        // while the incoming one animates in, so two heroes briefly share the document.
+        // A document-wide target let the LEAVER's cleanup strip the ARRIVER's animation
+        // while its letters were still parked at opacity-0 waiting for their staggered
+        // start - and the name then never appeared at all.
+        const nameEls = titleRef.current
+            ? Array.from(titleRef.current.querySelectorAll<HTMLElement>('.name-char'))
+            : [];
+
         const nameAnim = anime({
-            targets: '.name-char',
+            targets: nameEls,
             opacity: [0, 1],
             translateY: [20, 0],
             duration: 600,
@@ -641,7 +651,11 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
             floatAnim.pause();
             anime.remove(wrapperEl);
             anime.remove(imageEl);
-            anime.remove('.name-char');
+            anime.remove(nameEls);
+            // The name is the page's opening statement, so this entrance fails VISIBLE:
+            // torn down before the stagger finishes, the letters are left readable
+            // instead of stuck on the opacity-0 class they start from.
+            nameEls.forEach((el) => { el.style.opacity = '1'; el.style.transform = ''; });
         };
     }, [isReady, timing.name, timing.rest]);
 
