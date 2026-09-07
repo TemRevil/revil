@@ -19,8 +19,75 @@ export const CURRENCY_SYMBOL: Record<Currency, string> = {
     EUR: '€',
 };
 
-export type ProjectStatus = 'active' | 'pending' | 'completed';
+/**
+ * Where a project stands. ONE field, no second opinion: an earlier model kept a
+ * `done` boolean beside this one and the two could disagree, so `done` is gone
+ * and everything that read it now asks isFinished()/isOngoing().
+ */
+export type ProjectStatus = 'pending' | 'active' | 'paused' | 'live' | 'completed' | 'closed';
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid';
+
+export interface ProjectStatusMeta {
+    id: ProjectStatus;
+    label: string;
+    /** One line saying when to pick it, shown under the picker. */
+    hint: string;
+    color: string;
+    /**
+     * Whether the homepage's "projects I handle" list may name it. Work that
+     * stopped stays private - a client should never read "paused" or "closed"
+     * next to their own name - and finished work drops off the list the way it
+     * always did.
+     */
+    publicly: boolean;
+    /** The work has ended, so it leaves the active board and stops being WIP. */
+    finished: boolean;
+}
+
+/** Every status, in the order the picker offers them. */
+export const PROJECT_STATUSES: ProjectStatusMeta[] = [
+    { id: 'pending', label: 'Pending', hint: 'Agreed, not started yet', color: '#f59e0b', publicly: true, finished: false },
+    { id: 'active', label: 'Active', hint: 'Being worked on right now', color: '#3b82f6', publicly: true, finished: false },
+    { id: 'paused', label: 'Paused', hint: 'Development stopped for now - records the date', color: '#a855f7', publicly: false, finished: false },
+    { id: 'live', label: 'Live', hint: 'Delivered and still maintained', color: '#14b8a6', publicly: true, finished: false },
+    { id: 'completed', label: 'Completed', hint: 'Finished and handed over', color: '#22c55e', publicly: false, finished: true },
+    { id: 'closed', label: 'Closed', hint: 'Ended without finishing - records the date and why', color: '#ef4444', publicly: false, finished: true },
+];
+
+const STATUS_META = new Map<string, ProjectStatusMeta>(PROJECT_STATUSES.map(m => [m.id, m]));
+
+/** Metadata for a status; anything unrecognised reads as Active. */
+export function statusMeta(status: string): ProjectStatusMeta {
+    return STATUS_META.get(status) || PROJECT_STATUSES[1];
+}
+
+/** The work is over - completed or closed. This is what `done` used to mean. */
+export const isFinished = (p: { status: ProjectStatus }): boolean => statusMeta(p.status).finished;
+/** Still on the books: pending, active, paused or live. */
+export const isOngoing = (p: { status: ProjectStatus }): boolean => !statusMeta(p.status).finished;
+
+/**
+ * Read a stored project into the current shape.
+ *
+ * Documents written before the statuses were unified carry a separate `done`
+ * boolean, and it could disagree with `status`. `done` wins when it says the work
+ * is over, because it is the flag the old dashboard actually acted on - so a
+ * project marked done back then lands on 'completed' instead of reappearing on
+ * the active board. The field itself is dropped here and never written again.
+ */
+export function normalizeProject(id: string, raw: Record<string, unknown>, index: number): TreasuryProject {
+    const stored = typeof raw.status === 'string' && STATUS_META.has(raw.status) ? raw.status as ProjectStatus : null;
+    const status: ProjectStatus = raw.done === true && (!stored || !statusMeta(stored).finished)
+        ? 'completed'
+        : stored ?? 'active';
+    const { done: _legacy, status: _stored, order: _order, ...rest } = raw as Record<string, unknown>;
+    return {
+        ...(rest as unknown as Omit<TreasuryProject, 'id' | 'status' | 'order'>),
+        id,
+        status,
+        order: typeof raw.order === 'number' ? raw.order : index,
+    };
+}
 
 export type AccountType = 'cash' | 'bank' | 'card' | 'wallet' | 'other';
 export const ACCOUNT_TYPES: AccountType[] = ['cash', 'bank', 'card', 'wallet', 'other'];
@@ -65,9 +132,13 @@ export interface TreasuryProject {
     paidAmount: number;           // received so far, in priceCurrency
     notes?: string;
     startDate?: string | null;    // 'YYYY-MM-DD'
-    endDate?: string | null;      // 'YYYY-MM-DD' (set when marked done)
+    endDate?: string | null;      // 'YYYY-MM-DD' - stamped when the work ends (completed or closed)
+    // When development was last paused. Kept after resuming, so the card can still
+    // say when the project last went quiet.
+    pausedAt?: string | null;     // 'YYYY-MM-DD'
+    closedAt?: string | null;     // 'YYYY-MM-DD' - when it ended without finishing
+    closedReason?: string;        // why it ended - dashboard only, never mirrored publicly
     nextPaymentDate?: string;     // 'YYYY-MM-DD' - for monthly retainers: when the next payment is due (auto-advanced)
-    done: boolean;
     order: number;
     createdAt: number;            // ms epoch
 }
@@ -501,7 +572,7 @@ export function matchCategories(query: string, categories: string[], limit = 8):
 
 /** Projects an EXPENSE can be linked to: exclude finished/completed projects. */
 export function expenseProjectOptions(projects: TreasuryProject[]): TreasuryProject[] {
-    return (projects || []).filter(p => !p.done && p.status !== 'completed');
+    return (projects || []).filter(isOngoing);
 }
 
 /**
@@ -738,7 +809,7 @@ export function buildInsights(data: TreasuryData): Insight[] {
     }
 
     // Done but not fully paid → invoice it
-    const doneUnpaid = data.projects.filter(p => p.done && projectPaymentStatus(p, data.income, rates) !== 'paid' && p.priceAmount > 0);
+    const doneUnpaid = data.projects.filter(p => isFinished(p) && projectPaymentStatus(p, data.income, rates) !== 'paid' && p.priceAmount > 0);
     for (const p of doneUnpaid.slice(0, 2)) {
         out.push({ tone: 'warn', icon: 'invoice', label: 'Invoice due', text: `"${p.name}" is finished but still ${projectPaymentStatus(p, data.income, rates)} - time to invoice the rest.` });
     }
@@ -758,7 +829,7 @@ export function buildInsights(data: TreasuryData): Insight[] {
     }
 
     // Monthly retainer income
-    const retainers = data.projects.filter(p => p.monthly && !p.done && p.priceAmount > 0);
+    const retainers = data.projects.filter(p => p.monthly && isOngoing(p) && p.priceAmount > 0);
     if (retainers.length) {
         const perMonth = retainers.reduce((s, p) => s + convert(p.priceAmount, p.priceCurrency, cur, rates), 0);
         out.push({ tone: 'good', icon: 'profit', label: 'Retainers', text: `${formatMoney(perMonth, cur)}/mo expected from ${retainers.length} monthly project${retainers.length === 1 ? '' : 's'}.` });
@@ -771,7 +842,7 @@ export function buildInsights(data: TreasuryData): Insight[] {
     }
 
     // Long-running active projects
-    for (const p of data.projects.filter(p => !p.done && p.startDate)) {
+    for (const p of data.projects.filter(p => p.status === 'active' && p.startDate)) {
         const days = daysBetween(p.startDate, now);
         if (days !== null && days >= 30) {
             out.push({ tone: 'info', icon: 'running', label: 'Long-running', text: `"${p.name}" has been running ${days} days and isn't marked done.` });
@@ -822,7 +893,7 @@ export function buildHtmlReport(data: TreasuryData, generatedAt: Date): string {
           <td>${p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}${p.monthly ? '/mo' : ''}</td>
           <td><span class="pay ${status}">${p.monthly ? 'monthly' : status}</span></td>
           <td>${formatMoney(received, p.priceCurrency)}</td>
-          <td>${esc(p.startDate || '-')} → ${esc(p.endDate || (p.done ? '-' : 'ongoing'))}</td>
+          <td>${esc(p.startDate || '-')} → ${esc(p.endDate || (isFinished(p) ? '-' : 'ongoing'))}</td>
           <td class="notes">${esc(p.notes || '')}</td>
         </tr>`;
     }).join('');

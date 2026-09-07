@@ -11,6 +11,7 @@ import {
     TreasuryProject, TreasuryExpense, TreasuryIncome, TreasuryAccount, TreasuryConfig, uid, derivePaymentStatus,
     ExpenseTemplate, matchExpenseTemplates, expenseProjectOptions, incomeProjectOptions, formatMoney,
     expenseCategories, matchCategories, nextMonthlyPaymentDate, accountOptions, installmentTotal,
+    PROJECT_STATUSES, statusMeta,
 } from '../../lib/treasury';
 import DatePicker from '../DatePicker';
 import Select from '../Select';
@@ -57,7 +58,9 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
     const [priceCurrency, setPriceCurrency] = useState<Currency>(project?.priceCurrency ?? config.defaultCurrency);
     const [startDate, setStartDate] = useState(project?.startDate ?? (project ? '' : today()));
     const [endDate, setEndDate] = useState(project?.endDate ?? '');
-    const [done, setDone] = useState(project?.done ?? false);
+    const [pausedAt, setPausedAt] = useState(project?.pausedAt ?? '');
+    const [closedAt, setClosedAt] = useState(project?.closedAt ?? '');
+    const [closedReason, setClosedReason] = useState(project?.closedReason ?? '');
     const [monthly, setMonthly] = useState(project?.monthly ?? false);
     // Installment plan: the fixed price split into equal monthly payments, with an
     // optional surcharge charged on the WHOLE price. Mutually exclusive with the
@@ -248,8 +251,12 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                 paymentStatus: derivePaymentStatus({ priceAmount: price, paidAmount: paid }),
                 notes: notes.trim() || undefined,
                 startDate: startDate || null,
-                endDate: done ? (endDate || today()) : (endDate || null),
-                done,
+                // A finished project always carries an end date, even if the field
+                // was left blank; an unfinished one never carries a stale one.
+                endDate: statusMeta(status).finished ? (endDate || today()) : (endDate || null),
+                pausedAt: status === 'paused' ? (pausedAt || today()) : (pausedAt || null),
+                closedAt: status === 'closed' ? (closedAt || today()) : null,
+                closedReason: status === 'closed' ? (closedReason.trim() || undefined) : undefined,
                 order: project?.order ?? nextOrder,
                 createdAt: project?.createdAt ?? Date.now(),
             };
@@ -358,14 +365,17 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             </div>
                             <div>
                                 <label className={labelCls}>Status</label>
-                                <div className={`flex rounded-xl border ${fieldBg} p-1 gap-1`}>
-                                    {(['active', 'pending', 'completed'] as ProjectStatus[]).map(s => (
-                                        <button key={s} type="button" onClick={() => setStatus(s)}
-                                            className={`flex-1 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${status === s ? 'bg-blue-500 text-white shadow' : 'text-sec hover:text-primary'}`}>
-                                            {s}
-                                        </button>
-                                    ))}
-                                </div>
+                                <Select
+                                    value={status}
+                                    options={PROJECT_STATUSES.map(m => ({ value: m.id, label: m.label, hint: m.hint }))}
+                                    onChange={(v) => setStatus(v as ProjectStatus)}
+                                    isDark={isDark}
+                                    searchable={false}
+                                    aria-label="Project status"
+                                />
+                                {!statusMeta(status).publicly && (
+                                    <p className="text-[11px] text-sec mt-1.5 m-0">Not shown on your public site.</p>
+                                )}
                             </div>
             <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -470,10 +480,24 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                                     <DatePicker value={endDate} onChange={setEndDate} isDark={isDark} placeholder="Not ended" />
                                 </div>
                             </div>
-                            <div className="flex items-center gap-3 select-none">
-                                <Toggle checked={done} onChange={setDone} aria-label="Mark as done" />
-                                <span className="text-sm text-primary font-medium">Mark as done (sets the end date)</span>
-                            </div>
+                            {status === 'paused' && (
+                                <div>
+                                    <label className={labelCls}>Paused since</label>
+                                    <DatePicker value={pausedAt} onChange={setPausedAt} isDark={isDark} placeholder="Today" />
+                                </div>
+                            )}
+                            {status === 'closed' && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className={labelCls}>Closed on</label>
+                                        <DatePicker value={closedAt} onChange={setClosedAt} isDark={isDark} placeholder="Today" />
+                                    </div>
+                                    <div>
+                                        <label className={labelCls}>Why it ended</label>
+                                        <input className={inputCls} value={closedReason} onChange={e => setClosedReason(e.target.value)} placeholder="Optional - private note" />
+                                    </div>
+                                </div>
+                            )}
                         </>
                     )}
 

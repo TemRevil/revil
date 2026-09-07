@@ -23,6 +23,7 @@ import {
     projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome, convert,
     nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
     hasInstallments, installmentMonthlyAmount, installmentsPaidCount, projectContractTotal,
+    ProjectStatus, PROJECT_STATUSES, statusMeta, isFinished, isOngoing, normalizeProject,
 } from '../../lib/treasury';
 import RollingNumber from '../RollingNumber';
 import MTreasuryEntry from './M-TreasuryEntry';
@@ -337,9 +338,9 @@ const DTreasury = () => {
 
         const attach = () => {
             unsubs.push(onSnapshot(PROJECTS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryProject, 'id'>>;
+                const entries = (snap.data()?.entries || {}) as Record<string, Record<string, unknown>>;
                 const projects = Object.entries(entries)
-                    .map(([id, p], i) => ({ id, ...p, order: p.order ?? i } as TreasuryProject))
+                    .map(([id, p], i) => normalizeProject(id, p, i))
                     .sort((a, b) => a.order - b.order);
                 setData(prev => ({ ...prev, projects }));
                 setLoading(false);
@@ -399,9 +400,11 @@ const DTreasury = () => {
 
     // Mirror only the public subset (name/status/notes/order) of the still-handled
     // projects to the PUBLIC Settings/HandledProjects doc the homepage Hero reads.
-    // Prices/earnings stay in the admin-only Treasury collection.
+    // Prices/earnings stay in the admin-only Treasury collection, and so does work
+    // that stopped: paused and closed are marked private in PROJECT_STATUSES, so a
+    // client never reads either word beside their own project name.
     const mirrorPublic = useCallback((projects: TreasuryProject[]) => {
-        const handled = projects.filter(p => !p.done).sort((a, b) => a.order - b.order);
+        const handled = projects.filter(p => statusMeta(p.status).publicly).sort((a, b) => a.order - b.order);
         const map: Record<string, { name: string; status: string; description: string; order: number }> = {};
         handled.forEach((p, i) => { map[p.id] = { name: p.name, status: p.status, description: p.notes || '', order: i }; });
         setDoc(HANDLED_PUBLIC_DOC, { projects: map, lastWrite: serverTimestamp() }).catch(() => { });
@@ -510,10 +513,28 @@ const DTreasury = () => {
     // Delete needs the full-doc rewrite (merge can't remove a map key on its own).
     const deleteAccount = (id: string) => writeAccounts(data.accounts.filter(a => a.id !== id));
 
-    const markDone = (p: TreasuryProject) => {
+    /**
+     * Move a project to a status, stamping the date that status is about.
+     *
+     * Each stamp is written once and then left alone: re-entering a status keeps
+     * the original date rather than resetting it, so "paused since March" doesn't
+     * silently become today the next time the card is touched. Clearing a stamp is
+     * deliberate - leaving 'closed' for live work drops closedAt, because a project
+     * that is running again was plainly not closed on that date after all.
+     */
+    const setProjectStatus = (p: TreasuryProject, status: ProjectStatus) => {
+        if (status === p.status) return;
         const today = new Date().toISOString().slice(0, 10);
-        saveProject({ ...p, done: !p.done, status: (!p.done ? 'completed' : p.status) as TreasuryProject['status'], endDate: !p.done ? (p.endDate || today) : p.endDate });
-        showToast(!p.done ? `"${p.name}" marked done` : `"${p.name}" reopened`, !p.done ? 'good' : 'info');
+        const meta = statusMeta(status);
+        const next: TreasuryProject = { ...p, status };
+
+        next.endDate = meta.finished ? (p.endDate || today) : null;
+        if (status === 'paused') next.pausedAt = p.pausedAt || today;
+        if (status === 'closed') next.closedAt = p.closedAt || today;
+        else { next.closedAt = null; next.closedReason = ''; }
+
+        saveProject(next);
+        showToast(`"${p.name}" is now ${meta.label.toLowerCase()}`, meta.finished ? 'good' : 'info');
     };
 
     // -- staged settings (Save / Discard) -------------------------------------
@@ -572,7 +593,7 @@ const DTreasury = () => {
     }, [loading, settingsLoaded]);
 
     const handleReorderActive = (newActive: TreasuryProject[]) => {
-        const completed = data.projects.filter(p => p.done);
+        const completed = data.projects.filter(isFinished);
         const merged = [...newActive, ...completed].map((p, idx) => ({ ...p, order: idx }));
         setData(d => ({ ...d, projects: merged }));
     };
@@ -595,8 +616,8 @@ const DTreasury = () => {
     const cur = data.config.displayCurrency;
     const dailySeries = useMemo(() => buildDailySeries(data), [data]);
 
-    const activeProjects = useMemo(() => data.projects.filter(p => !p.done), [data.projects]);
-    const completedProjects = useMemo(() => data.projects.filter(p => p.done), [data.projects]);
+    const activeProjects = useMemo(() => data.projects.filter(isOngoing), [data.projects]);
+    const completedProjects = useMemo(() => data.projects.filter(isFinished), [data.projects]);
 
     const liveAccounts = useMemo(() => accountOptions(data.accounts), [data.accounts]);
     const archivedAccounts = useMemo(() => data.accounts.filter(a => a.archived), [data.accounts]);
@@ -678,7 +699,7 @@ const DTreasury = () => {
         { label: 'Net profit', value: totals.net, icon: Wallet, color: totals.net >= 0 ? '#22c55e' : '#f43f5e' },
     ];
 
-    const statusColor = (s: string) => s === 'completed' ? '#22c55e' : s === 'pending' ? '#f59e0b' : '#3b82f6';
+    const statusColor = (s: string) => statusMeta(s).color;
     const payColor: Record<string, string> = { paid: '#22c55e', partial: '#f59e0b', unpaid: '#f43f5e' };
 
     const TABS: { id: Tab; label: string; icon: typeof Wallet }[] = [
@@ -885,7 +906,7 @@ const DTreasury = () => {
                                         'Active projects',
                                         <button onClick={() => setModal({ mode: 'project', project: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Project</button>
                                     )}
-                                    <p className="text-xs text-sec -mt-2">Drag cards to reorder - active & pending projects. Click a card to focus details.</p>
+                                    <p className="text-xs text-sec -mt-2">Drag cards to reorder - everything not finished. Click a card to focus details.</p>
                                     
                                     {activeProjects.length === 0 ? (
                                         <div className="border-2 border-dashed border-input-border rounded-2xl p-8 text-center text-sec text-sm">No active projects. Click "+ Project" to add one.</div>
@@ -918,7 +939,7 @@ const DTreasury = () => {
                                                             <button onClick={(e) => { e.stopPropagation(); setModal({ mode: 'project', project: p }); }} className="p-1.5 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-colors"><Pencil size={14} /></button>
                                                         </div>
                                                         <div className="flex items-center gap-1.5 flex-wrap">
-                                                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${statusColor(p.status)}22`, color: statusColor(p.status) }}>{p.status}</span>
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${statusColor(p.status)}22`, color: statusColor(p.status) }}>{statusMeta(p.status).label}</span>
                                                             {p.monthly
                                                                 ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#10b98122', color: '#10b981' }}>monthly</span>
                                                                 : <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${payColor[pay]}22`, color: payColor[pay] }}>{pay}</span>}
@@ -934,7 +955,7 @@ const DTreasury = () => {
                                                             {!p.monthly && bal > 0 && <p className="text-[10.5px] text-amber-500 font-semibold leading-tight mt-0.5">{formatMoney(bal, p.priceCurrency)} to collect</p>}
                                                             {p.monthly && (() => { const np = projectNextPaymentDate(p, data.income); return np ? <p className="text-[10.5px] text-sec font-semibold leading-tight mt-0.5">next {new Date(`${np}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p> : null; })()}
                                                         </div>
-                                                        <div className="text-[10.5px] text-sec flex items-center gap-1 mt-auto pt-2"><Clock size={11} /><span>{p.startDate || '-'}{p.endDate ? ` → ${p.endDate}` : p.done ? '' : ' → ongoing'}</span></div>
+                                                        <div className="text-[10.5px] text-sec flex items-center gap-1 mt-auto pt-2"><Clock size={11} /><span>{p.startDate || '-'}{p.endDate ? ` → ${p.endDate}` : isFinished(p) ? '' : ' → ongoing'}</span></div>
                                                     </Reorder.Item>
                                                 );
                                             })}
@@ -954,7 +975,7 @@ const DTreasury = () => {
                                                         <h3 className="text-lg font-black text-primary truncate mt-0.5" title={focusedProject.name}>{focusedProject.name}</h3>
                                                         {focusedProject.client && <p className="text-xs text-sec truncate">{focusedProject.client}</p>}
                                                     </div>
-                                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full" style={{ background: `${statusColor(focusedProject.status)}22`, color: statusColor(focusedProject.status) }}>{focusedProject.status}</span>
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full" style={{ background: `${statusColor(focusedProject.status)}22`, color: statusColor(focusedProject.status) }}>{statusMeta(focusedProject.status).label}</span>
                                                 </div>
 
                                                 {/* Progress Tracker */}
@@ -1064,10 +1085,27 @@ const DTreasury = () => {
                                                     <button onClick={() => setModal({ mode: 'income', income: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-all"><Plus size={14} /> Log income</button>
                                                     <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <button onClick={() => markDone(focusedProject)} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all ${focusedProject.done ? 'bg-green-500/15 text-green-500' : 'bg-blue-500/10 text-blue-500 hover:bg-blue-500/15'}`}><CheckCircle2 size={14} /> {focusedProject.done ? 'Reopen' : 'Mark Done'}</button>
-                                                    <button onClick={() => setReceiptFor(focusedProject.id)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-primary bg-black/[0.05] dark:bg-white/[0.07] hover:bg-black/[0.09] dark:hover:bg-white/[0.11] transition-all"><Receipt size={14} /> Receipt</button>
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sec"><CheckCircle2 size={12} /> Status</div>
+                                                    <Select
+                                                        value={focusedProject.status}
+                                                        options={PROJECT_STATUSES.map(m => ({ value: m.id, label: m.label, hint: m.hint }))}
+                                                        onChange={(v) => setProjectStatus(focusedProject, v as ProjectStatus)}
+                                                        isDark={isDark}
+                                                        searchable={false}
+                                                        aria-label="Project status"
+                                                    />
+                                                    {/* The stamp for whichever status the project is actually in. */}
+                                                    {focusedProject.status === 'paused' && focusedProject.pausedAt && (
+                                                        <p className="text-[11px] text-sec m-0">Paused since {focusedProject.pausedAt}</p>
+                                                    )}
+                                                    {focusedProject.status === 'closed' && (
+                                                        <p className="text-[11px] text-sec m-0">
+                                                            Closed {focusedProject.closedAt || '-'}{focusedProject.closedReason ? ` - ${focusedProject.closedReason}` : ''}
+                                                        </p>
+                                                    )}
                                                 </div>
+                                                <button onClick={() => setReceiptFor(focusedProject.id)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-primary bg-black/[0.05] dark:bg-white/[0.07] hover:bg-black/[0.09] dark:hover:bg-white/[0.11] transition-all"><Receipt size={14} /> Receipt</button>
                                             </div>
                                         </div>
                                     ) : (
@@ -1115,8 +1153,9 @@ const DTreasury = () => {
                                                                     <span className="font-bold text-primary tnum">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}</span>
                                                                     {received > 0 && <span className="text-[10px] text-emerald-500 font-semibold tnum">paid</span>}
                                                                 </div>
-                                                                <div className="text-[10px] text-sec flex items-center gap-1 mt-1"><Clock size={11} /><span>Completed {p.endDate || '-'}</span></div>
-                                                                <button onClick={(e) => { e.stopPropagation(); markDone(p); }} className="mt-2 py-1.5 rounded-lg text-[10px] font-bold bg-blue-500/10 text-blue-500 hover:bg-blue-500/15 transition-all w-fit px-3">Reopen</button>
+                                                                {/* This list holds both endings, so it says which one this was. */}
+                                                                <div className="text-[10px] text-sec flex items-center gap-1 mt-1"><Clock size={11} /><span>{statusMeta(p.status).label} {p.endDate || '-'}</span></div>
+                                                                <button onClick={(e) => { e.stopPropagation(); setProjectStatus(p, 'active'); }} className="mt-2 py-1.5 rounded-lg text-[10px] font-bold bg-blue-500/10 text-blue-500 hover:bg-blue-500/15 transition-all w-fit px-3">Reopen</button>
                                                             </div>
                                                         );
                                                     })}

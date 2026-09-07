@@ -180,7 +180,7 @@ const DEFAULT_RATES: Rates = { USD: 1, EGP: 48, EUR: 0.92 };
 interface Account { id?: string; name?: string; type?: string; currency: string; openingBalance?: number; archived?: boolean; order?: number; createdAt?: number; notes?: string; }
 interface Income { id?: string; amount?: number; currency: string; date?: string; note?: string; projectId?: string; accountId?: string; monthlyPayment?: boolean; createdAt?: number; }
 interface Expense { id?: string; label?: string; amount?: number; currency: string; category?: string; date?: string; recurring?: boolean; projectId?: string; accountId?: string; clientPaid?: boolean; notes?: string; createdAt?: number; }
-interface Project { id?: string; name?: string; client?: string; clientEmail?: string; monthly?: boolean; priceAmount?: number; priceCurrency: string; paidAmount?: number; nextPaymentDate?: string; startDate?: string; installmentMonths?: number; installmentPercent?: number; }
+interface Project { id?: string; name?: string; client?: string; clientEmail?: string; monthly?: boolean; priceAmount?: number; priceCurrency: string; paidAmount?: number; nextPaymentDate?: string; startDate?: string; endDate?: string | null; pausedAt?: string | null; closedAt?: string | null; closedReason?: string; status?: string; installmentMonths?: number; installmentPercent?: number; }
 interface TreasurySettings { rates?: Rates; [k: string]: unknown; }
 
 /** Convert between currencies using units-per-USD rates. */
@@ -1360,7 +1360,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         clientEmail: z.string().email().optional().describe("customer email - where receipts are sent"),
         price: z.number().describe("contracted price; the per-MONTH rate when monthly=true"),
         currency: z.enum(["USD", "EGP", "EUR"]),
-        status: z.enum(["active", "pending", "completed"]).optional().describe("defaults to active"),
+        status: z.enum(["pending", "active", "paused", "live", "completed", "closed"]).optional()
+          .describe("defaults to active. " + "pending = agreed but not started, active = being worked on, paused = development stopped for now, live = delivered and still maintained, completed = finished and handed over, closed = ended without finishing. paused and closed are PRIVATE - they never appear on the public site."),
         monthly: z.boolean().optional().describe("open-ended retainer: price is charged every month"),
         installmentMonths: z.number().int().min(2).max(24).optional().describe("split the fixed price over this many months"),
         installmentPercent: z.number().min(0).max(100).optional().describe("extra charge as a % of the WHOLE price"),
@@ -1396,7 +1397,6 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         ...(a.notes ? { notes: a.notes } : {}),
         startDate: a.startDate || null,
         endDate: null,
-        done: false,
         order: Object.keys(existing).length,
         createdAt: now(),
       };
@@ -1433,13 +1433,14 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         clientEmail: z.string().email().optional().describe("customer email - where receipts are sent"),
         price: z.number().optional().describe("contracted price; the per-MONTH rate when monthly=true"),
         currency: z.enum(["USD", "EGP", "EUR"]).optional(),
-        status: z.enum(["active", "pending", "completed"]).optional(),
+        status: z.enum(["pending", "active", "paused", "live", "completed", "closed"]).optional()
+          .describe("pending = agreed but not started, active = being worked on, paused = development stopped for now, live = delivered and still maintained, completed = finished and handed over, closed = ended without finishing. paused and closed are PRIVATE - they never appear on the public site." + " Setting paused or closed stamps the date it happened."),
         monthly: z.boolean().optional().describe("open-ended retainer"),
         installmentMonths: z.number().int().min(0).max(24).optional().describe("2-24 sets a plan; 0 clears it"),
         installmentPercent: z.number().min(0).max(100).optional().describe("extra charge as a % of the WHOLE price"),
         startDate: z.string().optional().describe("YYYY-MM-DD"),
         notes: z.string().optional(),
-        done: z.boolean().optional(),
+        closedReason: z.string().optional().describe("why it ended - only meaningful with status 'closed'"),
       },
       annotations: { destructiveHint: false },
     },
@@ -1460,7 +1461,17 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       if (a.monthly !== undefined) patch.monthly = a.monthly;
       if (a.startDate !== undefined) patch.startDate = a.startDate;
       if (a.notes !== undefined) patch.notes = a.notes;
-      if (a.done !== undefined) patch.done = a.done;
+      if (a.closedReason !== undefined) patch.closedReason = a.closedReason;
+      // Moving to a status that is *about* a moment stamps that moment, once. An
+      // existing stamp is kept, so re-confirming a pause doesn't move its date.
+      if (a.status !== undefined) {
+        const finished = a.status === "completed" || a.status === "closed";
+        if (finished && !cur.endDate) patch.endDate = time.date;
+        if (a.status === "paused" && !cur.pausedAt) patch.pausedAt = time.date;
+        if (a.status === "closed" && !cur.closedAt) patch.closedAt = time.date;
+        if (a.status !== "closed") { patch.closedAt = null; patch.closedReason = ""; }
+        if (!finished) patch.endDate = null;
+      }
       // 0/1 clears the plan. Written as 0 rather than deleted so a merge can express it.
       if (a.installmentMonths !== undefined) {
         const m = a.installmentMonths > 1 ? a.installmentMonths : 0;

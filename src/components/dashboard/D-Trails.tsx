@@ -1103,6 +1103,14 @@ const DTrails = () => {
     };
 
     // ── render ───────────────────────────────────────────────────────────
+    // Sits beside the tabs. The tab is the title; this only adds what the tab
+    // can't say, which is what you are looking at right now.
+    const viewCaption = view === 'stories'
+        ? 'Every visit, in the order it happened'
+        : view === 'links'
+            ? 'Private doors into the portfolio, one per person'
+            : dailySeries.length ? `Since ${dailySeries[0].date}` : 'Nothing recorded yet';
+
     const counters = [
         { label: 'Visits', value: totals?.Sessions ?? 0, icon: <Footprints size={18} />, tint: '#3b82f6' },
         { label: 'People', value: totals?.Visitors ?? 0, icon: <Users size={18} />, tint: '#10b981' },
@@ -1114,8 +1122,9 @@ const DTrails = () => {
         <div className="flex flex-col gap-6 h-full overflow-y-auto lg:overflow-hidden p-1 sm:p-0">
             <Loader isOpen={isLoading} isFullScreen={true} />
 
-            {/* view switcher */}
-            <div className="flex items-center gap-3 flex-wrap">
+            {/* One header row - tabs, what you're looking at, and the live pill.
+                Everything below it is content. */}
+            <div className="flex items-center gap-x-3 gap-y-2 flex-wrap shrink-0">
                 <div className="flex overflow-x-auto" style={{
                     gap: isExtraSmall ? '4px' : '6px',
                     backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
@@ -1167,6 +1176,9 @@ const DTrails = () => {
                         {liveCount} reading now
                     </button>
                 )}
+
+                {/* Hidden on the narrowest screens, where the tabs already fill the row. */}
+                <p className="text-muted text-sm m-0 hidden md:block ml-auto text-right">{viewCaption}</p>
             </div>
 
             <div className="flex-1 min-h-0">
@@ -1183,12 +1195,7 @@ const DTrails = () => {
                             <div className="flex flex-col h-full min-h-0">
                                 {/* The title, the filters and the search stay put. Only the
                                     rows underneath move, which is the thing you are reading. */}
-                                <div className="shrink-0 flex flex-col gap-5 pb-5">
-                                    <div className="flex flex-col gap-1">
-                                        <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Stories</h1>
-                                        <p className="text-muted text-sm">Every visit, in the order it happened</p>
-                                    </div>
-
+                                <div className="shrink-0 flex flex-col gap-4 pb-4">
                                     {/* filters */}
                                     <div className="flex items-center gap-3 flex-wrap">
                                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -1362,13 +1369,6 @@ const DTrails = () => {
 
                         {view === 'overview' && (
                             <div className="flex flex-col h-full min-h-0 w-full">
-                                <div className="shrink-0 flex flex-col gap-1 pb-8">
-                                    <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Overview</h1>
-                                    <p className="text-muted text-sm">
-                                        {dailySeries.length ? `Since ${dailySeries[0].date}` : 'Nothing recorded yet'}
-                                    </p>
-                                </div>
-
                                 <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-12">
                                     <div className="flex flex-col gap-8 w-full">
                                         <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${windowWidth < 520 ? 140 : 180}px, 1fr))` }}>
@@ -1484,11 +1484,6 @@ const DTrails = () => {
 
                         {view === 'links' && (
                             <div className="flex flex-col h-full min-h-0">
-                                <div className="shrink-0 flex flex-col gap-1 pb-8">
-                                    <h1 className="heading-lg m-0 text-2xl sm:text-3xl">Links</h1>
-                                    <p className="text-muted text-sm">Private doors into the portfolio, one per person</p>
-                                </div>
-
                                 <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-12">
                                     <div className="grid gap-6 items-start" style={{
                                         gridTemplateColumns: windowWidth >= 1100 ? 'minmax(0, 320px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
