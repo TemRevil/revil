@@ -267,7 +267,7 @@ FIRESTORE STRUCTURE (you are admin and can read everything; paths are case-sensi
     • Treasury/income    - { entries: { id: { amount, currency, date, projectId?, note?, createdAt } } }. Money received; date = when it arrived; projectId optionally links it to a project. To record a payment, add an income entry here (don't edit paidAmount).
     • Treasury/spendings - { entries: { id: { label, amount, currency, category, date, recurring, projectId?, notes, createdAt } } }. Expenses; recurring:true = a monthly fee; projectId optionally ties the fee to a project.
     • Treasury/settings  - { defaultCurrency, displayCurrency, rates, ratesUpdatedAt }.
-- Settings/HandledProjects - PUBLIC, sanitized mirror of Treasury/projects shown on the homepage: { projects: { id: { name, status, description, order } } }. It has NO money fields and is auto-written from Treasury - don't edit it directly; change Treasury/projects instead.
+- Settings/HandledProjects - PUBLIC, sanitized mirror of Treasury/projects shown on the homepage: { projects: { id: { name, status, order } } }. It has NO money fields and no notes (a project's notes are private) - it is auto-written from Treasury, so don't edit it directly; change Treasury/projects instead.
 - Settings/Developer, Settings/"Tech Stack" - developer info and tech-stack items.
 - Analytics/ - visit analytics, READ-ONLY for you and for every client: only the trackSession Cloud Function may write here.
     - Analytics/Sessions/Items/{id} - one document per visit: Geo, Device, Entry, Sections, Projects, Socials, Contact, Events (an ordered timeline), ActiveMs vs OpenMs.

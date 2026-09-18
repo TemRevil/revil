@@ -133,7 +133,6 @@ const HandwritingText = ({
 interface HeroProject {
     name?: string;
     status?: string;
-    description?: string;
     order?: number;
 }
 
@@ -143,7 +142,8 @@ interface AvailabilityData {
 }
 
 // Public sanitized handled-projects mirror (Settings/HandledProjects), written
-// by the admin Treasury page. Holds name/status only - never prices.
+// by the admin Treasury page. Holds name/status only - never prices, and never
+// the project's notes, which are private to the dashboard.
 interface HandledData {
     projects?: Record<string, HeroProject>;
 }
@@ -418,11 +418,6 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
                                     {p.status || 'Active'}
                                 </span>
                             </div>
-                            {p.description && (
-                                <p className="text-[12px] text-muted leading-snug italic font-medium">
-                                    {p.description}
-                                </p>
-                            )}
                         </div>
                     ))}
                     {restCount > 0 && (

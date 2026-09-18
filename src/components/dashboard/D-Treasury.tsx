@@ -407,15 +407,22 @@ const DTreasury = () => {
         showAlert({ type, message: text });
     }, [showAlert]);
 
-    // Mirror only the public subset (name/status/notes/order) of the still-handled
+    // Mirror only the public subset (name/status/order) of the still-handled
     // projects to the PUBLIC Settings/HandledProjects doc the homepage Hero reads.
     // Prices/earnings stay in the admin-only Treasury collection, and so does work
     // that stopped: paused and closed are marked private in PROJECT_STATUSES, so a
     // client never reads either word beside their own project name.
+    //
+    // Notes are NOT mirrored. They used to ride along as the homepage's project
+    // description while the editor labelled the box plainly "Notes", so anything
+    // written there - a client's budget, why a job went sideways - was published
+    // without anyone being told. A project note is now private, full stop.
     const mirrorPublic = useCallback((projects: TreasuryProject[]) => {
         const handled = projects.filter(p => statusMeta(p.status).publicly).sort((a, b) => a.order - b.order);
-        const map: Record<string, { name: string; status: string; description: string; order: number }> = {};
-        handled.forEach((p, i) => { map[p.id] = { name: p.name, status: p.status, description: p.notes || '', order: i }; });
+        const map: Record<string, { name: string; status: string; order: number }> = {};
+        handled.forEach((p, i) => { map[p.id] = { name: p.name, status: p.status, order: i }; });
+        // Replaces the whole doc rather than merging, so a description written by an
+        // older build is dropped on the next save instead of lingering in public.
         setDoc(HANDLED_PUBLIC_DOC, { projects: map, lastWrite: serverTimestamp() }).catch(() => { });
     }, []);
 
