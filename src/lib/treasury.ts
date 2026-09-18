@@ -778,12 +778,53 @@ export function buildDailySeries(data: TreasuryData): DaySeriesPoint[] {
 }
 
 // ---------------------------------------------------------------------------
-// Insights - money suggestions surfaced on the page
+// Insights - the Suggestions panel
 // ---------------------------------------------------------------------------
 
-export type InsightTone = 'good' | 'warn' | 'info';
-export type InsightIcon = 'outstanding' | 'invoice' | 'ratio' | 'profit' | 'loss' | 'noprice' | 'running' | 'recurring' | 'empty';
-export interface Insight { tone: InsightTone; icon: InsightIcon; label: string; text: string; }
+/**
+ * How loudly a suggestion asks for attention.
+ *
+ * `urgent` is reserved for money that is already late or an account in the red -
+ * things costing you today. `warn` is a decision waiting on you. `good` is
+ * confirmation, `info` is context. The panel sorts on this, so the top row is
+ * always the thing most worth doing.
+ */
+export type InsightTone = 'urgent' | 'warn' | 'good' | 'info';
+
+export type InsightIcon =
+    | 'overdue' | 'outstanding' | 'invoice' | 'installment' | 'paused' | 'closed'
+    | 'live' | 'pending' | 'running' | 'ratio' | 'profit' | 'loss' | 'runway'
+    | 'account' | 'noprice' | 'recurring' | 'client' | 'unlinked' | 'email'
+    | 'rates' | 'empty';
+
+/** The Treasury tabs a suggestion can send you to - same ids the dashboard uses. */
+export type InsightTab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
+
+/** Where acting on a suggestion takes you. A suggestion without one is just context. */
+export interface InsightAction {
+    tab: InsightTab;
+    /** Focus this project once the tab opens. */
+    projectId?: string;
+    label: string;
+}
+
+export interface Insight {
+    /** Stable across rebuilds, so a re-render never shuffles the list under a click. */
+    id: string;
+    tone: InsightTone;
+    icon: InsightIcon;
+    /** Two or three words - the eyebrow above the sentence. */
+    label: string;
+    text: string;
+    /** The one figure the row is about, pulled out so the eye can scan the column. */
+    value?: string;
+    action?: InsightAction;
+}
+
+/** At most this many rows from any single check, so one bad month can't fill the panel. */
+const PER_CHECK = 2;
+/** Hard ceiling on the panel. Anything past this is noise, not advice. */
+const MAX_INSIGHTS = 12;
 
 function daysBetween(from: string | null | undefined, to: Date): number | null {
     if (!from) return null;
@@ -792,79 +833,423 @@ function daysBetween(from: string | null | undefined, to: Date): number | null {
     return Math.floor((to.getTime() - d.getTime()) / 86400000);
 }
 
+/** Whole months from a date to now, counting only months that have fully elapsed. */
+function monthsSince(from: string | null | undefined, to: Date): number | null {
+    if (!from) return null;
+    const d = new Date(`${from}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return null;
+    let m = (to.getFullYear() - d.getFullYear()) * 12 + (to.getMonth() - d.getMonth());
+    if (to.getDate() < d.getDate()) m -= 1;
+    return Math.max(0, m);
+}
+
+/** "9 days", "5 weeks", "7 months" - a duration you read rather than count. */
+function spanLabel(days: number): string {
+    if (days < 14) return `${days} day${days === 1 ? '' : 's'}`;
+    if (days < 60) return `${Math.round(days / 7)} weeks`;
+    return `${Math.round(days / 30)} months`;
+}
+
+/** "Sep 7" - a date said the way a person would say it. */
+function dateLabel(s: string): string {
+    const d = new Date(`${s}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return s;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Everything the Suggestions panel knows how to notice.
+ *
+ * The checks are deliberately status-aware: a paused project is meant to sit
+ * still, so it is never nagged for being idle - it is asked whether it is coming
+ * back. A closed one is never asked to finish; it is asked whether the unbilled
+ * work gets invoiced or written off. A live one is asked whether the upkeep
+ * should be earning monthly. What each status means lives once, in
+ * PROJECT_STATUSES, and is read from there.
+ */
 export function buildInsights(data: TreasuryData): Insight[] {
     const out: Insight[] = [];
     const t = computeTotals(data);
     const cur = data.config.displayCurrency;
     const rates = data.config.rates;
     const now = new Date();
+    const today = ymd(now);
+    const money = (n: number) => formatMoney(n, cur);
+    /** What a project still owes, in the display currency. */
+    const owed = (p: TreasuryProject) => convert(projectBalance(p, data.income, rates), p.priceCurrency, cur, rates);
 
-    // Outstanding receivables
-    const owing = data.projects.filter(p => projectBalance(p, data.income, rates) > 0);
-    if (t.outstanding > 0) {
+    const income = data.income || [];
+    const accounts = (data.accounts || []).filter(a => !a.archived);
+    // Only work that is genuinely running bills on a schedule. Pending has not
+    // started and paused has stopped, so chasing either for this month's money
+    // would be nagging about a decision that has already been taken.
+    const billing = (p: TreasuryProject) => p.status === 'active' || p.status === 'live';
+
+    // -- Late money -----------------------------------------------------------
+    // A retainer whose due date has passed. First, because it is the only kind of
+    // suggestion that gets more expensive the longer it sits here.
+    const lateRetainers = data.projects
+        .filter(p => p.monthly && billing(p))
+        .map(p => ({ p, due: projectNextPaymentDate(p, income) }))
+        .filter((x): x is { p: TreasuryProject; due: string } => !!x.due && x.due < today)
+        .sort((a, b) => a.due.localeCompare(b.due));
+    for (const { p, due } of lateRetainers.slice(0, PER_CHECK)) {
         out.push({
-            tone: 'warn', icon: 'outstanding', label: 'Outstanding',
-            text: `${formatMoney(t.outstanding, cur)} owed across ${owing.length} project${owing.length === 1 ? '' : 's'} - consider following up.`,
+            id: `retainer-late-${p.id}`, tone: 'urgent', icon: 'overdue', label: 'Payment overdue',
+            value: formatMoney(p.priceAmount, p.priceCurrency),
+            text: `"${p.name}" was due ${dateLabel(due)}, ${spanLabel(daysBetween(due, now) ?? 0)} ago - log the payment or chase it.`,
+            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
+        });
+    }
+    if (lateRetainers.length > PER_CHECK) {
+        out.push({
+            id: 'retainer-late-more', tone: 'urgent', icon: 'overdue', label: 'Also overdue',
+            text: `${plural(lateRetainers.length - PER_CHECK, 'other retainer')} past due as well.`,
+            action: { tab: 'projects', label: 'See projects' },
         });
     }
 
-    // Done but not fully paid → invoice it
-    const doneUnpaid = data.projects.filter(p => isFinished(p) && projectPaymentStatus(p, data.income, rates) !== 'paid' && p.priceAmount > 0);
-    for (const p of doneUnpaid.slice(0, 2)) {
-        out.push({ tone: 'warn', icon: 'invoice', label: 'Invoice due', text: `"${p.name}" is finished but still ${projectPaymentStatus(p, data.income, rates)} - time to invoice the rest.` });
-    }
-
-    // Spend ratio
-    if (t.earned > 0 && t.spent > 0) {
-        const pct = Math.round((t.spent / t.earned) * 100);
+    // An account in the red is an overdraft, not an estimate.
+    const overdrawn = accounts
+        .map(a => ({ a, bal: accountBalance(a, income, data.expenses, rates) }))
+        .filter(x => x.bal < 0)
+        .sort((x, y) => x.bal - y.bal);
+    for (const { a, bal } of overdrawn.slice(0, PER_CHECK)) {
         out.push({
-            tone: pct > 60 ? 'warn' : 'info', icon: 'ratio', label: 'Spend ratio',
-            text: `Spendings are ${pct}% of what you've earned${pct > 60 ? ' - margins are thin.' : '.'}`,
+            id: `account-negative-${a.id}`, tone: 'urgent', icon: 'account', label: 'Overdrawn',
+            value: `${formatMoney(Math.abs(bal), a.currency)} down`,
+            text: `"${a.name}" is overdrawn - move money in, or re-check what was paid from it.`,
+            action: { tab: 'accounts', label: 'Open accounts' },
         });
     }
+
     if (t.net < 0) {
-        out.push({ tone: 'warn', icon: 'loss', label: 'Net negative', text: `You're down ${formatMoney(Math.abs(t.net), cur)} - spendings exceed received income.` });
-    } else if (t.earned > 0) {
-        out.push({ tone: 'good', icon: 'profit', label: 'Net profit', text: `You're up ${formatMoney(t.net, cur)} after spendings.` });
+        out.push({
+            id: 'net-negative', tone: 'urgent', icon: 'loss', label: 'Net negative',
+            value: money(Math.abs(t.net)),
+            text: 'Spendings exceed everything received - that is the size of the gap.',
+            action: { tab: 'money', label: 'Review spending' },
+        });
     }
 
-    // Monthly retainer income
-    const retainers = data.projects.filter(p => p.monthly && isOngoing(p) && p.priceAmount > 0);
+    // -- Decisions waiting on you ---------------------------------------------
+    // An installment plan that has fallen behind its own schedule.
+    const behindPlans = data.projects
+        .filter(p => hasInstallments(p) && billing(p) && p.startDate && owed(p) > 0)
+        .map(p => {
+            const elapsed = monthsSince(p.startDate, now);
+            const dueCount = elapsed === null ? 0 : Math.min(p.installmentMonths || 0, elapsed + 1);
+            const paid = installmentsPaidCount(p, income, rates);
+            return { p, dueCount, paid, short: dueCount - paid };
+        })
+        .filter(x => x.short > 0)
+        .sort((a, b) => b.short - a.short);
+    for (const { p, dueCount, paid, short } of behindPlans.slice(0, PER_CHECK)) {
+        out.push({
+            id: `plan-behind-${p.id}`, tone: 'warn', icon: 'installment', label: 'Plan behind',
+            value: formatMoney(installmentMonthlyAmount(p) * short, p.priceCurrency),
+            text: paid === 0
+                ? `"${p.name}" has paid none of its ${p.installmentMonths} installments, and ${dueCount} ${dueCount === 1 ? 'is' : 'are'} due by now.`
+                : `"${p.name}" is on installment ${paid} of ${p.installmentMonths}, but ${dueCount} ${dueCount === 1 ? 'is' : 'are'} due by now.`,
+            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
+        });
+    }
+
+    // Work that ended and was never fully billed. Completed and closed mean
+    // different things, so they are asked different questions.
+    const unbilled = data.projects
+        .filter(p => isFinished(p) && p.priceAmount > 0 && owed(p) > 0)
+        .sort((a, b) => owed(b) - owed(a));
+    for (const p of unbilled.filter(x => x.status === 'completed').slice(0, PER_CHECK)) {
+        out.push({
+            id: `invoice-${p.id}`, tone: 'warn', icon: 'invoice', label: 'Invoice due',
+            value: formatMoney(projectBalance(p, income, rates), p.priceCurrency),
+            text: `"${p.name}" is finished and still ${projectPaymentStatus(p, income, rates)} - invoice the rest.`,
+            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
+        });
+    }
+    for (const p of unbilled.filter(x => x.status === 'closed').slice(0, PER_CHECK)) {
+        const when = p.closedAt || p.endDate;
+        out.push({
+            id: `closed-owing-${p.id}`, tone: 'warn', icon: 'closed', label: 'Closed, still owed',
+            value: formatMoney(projectBalance(p, income, rates), p.priceCurrency),
+            text: `"${p.name}" ended${when ? ` ${dateLabel(when)}` : ''} with money uncollected - bill for what shipped, or write it off.`,
+            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
+        });
+    }
+
+    // A pause is fine. A pause nobody has revisited in a month is a decision
+    // being avoided - especially with money still on the table.
+    const pausedIssues = data.projects
+        .filter(p => p.status === 'paused')
+        .map(p => ({ p, days: daysBetween(p.pausedAt, now), bal: owed(p) }))
+        // Worth raising when money is still owed, or when the pause itself has
+        // outlasted a month. A project paused before pausedAt was recorded has no
+        // duration at all, so it qualifies on the money alone.
+        // A paused retainer always qualifies: paused or not, it is a monthly fee
+        // that has stopped arriving, and that is worth one line whatever the balance.
+        .filter(x => x.p.monthly || x.bal > 0 || (x.days !== null && x.days >= 30))
+        .sort((a, b) => b.bal - a.bal || (b.days ?? 0) - (a.days ?? 0));
+    for (const { p, days, bal } of pausedIssues.slice(0, PER_CHECK)) {
+        const since = days !== null && days >= 30 ? ` ${spanLabel(days)} ago` : '';
+        out.push({
+            id: `paused-stale-${p.id}`, tone: bal > 0 ? 'warn' : 'info', icon: 'paused', label: 'Paused',
+            value: bal > 0 ? formatMoney(projectBalance(p, income, rates), p.priceCurrency) : undefined,
+            text: p.monthly
+                ? `"${p.name}" is a paused retainer${since ? `, stopped${since}` : ''}, so nothing is billing - resume it or close it.`
+                : `"${p.name}" was paused${since}${bal > 0 ? ' with money still owed' : ''} - resume it or close it.`,
+            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
+        });
+    }
+
+    // Outstanding across the board, with the biggest single debtor named - a
+    // total on its own tells you nothing about where to start.
+    // Monthly retainers have no fixed total, so computeTotals leaves them out of
+    // `outstanding` entirely. Counting them here would name a share of a total
+    // they were never part of - "the biggest at 100%" out of four projects.
+    const owing = data.projects.filter(p => !p.monthly && projectBalance(p, income, rates) > 0);
+    if (t.outstanding > 0 && owing.length) {
+        const top = [...owing].sort((a, b) => owed(b) - owed(a))[0];
+        const share = Math.round((owed(top) / t.outstanding) * 100);
+        out.push({
+            id: 'outstanding', tone: 'warn', icon: 'outstanding', label: 'Outstanding',
+            value: money(t.outstanding),
+            text: owing.length === 1
+                ? `All of it sits with "${top.name}".`
+                : `Owed across ${plural(owing.length, 'project')} - "${top.name}" is the biggest at ${share}%.`,
+            action: { tab: 'projects', projectId: top.id, label: 'Open biggest' },
+        });
+    }
+
+    // Runway: what the accounts hold, against what the last quarter actually burned.
+    const recentSpend = data.expenses
+        .filter(e => !e.clientPaid && (daysBetween(e.date, now) ?? 999) <= 90)
+        .reduce((s, e) => s + convert(e.amount || 0, e.currency, cur, rates), 0);
+    const monthlyBurn = recentSpend / 3;
+    const liquid = accounts.length ? accountsTotal(data) : 0;
+    const runwayMonths = monthlyBurn > 0 ? liquid / monthlyBurn : 0;
+    // Past a year and a half this stops being advice and starts being trivia, and
+    // an empty till is already said louder by the overdrawn row above.
+    if (liquid > 0 && monthlyBurn > 0 && runwayMonths < 18) {
+        out.push({
+            id: 'runway', tone: runwayMonths < 2 ? 'warn' : runwayMonths >= 6 ? 'good' : 'info', icon: 'runway', label: 'Runway',
+            value: `${runwayMonths < 10 ? runwayMonths.toFixed(1) : Math.round(runwayMonths)} mo`,
+            text: `Cash on hand covers about that long at your recent ${money(monthlyBurn)}/mo burn.`,
+            action: { tab: 'accounts', label: 'Open accounts' },
+        });
+    }
+
+    // -- Good news ------------------------------------------------------------
+    // Paused retainers are NOT expected income - that is what pausing one means.
+    const retainers = data.projects.filter(p => p.monthly && billing(p) && p.priceAmount > 0);
     if (retainers.length) {
         const perMonth = retainers.reduce((s, p) => s + convert(p.priceAmount, p.priceCurrency, cur, rates), 0);
-        out.push({ tone: 'good', icon: 'profit', label: 'Retainers', text: `${formatMoney(perMonth, cur)}/mo expected from ${retainers.length} monthly project${retainers.length === 1 ? '' : 's'}.` });
+        out.push({
+            id: 'retainers', tone: 'good', icon: 'recurring', label: 'Retainers',
+            value: `${money(perMonth)}/mo`,
+            text: `Expected every month from ${plural(retainers.length, 'monthly project')}.`,
+            action: { tab: 'projects', label: 'See projects' },
+        });
     }
 
-    // Missing prices
-    const noPrice = data.projects.filter(p => !p.priceAmount);
-    if (noPrice.length) {
-        out.push({ tone: 'info', icon: 'noprice', label: 'Missing price', text: `${noPrice.length} project${noPrice.length === 1 ? ' has' : 's have'} no price set - add one to track earnings.` });
+    // Margin, said once. The old panel printed the spend ratio and the net profit
+    // as two separate rows that were really the same sentence.
+    if (t.net >= 0 && t.earned > 0) {
+        const pct = t.spent > 0 ? Math.round((t.spent / t.earned) * 100) : 0;
+        out.push({
+            id: 'margin', tone: pct > 75 ? 'warn' : 'good', icon: pct > 75 ? 'ratio' : 'profit', label: 'Net profit',
+            value: money(t.net),
+            text: pct > 0
+                ? `Kept after spendings, which eat ${pct}% of what comes in${pct > 75 ? ' - margins are thin' : ''}.`
+                : 'Kept after spendings - nothing logged as spent yet.',
+        });
     }
 
-    // Long-running active projects
-    for (const p of data.projects.filter(p => p.status === 'active' && p.startDate)) {
-        const days = daysBetween(p.startDate, now);
-        if (days !== null && days >= 30) {
-            out.push({ tone: 'info', icon: 'running', label: 'Long-running', text: `"${p.name}" has been running ${days} days and isn't marked done.` });
-            break;
+    // Month over month, once there is enough of this month to judge it by.
+    const monthOf = (s: string) => (s || '').slice(0, 7);
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    const excluded = excludedAccountIds(data.accounts);
+    const monthTotal = (key: string) => income
+        .filter(i => monthOf(i.date) === key && !(i.accountId && excluded.has(i.accountId)))
+        .reduce((s, i) => s + convert(i.amount || 0, i.currency, cur, rates), 0);
+    if (now.getDate() >= 10) {
+        const mine = monthTotal(monthOf(today));
+        const theirs = monthTotal(lastMonthKey);
+        const delta = theirs > 0 ? Math.round(((mine - theirs) / theirs) * 100) : 0;
+        if (theirs > 0 && Math.abs(delta) >= 15) {
+            out.push({
+                id: 'month-trend', tone: delta > 0 ? 'good' : 'info', icon: 'ratio', label: 'This month',
+                value: money(mine),
+                text: `${Math.abs(delta)}% ${delta > 0 ? 'above' : 'below'} last month's ${money(theirs)}.`,
+                action: { tab: 'money', label: 'Open ledger' },
+            });
         }
     }
 
-    // Recurring expense burn
+    // -- Context and housekeeping ---------------------------------------------
+    // A retainer coming due inside the week, so it is expected rather than a surprise.
+    const dueSoon = data.projects
+        .filter(p => p.monthly && billing(p))
+        .map(p => ({ p, due: projectNextPaymentDate(p, income) }))
+        .filter((x): x is { p: TreasuryProject; due: string } => {
+            const d = x.due ? daysBetween(x.due, now) : null;
+            return d !== null && d <= 0 && d >= -7;
+        })
+        .sort((a, b) => a.due.localeCompare(b.due));
+    if (dueSoon.length) {
+        const { p, due } = dueSoon[0];
+        out.push({
+            id: `retainer-soon-${p.id}`, tone: 'info', icon: 'recurring', label: 'Due soon',
+            value: formatMoney(p.priceAmount, p.priceCurrency),
+            text: `"${p.name}" bills ${dateLabel(due)}${dueSoon.length > 1 ? `, and ${plural(dueSoon.length - 1, 'other')} this week` : ''}.`,
+            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
+        });
+    }
+
+    // Live means delivered and still maintained - that is a service, and a service
+    // with no monthly rate is upkeep you are giving away.
+    const liveOneOff = data.projects.filter(p => p.status === 'live' && !p.monthly);
+    if (liveOneOff.length) {
+        out.push({
+            id: 'live-no-retainer', tone: 'info', icon: 'live', label: 'Maintenance',
+            text: liveOneOff.length === 1
+                ? `"${liveOneOff[0].name}" is live but has no monthly rate - upkeep could be earning.`
+                : `${plural(liveOneOff.length, 'live project')} have no monthly rate - upkeep could be earning.`,
+            action: { tab: 'projects', projectId: liveOneOff[0].id, label: 'Open project' },
+        });
+    }
+
+    // Agreed, and still sitting there.
+    const stalePending = data.projects
+        .filter(p => p.status === 'pending')
+        .map(p => ({ p, days: daysBetween(p.startDate, now) ?? Math.floor((now.getTime() - (p.createdAt || now.getTime())) / 86400000) }))
+        .filter(x => x.days >= 14)
+        .sort((a, b) => b.days - a.days);
+    if (stalePending.length) {
+        const { p, days } = stalePending[0];
+        out.push({
+            id: `pending-stale-${p.id}`, tone: 'info', icon: 'pending', label: 'Still pending',
+            text: `"${p.name}" has been pending ${spanLabel(days)} - start it, or move the date.`,
+            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
+        });
+    }
+
+    // Long-running active work. Paused and live projects are deliberately left
+    // out: one is meant to sit still, the other is meant to keep going.
+    const longRunning = data.projects
+        .filter(p => p.status === 'active' && !p.monthly && p.startDate)
+        .map(p => ({ p, days: daysBetween(p.startDate, now) }))
+        .filter((x): x is { p: TreasuryProject; days: number } => x.days !== null && x.days >= 60)
+        .sort((a, b) => b.days - a.days);
+    if (longRunning.length) {
+        const { p, days } = longRunning[0];
+        out.push({
+            id: `long-running-${p.id}`, tone: 'info', icon: 'running', label: 'Long-running',
+            text: `"${p.name}" has been active ${spanLabel(days)} - if it shipped, set it Live or Completed.`,
+            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
+        });
+    }
+
+    // One client carrying everything is a risk worth naming.
+    const byClient = new Map<string, number>();
+    for (const p of data.projects) {
+        const client = (p.client || '').trim();
+        if (!client) continue;
+        const got = convert(projectReceived(p, income, rates), p.priceCurrency, cur, rates);
+        if (got > 0) byClient.set(client, (byClient.get(client) || 0) + got);
+    }
+    if (byClient.size >= 2) {
+        const total = [...byClient.values()].reduce((s, v) => s + v, 0);
+        const [name, amount] = [...byClient.entries()].sort((a, b) => b[1] - a[1])[0];
+        const share = Math.round((amount / total) * 100);
+        if (share >= 60) {
+            out.push({
+                id: 'client-concentration', tone: 'info', icon: 'client', label: 'Concentration',
+                value: `${share}%`,
+                text: `"${name}" is that much of everything received - one client carries the business.`,
+            });
+        }
+    }
+
     const recurring = data.expenses.filter(e => e.recurring && !e.clientPaid);
     if (recurring.length) {
-        const monthly = recurring.reduce((s, e) => s + convert(e.amount, e.currency, cur, data.config.rates), 0);
-        out.push({ tone: 'info', icon: 'recurring', label: 'Recurring', text: `Recurring expenses total ${formatMoney(monthly, cur)}/mo across ${recurring.length} item${recurring.length === 1 ? '' : 's'}.` });
+        const monthly = recurring.reduce((s, e) => s + convert(e.amount || 0, e.currency, cur, rates), 0);
+        out.push({
+            id: 'recurring', tone: 'info', icon: 'recurring', label: 'Recurring',
+            value: `${money(monthly)}/mo`,
+            text: `Going out every month across ${plural(recurring.length, 'item')}.`,
+            action: { tab: 'money', label: 'Open ledger' },
+        });
+    }
+
+    const noPrice = data.projects.filter(p => isOngoing(p) && !p.priceAmount);
+    if (noPrice.length) {
+        out.push({
+            id: 'no-price', tone: 'info', icon: 'noprice', label: 'Missing price',
+            text: `${plural(noPrice.length, 'ongoing project')} without a price - earnings cannot be tracked until there is one.`,
+            action: { tab: 'projects', projectId: noPrice[0].id, label: 'Open project' },
+        });
+    }
+
+    // Finished, still owed, and nowhere to send the receipt.
+    const noEmail = data.projects.filter(p => isFinished(p) && owed(p) > 0 && !(p.clientEmail || '').trim());
+    if (noEmail.length) {
+        out.push({
+            id: 'no-client-email', tone: 'info', icon: 'email', label: 'No email on file',
+            text: noEmail.length === 1
+                ? `"${noEmail[0].name}" is owed money but has no client email, so no receipt can be sent.`
+                : `${plural(noEmail.length, 'unpaid project')} have no client email, so no receipt can be sent.`,
+            action: { tab: 'projects', projectId: noEmail[0].id, label: 'Open project' },
+        });
+    }
+
+    const unlinked = income.filter(i => !i.projectId);
+    if (unlinked.length >= 3) {
+        out.push({
+            id: 'unlinked-income', tone: 'info', icon: 'unlinked', label: 'Unlinked income',
+            value: plural(unlinked.length, 'payment'),
+            text: 'Not tied to any project, so they never count toward one project’s earnings.',
+            action: { tab: 'money', label: 'Open ledger' },
+        });
+    }
+
+    // Stale FX only matters when the books actually span currencies.
+    const used = new Set<Currency>([
+        ...data.projects.map(p => p.priceCurrency),
+        ...data.expenses.map(e => e.currency),
+        ...income.map(i => i.currency),
+    ]);
+    const rateAge = data.config.ratesUpdatedAt ? Math.floor((now.getTime() - data.config.ratesUpdatedAt) / 86400000) : null;
+    if (used.size > 1 && (rateAge === null || rateAge >= 14)) {
+        out.push({
+            id: 'stale-rates', tone: 'info', icon: 'rates', label: 'Exchange rates',
+            text: rateAge === null
+                ? `Never refreshed, and your books span ${plural(used.size, 'currency', 'currencies')} - totals may drift.`
+                : `Last refreshed ${spanLabel(rateAge)} ago, and your books span ${plural(used.size, 'currency', 'currencies')}.`,
+            action: { tab: 'settings', label: 'Open settings' },
+        });
     }
 
     if (!out.length) {
-        out.push({ tone: 'info', icon: 'empty', label: 'Get started', text: 'Add a project price or an expense, and tailored suggestions will appear here.' });
+        out.push({
+            id: 'empty', tone: 'info', icon: 'empty', label: 'Get started',
+            text: 'Add a project price or an expense, and tailored suggestions will appear here.',
+            action: { tab: 'projects', label: 'Add a project' },
+        });
     }
 
-    // Severity order: warnings first, then good news, then info.
-    const rank: Record<InsightTone, number> = { warn: 0, good: 1, info: 2 };
-    return out.sort((a, b) => rank[a.tone] - rank[b.tone]);
+    // Loudest first. Array.sort is stable, so inside one tone the rows keep the
+    // order they were found in - which is already most-pressing-first per check.
+    const rank: Record<InsightTone, number> = { urgent: 0, warn: 1, good: 2, info: 3 };
+    return out.sort((a, b) => rank[a.tone] - rank[b.tone]).slice(0, MAX_INSIGHTS);
 }
+
+/** How many suggestions are actually asking for something to be done. */
+export const actionableCount = (insights: Insight[]): number =>
+    insights.filter(i => i.tone === 'urgent' || i.tone === 'warn').length;
 
 // ---------------------------------------------------------------------------
 // Standalone HTML report export

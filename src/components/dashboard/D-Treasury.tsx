@@ -7,6 +7,7 @@ import {
     TrendingUp, TrendingDown, Wallet, Sparkles, Clock, Lightbulb, SlidersHorizontal,
     ChevronLeft, ChevronRight, RefreshCcw, Percent, Repeat, Hourglass, Tag, Banknote,
     GripVertical, Landmark, Wallet2, Paperclip, CalendarClock,
+    AlertTriangle, PauseCircle, XCircle, Rocket, Gauge, Users, Unlink, Mail, ChevronDown,
 } from 'lucide-react';
 import {
     ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps,
@@ -20,7 +21,8 @@ const storage = getStorage(app);
 import {
     Currency, CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense, TreasuryReceipt,
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
-    projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, InsightIcon, InsightTone, TreasuryIncome, convert,
+    projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, TreasuryIncome, convert,
+    Insight, InsightAction, InsightIcon, InsightTone, actionableCount,
     nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
     hasInstallments, installmentMonthlyAmount, installmentsPaidCount, projectContractTotal,
     ProjectStatus, PROJECT_STATUSES, statusMeta, isFinished, isOngoing, normalizeProject,
@@ -54,16 +56,22 @@ const receiptDayKey = (ms: number): string => {
 const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
 
 type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
+
+// Per-insight Lucide icon + severity colour. The icon and the eyebrow carry the
+// meaning on their own, so colour is never the only thing saying "this is bad".
+const INSIGHT_ICONS: Record<InsightIcon, typeof Wallet> = {
+    overdue: AlertTriangle, outstanding: Clock, invoice: Receipt, installment: CalendarClock,
+    paused: PauseCircle, closed: XCircle, live: Rocket, pending: Hourglass, running: Hourglass,
+    ratio: Percent, profit: TrendingUp, loss: TrendingDown, runway: Gauge, account: Landmark,
+    noprice: Tag, recurring: Repeat, client: Users, unlinked: Unlink, email: Mail,
+    rates: RefreshCcw, empty: Lightbulb,
+};
+const TONE_COLOR: Record<InsightTone, string> = { urgent: '#f43f5e', warn: '#f59e0b', good: '#22c55e', info: '#3b82f6' };
+// How many suggestions show before the rest fold away - two rows of the two-column
+// grid. Enough to act on, short enough that the chart stays on screen.
+const INSIGHT_PREVIEW = 4;
 type ChartFilter = 'daily' | 'weekly' | 'monthly';
 interface ChartPoint { label: string; fullDate: string; earned: number; spent: number; type: ChartFilter; }
-
-// Per-insight Lucide icon + severity colour (icon + label carry meaning beyond
-// colour alone, for accessibility).
-const INSIGHT_ICONS: Record<InsightIcon, typeof Wallet> = {
-    outstanding: Clock, invoice: Receipt, ratio: Percent, profit: TrendingUp,
-    loss: TrendingDown, noprice: Tag, running: Hourglass, recurring: Repeat, empty: Lightbulb,
-};
-const TONE_COLOR: Record<InsightTone, string> = { warn: '#f59e0b', good: '#22c55e', info: '#3b82f6' };
 
 // ── D-Views-style frosted tooltip ──────────────────────────────────────────
 const ChartTooltip = ({ active, payload, isDark, cur }: TooltipProps<number, string> & { isDark?: boolean; cur: Currency }) => {
@@ -286,6 +294,7 @@ const DTreasury = () => {
     const [data, setData] = useState<TreasuryData>({ config: { ...DEFAULT_CONFIG }, projects: [], expenses: [], income: [], accounts: [], receipts: [] });
     const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
     const [archiveOpen, setArchiveOpen] = useState(false);
+    const [insightsOpen, setInsightsOpen] = useState(false);
     const [tab, setTab] = useState<Tab>('overview');
     const [chartFilter, setChartFilter] = useState<ChartFilter>('daily');
     const [moneyView, setMoneyView] = useState<'all' | 'day'>('all');
@@ -613,6 +622,8 @@ const DTreasury = () => {
     // -- derived --------------------------------------------------------------
     const totals = useMemo(() => computeTotals(data), [data]);
     const insights = useMemo(() => buildInsights(data), [data]);
+    const insightsToAct = useMemo(() => actionableCount(insights), [insights]);
+    const shownInsights = insightsOpen ? insights : insights.slice(0, INSIGHT_PREVIEW);
     const cur = data.config.displayCurrency;
     const dailySeries = useMemo(() => buildDailySeries(data), [data]);
 
@@ -721,6 +732,46 @@ const DTreasury = () => {
             {action}
         </div>
     );
+
+    // Acting on a suggestion: focus what it is about, then open the tab that can
+    // do something about it.
+    const runInsight = (a: InsightAction) => {
+        if (a.projectId) {
+            setFocusedProjectId(a.projectId);
+            // Finished work sits inside the collapsed archive - open it, or the
+            // click would focus a card nobody can see.
+            const p = data.projects.find(x => x.id === a.projectId);
+            if (p && isFinished(p)) setArchiveOpen(true);
+        }
+        setTab(a.tab);
+    };
+
+    // One suggestion. Actionable ones are real buttons that take you to the fix;
+    // the rest are inert cards, so a hover never promises something that isn't there.
+    const renderInsight = (ins: Insight) => {
+        const Icon = INSIGHT_ICONS[ins.icon] || Lightbulb;
+        const c = TONE_COLOR[ins.tone];
+        const act = ins.action;
+        return (
+            <button key={ins.id} type="button" disabled={!act} title={act?.label}
+                onClick={act ? () => runInsight(act) : undefined}
+                className={`group text-left w-full flex items-start gap-3 p-3 rounded-2xl border transition-[background-color,border-color] duration-200
+                    ${ins.tone === 'urgent'
+                        ? 'border-rose-500/25 bg-rose-500/[0.06]'
+                        : 'border-black/[0.06] dark:border-white/[0.06] bg-black/[0.015] dark:bg-white/[0.02]'}
+                    ${act ? 'cursor-pointer hover:border-blue-500/40 hover:bg-blue-500/[0.05]' : 'cursor-default'}`}>
+                <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${c}24`, color: c }}><Icon size={17} /></span>
+                <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-2">
+                        <span className="text-[10.5px] font-bold uppercase tracking-[0.08em] leading-tight" style={{ color: c }}>{ins.label}</span>
+                        {ins.value && <span className="text-xs font-extrabold text-primary tnum shrink-0">{ins.value}</span>}
+                    </span>
+                    <span className="block text-[13px] leading-snug text-sec mt-0.5">{ins.text}</span>
+                </span>
+                {act && <ChevronRight size={15} className="shrink-0 mt-1.5 text-sec/35 group-hover:text-blue-500 transition-colors" />}
+            </button>
+        );
+    };
 
     // One money-ledger row (income or expense), tappable to edit.
     const renderMoneyRow = (r: typeof moneyRows[number]) => {
@@ -863,29 +914,32 @@ const DTreasury = () => {
                     {tab === 'overview' && (
                         <>
                             {kpiCards}
+                            {/* Suggestions. lib/treasury.ts decides WHAT is worth saying;
+                                this decides how much of it you see at once - loudest first,
+                                two across, and everything past the first four folded away.
+                                The old panel was one column of equally-weighted rows that ran
+                                the length of the screen before the chart got a look in. */}
                             <div className="glass-panel p-4 sm:p-5">
-                                <div className="flex items-center justify-between mb-3.5">
-                                    <div className="flex items-center gap-2">
-                                        <span className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-400/15 text-amber-500"><Lightbulb size={15} /></span>
+                                <div className="flex items-center justify-between gap-3 mb-3.5">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-amber-400/15 text-amber-500"><Lightbulb size={15} /></span>
                                         <span className="text-sm font-bold text-primary">Suggestions</span>
+                                        <span className="text-xs text-sec truncate hidden sm:inline">
+                                            {insightsToAct ? `${insightsToAct} waiting on a decision` : 'Nothing is waiting on you'}
+                                        </span>
                                     </div>
-                                    <span className="text-[11px] font-bold text-sec tnum px-2 py-0.5 rounded-full bg-black/[0.05] dark:bg-white/[0.07]">{insights.length}</span>
+                                    <span className={`text-[11px] font-bold tnum px-2 py-0.5 rounded-full shrink-0 ${insightsToAct ? 'bg-amber-500/15 text-amber-500' : 'bg-black/[0.05] dark:bg-white/[0.07] text-sec'}`}>{insights.length}</span>
                                 </div>
-                                <div className="flex flex-col gap-1 tnum">
-                                    {insights.map((ins, i) => {
-                                        const Icon = INSIGHT_ICONS[ins.icon] || Lightbulb;
-                                        const c = TONE_COLOR[ins.tone];
-                                        return (
-                                            <div key={i} className="group flex items-center gap-3 p-2.5 rounded-2xl transition-colors duration-200 hover:bg-black/[0.025] dark:hover:bg-white/[0.04]">
-                                                <span className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${c}24`, color: c }}><Icon size={17} /></span>
-                                                <div className="min-w-0">
-                                                    <div className="text-[10.5px] font-bold uppercase tracking-[0.08em] leading-tight" style={{ color: c }}>{ins.label}</div>
-                                                    <p className={`text-sm leading-snug ${ins.tone === 'warn' ? 'text-primary font-medium' : 'text-sec'}`}>{ins.text}</p>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                <div className="grid gap-1.5 sm:grid-cols-2">
+                                    {shownInsights.map(renderInsight)}
                                 </div>
+                                {insights.length > INSIGHT_PREVIEW && (
+                                    <button onClick={() => setInsightsOpen(o => !o)}
+                                        className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-none bg-transparent cursor-pointer text-xs font-bold text-sec hover:text-primary hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors">
+                                        {insightsOpen ? 'Show less' : `${insights.length - INSIGHT_PREVIEW} more`}
+                                        <ChevronDown size={14} className={`transition-transform duration-200 ${insightsOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                )}
                             </div>
                             {chartData.length === 0 ? (
                                 <div className="glass-panel p-8 text-center text-sec text-sm">No dated activity yet - add a project payment or an expense and the graph fills in from that day.</div>
