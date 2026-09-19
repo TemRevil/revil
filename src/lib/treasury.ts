@@ -312,6 +312,11 @@ export function computeTotals(data: TreasuryData): TreasuryTotals {
         const price = convert(projectContractTotal(p), p.priceCurrency, cur, rates);
         const received = convert(projectReceived(p, data.income, rates), p.priceCurrency, cur, rates);
         contracted += price;
+        // A CLOSED project is one the client walked away from without paying, so
+        // its balance is not money still expected - counting it would quietly
+        // inflate the receivables figure with debt already written off. It stays
+        // in `contracted`, which records what was agreed, not what is coming.
+        if (p.status === 'closed') continue;
         outstanding += Math.max(0, price - received);
     }
     // Earned = every payment actually received: legacy per-project paidAmount +
@@ -805,6 +810,12 @@ export interface InsightAction {
     tab: InsightTab;
     /** Focus this project once the tab opens. */
     projectId?: string;
+    /**
+     * Narrow the destination to the rows the suggestion is actually about -
+     * landing on an unfiltered ledger and leaving you to find them yourself is
+     * only half an answer.
+     */
+    filter?: 'unlinked';
     label: string;
 }
 
@@ -957,8 +968,11 @@ export function buildInsights(data: TreasuryData): Insight[] {
         });
     }
 
-    // Work that ended and was never fully billed. Completed and closed mean
-    // different things, so they are asked different questions.
+    // Work that ended and was never fully billed - completed only. A CLOSED
+    // project is one the client walked away from without paying, so "invoice the
+    // rest" is advice about a decision that was already taken out of your hands.
+    // The same reasoning keeps closed work out of every other collect-the-money
+    // prompt below.
     const unbilled = data.projects
         .filter(p => isFinished(p) && p.priceAmount > 0 && owed(p) > 0)
         .sort((a, b) => owed(b) - owed(a));
@@ -967,15 +981,6 @@ export function buildInsights(data: TreasuryData): Insight[] {
             id: `invoice-${p.id}`, tone: 'warn', icon: 'invoice', label: 'Invoice due',
             value: formatMoney(projectBalance(p, income, rates), p.priceCurrency),
             text: `"${p.name}" is finished and still ${projectPaymentStatus(p, income, rates)} - invoice the rest.`,
-            action: { tab: 'projects', projectId: p.id, label: 'Open project' },
-        });
-    }
-    for (const p of unbilled.filter(x => x.status === 'closed').slice(0, PER_CHECK)) {
-        const when = p.closedAt || p.endDate;
-        out.push({
-            id: `closed-owing-${p.id}`, tone: 'warn', icon: 'closed', label: 'Closed, still owed',
-            value: formatMoney(projectBalance(p, income, rates), p.priceCurrency),
-            text: `"${p.name}" ended${when ? ` ${dateLabel(when)}` : ''} with money uncollected - bill for what shipped, or write it off.`,
             action: { tab: 'projects', projectId: p.id, label: 'Open project' },
         });
     }
@@ -1009,7 +1014,7 @@ export function buildInsights(data: TreasuryData): Insight[] {
     // Monthly retainers have no fixed total, so computeTotals leaves them out of
     // `outstanding` entirely. Counting them here would name a share of a total
     // they were never part of - "the biggest at 100%" out of four projects.
-    const owing = data.projects.filter(p => !p.monthly && projectBalance(p, income, rates) > 0);
+    const owing = data.projects.filter(p => !p.monthly && p.status !== 'closed' && projectBalance(p, income, rates) > 0);
     if (t.outstanding > 0 && owing.length) {
         const top = [...owing].sort((a, b) => owed(b) - owed(a))[0];
         const share = Math.round((owed(top) / t.outstanding) * 100);
@@ -1195,7 +1200,7 @@ export function buildInsights(data: TreasuryData): Insight[] {
     }
 
     // Finished, still owed, and nowhere to send the receipt.
-    const noEmail = data.projects.filter(p => isFinished(p) && owed(p) > 0 && !(p.clientEmail || '').trim());
+    const noEmail = data.projects.filter(p => p.status === 'completed' && owed(p) > 0 && !(p.clientEmail || '').trim());
     if (noEmail.length) {
         out.push({
             id: 'no-client-email', tone: 'info', icon: 'email', label: 'No email on file',
@@ -1212,7 +1217,7 @@ export function buildInsights(data: TreasuryData): Insight[] {
             id: 'unlinked-income', tone: 'info', icon: 'unlinked', label: 'Unlinked income',
             value: plural(unlinked.length, 'payment'),
             text: 'Not tied to any project, so they never count toward one project’s earnings.',
-            action: { tab: 'money', label: 'Open ledger' },
+            action: { tab: 'money', filter: 'unlinked', label: 'Show them' },
         });
     }
 

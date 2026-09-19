@@ -298,7 +298,7 @@ const DTreasury = () => {
     const [tab, setTab] = useState<Tab>('overview');
     const [chartFilter, setChartFilter] = useState<ChartFilter>('daily');
     const [moneyView, setMoneyView] = useState<'all' | 'day'>('all');
-    const [moneyType, setMoneyType] = useState<'all' | 'income' | 'expense'>('all');
+    const [moneyType, setMoneyType] = useState<'all' | 'income' | 'expense' | 'unlinked'>('all');
     // Account filter: 'all' = every account, or a specific account id.
     const [moneyAccount, setMoneyAccount] = useState<string>('all');
     const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
@@ -674,7 +674,12 @@ const DTreasury = () => {
 
     // Apply the income/expense type filter and the account filter together.
     const visibleRows = useMemo(() => {
-        let rows = moneyType === 'all' ? moneyRows : moneyRows.filter(r => r.t === moneyType);
+        let rows = moneyType === 'all'
+            ? moneyRows
+            // Unlinked is income-only by definition: an expense has no project earnings to miss.
+            : moneyType === 'unlinked'
+                ? moneyRows.filter(r => r.t === 'income' && !r.raw.projectId)
+                : moneyRows.filter(r => r.t === moneyType);
         if (moneyAccount !== 'all') rows = rows.filter(r => r.raw.accountId === moneyAccount);
         return rows;
     }, [moneyRows, moneyType, moneyAccount]);
@@ -760,6 +765,15 @@ const DTreasury = () => {
     // Acting on a suggestion: focus what it is about, then open the tab that can
     // do something about it.
     const runInsight = (a: InsightAction) => {
+        if (a.filter === 'unlinked') {
+            setMoneyType('unlinked');
+            // Clear the other slices too. Landing on the right filter only to find
+            // an empty list because a day or an account was still selected is worse
+            // than not filtering at all.
+            setMoneyAccount('all');
+            setSelectedDay('');
+            setMoneyView('all');
+        }
         if (a.projectId) {
             setFocusedProjectId(a.projectId);
             // Finished work sits inside the collapsed archive - open it, or the
@@ -1274,9 +1288,9 @@ const DTreasury = () => {
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <div className="w-[152px]">
                                             <Select
-                                                value={moneyType === 'income' ? 'Income only' : moneyType === 'expense' ? 'Expenses only' : 'Income & expenses'}
-                                                options={['Income & expenses', 'Income only', 'Expenses only']}
-                                                onChange={(v) => setMoneyType(v === 'Income only' ? 'income' : v === 'Expenses only' ? 'expense' : 'all')}
+                                                value={moneyType === 'income' ? 'Income only' : moneyType === 'expense' ? 'Expenses only' : moneyType === 'unlinked' ? 'Unlinked income' : 'Income & expenses'}
+                                                options={['Income & expenses', 'Income only', 'Expenses only', 'Unlinked income']}
+                                                onChange={(v) => setMoneyType(v === 'Income only' ? 'income' : v === 'Expenses only' ? 'expense' : v === 'Unlinked income' ? 'unlinked' : 'all')}
                                                 isDark={isDark}
                                                 searchable={false}
                                             />
