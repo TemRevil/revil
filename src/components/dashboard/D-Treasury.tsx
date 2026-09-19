@@ -546,11 +546,29 @@ const DTreasury = () => {
 
         next.endDate = meta.finished ? (p.endDate || today) : null;
         if (status === 'paused') next.pausedAt = p.pausedAt || today;
-        if (status === 'closed') next.closedAt = p.closedAt || today;
+        // Closed means the work ended, so closedAt IS the end date - derived, never
+        // stamped separately, or completing on one day and closing on another leaves
+        // the two disagreeing about when the project finished.
+        if (status === 'closed') next.closedAt = next.endDate;
         else { next.closedAt = null; next.closedReason = ''; }
 
         saveProject(next);
         showToast(`"${p.name}" is now ${meta.label.toLowerCase()}`, meta.finished ? 'good' : 'info');
+    };
+
+    /**
+     * Correct a date a status stamped. Marking a project Completed or Closed
+     * records today, but work is usually marked done days or weeks after it
+     * actually ended - so the stamp is editable here rather than final, without
+     * having to open the full editor.
+     *
+     * For a closed project endDate and closedAt are the same day by definition,
+     * so editing one moves the other; they can never drift apart.
+     */
+    const setProjectDate = (p: TreasuryProject, field: 'endDate' | 'pausedAt', date: string) => {
+        const next: TreasuryProject = { ...p, [field]: date || null };
+        if (field === 'endDate' && p.status === 'closed') next.closedAt = date || null;
+        saveProject(next);
     };
 
     // -- staged settings (Save / Discard) -------------------------------------
@@ -630,7 +648,6 @@ const DTreasury = () => {
     const totals = useMemo(() => computeTotals(data), [data]);
     const insights = useMemo(() => buildInsights(data), [data]);
     const insightsToAct = useMemo(() => actionableCount(insights), [insights]);
-    const shownInsights = insightsOpen ? insights : insights.slice(0, INSIGHT_PREVIEW);
     const cur = data.config.displayCurrency;
     const dailySeries = useMemo(() => buildDailySeries(data), [data]);
 
@@ -938,11 +955,21 @@ const DTreasury = () => {
                                     <span className={`text-[11px] font-bold tnum px-2 py-0.5 rounded-full shrink-0 ${insightsToAct ? 'bg-amber-500/15 text-amber-500' : 'bg-black/[0.05] dark:bg-white/[0.07] text-sec'}`}>{insights.length}</span>
                                 </div>
                                 <div className="grid gap-1.5 sm:grid-cols-2">
-                                    {shownInsights.map(renderInsight)}
+                                    {insights.slice(0, INSIGHT_PREVIEW).map(renderInsight)}
                                 </div>
+                                <AnimatePresence initial={false}>
+                                    {insightsOpen && (
+                                        <motion.div key="more" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.28, ease: 'easeInOut' }} className="overflow-hidden">
+                                            <div className="grid gap-1.5 sm:grid-cols-2 pt-1.5">
+                                                {insights.slice(INSIGHT_PREVIEW).map(renderInsight)}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                                 {insights.length > INSIGHT_PREVIEW && (
                                     <button onClick={() => setInsightsOpen(o => !o)}
-                                        className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-none bg-transparent cursor-pointer text-xs font-bold text-sec hover:text-primary hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors">
+                                        className="mt-4 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-none bg-transparent cursor-pointer text-xs font-bold text-sec hover:text-primary hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors">
                                         {insightsOpen ? 'Show less' : `${insights.length - INSIGHT_PREVIEW} more`}
                                         <ChevronDown size={14} className={`transition-transform duration-200 ${insightsOpen ? 'rotate-180' : ''}`} />
                                     </button>
@@ -1156,14 +1183,22 @@ const DTreasury = () => {
                                                         searchable={false}
                                                         aria-label="Project status"
                                                     />
-                                                    {/* The stamp for whichever status the project is actually in. */}
-                                                    {focusedProject.status === 'paused' && focusedProject.pausedAt && (
-                                                        <p className="text-[11px] text-sec m-0">Paused since {focusedProject.pausedAt}</p>
+                                                    {/* The date whichever status stamped, editable in place - the work
+                                                        rarely ended on the day someone got round to marking it. */}
+                                                    {isFinished(focusedProject) && (
+                                                        <div className="flex flex-col gap-1 mt-0.5">
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-sec">Ended</span>
+                                                            <DatePicker value={focusedProject.endDate || ''} onChange={(d) => setProjectDate(focusedProject, 'endDate', d)} isDark={isDark} placeholder="Not ended" />
+                                                        </div>
                                                     )}
-                                                    {focusedProject.status === 'closed' && (
-                                                        <p className="text-[11px] text-sec m-0">
-                                                            Closed {focusedProject.closedAt || '-'}{focusedProject.closedReason ? ` - ${focusedProject.closedReason}` : ''}
-                                                        </p>
+                                                    {focusedProject.status === 'paused' && (
+                                                        <div className="flex flex-col gap-1 mt-0.5">
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-sec">Paused since</span>
+                                                            <DatePicker value={focusedProject.pausedAt || ''} onChange={(d) => setProjectDate(focusedProject, 'pausedAt', d)} isDark={isDark} placeholder="Today" />
+                                                        </div>
+                                                    )}
+                                                    {focusedProject.status === 'closed' && focusedProject.closedReason && (
+                                                        <p className="text-[11px] text-sec m-0">{focusedProject.closedReason}</p>
                                                     )}
                                                 </div>
                                                 <button onClick={() => setReceiptFor(focusedProject.id)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-primary bg-black/[0.05] dark:bg-white/[0.07] hover:bg-black/[0.09] dark:hover:bg-white/[0.11] transition-all"><Receipt size={14} /> Receipt</button>
