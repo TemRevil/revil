@@ -63,6 +63,48 @@ const PAGE_SOURCES: Record<string, string[]> = {
     settings: ['Settings/Account', 'Settings/Availability', 'Settings/HandledProjects', 'Settings/Tech Stack'],
     canary: ['Settings/Canary'],
 };
+/**
+ * What Spark is allowed to write to, and what it may delete.
+ *
+ * `write_data`/`delete_data` used to take the path straight from the model, and
+ * `read_screen` on the Canary page feeds visitor-written contact-form text into
+ * that same model's context - so a visitor could write instructions into a contact
+ * message and, once the owner asked Spark about the inbox, have them come back out
+ * as `delete_data Treasury/income`. With auto mode on there was no confirm in the
+ * way at all. An allowlist is the boundary that makes prompt injection survivable:
+ * the worst an injected instruction can now reach is a documented dashboard field.
+ *
+ * Deliberately NOT here: Settings/Canary (visitor PII - Spark reads it, never edits
+ * it), Settings/HandledProjects (auto-written from Treasury; editing it directly
+ * desynchronises the public homepage), MCP/* (live OAuth tokens) and Analytics/*
+ * apart from share links (function-written; forging a visit story is not a thing
+ * the assistant should be able to do).
+ */
+const WRITABLE: { prefix: string; exact?: boolean; deletable?: boolean }[] = [
+    { prefix: 'Projects', deletable: true },
+    { prefix: 'Tags', deletable: true },
+    { prefix: 'Settings/Account', exact: true },
+    { prefix: 'Settings/Availability', exact: true },
+    { prefix: 'Settings/Developer', exact: true },
+    { prefix: 'Settings/Tech Stack', exact: true },
+    { prefix: 'Treasury' },
+    { prefix: 'Analytics/Links/Items', deletable: true },
+    { prefix: 'Spark/Memory', exact: true },
+];
+
+/** Returns null when the path is allowed for `op`, or the reason it is not. */
+function refuseWrite(path: string, op: 'write' | 'delete'): string | null {
+    const segs = path.split('/').filter(Boolean);
+    if (segs.length === 0 || segs.length % 2 !== 0) {
+        return `"${path}" is not a document path (it needs an even number of segments).`;
+    }
+    const clean = segs.join('/');
+    const rule = WRITABLE.find(w => (w.exact ? clean === w.prefix : clean === w.prefix || clean.startsWith(w.prefix + '/')));
+    if (!rule) return `Not allowed: ${clean} is outside the paths Spark may ${op}. Tell the user what you wanted to change and why.`;
+    if (op === 'delete' && !rule.deletable) return `Not allowed: ${clean} may be edited but never deleted.`;
+    return null;
+}
+
 const PAGE_LABEL: Record<string, string> = {
     treasury: 'Treasury', trails: 'Trails (who visited and what they did)', projects: 'Projects', tags: 'Tags',
     developer: 'Developer', settings: 'Settings', canary: 'Canary (visitor inbox)',
@@ -404,11 +446,18 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                 }
                 case 'write_data': {
                     const path = String(a.path || '');
+                    const refused = refuseWrite(path, 'write');
+                    if (refused) return refused;
                     const data = (a.data || {}) as Record<string, unknown>;
                     const merge = !!a.merge;
                     let ok = true;
                     if (!autoRef.current) {
-                        ok = await new Promise<boolean>(res => setPending({ desc: `Write to ${path}${merge ? ' (merge)' : ''}`, detail: JSON.stringify(data).slice(0, 300), resolve: res }));
+                        const json = JSON.stringify(data);
+                        ok = await new Promise<boolean>(res => setPending({
+                            desc: `Write to ${path}${merge ? ' (merge)' : ''}`,
+                            detail: json.length > 600 ? `${json.slice(0, 600)}… (${json.length} chars total)` : json,
+                            resolve: res,
+                        }));
                         setPending(null);
                     }
                     if (!ok) return 'User declined the write.';
@@ -417,11 +466,13 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                 }
                 case 'delete_data': {
                     const path = String(a.path || '');
-                    let ok = true;
-                    if (!autoRef.current) {
-                        ok = await new Promise<boolean>(res => setPending({ desc: `Delete ${path}`, resolve: res }));
-                        setPending(null);
-                    }
+                    const refused = refuseWrite(path, 'delete');
+                    if (refused) return refused;
+                    // A delete ALWAYS asks, auto mode or not. Auto mode is there to
+                    // save clicks on routine edits; nothing it saves is worth losing
+                    // a document to a sentence the model read somewhere.
+                    const ok = await new Promise<boolean>(res => setPending({ desc: `Delete ${path}`, resolve: res }));
+                    setPending(null);
                     if (!ok) return 'User declined the delete.';
                     await deleteDoc(doc(db, path));
                     return `Deleted ${path}`;
