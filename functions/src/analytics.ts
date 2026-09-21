@@ -728,14 +728,29 @@ async function applyFlush(ctx: {
 
     // Per-project engagement stays on the project itself: the public project modal
     // shows these counts. What changed is that only this function can write them.
-    for (const [projectId, row] of Object.entries(projects)) {
-      const views: Record<string, unknown> = {};
-      if (row.Opens) views.Project = FV.increment(row.Opens);
-      if (row.Live) views.Live = FV.increment(row.Live);
-      if (row.Github) views.Github = FV.increment(row.Github);
-      if (row.Download) views.Download = FV.increment(row.Download);
-      if (Object.keys(views).length) {
-        batch.set(db().doc(`Projects/${projectId}`), { Views: views }, { merge: true });
+    //
+    // The id comes from the caller's payload and only ever passed safeKey(), which
+    // says the string is a legal document id - not that the project exists. Combined
+    // with merge:true (a create when absent) and the Admin SDK's rules bypass, that
+    // let anyone holding an App Check token post junk ids and have them appear as
+    // real documents in the PUBLICLY READABLE Projects collection, 60 per request.
+    // So: only raise counters on a project that is already there.
+    const projectIds = Object.keys(projects);
+    if (projectIds.length) {
+      const refs = projectIds.map((id) => db().doc(`Projects/${id}`));
+      const snaps = await db().getAll(...refs);
+      const known = new Set(snaps.filter((snap) => snap.exists).map((snap) => snap.id));
+
+      for (const [projectId, row] of Object.entries(projects)) {
+        if (!known.has(projectId)) continue; // unknown id - drop it, never create it
+        const views: Record<string, unknown> = {};
+        if (row.Opens) views.Project = FV.increment(row.Opens);
+        if (row.Live) views.Live = FV.increment(row.Live);
+        if (row.Github) views.Github = FV.increment(row.Github);
+        if (row.Download) views.Download = FV.increment(row.Download);
+        if (Object.keys(views).length) {
+          batch.set(db().doc(`Projects/${projectId}`), { Views: views }, { merge: true });
+        }
       }
     }
 
