@@ -80,22 +80,53 @@ function escHtml(v: unknown): string {
 }
 
 /**
- * A contact-form attachment link is only trustworthy if it actually points at our
- * own Storage bucket under `emails/`. The public form writes the `Files Attached`
- * array straight into Settings/Canary, so a visitor can name any URL there without
+ * A contact-form attachment link is only trustworthy if it actually points at OUR
+ * OWN bucket under `emails/`. The public form writes the `Files Attached` array
+ * straight into Settings/Canary, so a visitor can name any URL there without
  * uploading anything - escAttr stops attribute breakout but says nothing about the
  * destination, which would put an attacker-chosen link in the owner's inbox.
- * Mirrors the `MeetingLink` origin check further down. Returns null if unsafe.
+ *
+ * Checking the hostname is not enough on its own: `storage.googleapis.com` serves
+ * every public GCS bucket there is, and `firebasestorage.googleapis.com` carries
+ * the bucket inside the path, so an attacker's own bucket with an `emails/` folder
+ * in it clears a host-only test. The bucket name is pinned here, and the object
+ * path must START with `emails/` - the same shape of gate sendReply already applies
+ * to `replies/` before it reads a file (it is safe there for a second reason: it
+ * reads through the Admin SDK, which is scoped to our bucket whatever the URL said).
+ *
+ * Returns the URL when it is ours, null otherwise.
  */
+function ourBucket(): string {
+  return admin.storage().bucket().name;
+}
+
 function safeAttachmentUrl(v: unknown): string | null {
   if (typeof v !== "string" || !v) return null;
   let u: URL;
   try { u = new URL(v); } catch { return null; }
   if (u.protocol !== "https:") return null;
-  if (u.hostname !== "firebasestorage.googleapis.com" && u.hostname !== "storage.googleapis.com") return null;
-  // Path is `/v0/b/<bucket>/o/emails%2F<id>%2F<file>` (encoded) or `/<bucket>/emails/<id>/<file>`.
-  const path = decodeURIComponent(u.pathname);
-  return /(^|\/)emails\//.test(path) ? v : null;
+
+  let bucket: string | null = null;
+  let objectPath: string | null = null;
+  const segs = u.pathname.split("/").filter(Boolean).map((seg) => decodeURIComponent(seg));
+
+  if (u.hostname === "firebasestorage.googleapis.com") {
+    // /v0/b/<bucket>/o/<url-encoded object path>
+    const i = u.pathname.indexOf("/o/");
+    if (segs[0] !== "v0" || segs[1] !== "b" || !segs[2] || i === -1) return null;
+    bucket = segs[2];
+    objectPath = decodeURIComponent(u.pathname.slice(i + 3).split("?")[0]);
+  } else if (u.hostname === "storage.googleapis.com") {
+    // /<bucket>/<object path>
+    if (segs.length < 2) return null;
+    bucket = segs[0];
+    objectPath = segs.slice(1).join("/");
+  } else {
+    return null;
+  }
+
+  if (bucket !== ourBucket()) return null;
+  return objectPath.startsWith("emails/") ? v : null;
 }
 
 /**
