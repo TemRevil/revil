@@ -672,8 +672,13 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
         const storage = getStorage(app);
         const uniqueFolderId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        for (const file of formData.attachments) {
-          const fileRef = ref(storage, `emails/${uniqueFolderId}/${file.name}`);
+        // Index-prefixed so two attachments with the SAME filename get two paths.
+        // They used to collide, and the second upload quietly overwrote the first -
+        // leaving two entries in the email pointing at one file. It also matters now
+        // that the storage rule is `create` rather than `write`: a colliding path is
+        // an update, which is (correctly) refused.
+        for (const [i, file] of formData.attachments.entries()) {
+          const fileRef = ref(storage, `emails/${uniqueFolderId}/${i}_${file.name}`);
           const snapshot = await uploadBytes(fileRef, file);
           const downloadURL = await getDownloadURL(snapshot.ref);
           uploadedFiles.push({ name: file.name, url: downloadURL });

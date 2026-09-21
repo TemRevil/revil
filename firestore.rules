@@ -144,9 +144,25 @@ service cloud.firestore {
       allow create, update: if false;
     }
 
-    // Secure everything else (require admin access)
-    match /{document=**} {
-      allow read, write: if isAdmin();
+    // Secure everything else (require admin access).
+    //
+    // This CANNOT be a bare `match /{document=**}`. Firestore rules are additive -
+    // an allow anywhere wins, and a deny never overrides one - so a recursive
+    // catch-all silently re-granted the two collections that are explicitly denied
+    // above: `/MCP/{docId}` (live OAuth access and refresh tokens, which must never
+    // reach any client) and `/Analytics/Sessions/Items/{id}` (a visit story may be
+    // deleted, never forged or edited). The same reasoning already excluded
+    // Settings/Canary from the public Settings read.
+    //
+    // So the catch-all names the top-level collection in a single-segment variable
+    // and subtracts those two. Everything under them is governed only by their own
+    // blocks above; the dashboard's real needs there (share links read/write, visit
+    // stories read/delete) are granted explicitly and still work.
+    match /{coll}/{doc} {
+      allow read, write: if isAdmin() && coll != 'MCP' && coll != 'Analytics';
+    }
+    match /{coll}/{doc}/{rest=**} {
+      allow read, write: if isAdmin() && coll != 'MCP' && coll != 'Analytics';
     }
   }
 }

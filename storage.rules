@@ -16,9 +16,14 @@ service firebase.storage {
     // unguessable random strings, so attachments can't be discovered or listed.
     // Note: SVG is intentionally NOT in the allowlist — SVGs can execute JS when
     // served as image/svg+xml. Allowed: raster images, PDF, plain text, MS Office.
+    // `create`, NOT `write`: in Storage rules `write` = create + update + delete, so
+    // the old form also let anyone who knew an attachment's path overwrite it with a
+    // different (still type-valid) file. A visitor only ever needs to create.
+    // Deleting an attachment is the cleanup function's job - it uses the Admin SDK,
+    // which bypasses these rules.
     match /emails/{emailId}/{fileName} {
       allow read: if true;
-      allow write: if
+      allow create: if
         // Max 10MB per file
         request.resource.size < 10 * 1024 * 1024
         // Only allow safe, non-executable file types
