@@ -80,6 +80,25 @@ function escHtml(v: unknown): string {
 }
 
 /**
+ * A contact-form attachment link is only trustworthy if it actually points at our
+ * own Storage bucket under `emails/`. The public form writes the `Files Attached`
+ * array straight into Settings/Canary, so a visitor can name any URL there without
+ * uploading anything - escAttr stops attribute breakout but says nothing about the
+ * destination, which would put an attacker-chosen link in the owner's inbox.
+ * Mirrors the `MeetingLink` origin check further down. Returns null if unsafe.
+ */
+function safeAttachmentUrl(v: unknown): string | null {
+  if (typeof v !== "string" || !v) return null;
+  let u: URL;
+  try { u = new URL(v); } catch { return null; }
+  if (u.protocol !== "https:") return null;
+  if (u.hostname !== "firebasestorage.googleapis.com" && u.hostname !== "storage.googleapis.com") return null;
+  // Path is `/v0/b/<bucket>/o/emails%2F<id>%2F<file>` (encoded) or `/<bucket>/emails/<id>/<file>`.
+  const path = decodeURIComponent(u.pathname);
+  return /(^|\/)emails\//.test(path) ? v : null;
+}
+
+/**
  * Escape user-supplied strings used inside an HTML attribute (mailto:, href, etc).
  * Prevents attribute breakout without breaking URL protocols.
  */
@@ -198,6 +217,26 @@ function emailTemplate({ title, preheader, bodyHtml, footerNote }: EmailTemplate
 
 /** Basic sanity check so we never try to email obvious junk addresses. */
 const GUEST_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/**
+ * The single admin gate for every callable in this file.
+ *
+ * Fails CLOSED. The old per-callable form was `if (adminUid && uid !== adminUid)`,
+ * which skipped the whole check whenever `Settings/Account.uid` was absent - and
+ * nothing in this repo ever writes that field (`scripts/set-admin.js` sets the
+ * `admin: true` custom claim instead), so on a fresh deployment every signed-in
+ * Google user passed. Accepts the claim first, then the optional uid mirror.
+ */
+async function requireAdmin(
+  auth: { uid: string; token?: Record<string, unknown> } | undefined,
+  denial: string,
+): Promise<void> {
+  if (!auth) throw new HttpsError("unauthenticated", "Sign in required.");
+  if (auth.token?.admin === true) return;
+  const adminUid = (await db.doc("Settings/Account").get()).data()?.uid;
+  if (typeof adminUid === "string" && adminUid && auth.uid === adminUid) return;
+  throw new HttpsError("permission-denied", denial);
+}
 
 /**
  * Auto-acknowledge a visitor: a branded "I received it, I'll reply within 24h"
@@ -329,10 +368,13 @@ export const notifyCanary = onDocumentWritten(
           ? `<div class="divider"></div>
              <p style="font-size:13px;color:#666;margin-bottom:8px">ATTACHMENTS</p>
              ${e["Files Attached"]
-               .map(
-                 (f) =>
-                   `<p style="margin:4px 0"><a href="${escAttr(f.url)}" style="color:#3395ff;text-decoration:none">${escHtml(f.name)}</a></p>`,
-               )
+               .map((f) => {
+                 const href = safeAttachmentUrl(f.url);
+                 // An unverified URL is shown as plain text, never as a clickable link.
+                 return href
+                   ? `<p style="margin:4px 0"><a href="${escAttr(href)}" style="color:#3395ff;text-decoration:none">${escHtml(f.name)}</a></p>`
+                   : `<p style="margin:4px 0;color:#888">${escHtml(f.name)} <span style="font-size:12px">(link not verified - open from the dashboard)</span></p>`;
+               })
                .join("")}`
           : "";
 
@@ -549,17 +591,9 @@ export const notifyLogin = onCall(
     enforceAppCheck: true,
   },
   async (request) => {
-    // Only authenticated users can call this - use HttpsError so client gets a typed rejection
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Sign in required to call notifyLogin.");
-    }
-
-    // Only alert for admin
-    const accountSnap = await db.doc("Settings/Account").get();
-    const adminUid = accountSnap.data()?.uid;
-    if (adminUid && request.auth.uid !== adminUid) {
-      return { status: "skipped", reason: "Not admin" };
-    }
+    // Only the owner gets a login alert - and the gate fails closed.
+    await requireAdmin(request.auth, "Only the portfolio owner receives login alerts.");
+    const auth = request.auth!; // requireAdmin threw if this was missing
 
     const { userAgent, provider } = request.data || {};
 
@@ -579,6 +613,8 @@ export const notifyLogin = onCall(
       hour12: true,
     });
 
+    // Derived from the caller-supplied X-Forwarded-For header (Functions runs behind a
+    // trusted proxy), so it is untrusted input and must be escaped like any other field.
     const ip = request.rawRequest?.ip || "Unknown";
 
     const html = emailTemplate({
@@ -591,7 +627,7 @@ export const notifyLogin = onCall(
         <div>
           <div class="info-row">
             <div class="info-label">Account</div>
-            <div class="info-value">${request.auth.token?.email || "Unknown"}</div>
+            <div class="info-value">${escHtml(auth.token?.email || "Unknown")}</div>
           </div>
           <div class="info-row">
             <div class="info-label">Provider</div>
@@ -607,7 +643,7 @@ export const notifyLogin = onCall(
           </div>
           <div class="info-row">
             <div class="info-label">IP Address</div>
-            <div class="info-value"><code style="background:#1a1a1a;padding:4px 8px;border-radius:6px;font-size:13px">${ip}</code></div>
+            <div class="info-value"><code style="background:#1a1a1a;padding:4px 8px;border-radius:6px;font-size:13px">${escHtml(ip)}</code></div>
           </div>
           <div class="info-row" style="border:none">
             <div class="info-label">Device</div>
@@ -654,14 +690,7 @@ export const sendReceipt = onCall(
     enforceAppCheck: true,
   },
   async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Sign in required to send a receipt.");
-    }
-    const accountSnap = await db.doc("Settings/Account").get();
-    const adminUid = accountSnap.data()?.uid;
-    if (adminUid && request.auth.uid !== adminUid) {
-      throw new HttpsError("permission-denied", "Only the portfolio owner can send receipts.");
-    }
+    await requireAdmin(request.auth, "Only the portfolio owner can send receipts.");
 
     const { to, subject, html, meta } = (request.data || {}) as {
       to?: string; subject?: string; html?: string;
@@ -740,14 +769,7 @@ export const sendReply = onCall(
     timeoutSeconds: 120,
   },
   async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Sign in required to send a reply.");
-    }
-    const accountSnap = await db.doc("Settings/Account").get();
-    const adminUid = accountSnap.data()?.uid;
-    if (adminUid && request.auth.uid !== adminUid) {
-      throw new HttpsError("permission-denied", "Only the portfolio owner can send replies.");
-    }
+    await requireAdmin(request.auth, "Only the portfolio owner can send replies.");
 
     const { to, subject, html, attachments } = (request.data || {}) as {
       to?: string; subject?: string; html?: string;
@@ -842,16 +864,7 @@ export const llm = onCall(
     enforceAppCheck: true,
   },
   async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Sign in required.");
-    }
-    // Admin gate: custom claim, or fall back to Settings/Account.uid (mirrors notifyLogin).
-    const accountSnap = await db.doc("Settings/Account").get();
-    const adminUid = accountSnap.data()?.uid;
-    const isAdmin = request.auth.token?.admin === true || (adminUid && request.auth.uid === adminUid);
-    if (!isAdmin) {
-      throw new HttpsError("permission-denied", "Admin only.");
-    }
+    await requireAdmin(request.auth, "Admin only.");
 
     const key = (llmApiKey.value() || "").trim();
     const provider = detectLlmProvider(key);
