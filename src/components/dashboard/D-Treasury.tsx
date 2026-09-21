@@ -545,7 +545,9 @@ const DTreasury = () => {
         const next: TreasuryProject = { ...p, status };
 
         next.endDate = meta.finished ? (p.endDate || today) : null;
-        if (status === 'paused') next.pausedAt = p.pausedAt || today;
+        // Cleared on resume, or a project paused in January, resumed in March and
+        // paused again today still reports its pause as 8 months old.
+        next.pausedAt = status === 'paused' ? (p.pausedAt || today) : null;
         // Closed means the work ended, so closedAt IS the end date - derived, never
         // stamped separately, or completing on one day and closing on another leaves
         // the two disagreeing about when the project finished.
@@ -765,11 +767,14 @@ const DTreasury = () => {
     // Acting on a suggestion: focus what it is about, then open the tab that can
     // do something about it.
     const runInsight = (a: InsightAction) => {
-        if (a.filter === 'unlinked') {
-            setMoneyType('unlinked');
-            // Clear the other slices too. Landing on the right filter only to find
-            // an empty list because a day or an account was still selected is worse
-            // than not filtering at all.
+        // Any money-tab suggestion clears the slices first. Landing on the right
+        // filter only to find an empty list because a day or an account was still
+        // selected is worse than not filtering at all - and that cuts both ways:
+        // when this reset lived inside the `unlinked` branch, every OTHER money
+        // suggestion inherited a sticky income-only filter from the last one, so
+        // "Net negative -> Review spending" opened on an empty list of expenses.
+        if (a.tab === 'money') {
+            setMoneyType(a.filter === 'unlinked' ? 'unlinked' : 'all');
             setMoneyAccount('all');
             setSelectedDay('');
             setMoneyView('all');
