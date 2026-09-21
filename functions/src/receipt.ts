@@ -215,9 +215,19 @@ export interface ItemizedReceiptData {
     note?: string;
 }
 
-/** REV-YYYY-MMDD, matching the numbering used on issued receipts. */
+/**
+ * REV-YYYY-MMDD-XXXX, matching the numbering used on issued receipts.
+ *
+ * The four random characters are the point: without them every receipt issued on
+ * the same day carried the SAME number, so two clients billed on one afternoon both
+ * held "REV-2026-0920" and any reference to a receipt by number was ambiguous - in
+ * the receipt history as well as in the customer's own records. `receiptNumber()`
+ * above has always appended a suffix for exactly this reason.
+ */
 export function revReceiptNumber(d = new Date()): string {
-    return `REV-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const r = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return `REV-${ymd}-${r}`;
 }
 
 // Dark receipt palette. Every text tone is checked against the surface it actually sits

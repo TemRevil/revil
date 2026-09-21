@@ -68,9 +68,20 @@ const ACCESS_TTL_MS = 60 * 60 * 1000;          // 1 hour
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const CODE_TTL_MS = 5 * 60 * 1000;             // 5 minutes
 const LOGIN_TTL_MS = 10 * 60 * 1000;           // 10 minutes
+const APPROVAL_TTL_MS = 5 * 60 * 1000;         // 5 minutes - the consent step's own window
 
 // ── small helpers ──────────────────────────────────────────────────
 const rand = (n = 32): string => randomBytes(n).toString("base64url");
+
+/**
+ * Every opaque value we hand out (auth code, access/refresh token, login state,
+ * approval) is base64url, and each one is pasted into a document path. Check the
+ * shape before it gets there: a caller-supplied value carrying `/` addresses a
+ * different document, and one with an odd segment count throws instead of
+ * returning a clean 400.
+ */
+const OPAQUE_RE = /^[A-Za-z0-9_-]{8,128}$/;
+const opaque = (v: unknown): string | null => (typeof v === "string" && OPAQUE_RE.test(v) ? v : null);
 const sha256url = (s: string): string => createHash("sha256").update(s).digest("base64url");
 const now = (): number => Date.now();
 
@@ -160,7 +171,20 @@ interface RefreshRec {
   sub: string;
   scope: string;
   exp: number;
+  iat: number;       // so revokedBefore can reject this token too, not just the access one
   accessToken: string;
+}
+/** A verified admin login waiting on the human's explicit approval of one client. */
+interface ApprovalRec {
+  clientId: string;
+  clientName: string;
+  redirectUri: string;
+  codeChallenge: string;
+  clientState: string;
+  scope: string;
+  resource: string;
+  sub: string;
+  exp: number;
 }
 
 async function mcpConfig(): Promise<McpCfg> {
@@ -355,11 +379,39 @@ function authServerMetadata(_req: Request, res: Response): void {
 }
 
 // ── OAuth: dynamic client registration (RFC 7591) ──────────────────
+/**
+ * A redirect_uri is where an authorization code gets delivered, and registration is
+ * open to anyone, so the shape is checked here: https, or http on the loopback
+ * address (which is how desktop MCP clients receive their callback). No fragment,
+ * no credentials, no other scheme. This does not by itself make registration safe -
+ * an attacker can still register their own https host - which is why /oauth/approve
+ * makes the owner look at the destination before any code is minted.
+ */
+function validRedirectUri(v: unknown): boolean {
+  if (typeof v !== "string" || !v || v.length > 2000) return false;
+  let u: URL;
+  try { u = new URL(v); } catch { return false; }
+  if (u.hash || u.username || u.password) return false;
+  if (u.protocol === "https:") return !!u.hostname;
+  if (u.protocol === "http:") return u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
+  return false;
+}
+
 async function register(req: Request, res: Response): Promise<void> {
   const body = req.body || {};
   const redirectUris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
   if (redirectUris.length === 0) {
     return json(res, 400, { error: "invalid_client_metadata", error_description: "redirect_uris required" });
+  }
+  if (redirectUris.length > 5) {
+    return json(res, 400, { error: "invalid_client_metadata", error_description: "at most 5 redirect_uris" });
+  }
+  const bad = redirectUris.find((u: unknown) => !validRedirectUri(u));
+  if (bad !== undefined) {
+    return json(res, 400, {
+      error: "invalid_redirect_uri",
+      error_description: "redirect_uris must be https, or http on localhost.",
+    });
   }
   const clientId = `mcp_${rand(16)}`;
   const record = {
@@ -420,9 +472,9 @@ async function authorize(req: Request, res: Response): Promise<void> {
 // form-action on the downstream client redirect). A plain browser POST still gets a
 // 302. CORS is set on every response so the site origin can read the body.
 async function firebaseCallback(req: Request, res: Response): Promise<void> {
-  const loginState = (req.body && req.body.s) || req.query.s;
+  const loginState = opaque((req.body && req.body.s) || req.query.s);
   const idToken = (req.body && req.body.id_token) || req.query.id_token;
-  if (!loginState || !idToken) return callbackError(req, res, 400, "Missing login state or token.");
+  if (!loginState || !idToken) return callbackError(req, res, 400, "Missing or malformed login state or token.");
 
   const loginRef = db().doc(`MCP/login_${loginState}`);
   const loginSnap = await loginRef.get();
@@ -450,21 +502,97 @@ async function firebaseCallback(req: Request, res: Response): Promise<void> {
 
   await loginRef.delete();
 
-  // Mint our authorization code, bound to the client + PKCE challenge.
-  const authCode = rand(24);
-  await db().doc(`MCP/codes_${authCode}`).set({
+  // Proving who you are is not the same as agreeing to this. Registration is open
+  // and unauthenticated, so anyone can register a client pointing at their own host
+  // and send the owner a crafted /authorize link; if the code were minted here it
+  // would travel straight to that host on one click, and PKCE would protect nothing
+  // because the attacker owns both halves of it. So stop, and hand back a pending
+  // approval that names the client and the exact destination. /oauth/approve mints
+  // the code, and only after the human has looked at that destination and agreed.
+  const clientSnap = await db().doc(`MCP/clients_${login.clientId}`).get();
+  const clientName = String(clientSnap.data()?.client_name || "Unknown client").slice(0, 200);
+
+  const approval = rand(24);
+  const rec: ApprovalRec = {
     clientId: login.clientId,
+    clientName,
     redirectUri: login.redirectUri,
     codeChallenge: login.codeChallenge,
+    clientState: login.clientState,
     scope: login.scope,
     resource: login.resource,
     sub: decoded.uid,
+    exp: now() + APPROVAL_TTL_MS,
+  };
+  await db().doc(`MCP/approval_${approval}`).set(rec);
+
+  setCors(req, res);
+  if (wantsJson(req)) {
+    return json(res, 200, {
+      approval,
+      client_name: clientName,
+      redirect_uri: login.redirectUri,
+      redirect_host: safeHost(login.redirectUri),
+    });
+  }
+  // Plain-browser fallback: the same decision as a minimal self-contained form.
+  res.status(200).send(consentPage(approval, clientName, login.redirectUri));
+}
+
+/** Hostname of a redirect URI for display, or a literal marker if it will not parse. */
+function safeHost(raw: string): string {
+  try { return new URL(raw).host; } catch { return "unparseable"; }
+}
+
+/**
+ * The no-JavaScript consent page. The bridge at /mcp-login renders its own styled
+ * version from the JSON above; this exists so a direct browser POST still gets a
+ * real decision rather than a silent redirect.
+ */
+function consentPage(approval: string, clientName: string, redirectUri: string): string {
+  const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Authorize MCP client</title>
+<body style="font:15px/1.6 system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem">
+<h1 style="font-size:1.25rem">Authorize this client?</h1>
+<p>It will get full admin access to your bookings, messages and treasury.</p>
+<p><b>Client:</b> ${esc(clientName)}<br><b>Code will be sent to:</b><br>
+<code style="word-break:break-all">${esc(redirectUri)}</code></p>
+<p style="color:#666;font-size:13px">If you did not start this from your own MCP client, close this page.</p>
+<form method="POST" action="${esc(baseUrl())}/oauth/approve">
+<input type="hidden" name="approval" value="${esc(approval)}">
+<button type="submit" style="padding:.6rem 1.2rem;font-size:15px">Approve</button>
+</form>
+</body>`;
+}
+
+// ── OAuth: /oauth/approve → the human agreed; now mint the code ────
+async function approveAuthorization(req: Request, res: Response): Promise<void> {
+  const approval = opaque((req.body && req.body.approval) || req.query.approval);
+  if (!approval) return callbackError(req, res, 400, "Missing or malformed approval.");
+
+  const ref = db().doc(`MCP/approval_${approval}`);
+  const snap = await ref.get();
+  const rec = snap.data() as ApprovalRec | undefined;
+  if (!rec || rec.exp < now()) {
+    return callbackError(req, res, 400, "This approval expired - start again from your MCP client.");
+  }
+  await ref.delete(); // single use
+
+  const authCode = rand(24);
+  await db().doc(`MCP/codes_${authCode}`).set({
+    clientId: rec.clientId,
+    redirectUri: rec.redirectUri,
+    codeChallenge: rec.codeChallenge,
+    scope: rec.scope,
+    resource: rec.resource,
+    sub: rec.sub,
     exp: now() + CODE_TTL_MS,
   });
 
-  const back = new URL(login.redirectUri);
+  const back = new URL(rec.redirectUri);
   back.searchParams.set("code", authCode);
-  if (login.clientState) back.searchParams.set("state", login.clientState);
+  if (rec.clientState) back.searchParams.set("state", rec.clientState);
   return callbackRedirect(req, res, back.toString());
 }
 
@@ -474,7 +602,7 @@ async function issueTokens(sub: string, scope: string) {
   const refreshToken = rand(32);
   const accessExp = now() + ACCESS_TTL_MS;
   await db().doc(`MCP/tokens_${accessToken}`).set({ sub, scope, exp: accessExp, iat: now(), refreshToken });
-  await db().doc(`MCP/refresh_${refreshToken}`).set({ sub, scope, exp: now() + REFRESH_TTL_MS, accessToken });
+  await db().doc(`MCP/refresh_${refreshToken}`).set({ sub, scope, exp: now() + REFRESH_TTL_MS, iat: now(), accessToken });
   return {
     access_token: accessToken,
     token_type: "Bearer",
@@ -487,7 +615,9 @@ async function issueTokens(sub: string, scope: string) {
 async function token(req: Request, res: Response): Promise<void> {
   const b = req.body || {};
   if (b.grant_type === "authorization_code") {
-    const codeRef = db().doc(`MCP/codes_${b.code}`);
+    const code = opaque(b.code);
+    if (!code) return json(res, 400, { error: "invalid_grant" });
+    const codeRef = db().doc(`MCP/codes_${code}`);
     const codeSnap = await codeRef.get();
     if (!codeSnap.exists) return json(res, 400, { error: "invalid_grant" });
     const c = codeSnap.data() as CodeRec;
@@ -502,12 +632,28 @@ async function token(req: Request, res: Response): Promise<void> {
   }
 
   if (b.grant_type === "refresh_token") {
-    const refRef = db().doc(`MCP/refresh_${b.refresh_token}`);
+    const refreshTok = opaque(b.refresh_token);
+    if (!refreshTok) return json(res, 400, { error: "invalid_grant" });
+    const refRef = db().doc(`MCP/refresh_${refreshTok}`);
     const refSnap = await refRef.get();
     if (!refSnap.exists) return json(res, 400, { error: "invalid_grant" });
     const r = refSnap.data() as RefreshRec;
     await refRef.delete();
     if (r.exp < now()) return json(res, 400, { error: "invalid_grant", error_description: "refresh expired" });
+
+    // Revocation has to bite here too. handleMcp rejects an access token issued
+    // before `revokedBefore`, but this grant used to check only `exp` and then mint
+    // a token stamped with a fresh `iat` - so a leaked refresh token kept handing
+    // out valid access for its full 30 days after the owner revoked. `iat` is
+    // missing on refresh records written before this fix; treat that as 0, which is
+    // the fail-closed reading (revoking kills them).
+    const cfg = await mcpConfig();
+    if (!cfg.enabled) {
+      return json(res, 400, { error: "invalid_grant", error_description: "MCP is turned off in Settings." });
+    }
+    if ((r.iat || 0) < cfg.revokedBefore) {
+      return json(res, 400, { error: "invalid_grant", error_description: "This authorization was revoked - connect again." });
+    }
     // Invalidate the old access token paired with this refresh (rotation).
     if (r.accessToken) await db().doc(`MCP/tokens_${r.accessToken}`).delete().catch(() => { /* already gone */ });
     return json(res, 200, await issueTokens(r.sub, r.scope));
@@ -520,7 +666,9 @@ async function verifyBearer(req: Request): Promise<TokenRec | null> {
   const auth = req.headers.authorization || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
   if (!m) return null;
-  const snap = await db().doc(`MCP/tokens_${m[1]}`).get();
+  const tok = opaque(m[1].trim());
+  if (!tok) return null;
+  const snap = await db().doc(`MCP/tokens_${tok}`).get();
   if (!snap.exists) return null;
   const t = snap.data() as TokenRec;
   if (t.exp < now()) return null;
@@ -1330,15 +1478,22 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       const snap = await db().doc("Treasury/spendings").get();
       const existing = snap.exists ? (snap.data()?.entries || {})[a.id] : null;
       if (!existing) return fail(`No expense with id ${a.id}. Use treasury_overview to find the right id.`);
+      // Validate AND keep the result. The old form threw `d.date` away and let the
+      // loop below copy the raw input, so `date: ""` sailed through (resolveEntryDate
+      // returns today, with no error, for empty input) and blanked the entry's date -
+      // dropping it out of every day and month rollup, unrecoverably.
+      let resolvedDate: string | undefined;
       if (a.date !== undefined) {
         const d = resolveEntryDate(a.date);
         if (d.error) return fail(d.error);
+        resolvedDate = d.date;
       }
       const src = a as Record<string, unknown>;
       const patch: Record<string, unknown> = {};
       for (const k of ["label", "amount", "currency", "category", "date", "recurring", "projectId", "accountId", "clientPaid", "notes"]) {
         if (src[k] !== undefined) patch[k] = src[k];
       }
+      if (resolvedDate !== undefined) patch.date = resolvedDate;
       if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
       await db().doc("Treasury/spendings").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
@@ -1463,14 +1618,22 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       if (a.notes !== undefined) patch.notes = a.notes;
       if (a.closedReason !== undefined) patch.closedReason = a.closedReason;
       // Moving to a status that is *about* a moment stamps that moment, once. An
-      // existing stamp is kept, so re-confirming a pause doesn't move its date.
+      // existing stamp is kept, so re-confirming a pause doesn't move its date -
+      // but LEAVING that status clears it. Mirrors setProjectStatus in
+      // D-Treasury.tsx; the two must agree or the dashboard and MCP disagree about
+      // when a project paused or finished.
       if (a.status !== undefined) {
         const finished = a.status === "completed" || a.status === "closed";
-        if (finished && !cur.endDate) patch.endDate = time.date;
-        if (a.status === "paused" && !cur.pausedAt) patch.pausedAt = time.date;
-        if (a.status === "closed" && !cur.closedAt) patch.closedAt = time.date;
-        if (a.status !== "closed") { patch.closedAt = null; patch.closedReason = ""; }
-        if (!finished) patch.endDate = null;
+        const endDate = finished ? (cur.endDate || time.date) : null;
+        patch.endDate = endDate;
+        // Cleared on resume. Without this a project paused in January, resumed in
+        // March and paused again today still reports its pause as 8 months old.
+        patch.pausedAt = a.status === "paused" ? (cur.pausedAt || time.date) : null;
+        // Closed means the work ended, so closedAt IS the end date - derived, never
+        // stamped independently, or completing on one day and closing on another
+        // leaves the two disagreeing about when the project finished.
+        if (a.status === "closed") patch.closedAt = endDate;
+        else { patch.closedAt = null; patch.closedReason = ""; }
       }
       // 0/1 clears the plan. Written as 0 rather than deleted so a merge can express it.
       if (a.installmentMonths !== undefined) {
@@ -1685,14 +1848,19 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       const dateLabel = valid.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
       const receiptNo = revReceiptNumber(valid);
 
+      // Check BEFORE defaulting. The guard used to run after the `?? 0` fallback had
+      // already turned a priceless line into a real 0, and `Number.isFinite` only
+      // catches NaN - which zod has rejected upstream - so it could never fire. A
+      // quantity line with no unitPrice was silently invoiced to the customer at 0.00.
+      const priceless = a.lines.find((l) => l.amount === undefined && l.unitPrice === undefined);
+      if (priceless) return fail(`Line "${priceless.label}" needs either an amount, or a unitPrice (qty defaults to 1).`);
+
       // Resolve every line's total ONCE, so the four places that consume it below cannot
       // disagree: a line is either an explicit `amount`, or qty x unitPrice.
       const lines = a.lines.map((l) => ({
         ...l,
         amount: round2(l.amount ?? ((l.qty ?? 1) * (l.unitPrice ?? 0))),
       }));
-      const badLine = lines.find((l) => !Number.isFinite(l.amount));
-      if (badLine) return fail(`Line "${badLine.label}" needs either an amount, or both qty and unitPrice.`);
 
       // Grand total: one converted figure shown as an emphasized row UNDER the per-currency
       // totals. Appears automatically whenever the receipt mixes currencies (converted into
@@ -1841,15 +2009,22 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       const snap = await db().doc("Treasury/income").get();
       const existing = snap.exists ? (snap.data()?.entries || {})[a.id] : null;
       if (!existing) return fail(`No income with id ${a.id}. Use treasury_overview to find the right id.`);
+      // Validate AND keep the result. The old form threw `d.date` away and let the
+      // loop below copy the raw input, so `date: ""` sailed through (resolveEntryDate
+      // returns today, with no error, for empty input) and blanked the entry's date -
+      // dropping it out of every day and month rollup, unrecoverably.
+      let resolvedDate: string | undefined;
       if (a.date !== undefined) {
         const d = resolveEntryDate(a.date);
         if (d.error) return fail(d.error);
+        resolvedDate = d.date;
       }
       const src = a as Record<string, unknown>;
       const patch: Record<string, unknown> = {};
       for (const k of ["amount", "currency", "date", "note", "projectId", "accountId", "monthlyPayment"]) {
         if (src[k] !== undefined) patch[k] = src[k];
       }
+      if (resolvedDate !== undefined) patch.date = resolvedDate;
       if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
       await db().doc("Treasury/income").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
@@ -1935,6 +2110,10 @@ export const mcp = onRequest(
       if (p.endsWith("/oauth/firebase/callback")) {
         if (req.method === "OPTIONS") { setCors(req, res); res.status(204).send(""); return; }
         return firebaseCallback(req, res);
+      }
+      if (p.endsWith("/oauth/approve")) {
+        if (req.method === "OPTIONS") { setCors(req, res); res.status(204).send(""); return; }
+        return approveAuthorization(req, res);
       }
       if (p.endsWith("/token")) return token(req, res);
       return handleMcp(req, res);

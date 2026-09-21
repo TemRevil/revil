@@ -16,9 +16,12 @@ import useSafeAlert from '../../hooks/useSafeAlert';
  * downstream client redirect - so fetch + connect-src is used instead.) This
  * reuses the site's Firebase Auth - no separate OAuth client.
  */
-type Phase = 'loading' | 'idle' | 'working' | 'invalid';
+type Phase = 'loading' | 'idle' | 'working' | 'consent' | 'invalid';
 
 type State = { phase: Phase; s: string; cb: string };
+
+/** What the callback hands back once it has verified the admin: a pending approval. */
+type Consent = { approval: string; clientName: string; redirectUri: string; redirectHost: string };
 
 // The bridge POSTs the admin's Firebase ID token to `cb`, and that value arrives in
 // the URL - so it MUST be pinned to the portfolio's own MCP callback origin. Without
@@ -43,6 +46,7 @@ function isAllowedCallback(raw: string): boolean {
 
 export default function McpLogin() {
     const [state, setState] = useState<State>({ phase: 'loading', s: '', cb: '' });
+    const [consent, setConsent] = useState<Consent | null>(null);
     const { phase } = state;
     const { alert, showAlert, hideAlert } = useSafeAlert();
 
@@ -75,15 +79,27 @@ export default function McpLogin() {
             const res = await signInWithPopup(appAuth(), provider);
             const token = await res.user.getIdToken();
 
-            // Hand the token to the function; it returns the client redirect URL.
+            // Hand the token to the function. Proving who you are is only half of
+            // it: what comes back is a pending approval naming the client and the
+            // exact address the code would be sent to, and nothing is minted until
+            // the answer below. Anyone can register an MCP client pointing at their
+            // own host, so this screen is what stops a crafted link from turning one
+            // click into full admin access for a stranger.
             const resp = await fetch(state.cb, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
                 body: new URLSearchParams({ s: state.s, id_token: token }),
             });
-            const data = (await resp.json().catch(() => ({}))) as { redirect?: string; error?: string };
-            if (resp.ok && data.redirect) {
-                window.location.href = data.redirect; // back to the MCP client with the code
+            const data = (await resp.json().catch(() => ({}))) as
+                { approval?: string; client_name?: string; redirect_uri?: string; redirect_host?: string; error?: string };
+            if (resp.ok && data.approval && data.redirect_uri) {
+                setConsent({
+                    approval: data.approval,
+                    clientName: data.client_name || 'Unknown client',
+                    redirectUri: data.redirect_uri,
+                    redirectHost: data.redirect_host || data.redirect_uri,
+                });
+                setState(prev => ({ ...prev, phase: 'consent' }));
                 return;
             }
             setState(prev => ({ ...prev, phase: 'idle' }));
@@ -92,6 +108,37 @@ export default function McpLogin() {
             setState(prev => ({ ...prev, phase: 'idle' }));
             showAlert({ type: 'error', message: 'Sign-in was cancelled or failed. Please try again.' });
         }
+    };
+
+    // The owner said yes to THIS client and THIS destination. Only now is a code minted.
+    const approve = async () => {
+        if (!consent || state.phase !== 'consent') return;
+        setState(prev => ({ ...prev, phase: 'working' }));
+        try {
+            const approveUrl = new URL(state.cb);
+            approveUrl.pathname = approveUrl.pathname.replace(/\/oauth\/firebase\/callback$/, '/oauth/approve');
+            const resp = await fetch(approveUrl.toString(), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+                body: new URLSearchParams({ approval: consent.approval }),
+            });
+            const data = (await resp.json().catch(() => ({}))) as { redirect?: string; error?: string };
+            if (resp.ok && data.redirect) {
+                window.location.href = data.redirect; // back to the MCP client with the code
+                return;
+            }
+            setState(prev => ({ ...prev, phase: 'consent' }));
+            showAlert({ type: 'error', message: data.error || 'Authorization failed. Please try again.' });
+        } catch {
+            setState(prev => ({ ...prev, phase: 'consent' }));
+            showAlert({ type: 'error', message: 'Authorization failed. Please try again.' });
+        }
+    };
+
+    const deny = () => {
+        setConsent(null);
+        setState(prev => ({ ...prev, phase: 'invalid' }));
+        showAlert({ type: 'info', message: 'Nothing was authorized. You can close this page.', duration: 0 });
     };
 
     const busy = phase === 'working';
@@ -112,33 +159,84 @@ export default function McpLogin() {
                     <Plug size={30} />
                 </span>
 
-                <header className="flex flex-col gap-2">
-                    <h1 className="heading-md text-2xl sm:text-3xl m-0">Connect your AI</h1>
-                    <p className="text-muted text-sm leading-relaxed max-w-sm">
-                        Authorize an MCP client to act on your portfolio - read bookings, messages and
-                        treasury, and manage projects. Only the portfolio admin can connect.
-                    </p>
-                </header>
+                {consent ? (
+                    <>
+                        <header className="flex flex-col gap-2">
+                            <h1 className="heading-md text-2xl sm:text-3xl m-0">Authorize this client?</h1>
+                            <p className="text-muted text-sm leading-relaxed max-w-sm">
+                                It will get full admin access to your bookings, messages and treasury.
+                                Check the address below is one you recognize.
+                            </p>
+                        </header>
 
-                {/* Primary action */}
-                <button
-                    type="button"
-                    onClick={connect}
-                    disabled={phase !== 'idle'}
-                    className="btn-primary w-full inline-flex items-center justify-center gap-3 px-5 py-3 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                    {busy ? (
-                        <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                        <img
-                            src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-                            alt=""
-                            aria-hidden="true"
-                            className="w-5 h-5 bg-white rounded-full p-0.5"
-                        />
-                    )}
-                    {buttonLabel}
-                </button>
+                        <dl className="w-full text-left flex flex-col gap-3 rounded-xl p-4 bg-black/[0.03] dark:bg-white/[0.04]">
+                            <div className="flex flex-col gap-0.5">
+                                <dt className="text-muted text-[11px] uppercase tracking-wide">Client</dt>
+                                <dd className="m-0 text-sm font-semibold break-words">{consent.clientName}</dd>
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                                <dt className="text-muted text-[11px] uppercase tracking-wide">Code will be sent to</dt>
+                                <dd className="m-0 text-sm font-semibold">{consent.redirectHost}</dd>
+                                <dd className="m-0 text-muted text-[11px] break-all font-mono">{consent.redirectUri}</dd>
+                            </div>
+                        </dl>
+
+                        <div className="w-full flex flex-col gap-2">
+                            <button
+                                type="button"
+                                onClick={approve}
+                                disabled={busy}
+                                className="btn-primary w-full inline-flex items-center justify-center gap-3 px-5 py-3 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                            >
+                                {busy && <Loader2 size={18} className="animate-spin" />}
+                                {busy ? 'Authorizing…' : 'Approve'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={deny}
+                                disabled={busy}
+                                className="w-full px-5 py-3 rounded-xl text-sm font-semibold text-muted cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+
+                        <p className="text-muted text-[11px] opacity-80 max-w-sm">
+                            If you did not start this from your own MCP client, cancel. A link someone
+                            else sent you can ask for this screen, but only you can approve it.
+                        </p>
+                    </>
+                ) : (
+                    <>
+                        <header className="flex flex-col gap-2">
+                            <h1 className="heading-md text-2xl sm:text-3xl m-0">Connect your AI</h1>
+                            <p className="text-muted text-sm leading-relaxed max-w-sm">
+                                Authorize an MCP client to act on your portfolio - read bookings, messages and
+                                treasury, and manage projects. Only the portfolio admin can connect.
+                            </p>
+                        </header>
+
+                        {/* Primary action */}
+                        <button
+                            type="button"
+                            onClick={connect}
+                            disabled={phase !== 'idle'}
+                            className="btn-primary w-full inline-flex items-center justify-center gap-3 px-5 py-3 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                            {busy ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                <img
+                                    src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
+                                    alt=""
+                                    aria-hidden="true"
+                                    className="w-5 h-5 bg-white rounded-full p-0.5"
+                                />
+                            )}
+                            {buttonLabel}
+                        </button>
+                    </>
+                )}
 
                 {/* Trust row */}
                 <div className="flex items-center justify-center gap-5 text-muted text-[11px]">
