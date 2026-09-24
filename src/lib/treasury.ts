@@ -681,57 +681,6 @@ export function accountOptions(accounts: TreasuryAccount[]): TreasuryAccount[] {
 }
 
 // ---------------------------------------------------------------------------
-// Monthly series (for the earnings vs spendings chart)
-// ---------------------------------------------------------------------------
-
-export interface MonthPoint {
-    month: string;     // 'YYYY-MM'
-    label: string;     // 'Mar' or "Mar '26"
-    earned: number;
-    spent: number;
-}
-
-function monthKey(date: string | number): string {
-    const d = typeof date === 'number' ? new Date(date) : new Date(`${date}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return '';
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** Last `count` months of earnings (by end/created date) vs spendings (by date). */
-export function monthlySeries(data: TreasuryData, count = 6): MonthPoint[] {
-    const { displayCurrency: cur, rates } = data.config;
-    const excluded = excludedAccountIds(data.accounts);
-    const now = new Date();
-    const points: MonthPoint[] = [];
-    const index = new Map<string, MonthPoint>();
-
-    for (let i = count - 1; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        const label = i === 0 || d.getMonth() === 0 ? `${MONTHS[d.getMonth()]} '${String(d.getFullYear()).slice(2)}` : MONTHS[d.getMonth()];
-        const point: MonthPoint = { month: key, label, earned: 0, spent: 0 };
-        points.push(point);
-        index.set(key, point);
-    }
-
-    for (const p of data.projects) {
-        if (!p.paidAmount) continue;
-        const key = monthKey(p.endDate || p.startDate || p.createdAt);
-        const point = index.get(key);
-        if (point) point.earned += convert(Math.min(p.paidAmount, p.priceAmount || p.paidAmount), p.priceCurrency, cur, rates);
-    }
-    for (const e of data.expenses) {
-        if (e.clientPaid) continue;
-        if (e.accountId && excluded.has(e.accountId)) continue;
-        const point = index.get(monthKey(e.date || e.createdAt));
-        if (point) point.spent += convert(e.amount || 0, e.currency, cur, rates);
-    }
-    return points;
-}
-
-// ---------------------------------------------------------------------------
 // Continuous daily series (powers the day/week/month paginated chart)
 // ---------------------------------------------------------------------------
 
