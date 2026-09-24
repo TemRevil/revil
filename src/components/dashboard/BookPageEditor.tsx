@@ -1,13 +1,52 @@
 import { useEffect, useRef, useState } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { BookOpen, Check, Plus, Trash2, X, ExternalLink, Eye, EyeOff, ArrowUp, ArrowDown } from 'lucide-react';
+import { BookOpen, Check, Plus, X, ExternalLink, Link2, Mail, Settings2 } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import type { AlertType } from '../Alert';
 import {
-    DEFAULT_BOOK_PAGE, parseBookPage, isSafeLinkUrl, introRuns,
-    MAX_TAGS, MAX_TAG_LENGTH, MAX_INTRO_LENGTH, MAX_SLOGAN_LENGTH, MAX_LINKS,
+    DEFAULT_BOOK_PAGE, parseBookPage, linksFromAccount,
+    MAX_TAGS, MAX_TAG_LENGTH, MAX_INTRO_LENGTH, MAX_SLOGAN_LENGTH,
     type BookPageConfig, type BookLink,
 } from '../../utils/bookPage';
+
+const INTRO_TYPE = 'text-sm font-medium leading-relaxed px-4 py-3 whitespace-pre-wrap break-words';
+
+/**
+ * A textarea that shows **bold** as you type. The typed text is transparent and sits
+ * exactly over a mirror that renders the same characters, with each closed **pair**
+ * drawn bold and its asterisks dimmed. Bold is a text stroke rather than a heavier
+ * weight on purpose: a real bold is wider and would push the mirror out of line with
+ * the caret. The mirror sits in the flow, so the field grows with its text.
+ */
+const FormattedTextarea = ({ id, value, onChange, maxLength, placeholder, fg, inputStyle }: {
+    id: string; value: string; onChange: (v: string) => void; maxLength: number; placeholder: string;
+    fg: string; inputStyle: { backgroundColor: string; borderColor: string; color: string };
+}) => (
+    <div className="relative rounded-xl border transition-colors focus-within:!border-blue-500" style={{ backgroundColor: inputStyle.backgroundColor, borderColor: inputStyle.borderColor }}>
+        <div aria-hidden="true" className={`${INTRO_TYPE} min-h-[7.5rem]`} style={{ color: fg }}>
+            {value.split(/(\*\*[^*\n]+\*\*)/g).map((part, i) =>
+                part.length > 4 && part.startsWith('**') && part.endsWith('**') ? (
+                    <span key={i}>
+                        <span style={{ opacity: 0.35 }}>**</span>
+                        <span style={{ WebkitTextStroke: '0.65px currentColor' }}>{part.slice(2, -2)}</span>
+                        <span style={{ opacity: 0.35 }}>**</span>
+                    </span>
+                ) : <span key={i} style={{ opacity: 0.82 }}>{part}</span>)}
+            {/* keeps a trailing newline's empty line, so the field grows under the caret */}
+            {'\u200b'}
+        </div>
+        <textarea
+            id={id}
+            value={value}
+            maxLength={maxLength}
+            placeholder={placeholder}
+            spellCheck
+            onChange={e => onChange(e.target.value)}
+            className={`${INTRO_TYPE} absolute inset-0 w-full h-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-[var(--text-muted)]`}
+            style={{ color: 'transparent', caretColor: fg, outline: 'none' }}
+        />
+    </div>
+);
 
 interface Props {
     isDark: boolean;
@@ -16,9 +55,10 @@ interface Props {
 }
 
 /**
- * Canary → Options: what the public /book page says. Title, intro, tags, status pill
- * and which links show, saved to Settings/BookPage (public read, admin write). The page
- * listens live, so a save shows up for open visitors without a redeploy.
+ * Canary → Options: what the public /book page says. Title, intro and tags, saved to
+ * Settings/BookPage (public read, admin write). The page listens live, so a save shows
+ * up for open visitors without a redeploy. Its links are the site's own, edited in
+ * dashboard Settings → Social Links; they are listed here read-only.
  */
 const BookPageEditor = ({ isDark, containerBg, showAlert }: Props) => {
     const [draft, setDraft] = useState<BookPageConfig>(DEFAULT_BOOK_PAGE);
@@ -26,27 +66,20 @@ const BookPageEditor = ({ isDark, containerBg, showAlert }: Props) => {
     const dirtyRef = useRef(false);
     const [saving, setSaving] = useState(false);
     const [newTag, setNewTag] = useState('');
-    const [newLink, setNewLink] = useState({ label: '', url: '' });
+    const [links, setLinks] = useState<BookLink[]>(() => linksFromAccount(null));
 
     // Live doc, but never stomp an edit in progress.
     useEffect(() => onSnapshot(doc(db, 'Settings', 'BookPage'), (snap) => {
         if (!dirtyRef.current) setDraft(parseBookPage(snap.exists() ? snap.data() : null));
     }, () => { /* offline / blocked: keep the defaults on screen */ }), []);
+    useEffect(() => onSnapshot(doc(db, 'Settings', 'Account'),
+        (snap) => setLinks(linksFromAccount(snap.exists() ? snap.data() : null)), () => { }), []);
 
     const patch = (p: Partial<BookPageConfig>) => {
         dirtyRef.current = true;
         setDirty(true);
         setDraft(prev => ({ ...prev, ...p }));
     };
-    const patchLink = (id: string, p: Partial<BookLink>) => patch({ links: draft.links.map(l => l.id === id ? { ...l, ...p } : l) });
-    const moveLink = (i: number, by: number) => {
-        const links = [...draft.links];
-        const j = i + by;
-        if (j < 0 || j >= links.length) return;
-        [links[i], links[j]] = [links[j], links[i]];
-        patch({ links });
-    };
-
     const addTag = () => {
         const t = newTag.trim().slice(0, MAX_TAG_LENGTH);
         if (!t) return;
@@ -56,26 +89,13 @@ const BookPageEditor = ({ isDark, containerBg, showAlert }: Props) => {
         setNewTag('');
     };
 
-    const addLink = () => {
-        const label = newLink.label.trim(), url = newLink.url.trim();
-        if (!label || !url) return;
-        if (!isSafeLinkUrl(url)) { showAlert({ type: 'error', message: 'Use a full https:// link, a mailto: address, or a site path like /' }); return; }
-        if (draft.links.length >= MAX_LINKS) { showAlert({ type: 'warning', message: `Up to ${MAX_LINKS} links` }); return; }
-        patch({ links: [...draft.links, { id: `link-${crypto.randomUUID().slice(0, 8)}`, kind: 'link', label, url, show: true }] });
-        setNewLink({ label: '', url: '' });
-    };
-
     const save = async () => {
-        const bad = draft.links.find(l => !l.label.trim() || !isSafeLinkUrl(l.url));
-        if (bad) { showAlert({ type: 'error', message: `Fix the link "${bad.label || bad.url || 'untitled'}" first: it needs a name and an https://, mailto: or / address` }); return; }
         setSaving(true);
         try {
             await setDoc(doc(db, 'Settings', 'BookPage'), {
                 slogan: draft.slogan.trim(),
                 intro: draft.intro.trim(),
                 tags: draft.tags,
-                status: draft.status.trim(),
-                links: draft.links.map(l => ({ ...l, label: l.label.trim(), url: l.url.trim() })),
             });
             dirtyRef.current = false;
             setDirty(false);
@@ -87,17 +107,10 @@ const BookPageEditor = ({ isDark, containerBg, showAlert }: Props) => {
         }
     };
 
-    const reset = () => {
-        dirtyRef.current = true;
-        setDirty(true);
-        setDraft(DEFAULT_BOOK_PAGE);
-    };
-
     const fg = isDark ? '#fff' : '#000';
     const inputStyle = { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', color: fg };
     const inputCls = 'w-full min-w-0 h-11 rounded-xl border px-4 text-sm font-medium outline-none focus:border-blue-500 transition-colors';
     const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
-    const iconBtn = 'grid place-items-center w-9 h-9 rounded-lg cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0';
 
     return (
         <div
@@ -134,21 +147,8 @@ const BookPageEditor = ({ isDark, containerBg, showAlert }: Props) => {
                             <label htmlFor="bp-intro" className="text-sm font-bold" style={{ color: fg }}>Intro</label>
                             <span className="text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>{draft.intro.length}/{MAX_INTRO_LENGTH}</span>
                         </div>
-                        <textarea id="bp-intro" rows={4} maxLength={MAX_INTRO_LENGTH} value={draft.intro} onChange={e => patch({ intro: e.target.value })}
-                            className="w-full rounded-xl border px-4 py-3 text-sm font-medium outline-none focus:border-blue-500 transition-colors resize-y leading-relaxed" style={inputStyle} />
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Wrap words in **double asterisks** to make them bold.</span>
-                        {draft.intro.trim() && (
-                            <p className="text-sm leading-relaxed m-0 px-4 py-3 rounded-xl" style={{ background: chipBg, color: 'var(--text-secondary)' }}>
-                                {introRuns(draft.intro).map((r, i) => r.bold ? <b key={i} style={{ color: fg }}>{r.text}</b> : <span key={i}>{r.text}</span>)}
-                            </p>
-                        )}
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                        <label htmlFor="bp-status" className="text-sm font-bold" style={{ color: fg }}>Status pill</label>
-                        <input id="bp-status" className={inputCls} style={inputStyle} maxLength={40} value={draft.status}
-                            placeholder="Leave empty to hide it" onChange={e => patch({ status: e.target.value })} />
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Shown with the green dot, like &quot;Available now&quot;. Empty hides it.</span>
+                        <FormattedTextarea id="bp-intro" value={draft.intro} maxLength={MAX_INTRO_LENGTH} onChange={v => patch({ intro: v })}
+                            fg={fg} inputStyle={inputStyle} placeholder="I'm **your name**. What you build, and what a call is for." />
                     </div>
 
                     <div className="flex flex-col gap-3">
@@ -180,54 +180,31 @@ const BookPageEditor = ({ isDark, containerBg, showAlert }: Props) => {
                     </div>
                 </div>
 
-                {/* Links */}
+                {/* Links: the site's own, read-only here */}
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between gap-3">
                         <span className="text-sm font-bold" style={{ color: fg }}>Links</span>
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{draft.links.filter(l => l.show).length} shown</span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>From Settings</span>
                     </div>
-                    <div className="flex flex-col gap-2">
-                        {draft.links.map((l, i) => (
-                            <div key={l.id} className="flex flex-col gap-2 p-3 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', opacity: l.show ? 1 : 0.6 }}>
-                                <div className="flex items-center gap-2">
-                                    <input aria-label="Link name" className={inputCls} style={{ ...inputStyle, height: 36 }} value={l.label} maxLength={60}
-                                        onChange={e => patchLink(l.id, { label: e.target.value })} />
-                                    <button type="button" className={iconBtn} aria-label={l.show ? `Hide ${l.label}` : `Show ${l.label}`} aria-pressed={l.show}
-                                        title={l.show ? 'Shown on the page' : 'Hidden'}
-                                        onClick={() => patchLink(l.id, { show: !l.show })} style={{ color: l.show ? '#3b82f6' : 'var(--text-muted)' }}>
-                                        {l.show ? <Eye size={16} /> : <EyeOff size={16} />}
-                                    </button>
-                                    <button type="button" className={iconBtn} aria-label={`Move ${l.label} up`} disabled={i === 0} onClick={() => moveLink(i, -1)} style={{ color: 'var(--text-muted)' }}><ArrowUp size={15} /></button>
-                                    <button type="button" className={iconBtn} aria-label={`Move ${l.label} down`} disabled={i === draft.links.length - 1} onClick={() => moveLink(i, 1)} style={{ color: 'var(--text-muted)' }}><ArrowDown size={15} /></button>
-                                    <button type="button" className={iconBtn} aria-label={`Delete ${l.label}`} onClick={() => patch({ links: draft.links.filter(x => x.id !== l.id) })} style={{ color: '#ef4444' }}><Trash2 size={15} /></button>
-                                </div>
-                                <input aria-label={`${l.label} address`} className={inputCls} style={{ ...inputStyle, height: 36, fontSize: 12, borderColor: isSafeLinkUrl(l.url) ? inputStyle.borderColor : '#ef4444' }}
-                                    value={l.url} onChange={e => patchLink(l.id, { url: e.target.value })} />
-                            </div>
+                    <ul className="flex flex-col gap-1.5 m-0 p-0 list-none">
+                        {links.map(l => (
+                            <li key={l.id} className="flex items-center gap-3 h-12 px-3 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
+                                <span className="grid place-items-center w-7 h-7 rounded-lg shrink-0" style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
+                                    {l.kind === 'email' ? <Mail size={14} /> : <Link2 size={14} />}
+                                </span>
+                                <span className="text-sm font-bold truncate shrink-0 max-w-[45%]" style={{ color: fg }}>{l.label}</span>
+                                <span className="text-xs truncate min-w-0" style={{ color: 'var(--text-muted)' }}>{l.url.replace(/^mailto:/, '')}</span>
+                            </li>
                         ))}
-                        {draft.links.length === 0 && <p className="text-sm m-0" style={{ color: 'var(--text-muted)' }}>No links, the row is hidden.</p>}
-                    </div>
-                    <div className="flex flex-col gap-2 pt-1">
-                        <label htmlFor="bp-new-link" className="text-sm font-bold" style={{ color: fg }}>New link</label>
-                        <input id="bp-new-link" className={inputCls} style={inputStyle} placeholder="Name, e.g. YouTube" maxLength={60} value={newLink.label}
-                            onChange={e => setNewLink({ ...newLink, label: e.target.value })} />
-                        <div className="flex items-center gap-2">
-                            <input aria-label="New link address" className={inputCls} style={inputStyle} placeholder="https://..." value={newLink.url}
-                                onChange={e => setNewLink({ ...newLink, url: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } }} />
-                            <button type="button" onClick={addLink} disabled={!newLink.label.trim() || !newLink.url.trim()}
-                                className="inline-flex items-center justify-center gap-2 px-5 h-11 rounded-xl text-sm font-bold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                                style={{ background: '#3b82f6', color: '#fff' }}>
-                                <Plus size={16} /> Add
-                            </button>
-                        </div>
-                    </div>
+                    </ul>
+                    <p className="flex items-start gap-2 text-xs leading-relaxed m-0" style={{ color: 'var(--text-muted)' }}>
+                        <Settings2 size={14} className="shrink-0 mt-px" />
+                        The same links as the rest of the site. Change them, and the email, in Settings → Social Links.
+                    </p>
                 </div>
             </div>
 
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-                <button type="button" onClick={reset} className="text-sm font-bold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
-                    Restore the original text
-                </button>
+            <div className="flex items-center justify-end gap-3 flex-wrap">
                 <button
                     type="button"
                     onClick={save}

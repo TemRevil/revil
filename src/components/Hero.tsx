@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { availabilityStatus } from '../utils/availability';
 import { Plus, Briefcase, Calendar } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 
@@ -294,11 +295,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
         if (unmountTimeoutRef.current) clearTimeout(unmountTimeoutRef.current);
     }, []);
 
-    const availabilityStr = availData?.['Current Availability'] || '100%';
-    // Guard against non-numeric / legacy values (e.g. "Available", "%") - parseInt → NaN
-    // would otherwise fall through every comparison and falsely render "Busy"/red.
-    const parsedAvailability = parseInt(availabilityStr);
-    const availabilityPercent = Number.isNaN(parsedAvailability) ? 100 : parsedAvailability;
+    const status = availabilityStatus(availData?.['Current Availability']);
     const currentTime = availData?.['Current Time'] || 'UTC+02:00';
     const projectsMap = handledData?.projects || {};
     // Respect the admin's manual drag-sort order (falls back to map order for legacy data)
@@ -307,21 +304,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
     const displayedProjects = projects.slice(0, 3);
     const restCount = projects.length - 3;
 
-    const getDotColor = (percent: number) => {
-        if (percent >= 100) return '#22c55e';
-        if (percent >= 75) return '#a3e635';
-        if (percent >= 50) return '#facc15';
-        if (percent >= 25) return '#fb923c';
-        return '#f87171';
-    };
-
-    const getAvailText = (percent: number) => {
-        if (percent >= 100) return 'Available';
-        if (percent > 0) return 'Handled';
-        return 'Busy';
-    };
-
-    const dotColor = getDotColor(availabilityPercent);
+    const dotColor = status.color;
 
     // Portal tooltip with proper enter/exit animation
     // Slide offset for the show/hide animation (px). Animated via top/bottom inset,
@@ -455,7 +438,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
                     <div ref={pulseRef} className="absolute inset-0 size-[12px] rounded-full transition-slow" style={{ backgroundColor: dotColor }}></div>
                 </div>
                 <span className="text-[15px] font-bold text-primary tracking-tight">
-                    {getAvailText(availabilityPercent)}
+                    {status.label}
                 </span>
             </div>
 

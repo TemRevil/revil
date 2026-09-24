@@ -86,3 +86,25 @@ export function buildHostSlots(cfg: AvailabilityConfig): string[] {
 export function isWorkingDay(cfg: AvailabilityConfig, date: Date): boolean {
     return cfg.workingDays.includes(date.getDay());
 }
+
+/**
+ * The public status pill: Settings/Availability "Current Availability" (a percent the
+ * owner sets) as a label and dot colour. Shared by the homepage hero and /book.
+ * Non-numeric / legacy values ("Available", "%") read as 100 rather than falling
+ * through to "Busy".
+ */
+export function availabilityStatus(raw: unknown): { percent: number; label: string; color: string } {
+    const parsed = parseInt(String(raw ?? '100%'));
+    const percent = Number.isNaN(parsed) ? 100 : parsed;
+    const color = percent >= 100 ? '#22c55e' : percent >= 75 ? '#a3e635' : percent >= 50 ? '#facc15' : percent >= 25 ? '#fb923c' : '#f87171';
+    const label = percent >= 100 ? 'Available' : percent > 0 ? 'Handled' : 'Busy';
+    return { percent, label, color };
+}
+
+/** Hours east of UTC from a "UTC+03:00 (EEST)" style string; 0 when it doesn't parse. */
+export function utcOffsetHours(tz: string): number {
+    const m = tz.match(/UTC([+-]\d{2}):(\d{2})/);
+    if (!m) return 0;
+    const h = parseInt(m[1]);
+    return h + (parseInt(m[2]) / 60) * (h < 0 ? -1 : 1);
+}

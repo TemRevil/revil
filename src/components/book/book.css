@@ -50,7 +50,8 @@
 .bp .pill { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 99px; font-size: 13px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums;
   background: var(--pill-bg); border: 1px solid var(--pill-border); box-shadow: var(--pill-shadow); backdrop-filter: blur(30px); }
 .bp .dot { position: relative; width: 12px; height: 12px; }
-.bp .dot i { position: absolute; inset: 0; border-radius: 50%; background: var(--success); }
+.bp .dot i { position: absolute; inset: 0; border-radius: 50%; background: var(--dot, var(--success)); }
+.bp .pill .zone { color: var(--text-muted); font-weight: 600; }
 .bp .dot i + i { animation: bp-pulse 2s ease-out infinite; }
 @keyframes bp-pulse { from { transform: scale(1); opacity: .6; } to { transform: scale(2.6); opacity: 0; } }
 

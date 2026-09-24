@@ -108,6 +108,8 @@ export default function useMeetingBooking({ showAlert, enabled = true }: { showA
 
   // Timezone States
   const [hostTimezoneString, setHostTimezoneString] = useState('UTC+02:00 (EET)'); // Default
+  // The owner's "Current Availability" percent, for pages that show the status pill.
+  const [hostAvailability, setHostAvailability] = useState<unknown>(undefined);
   const [userTimezone, setUserTimezone] = useState<number>(localOffset);
   // The visitor's own row is named after their city rather than a stand-in
   // abbreviation, so someone in Cairo is not told they are on Moscow time.
@@ -155,6 +157,7 @@ export default function useMeetingBooking({ showAlert, enabled = true }: { showA
         if (data['Current Time']) {
           setHostTimezoneString(data['Current Time']);
         }
+        setHostAvailability(data['Current Availability']);
         setAvailConfig(parseAvailabilityConfig(data));
       } else {
         setAvailConfig(DEFAULT_AVAILABILITY);
@@ -513,7 +516,7 @@ export default function useMeetingBooking({ showAlert, enabled = true }: { showA
     calendarDate, setCalendarDate, isPrevMonthDisabled, isNextMonthDisabled, isFutureMonth,
     selectedDate, setSelectedDate, selectedTime, setSelectedTime, isCustomTime, setIsCustomTime,
     meetingData, setMeetingData, isSubmitting, bookingSuccess, setBookingSuccess,
-    userTimezone, setUserTimezone, tzOptions,
+    userTimezone, setUserTimezone, tzOptions, hostTimezoneString, hostAvailability,
     availConfig, timeSlots, convertedSlots,
     getMeetingsForDate, convertTimeToUser, isTimePassed, hasFreeSlots, isDayBookable,
     handleMeetingSubmit, validateCustomTime, isCustomTimeUnavailable,

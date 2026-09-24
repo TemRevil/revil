@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, HardDrive, ZoomIn, Link, Sun, Moon, Plug } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, HardDrive, ZoomIn, Link, Sun, Moon, Plug, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
 import Cropper from 'react-easy-crop';
@@ -20,6 +20,8 @@ import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
 // Replaced failing ui-avatars.com with a local icon-based placeholder logic
 
+
+const isValidContactEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s.trim());
 
 interface StackItem {
     id: string;
@@ -154,6 +156,9 @@ export default function DSettings() {
     const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
     const [newLinkName, setNewLinkName] = useState('');
     const [newLinkUrl, setNewLinkUrl] = useState('');
+    // Public contact email (Settings/Account.Email): shown first among the links on /book
+    // and used by the CV.
+    const [contactEmail, setContactEmail] = useState('');
     const [isEditingProfile, setIsEditingProfile] = useState(false);
 
     // For immediate revert on Cancel
@@ -416,6 +421,7 @@ export default function DSettings() {
                 }
                 if (data.name && !isEditingProfile && !profileInfoDirty) setProfileName(data.name);
                 if (data.title && !isEditingProfile && !profileInfoDirty) setProfileTitle(data.title);
+                if (!isEditingProfile && !profileInfoDirty) setContactEmail(typeof data.Email === 'string' ? data.Email : '');
                 if (data['Social Links'] && !isEditingProfile && !profileInfoDirty) {
                     const links = Object.entries(data['Social Links']).map(([name, url]) => ({
                         name,
@@ -992,6 +998,16 @@ export default function DSettings() {
         setHasUnsavedChanges(false);
     };
 
+    const addSocialLink = () => {
+        const name = newLinkName.trim(), url = newLinkUrl.trim();
+        if (socialLinks.length >= 5 || !name || !url) return;
+        setSocialLinks([...socialLinks, { name, url }]);
+        setNewLinkName('');
+        setNewLinkUrl('');
+        setProfileInfoDirty(true);
+        setHasUnsavedChanges(true);
+    };
+
     // Persist profile name/title/links to Firestore (used by Apply All)
     const handleSaveProfileInfo = async (silent = false) => {
         try {
@@ -1003,8 +1019,11 @@ export default function DSettings() {
             await setDoc(doc(db, 'Settings', 'Account'), {
                 name: profileName,
                 title: profileTitle,
+                Email: contactEmail.trim(),
                 'Social Links': linksMap
-            }, { merge: true });
+            // mergeFields replaces each field whole; a plain merge deep-merges the links
+            // map, so a removed link would never leave Firestore.
+            }, { mergeFields: ['name', 'title', 'Email', 'Social Links'] });
 
             if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Profile updated!', duration: 3000 });
         } catch (err) {
@@ -1538,82 +1557,104 @@ export default function DSettings() {
                             </div>
 
                             {/* Social Links Editor */}
-                            <div className="settings-panel glass-panel p-6 flex flex-col gap-4">
-                                <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center mb-2">
+                            <div className="settings-panel glass-panel p-6 flex flex-col gap-5">
+                                <h3 className="heading-md text-base sm:text-lg md:text-xl flex items-center m-0">
                                     <Link size={22} className="mr-3" />
                                     Social Links
                                 </h3>
-                                <div className="flex flex-col gap-4">
-                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                                        <div className="sm:col-span-4">
-                                            <label className="text-xs text-muted mb-1 block">Platform Name</label>
-                                            <input
-                                                className="input-field w-full"
-                                                placeholder="e.g. GitHub"
-                                                value={newLinkName}
-                                                onChange={(e) => setNewLinkName(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="sm:col-span-6">
-                                            <label className="text-xs text-muted mb-1 block">URL</label>
-                                            <input
-                                                className="input-field w-full"
-                                                placeholder="https://..."
-                                                value={newLinkUrl}
-                                                onChange={(e) => setNewLinkUrl(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="sm:col-span-2">
-                                            <button
-                                                className="btn btn-primary w-full justify-center"
-                                                disabled={socialLinks.length >= 5 || !newLinkName || !newLinkUrl}
-                                                onClick={() => {
-                                                    if (socialLinks.length < 5 && newLinkName && newLinkUrl) {
-                                                        setSocialLinks([...socialLinks, { name: newLinkName, url: newLinkUrl }]);
-                                                        setNewLinkName('');
-                                                        setNewLinkUrl('');
-                                                        setHasUnsavedChanges(true);
-                                                    }
-                                                }}
-                                            >
-                                                <Plus size={18} /> <span className="hidden sm:inline">Add</span>
-                                            </button>
-                                        </div>
-                                    </div>
 
+                                {/* Email */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label htmlFor="settings-contact-email" className="text-xs font-semibold text-muted">Email</label>
+                                    <div className="relative">
+                                        <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
+                                        <input
+                                            id="settings-contact-email"
+                                            type="email"
+                                            autoComplete="email"
+                                            className="input-field w-full !h-11 !py-0 !pl-10 !text-sm"
+                                            style={contactEmail.trim() && !isValidContactEmail(contactEmail) ? { borderColor: '#ef4444' } : undefined}
+                                            placeholder="hello@example.com"
+                                            value={contactEmail}
+                                            onChange={(e) => { setContactEmail(e.target.value); setProfileInfoDirty(true); setHasUnsavedChanges(true); }}
+                                        />
+                                    </div>
+                                    <span className="text-xs text-muted">Shown first on the book page and on the CV. Leave empty to hide it.</span>
+                                </div>
+
+                                {/* Links */}
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-semibold text-muted">Links</span>
+                                        <span className="text-xs text-muted tabular-nums">{socialLinks.length}/5</span>
+                                    </div>
                                     {socialLinks.length > 0 ? (
-                                        <div className="flex flex-col gap-2 mt-2">
+                                        <ul className="flex flex-col gap-1.5 m-0 p-0 list-none">
                                             {socialLinks.map((link, index) => (
-                                                <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                                                    <div className="flex items-center gap-3 overflow-hidden">
-                                                        <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                                                            <Link size={14} className="text-primary" />
-                                                        </div>
-                                                        <div className="flex flex-col overflow-hidden">
-                                                            <span className="font-bold text-sm truncate">{link.name}</span>
-                                                            <span className="text-xs text-muted truncate">{link.url}</span>
-                                                        </div>
-                                                    </div>
+                                                <li key={index} className="flex items-center gap-3 h-12 pl-3 pr-1.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04]">
+                                                    <span className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-500 grid place-items-center shrink-0">
+                                                        <Link size={14} />
+                                                    </span>
+                                                    <span className="font-bold text-sm truncate shrink-0 max-w-[40%]">{link.name}</span>
+                                                    <span className="text-xs text-muted truncate min-w-0 flex-1">{link.url}</span>
                                                     <button
-                                                        className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                        type="button"
+                                                        aria-label={`Remove ${link.name}`}
+                                                        className="w-9 h-9 grid place-items-center shrink-0 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                                                         onClick={() => {
                                                             const newLinks = [...socialLinks];
                                                             newLinks.splice(index, 1);
                                                             setSocialLinks(newLinks);
+                                                            setProfileInfoDirty(true);
                                                             setHasUnsavedChanges(true);
                                                         }}
                                                     >
-                                                        <Trash2 size={16} />
+                                                        <Trash2 size={15} />
                                                     </button>
-                                                </div>
+                                                </li>
                                             ))}
-                                        </div>
+                                        </ul>
                                     ) : (
-                                        <div className="text-center p-6 border border-dashed border-white/10 rounded-xl text-muted text-sm">
-                                            No social links added yet. Add up to 5 links.
+                                        <div className="text-center p-5 border border-dashed border-black/10 dark:border-white/10 rounded-xl text-muted text-sm">
+                                            No links yet. Add up to 5.
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Add a link */}
+                                {socialLinks.length < 5 && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto] gap-2 items-end">
+                                        <div className="flex flex-col gap-1.5">
+                                            <label htmlFor="settings-link-name" className="text-xs font-semibold text-muted">Name</label>
+                                            <input
+                                                id="settings-link-name"
+                                                className="input-field w-full !h-11 !py-0 !text-sm"
+                                                placeholder="GitHub"
+                                                value={newLinkName}
+                                                onChange={(e) => setNewLinkName(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="flex flex-col gap-1.5">
+                                            <label htmlFor="settings-link-url" className="text-xs font-semibold text-muted">Address</label>
+                                            <input
+                                                id="settings-link-url"
+                                                className="input-field w-full !h-11 !py-0 !text-sm"
+                                                placeholder="https://..."
+                                                value={newLinkUrl}
+                                                onChange={(e) => setNewLinkUrl(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') addSocialLink(); }}
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary h-11 !py-0 px-5 justify-center"
+                                            disabled={!newLinkName.trim() || !newLinkUrl.trim()}
+                                            onClick={addSocialLink}
+                                        >
+                                            <Plus size={18} /> Add
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </motion.div>

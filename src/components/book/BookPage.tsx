@@ -9,13 +9,12 @@ import HintTooltip from '../HintTooltip';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import useTheme from '../../hooks/useTheme';
 import useMeetingBooking, { getDaysInMonth } from '../../hooks/useMeetingBooking';
-import { DEFAULT_BOOK_PAGE, parseBookPage, introRuns, type BookLink, type BookPageConfig } from '../../utils/bookPage';
+import { DEFAULT_BOOK_PAGE, parseBookPage, introRuns, linksFromAccount, type BookLink, type BookPageConfig } from '../../utils/bookPage';
+import { availabilityStatus, utcOffsetHours } from '../../utils/availability';
 import { paintBook, startBoil } from './brushes';
 import './book.css';
 
 const NAME_LINES = ['TEM', 'REVIL'];
-const HOST_ZONE = 'Africa/Cairo';
-const HOST_PLACE = 'El Mansoura';
 
 /** "01:00 PM" -> "1:00 PM" for display; the stored value keeps the hook's format. */
 const shortTime = (t: string) => t.replace(/^0/, '');
@@ -44,13 +43,17 @@ const LinkIcon = ({ kind }: { kind: BookLink['kind'] }) => {
     }
 };
 
-const useHostClock = () => {
-    const fmt = () => new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: HOST_ZONE });
+/** The owner's local time, from the zone set in Settings/Availability ("Current Time"). */
+const useHostClock = (tz: string) => {
+    const offset = utcOffsetHours(tz);
+    const fmt = () => new Date(Date.now() + offset * 3600000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
     const [now, setNow] = useState(fmt);
     useEffect(() => {
-        const id = window.setInterval(() => setNow(fmt()), 15000);
+        const tick = () => setNow(new Date(Date.now() + offset * 3600000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }));
+        tick();
+        const id = window.setInterval(tick, 15000);
         return () => window.clearInterval(id);
-    }, []);
+    }, [offset]);
     return now;
 };
 
@@ -59,8 +62,9 @@ export default function BookPage() {
     const rootRef = useRef<HTMLDivElement>(null);
     const boilRef = useRef<SVGFETurbulenceElement>(null);
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
-    const clock = useHostClock();
     const b = useMeetingBooking({ showAlert });
+    const clock = useHostClock(b.hostTimezoneString);
+    const status = availabilityStatus(b.hostAvailability);
 
     // What the page says about the owner, edited from the dashboard (Canary → Options).
     const [content, setContent] = useState<BookPageConfig>(DEFAULT_BOOK_PAGE);
@@ -68,6 +72,12 @@ export default function BookPage() {
     useEffect(() => onSnapshot(doc(db, 'Settings', 'BookPage'),
         (snap) => { setContent(parseBookPage(snap.exists() ? snap.data() : null)); setContentLoaded(true); },
         () => setContentLoaded(true)), []);
+
+    // Links are the site's own (dashboard Settings → Social Links + contact email).
+    const [links, setLinks] = useState<BookLink[]>(() => linksFromAccount(null));
+    useEffect(() => onSnapshot(doc(db, 'Settings', 'Account'),
+        (snap) => setLinks(linksFromAccount(snap.exists() ? snap.data() : null)),
+        () => { /* offline / blocked: keep the portfolio link */ }), []);
 
     // ---- paint: first draw animates once the photo, fonts and content are in; later
     // draws (resize, a live content edit that moves the text) land without animation.
@@ -91,7 +101,7 @@ export default function BookPage() {
         const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         paintBook(root, !painted.current && !reduce);
         painted.current = true;
-    }, [ready, content]);
+    }, [ready, content, links]);
 
     useEffect(() => {
         const root = rootRef.current;
@@ -124,7 +134,6 @@ export default function BookPage() {
     const canSubmit = !b.isSubmitting && !!sel && !!b.selectedTime && !!b.meetingData.name.trim() && !!b.meetingData.email.trim() && !!b.meetingData.reason.trim();
     const tzOptions = useMemo(() => b.tzOptions.map(t => ({ value: String(t.value), label: t.label })), [b.tzOptions]);
     const sloganLines = splitSlogan(content.slogan);
-    const links = content.links.filter(l => l.show);
 
     return (
         <div ref={rootRef} className="bp">
@@ -162,8 +171,8 @@ export default function BookPage() {
                         {sloganLines.map((line, i) => <span key={i}>{i > 0 && <br />}<Chars text={line} className="ch" /></span>)}
                     </div>
                     <div className="pills">
-                        {content.status.trim() && <span className="pill"><span className="dot" aria-hidden="true"><i /><i /></span>{content.status}</span>}
-                        <span className="pill">{clock} in {HOST_PLACE}</span>
+                        <span className="pill"><span className="dot" aria-hidden="true" style={{ '--dot': status.color } as React.CSSProperties}><i /><i /></span>{status.label}</span>
+                        <span className="pill">{clock}<span className="zone">{b.hostTimezoneString.split(' ')[0]}</span></span>
                     </div>
                 </section>
 
