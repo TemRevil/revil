@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import {
     X, Monitor, Smartphone, Tablet, Clock, Gauge, MousePointer2, Trash2,
     ArrowDownWideNarrow, Link2, Zap, Radio,
 } from 'lucide-react';
+import { polyfillCountryFlagEmojis } from 'country-flag-emoji-polyfill';
 import { BOOK_SECTION, EVENT_LABEL, formatMs, sawBookPage, sentLabel, type SessionDoc, type SessionEvent } from '../../lib/analytics/types';
 
 /**
@@ -25,6 +26,27 @@ export const flagOf = (code?: string): string => {
         return '';
     }
 };
+
+/**
+ * Windows has no flag emoji: it draws "EG" as the two letters. This self-hosted
+ * Twemoji font covers only the flag code points, and only loads on browsers that
+ * can't draw them. Call once from whatever shows flags; a repeat call is harmless.
+ */
+export const loadFlagFont = () => { polyfillCountryFlagEmojis('Twemoji Country Flags', '/fonts/TwemojiCountryFlags.woff2'); };
+
+/** The visitor's flag, drawn by the font above where the system can't. */
+export const Flag = ({ code, fallback }: { code?: string; fallback: ReactNode }) => {
+    const flag = flagOf(code);
+    if (!flag) return <>{fallback}</>;
+    return (
+        <span role="img" aria-label={code} style={{ fontFamily: '"Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif' }}>
+            {flag}
+        </span>
+    );
+};
+
+/** A long tag value (an ad click id runs to 90+ characters) cut to its two ends. */
+const shortTag = (v: string) => (v.length > 32 ? `${v.slice(0, 16)}…${v.slice(-8)}` : v);
 
 /** A visit is live if it has not ended and we heard from it inside a minute. */
 export const isLive = (s: SessionDoc): boolean =>
@@ -87,7 +109,7 @@ function describe(e: SessionEvent): string {
 const Fact = ({ label, value, isDark }: { label: string; value: string; isDark: boolean }) => (
     <div className="flex items-baseline justify-between gap-3 py-2" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}` }}>
         <span className="text-[10px] font-bold uppercase tracking-[0.12em] shrink-0" style={{ color: 'var(--text-muted)' }}>{label}</span>
-        <span className="text-xs font-semibold text-right break-words" style={{ color: isDark ? '#fff' : '#000' }}>{value || '-'}</span>
+        <span className="text-xs font-semibold text-right min-w-0 [overflow-wrap:anywhere]" style={{ color: isDark ? '#fff' : '#000' }}>{value || '-'}</span>
     </div>
 );
 
@@ -175,7 +197,7 @@ const MStory = ({ story, isDark, windowWidth, onClose, onDelete }: MStoryProps) 
                 <div className="flex items-start gap-4 p-5 sm:p-6 border-b" style={{ borderColor: 'var(--card-border)' }}>
                     <div className="w-11 h-11 rounded-2xl grid place-items-center shrink-0 text-xl"
                         style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}>
-                        {flagOf(story.Geo?.Code) || <DeviceIcon type={device.Type} size={20} />}
+                        <Flag code={story.Geo?.Code} fallback={<DeviceIcon type={device.Type} size={20} />} />
                     </div>
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -232,7 +254,7 @@ const MStory = ({ story, isDark, windowWidth, onClose, onDelete }: MStoryProps) 
                 </div>
 
                 {/* ── body ───────────────────────────────────────────────── */}
-                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar">
                     <div className="grid" style={{
                         gridTemplateColumns: wide ? 'minmax(0, 1fr) 296px' : 'minmax(0, 1fr)',
                         gap: wide ? '0' : '0',
@@ -261,7 +283,7 @@ const MStory = ({ story, isDark, windowWidth, onClose, onDelete }: MStoryProps) 
                                                 )}
                                             </div>
                                             <div className="flex items-baseline justify-between gap-3 flex-1 pb-3 min-w-0">
-                                                <span className="text-sm" style={{ color: isDark ? 'rgba(255,255,255,0.86)' : 'rgba(0,0,0,0.82)' }}>
+                                                <span className="text-sm min-w-0 [overflow-wrap:anywhere]" style={{ color: isDark ? 'rgba(255,255,255,0.86)' : 'rgba(0,0,0,0.82)' }}>
                                                     {describe(e)}
                                                 </span>
                                                 <span className="text-[10px] font-bold tabular-nums shrink-0" style={{ color: 'var(--text-muted)' }}>
@@ -322,7 +344,7 @@ const MStory = ({ story, isDark, windowWidth, onClose, onDelete }: MStoryProps) 
                         </div>
 
                         {/* who they were */}
-                        <div className="p-5 sm:p-6 flex flex-col gap-1"
+                        <div className="p-5 sm:p-6 flex flex-col gap-1 min-w-0"
                             style={{
                                 background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
                                 borderLeft: wide ? '1px solid var(--card-border)' : 'none',
@@ -351,9 +373,9 @@ const MStory = ({ story, isDark, windowWidth, onClose, onDelete }: MStoryProps) 
                             {utm.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 pt-3">
                                     {utm.map(([k, v]) => (
-                                        <span key={k} className="px-2 py-0.5 rounded-md text-[10px] font-bold"
+                                        <span key={k} title={`${k}: ${v}`} className="px-2 py-0.5 rounded-md text-[10px] font-bold max-w-full [overflow-wrap:anywhere]"
                                             style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>
-                                            {k}: {v}
+                                            {k}: {shortTag(v)}
                                         </span>
                                     ))}
                                 </div>

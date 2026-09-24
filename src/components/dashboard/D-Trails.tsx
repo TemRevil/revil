@@ -17,7 +17,7 @@ import Toggle from '../Toggle';
 import RollingNumber from '../RollingNumber';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
-import MStory, { DeviceIcon, flagOf, isLive } from './M-Story';
+import MStory, { DeviceIcon, Flag, isLive, loadFlagFont } from './M-Story';
 import { formatMs, sawBookPage, sentLabel, type SessionDoc, type LinkDoc, type TotalsDoc } from '../../lib/analytics/types';
 import { STORY_KEY } from '../Algorithm';
 
@@ -746,6 +746,7 @@ const DTrails = () => {
     const [rankProjects, setRankProjects] = useState<RankInput[]>([]);
 
     const [storyFilter, setStoryFilter] = useState<StoryFilter>('all');
+    useEffect(() => { loadFlagFont(); }, []);
     const [search, setSearch] = useState('');
     const [linkFilter, setLinkFilter] = useState<string | null>(null);
     const [openStoryId, setOpenStoryId] = useState<string | null>(null);
@@ -1261,7 +1262,6 @@ const DTrails = () => {
                                         <div className="flex flex-col gap-2">
                                             {visibleStories.map(story => {
                                                 const live = isLive(story);
-                                                const flag = flagOf(story.Geo?.Code);
                                                 const when = story.StartedAt
                                                     ? new Date(story.StartedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
                                                     : 'Before the rewrite';
@@ -1299,7 +1299,7 @@ const DTrails = () => {
                                                     >
                                                         <span className="w-9 h-9 rounded-xl grid place-items-center shrink-0 text-base"
                                                             style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', color: 'var(--text-muted)' }}>
-                                                            {flag || <DeviceIcon type={story.Device?.Type} size={16} />}
+                                                            <Flag code={story.Geo?.Code} fallback={<DeviceIcon type={story.Device?.Type} size={16} />} />
                                                         </span>
 
                                                         <span className="flex flex-col min-w-0 gap-0.5" style={{ flex: '1 1 200px' }}>

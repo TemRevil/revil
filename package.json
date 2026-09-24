@@ -20,6 +20,7 @@
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "animejs": "^3.2.2",
+    "country-flag-emoji-polyfill": "^0.1.10",
     "firebase": "^12.17.0",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.555.0",
