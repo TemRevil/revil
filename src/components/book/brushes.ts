@@ -212,23 +212,36 @@ function drawShirt(root: HTMLElement, t0: number, animate: boolean) {
 
 /** Handwritten labels and the stacked name, character by character (spans rendered by React). */
 function textIn(root: HTMLElement) {
+    const ease = 'cubic-bezier(.25,1,.5,1)';
     root.querySelectorAll<HTMLElement>('[data-write]').forEach((n, j) => {
         n.querySelectorAll<HTMLElement>('.ch').forEach((s, i) => s.animate(
-            [{ opacity: 0, transform: 'translateY(6px) scale(.9)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-            { duration: 260, delay: (j ? 1900 : 0) + i * 80, easing: 'ease-out', fill: 'backwards' }));
+            [{ opacity: 0, transform: 'translateY(6px) scale(.9)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+            { duration: 320, delay: (j ? 1900 : 0) + i * 80, easing: 'ease-out', fill: 'backwards' }));
     });
     root.querySelectorAll<HTMLElement>('.name-char').forEach((c, i) => c.animate(
-        [{ opacity: 0, transform: 'translateY(20px)' }, { opacity: 1, transform: 'none' }],
-        { duration: 600, delay: 400 + i * 60, easing: 'cubic-bezier(.25,1,.5,1)', fill: 'backwards' }));
-    const img = root.querySelector<HTMLElement>('.stage img');
-    img?.animate([{ opacity: 0, transform: 'scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: 1200, delay: 700, easing: 'cubic-bezier(.25,1,.5,1)', fill: 'backwards' });
+        [{ opacity: 0, transform: 'translateY(20px)', filter: 'blur(12px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+        { duration: 700, delay: 300 + i * 60, easing: ease, fill: 'backwards' }));
+    root.querySelector<HTMLElement>('.stage img')?.animate(
+        [{ opacity: 0, transform: 'scale(.97)', filter: 'blur(16px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+        { duration: 1200, delay: 600, easing: ease, fill: 'backwards' });
+    // The side column and the pills: a soft fade out of blur, one after another.
+    [...root.querySelectorAll<HTMLElement>('.side > *'), ...root.querySelectorAll<HTMLElement>('.pills > *')].forEach((n, i) => n.animate(
+        [{ opacity: 0, transform: 'translateY(14px)', filter: 'blur(10px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+        { duration: 800, delay: 450 + i * 110, easing: ease, fill: 'backwards' }));
 }
 
-/** Full entrance. With `animate` false (reduced motion, or a redraw after resize) everything lands at once. */
+/**
+ * Full entrance. With `animate` false (reduced motion, or a redraw after resize) everything
+ * lands at once. The page is rendered hidden (book.css gates it until data-intro="done"), so
+ * the gate lifts in the same task the entrance starts: nothing shows, then vanishes, then
+ * animates back in.
+ */
 export function paintBook(root: HTMLElement, animate: boolean) {
-    if (animate) textIn(root);
+    // Paint first: drawBg measures the text boxes, which the entrance offsets while it runs.
     drawBg(root, 900, animate);
     drawShirt(root, drawStage(root, 1100, animate) + 200, animate);
+    if (animate) textIn(root);
+    root.dataset.intro = 'done';
 }
 
 /** Old-animation boil: the brush edges re-roll 6 times a second. Returns a stop function. */

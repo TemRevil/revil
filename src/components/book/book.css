@@ -21,6 +21,9 @@
 .bp *, .bp *::before, .bp *::after { box-sizing: border-box; }
 .bp ::selection { background: var(--accent); color: #fff; }
 .bp :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* Hidden until the entrance starts (BookPage sets data-intro="done"), so the name and photo
+   never show, blink off, then animate back in. */
+.bp:not([data-intro="done"]) :is(.this-is, h1.name, .slogan, .stage img, .pills, .side) { opacity: 0; }
 .bp .wall { position: absolute; inset: 0; pointer-events: none;
   background-image: radial-gradient(circle at 25% 25%, var(--wall-dot) 1px, transparent 1px), radial-gradient(circle at 75% 75%, var(--wall-dot) 1px, transparent 1px);
   background-size: 20px 20px, 20px 20px; }

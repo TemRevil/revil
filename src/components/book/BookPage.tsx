@@ -80,7 +80,9 @@ export default function BookPage() {
         const timeout = new Promise(r => setTimeout(r, 1500));
         Promise.all([document.fonts.ready, img?.decode().catch(() => { }), Promise.race([timeout, new Promise<void>(r => { if (contentLoaded) r(); })])])
             .then(() => { if (alive) setReady(true); });
-        return () => { alive = false; };
+        // Failsafe: never leave the page hidden if the photo or fonts hang.
+        const failsafe = window.setTimeout(() => { if (root && !painted.current) root.dataset.intro = 'done'; }, 4000);
+        return () => { alive = false; window.clearTimeout(failsafe); };
     }, [contentLoaded]);
 
     useEffect(() => {
