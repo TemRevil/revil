@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, Phone, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply, Tags } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, Phone, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply, Tags, BookOpen } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField, setDoc } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app, { db } from '../../lib/firebase';
@@ -20,6 +20,13 @@ import MReply from './M-Reply';
 import CustomTimePicker from '../CustomTimePicker';
 import Select from '../Select';
 import Loader from '../reactbits/Loader';
+
+type OptionsTab = 'hours' | 'categories' | 'book';
+const OPTIONS_TABS: { key: OptionsTab; label: string; icon: typeof Clock }[] = [
+    { key: 'hours', label: 'Working hours', icon: Clock },
+    { key: 'categories', label: 'Categories', icon: Tags },
+    { key: 'book', label: 'Book page', icon: BookOpen },
+];
 
 interface Attachment {
     name: string;
@@ -146,6 +153,15 @@ const CategoryBadge = ({ cat, size = 'sm' }: { cat: MeetingCategory; size?: 'sm'
 const DCanary = () => {
     // Everything below that animates layout falls back to an instant change here.
     const reduceMotion = useReducedMotion();
+    // Options tab: which section the floating bar at the bottom has picked.
+    const [optionsTab, setOptionsTab] = useState<OptionsTab>('hours');
+    const [optionsDir, setOptionsDir] = useState(0);
+    const switchOptionsTab = (key: OptionsTab) => {
+        if (key === optionsTab) return;
+        const idx = (k: OptionsTab) => OPTIONS_TABS.findIndex(t => t.key === k);
+        setOptionsDir(idx(key) > idx(optionsTab) ? 1 : -1);
+        setOptionsTab(key);
+    };
     const [isDark, setIsDark] = useState(false);
     const [viewDate, setViewDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -935,11 +951,7 @@ const DCanary = () => {
         </div>
     );
 
-    const hoursEditor = (
-        // auto-fit rather than a breakpoint: the two panels pair up as soon as there is
-        // room for both and fall back to one column when there isn't, with no dead rail
-        // down the side of the tab at any width.
-        <div className="canary-section w-full" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem', alignItems: 'start' }}>
+    const hoursPanel = (
             <div
                 className="canary-panel w-full flex flex-col gap-7 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
                 style={{ backgroundColor: containerBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
@@ -1039,10 +1051,76 @@ const DCanary = () => {
                     </button>
                 </div>
             </div>
+    );
 
-            {categoriesEditor}
+    // Options is split into sections instead of stacking every panel on one page; a
+    // floating bar at the bottom switches between them, like the Projects sub-nav.
+    // Portaled to <body>: anime.js leaves a transform on .canary-section, and a transformed
+    // ancestor would pin a position:fixed bar to the section instead of the viewport.
+    const optionsBar = typeof document !== 'undefined' && activeSection === 'hours' && createPortal(
+        <nav aria-label="Options sections" className="fixed bottom-5 left-1/2 -translate-x-1/2 max-[560px]:left-4 max-[560px]:translate-x-0 z-[1100]">
+            <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.92 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="flex items-center gap-1 p-1.5 rounded-2xl md:gap-1.5 md:p-2 md:rounded-3xl backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
+                style={{ backgroundColor: 'var(--subnav-bg, rgba(255,255,255,0.25))', border: '1px solid var(--section-border)' }}
+            >
+                {OPTIONS_TABS.map(tab => {
+                    const isActive = optionsTab === tab.key;
+                    const Icon = tab.icon;
+                    return (
+                        <button
+                            key={tab.key}
+                            type="button"
+                            aria-current={isActive ? 'page' : undefined}
+                            onClick={() => switchOptionsTab(tab.key)}
+                            className="relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm transition-colors duration-200 cursor-pointer"
+                            style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)', background: 'transparent', border: 'none' }}
+                        >
+                            {isActive && (
+                                <motion.div
+                                    layoutId="options-subnav-pill"
+                                    className="absolute inset-0 rounded-xl md:rounded-2xl"
+                                    style={{ background: 'rgba(51, 149, 255, 0.12)', border: '1px solid rgba(51, 149, 255, 0.25)' }}
+                                    transition={reduceMotion ? { duration: 0 } : { type: 'spring', damping: 28, stiffness: 380 }}
+                                />
+                            )}
+                            <Icon strokeWidth={2.2} className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" />
+                            <span className="relative z-10 whitespace-nowrap">{tab.label}</span>
+                        </button>
+                    );
+                })}
+            </motion.div>
+        </nav>,
+        document.body,
+    );
 
-            <BookPageEditor isDark={isDark} containerBg={containerBg} showAlert={showAlert} />
+    const hoursEditor = (
+        // Bottom padding keeps the last panel's buttons clear of the floating bar.
+        <div className="canary-section w-full pb-28">
+            <AnimatePresence mode="wait" custom={optionsDir} initial={false}>
+                <motion.div
+                    key={optionsTab}
+                    custom={optionsDir}
+                    variants={{
+                        enter: (d: number) => ({ x: reduceMotion ? 0 : (d > 0 ? 40 : -40), opacity: 0 }),
+                        center: { x: 0, opacity: 1 },
+                        exit: (d: number) => ({ x: reduceMotion ? 0 : (d > 0 ? -40 : 40), opacity: 0 }),
+                    }}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+                    className="w-full"
+                    style={{ maxWidth: optionsTab === 'book' ? undefined : 760 }}
+                >
+                    {optionsTab === 'hours' ? hoursPanel
+                        : optionsTab === 'categories' ? categoriesEditor
+                        : <BookPageEditor isDark={isDark} containerBg={containerBg} showAlert={showAlert} />}
+                </motion.div>
+            </AnimatePresence>
+            {optionsBar}
         </div>
     );
 
