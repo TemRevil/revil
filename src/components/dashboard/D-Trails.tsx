@@ -18,7 +18,7 @@ import RollingNumber from '../RollingNumber';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
 import MStory, { DeviceIcon, flagOf, isLive } from './M-Story';
-import { formatMs, type SessionDoc, type LinkDoc, type TotalsDoc } from '../../lib/analytics/types';
+import { formatMs, sawBookPage, sentLabel, type SessionDoc, type LinkDoc, type TotalsDoc } from '../../lib/analytics/types';
 import { STORY_KEY } from '../Algorithm';
 
 /**
@@ -73,7 +73,7 @@ const SOURCE_KINDS: Record<string, { label: string; color: string }> = {
     direct: { label: 'Typed in', color: '#64748b' },
 };
 
-type StoryFilter = 'all' | 'live' | 'links' | 'contacted';
+type StoryFilter = 'all' | 'live' | 'links' | 'book' | 'contacted';
 type TrailsView = 'stories' | 'overview' | 'links';
 
 
@@ -726,6 +726,7 @@ const STORY_FILTERS: Array<{ id: StoryFilter; label: string }> = [
     { id: 'all', label: 'Everyone' },
     { id: 'live', label: 'Reading now' },
     { id: 'links', label: 'From a link' },
+    { id: 'book', label: 'Book page' },
     { id: 'contacted', label: 'Reached contact' },
 ];
 
@@ -891,6 +892,7 @@ const DTrails = () => {
             if (linkFilter && s.Link?.Id !== linkFilter) return false;
             if (storyFilter === 'live' && !isLive(s)) return false;
             if (storyFilter === 'links' && !s.Link) return false;
+            if (storyFilter === 'book' && !sawBookPage(s)) return false;
             if (storyFilter === 'contacted' && !(s.Contact?.Opens || s.Contact?.Sent)) return false;
             if (!needle) return true;
             return [
@@ -1274,11 +1276,13 @@ const DTrails = () => {
                                                 const did: { label: string; tint: string }[] = [];
                                                 if (projectCount) did.push({ label: `${projectCount} project${projectCount === 1 ? '' : 's'}`, tint: '16,185,129' });
                                                 if (story.Cv?.Opens) did.push({ label: 'CV', tint: '245,158,11' });
+                                                // /book and the contact modal are two ways in, so each keeps its own chip.
                                                 if (story.Contact?.Sent) {
-                                                    did.push({ label: story.Contact.Sent === 'meeting' ? 'booked a meeting' : 'sent a message', tint: '236,72,153' });
+                                                    did.push({ label: sentLabel(story.Contact.Sent), tint: story.Contact.Sent === 'book' ? '14,165,233' : '236,72,153' });
                                                 } else if (story.Contact?.Opens) {
                                                     did.push({ label: 'opened contact', tint: '236,72,153' });
                                                 }
+                                                if (sawBookPage(story) && story.Contact?.Sent !== 'book') did.push({ label: 'saw /book', tint: '14,165,233' });
                                                 if (socialCount) did.push({ label: `${socialCount} social${socialCount === 1 ? '' : 's'}`, tint: '139,92,246' });
 
                                                 return (

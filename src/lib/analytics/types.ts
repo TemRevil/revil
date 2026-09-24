@@ -22,7 +22,7 @@ export type EventKind =
     | 'cv'             // CV opened
     | 'contact'        // contact modal opened
     | 'contact_tab'    // v = "meeting" | "message"
-    | 'contact_sent'   // v = "meeting" | "message"
+    | 'contact_sent'   // v = "meeting" (contact modal) | "book" (/book page) | "message"
     | 'copy'           // v = "email" | "phone" | "text"
     | 'scroll'         // v = "<section>:<pct>" milestone
     | 'idle'
@@ -95,6 +95,7 @@ export interface SessionContact {
     Opens: number;
     /** Last tab they were on: the furthest step of the funnel they reached. */
     Tab: string;
+    /** What they sent: 'message', 'meeting' (booked in the contact modal) or 'book' (booked on /book). */
     Sent: string;
 }
 
@@ -230,6 +231,22 @@ export const EVENT_LABEL: Record<EventKind, string> = {
     print: 'Printed the page',
     end: 'Left',
 };
+
+/** The section name the standalone /book page records under. */
+export const BOOK_SECTION = 'book';
+
+/** Whether a visit spent any time on the standalone /book page. */
+export const sawBookPage = (s: Pick<SessionDoc, 'Sections' | 'Entry'>): boolean =>
+    (s.Sections?.[BOOK_SECTION] || 0) > 0 || s.Entry?.Section === BOOK_SECTION;
+
+/**
+ * What a visit sent, in words. The two booking paths are kept apart on purpose: the
+ * contact modal is a detour from the portfolio, /book is a page people are sent to.
+ */
+export const sentLabel = (sent: string): string =>
+    sent === 'book' ? 'booked on /book'
+        : sent === 'meeting' ? 'booked in contact'
+            : 'sent a message';
 
 /** Format a duration the way the dashboard shows it everywhere. */
 export const formatMs = (ms: number): string => {

@@ -33,6 +33,8 @@ const SCROLL_STEPS = [25, 50, 75, 100];
 
 const SID_KEY = 'revil_sid';
 const SID_AT_KEY = 'revil_sid_at';
+/** The last flush number sent for the tab's session (see start()). */
+const SEQ_KEY = 'revil_sid_seq';
 const VID_KEY = 'revil_vid';
 const VISITS_KEY = 'revil_visits';
 export const OPT_OUT_KEY = 'revil_no_track';
@@ -250,6 +252,12 @@ class Collector {
         this.startedAt = resumable ? prevAt : now;
         safeSession.set(SID_KEY, this.sessionId);
         safeSession.set(SID_AT_KEY, String(this.startedAt));
+        // A resumed session carries on from its last flush number. The server drops any
+        // flush numbered at or below the last it applied, so a fresh page (a reload, or
+        // moving between / and /book) that restarted at 1 lost everything it recorded
+        // until its count caught up with the page before it.
+        this.seq = resumable ? Number(safeSession.get(SEQ_KEY) || 0) || 0 : 0;
+        safeSession.set(SEQ_KEY, String(this.seq));
 
         this.visitorId = safeLocal.get(VID_KEY) || `v-${rand(12)}`;
         safeLocal.set(VID_KEY, this.visitorId);
@@ -352,7 +360,8 @@ class Collector {
     }
 
     /** The end of the funnel: they actually sent something. */
-    contactSubmit(kind: 'meeting' | 'message'): void {
+    /** 'meeting' = booked in the contact modal, 'book' = booked on the /book page. */
+    contactSubmit(kind: 'meeting' | 'message' | 'book'): void {
         if (!this.isRunning()) return;
         this.contactSent = kind;
         this.push('contact_sent', kind);
@@ -595,6 +604,7 @@ class Collector {
         this.buf = emptyBuffer();
         this.dirty = false;
         this.seq += 1;
+        safeSession.set(SEQ_KEY, String(this.seq));
 
         const body: Record<string, unknown> = {
             v: 2,

@@ -12,6 +12,8 @@ import useMeetingBooking, { getDaysInMonth } from '../../hooks/useMeetingBooking
 import { DEFAULT_BOOK_PAGE, parseBookPage, introRuns, linksFromAccount, type BookLink, type BookPageConfig } from '../../utils/bookPage';
 import { availabilityStatus, utcOffsetHours } from '../../utils/availability';
 import { paintBook, startBoil } from './brushes';
+import useBookTrail from './useBookTrail';
+import { analytics } from '../../lib/analytics/collector';
 import './book.css';
 
 const NAME_LINES = ['TEM', 'REVIL'];
@@ -62,7 +64,8 @@ export default function BookPage() {
     const rootRef = useRef<HTMLDivElement>(null);
     const boilRef = useRef<SVGFETurbulenceElement>(null);
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
-    const b = useMeetingBooking({ showAlert });
+    const b = useMeetingBooking({ showAlert, via: 'book' });
+    useBookTrail();
     const clock = useHostClock(b.hostTimezoneString);
     const status = availabilityStatus(b.hostAvailability);
 
@@ -311,6 +314,7 @@ export default function BookPage() {
                                 const external = /^https?:/i.test(l.url);
                                 return (
                                     <a key={l.id} href={l.url} className={l.kind === 'portfolio' ? 'full' : undefined}
+                                        onClick={() => { if (l.kind !== 'portfolio') analytics.socialClick(l.kind === 'email' ? 'Email' : l.label); }}
                                         {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
                                         <LinkIcon kind={l.kind} /><span>{l.label}</span>
                                     </a>

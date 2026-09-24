@@ -5,7 +5,7 @@ import {
     X, Monitor, Smartphone, Tablet, Clock, Gauge, MousePointer2, Trash2,
     ArrowDownWideNarrow, Link2, Zap, Radio,
 } from 'lucide-react';
-import { EVENT_LABEL, formatMs, type SessionDoc, type SessionEvent } from '../../lib/analytics/types';
+import { BOOK_SECTION, EVENT_LABEL, formatMs, sawBookPage, sentLabel, type SessionDoc, type SessionEvent } from '../../lib/analytics/types';
 
 /**
  * One visit, end to end.
@@ -75,6 +75,12 @@ function describe(e: SessionEvent): string {
         return e.v === 'dead' ? 'Clicked something that does nothing' : 'Clicked the same spot over and over';
     }
     if (e.k === 'copy') return `Copied ${e.v === 'text' ? 'some text' : `your ${e.v}`}`;
+    if (e.k === 'section' && e.v === BOOK_SECTION) return 'Opened the book page (/book)';
+    if (e.k === 'contact_sent') {
+        if (e.v === 'book') return 'Booked a call on the book page (/book)';
+        if (e.v === 'meeting') return 'Booked a call in the contact modal';
+        if (e.v === 'message') return 'Sent a message';
+    }
     return `${label} ${e.v}`;
 }
 
@@ -143,9 +149,10 @@ const MStory = ({ story, isDark, windowWidth, onClose, onDelete }: MStoryProps) 
     const sectionMax = sections[0]?.[1] || 1;
 
     const summary = [
-        story.Contact?.Sent ? `sent a ${story.Contact.Sent === 'meeting' ? 'booking' : 'message'}`
+        story.Contact?.Sent ? sentLabel(story.Contact.Sent)
             : story.Contact?.Opens ? 'opened contact but left'
                 : null,
+        sawBookPage(story) && story.Contact?.Sent !== 'book' ? 'saw /book' : null,
         projects.length ? `${projects.length} project${projects.length === 1 ? '' : 's'}` : null,
         story.Cv?.Opens ? 'read the CV' : null,
         story.Visit > 1 ? `visit #${story.Visit}` : 'first time',

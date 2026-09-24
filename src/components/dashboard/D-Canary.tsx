@@ -45,7 +45,17 @@ interface Meeting {
     googleEventId?: string;
     /** Category id. Absent = Personal, which is where every guest booking lands. */
     category?: string;
+    /** Where a guest booked it: the /book page or the contact modal. Absent = older, or added here. */
+    via?: 'book' | 'contact';
 }
+
+/** Which of the two booking paths a guest used. Sky for /book, pink for the modal (as in Trails). */
+const ViaBadge = ({ via }: { via: 'book' | 'contact' }) => (
+    <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-md font-semibold"
+        style={via === 'book' ? { color: '#0ea5e9', background: 'rgba(14,165,233,0.12)' } : { color: '#ec4899', background: 'rgba(236,72,153,0.12)' }}>
+        {via === 'book' ? 'Book page' : 'Contact'}
+    </div>
+);
 
 interface Email {
     id: string;
@@ -69,6 +79,7 @@ interface MeetingData {
     UserTimezone?: number;
     GoogleEventId?: string;
     Category?: string;
+    Via?: string;
 }
 
 interface EmailData {
@@ -236,7 +247,8 @@ const DCanary = () => {
                             reason: m["What For"],
                             userTimezone: m.UserTimezone || -(new Date().getTimezoneOffset() / 60),
                             googleEventId: m.GoogleEventId,
-                            category: typeof m.Category === 'string' ? m.Category : undefined
+                            category: typeof m.Category === 'string' ? m.Category : undefined,
+                            via: m.Via === 'book' || m.Via === 'contact' ? m.Via : undefined
                         };
                     })
                     .filter((m): m is Meeting => m !== null);
@@ -1360,6 +1372,7 @@ const DCanary = () => {
                                                         </div>
                                                     )}
                                                     {meeting.category && <CategoryBadge cat={categoryOf(meeting)} />}
+                                                    {meeting.via && <ViaBadge via={meeting.via} />}
                                                 </div>
                                                 <span className="text-[11px] opacity-40 italic font-normal line-clamp-1">{meeting.reason || 'No description'}</span>
                                             </div>
@@ -1864,6 +1877,15 @@ const DCanary = () => {
                                                         />
                                                     </div>
                                                 </div>
+
+                                                {editingMeeting.via && (
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Booked from</span>
+                                                        <p className="text-sm leading-relaxed m-0" style={{ color: isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.7)' }}>
+                                                            {editingMeeting.via === 'book' ? 'The book page (temrevil.com/book)' : 'The contact window on the portfolio'}
+                                                        </p>
+                                                    </div>
+                                                )}
 
                                                 {editingMeeting.reason && (
                                                     <div className="flex flex-col gap-1.5">

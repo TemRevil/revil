@@ -62,8 +62,13 @@ export const getDaysInMonth = (date: Date) => {
  *
  * `enabled` gates the one-time move to the next open day (the modal only wants it
  * while its meeting tab is showing).
+ *
+ * `via` says which of the two booked it. It is stored on the meeting (`Via`) so Canary
+ * can show where a booking came from, and sent with the analytics event so Trails can.
  */
-export default function useMeetingBooking({ showAlert, enabled = true }: { showAlert: ShowAlert; enabled?: boolean }) {
+export type BookingVia = 'book' | 'contact';
+
+export default function useMeetingBooking({ showAlert, enabled = true, via = 'contact' }: { showAlert: ShowAlert; enabled?: boolean; via?: BookingVia }) {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -444,12 +449,13 @@ export default function useMeetingBooking({ showAlert, enabled = true }: { showA
         Name: meetingData.name,
         timestamp: Date.now(),
         MeetingLink: meetLink,
-        GoogleEventId: googleEventId // Store the ID for reliable deletion/updates
+        GoogleEventId: googleEventId, // Store the ID for reliable deletion/updates
+        Via: via
       };
 
       try {
         await updateDoc(docRef, { [`Meetings.${meetingId}`]: payload, lastMeetingWrite: serverTimestamp() });
-        window.dispatchEvent(new CustomEvent('revil:contact_sent', { detail: { kind: 'meeting' } }));
+        window.dispatchEvent(new CustomEvent('revil:contact_sent', { detail: { kind: 'meeting', via } }));
       } catch (writeErr) {
         // The calendar event + guest invite already exist, but persisting the meeting
         // to Firestore failed - most commonly the rules' 300s global booking cooldown
