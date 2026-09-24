@@ -35,6 +35,8 @@ const SID_KEY = 'revil_sid';
 const SID_AT_KEY = 'revil_sid_at';
 /** The last flush number sent for the tab's session (see start()). */
 const SEQ_KEY = 'revil_sid_seq';
+/** Set once the server has accepted the visit's opening (`hello`) flush. */
+const HELLO_KEY = 'revil_sid_hello';
 const VID_KEY = 'revil_vid';
 const VISITS_KEY = 'revil_visits';
 export const OPT_OUT_KEY = 'revil_no_track';
@@ -59,6 +61,32 @@ interface Buffer {
     rage: number;
     prints: number;
     events: SessionEvent[];
+}
+
+/**
+ * Fold a buffer whose flush was refused back into the live one, so the next flush
+ * carries it. The server never applied it (it only applies a flush it answered OK),
+ * so nothing is counted twice.
+ */
+function mergeInto(into: Buffer, lost: Buffer): void {
+    into.openMs += lost.openMs;
+    into.activeMs += lost.activeMs;
+    into.idleMs += lost.idleMs;
+    for (const [k, v] of Object.entries(lost.sections)) into.sections[k] = (into.sections[k] || 0) + v;
+    for (const [k, v] of Object.entries(lost.projects)) {
+        const p = into.projects[k] || (into.projects[k] = { opens: 0, ms: 0, live: 0, github: 0, download: 0 });
+        p.opens += v.opens; p.ms += v.ms; p.live += v.live; p.github += v.github; p.download += v.download;
+    }
+    for (const [k, v] of Object.entries(lost.socials)) {
+        const s = into.socials[k] || (into.socials[k] = { clicks: 0, awayMs: 0 });
+        s.clicks += v.clicks; s.awayMs += v.awayMs;
+    }
+    into.cvOpens += lost.cvOpens;
+    into.contactOpens += lost.contactOpens;
+    into.copies += lost.copies;
+    into.rage += lost.rage;
+    into.prints += lost.prints;
+    into.events = [...lost.events, ...into.events].slice(0, MAX_EVENTS);
 }
 
 const emptyBuffer = (): Buffer => ({
@@ -217,6 +245,8 @@ class Collector {
     /** Supplied by the React bridge; returns a fresh App Check token or ''. */
     private getToken: () => Promise<string> = async () => '';
     private cachedToken = '';
+    /** Whether the server has the visit's opening flush (device, entry, share-link code). */
+    private helloAcked = false;
 
     /** The link code from the URL, resolved server-side on the first flush. */
     private code = '';
@@ -258,6 +288,8 @@ class Collector {
         // until its count caught up with the page before it.
         this.seq = resumable ? Number(safeSession.get(SEQ_KEY) || 0) || 0 : 0;
         safeSession.set(SEQ_KEY, String(this.seq));
+        this.helloAcked = resumable ? safeSession.get(HELLO_KEY) === '1' : false;
+        safeSession.set(HELLO_KEY, this.helloAcked ? '1' : '0');
 
         this.visitorId = safeLocal.get(VID_KEY) || `v-${rand(12)}`;
         safeLocal.set(VID_KEY, this.visitorId);
@@ -635,7 +667,12 @@ class Collector {
             events: buf.events,
         };
 
-        if (this.seq === 1) {
+        // The opening details ride along until the server confirms it has them. They
+        // used to go on flush 1 only: when that one was refused (no App Check token
+        // yet, a dropped connection), the visit was still recorded from flush 2 on,
+        // but with no device, no entry and no share-link code, so a link visit
+        // turned up as an anonymous one and the link never counted the open.
+        if (!this.helloAcked) {
             body.hello = {
                 startedAt: this.startedAt,
                 entry: readEntry(this.section),
@@ -655,11 +692,23 @@ class Collector {
                 body: JSON.stringify(body),
                 keepalive: true,
             })
-                .then(r => (r.ok ? r.json() : null))
+                .then(r => {
+                    if (r.ok) {
+                        if (body.hello) { this.helloAcked = true; safeSession.set(HELLO_KEY, '1'); }
+                        return r.json();
+                    }
+                    // Refused (a 401 without a token, a 5xx): keep what it carried for
+                    // the next flush. A 409 means the session itself is gone; drop it.
+                    if (r.status !== 409 && !final) { mergeInto(this.buf, buf); this.dirty = true; }
+                    return null;
+                })
                 .then((data: { tailor?: LinkTailor; link?: { Name: string; For: string } } | null) => {
                     if (data?.tailor && this.onTailor) this.onTailor(data.tailor, data.link || null);
                 })
-                .catch(() => { /* best effort - the next flush carries the same ground it lost */ });
+                .catch(() => {
+                    // Offline: the same as a refusal, the next flush carries it.
+                    if (!final) { mergeInto(this.buf, buf); this.dirty = true; }
+                });
         };
 
         // On the way out there is no time to await a token; use the warmed one.
