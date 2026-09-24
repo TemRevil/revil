@@ -14,6 +14,7 @@ const functions = getFunctions(app);
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MConfirmModal from './M-ConfirmModal';
+import BookPageEditor from './BookPageEditor';
 import MContact from '../M-Contact';
 import MReply from './M-Reply';
 import CustomTimePicker from '../CustomTimePicker';
@@ -1040,6 +1041,8 @@ const DCanary = () => {
             </div>
 
             {categoriesEditor}
+
+            <BookPageEditor isDark={isDark} containerBg={containerBg} showAlert={showAlert} />
         </div>
     );
 

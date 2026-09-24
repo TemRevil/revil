@@ -72,3 +72,6 @@ docs/
 # it records which snapshot the last deploy shipped.
 functions/data/geoip-v4.bin
 functions/data/geoip-v6.bin
+
+# Brainstorm companion mockups (local only)
+.superpowers/
