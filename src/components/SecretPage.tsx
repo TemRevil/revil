@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup as authSignInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app from '../lib/firebase';
 import { appAuth } from '../lib/appAuth';
 import { useSettings } from '../contexts/SettingsContext';
+import { PaintDefs, usePaint } from './book/paintKit';
+import './book/book.css';
 
 type SecretNavigate = (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
 
@@ -14,6 +16,11 @@ interface SecretPageProps {
 
 const SecretPage = ({ onNavigate }: SecretPageProps) => {
     const [isDark, setIsDark] = useState(false);
+    // The /book brushes from the page edges, faded out under the card ([data-paint-clear]).
+    const rootRef = useRef<HTMLDivElement>(null);
+    const [fontsReady, setFontsReady] = useState(false);
+    useEffect(() => { let alive = true; document.fonts.ready.then(() => { if (alive) setFontsReady(true); }); return () => { alive = false; }; }, []);
+    const { boilRef } = usePaint(rootRef, fontsReady);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const auth = appAuth();
@@ -89,8 +96,12 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
     };
 
     return (
-        <div className="w-full h-screen flex items-center justify-center p-5">
-            <div className="glass-panel p-10 w-full max-w-md flex flex-col items-center gap-6 animate-fade-in">
+        <div ref={rootRef} className="bp bp-secret">
+            <PaintDefs boilRef={boilRef} />
+            <div className="wall" aria-hidden="true" />
+            <svg className="paint-bg" aria-hidden="true" />
+        <div className="relative z-[1] w-full h-screen flex items-center justify-center p-5">
+            <div data-paint-clear className="glass-panel p-10 w-full max-w-md flex flex-col items-center gap-6 animate-fade-in">
                 <div className="relative w-30 h-30 rounded-full overflow-hidden mb-2" style={{
                     boxShadow: isDark ? '0 8px 24px rgba(0, 0, 0, 0.5)' : '0 8px 24px rgba(0, 0, 0, 0.2)',
                     border: `4px solid ${isDark ? '#ffffff20' : '#ffffff80'}`
@@ -137,6 +148,7 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
                     </p>
                 </form>
             </div>
+        </div>
         </div>
     );
 };

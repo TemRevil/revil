@@ -1,5 +1,5 @@
 /**
- * The painted hero (/book and the homepage): dry-brush strokes drawn in SVG, revealed in
+ * The painted hero (/book, the homepage, and the page-edge strokes on the sign-in page): dry-brush strokes drawn in SVG, revealed in
  * stop-motion steps and "boiling" at 15 frames a second like hand-drawn animation. Every
  * visit picks a different composition (a "mood", never the same one twice in a row) and
  * rolls the count, height, width and colour of each stroke. Strokes around the owner come
@@ -207,7 +207,7 @@ function drawBg(root: HTMLElement, t0: number, animate: boolean, mood: Mood) {
     const rb = root.getBoundingClientRect(), s = W / (rb.width || 1);
     const m = el('mask', { id: 'bps' + (++uid), maskUnits: 'userSpaceOnUse', x: -5000, y: -5000, width: 10000, height: 10000 });
     m.appendChild(el('rect', { x: -200, y: -200, width: W + 400, height: H + 400, fill: '#fff' }));
-    root.querySelectorAll('.pitch, .builds, .reach, .pills, .slogan').forEach(n => {
+    root.querySelectorAll('.pitch, .builds, .reach, .pills, .slogan, [data-paint-clear]').forEach(n => {
         const r = n.getBoundingClientRect();
         m.appendChild(el('rect', { x: (r.left - rb.left) * s - 12, y: (r.top - rb.top) * s - 12, width: r.width * s + 24, height: r.height * s + 24, rx: 20, fill: '#000', filter: 'url(#bp-soft)' }));
     });
