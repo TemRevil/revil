@@ -329,6 +329,7 @@ function buildInstructions(t: TimeInfo, cfg: McpCfg): string {
     "",
     "Rules:",
     "- Ground answers in the read tools (list_*, treasury_overview, get_current_time) before stating facts or acting.",
+    "- Trails (list_visits, get_visit, list_links) are the site's visit stories: who visited, from where, through which share link, and what they did. Visitors are anonymous; never try to identify one beyond what the story says.",
     "- Money: amounts are in the stated currency; valid currencies are USD, EGP, EUR. Don't convert silently - the treasury has its own display currency and FX rates.",
     "- Accounts: income lands INTO an account and expenses are paid FROM one. Use list_accounts and pass the right accountId; never invent an id.",
     "- Client-paid expenses: if the client/customer covered a cost, set clientPaid=true on the expense - it's recorded for reference but not counted as spending or deducted from any account.",
@@ -910,6 +911,194 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       const snap = await db().doc("Settings/Canary").get();
       const emails = snap.exists ? (snap.data()?.Emails || {}) : {};
       return ok(Object.entries(emails).map(([id, e]) => ({ id, ...(e as object) })));
+    });
+
+  // ---- Trails (visit analytics, written only by the trackSession function) ----
+  // Read-only. Timestamps come back in the owner's timezone (the same offset as
+  // get_current_time) so "last night" means the same thing to both of you.
+  const ownerOffset = (() => {
+    const m = /UTC([+-])(\d{2}):(\d{2})/.exec(time.offsetLabel);
+    return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) + Number(m[3]) / 60) : 0;
+  })();
+  const at = (ms: unknown): string | null => {
+    if (typeof ms !== "number" || !ms) return null;
+    const d = new Date(ms + ownerOffset * 3600000);
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} (${time.offsetLabel})`;
+  };
+  const dur = (ms: unknown): string => {
+    const s = Math.max(0, Math.round((typeof ms === "number" ? ms : 0) / 1000));
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  };
+  const sentWords = (sent: unknown): string | null =>
+    sent === "book" ? "booked a call on the /book page"
+      : sent === "meeting" ? "booked a call in the contact window"
+        : sent === "message" ? "sent a message" : null;
+  const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? v as Record<string, unknown> : {});
+
+  /** One visit as a short line-up of facts: what the Trails list shows. */
+  const visitSummary = (id: string, v: Record<string, unknown>) => {
+    const link = obj(v.Link);
+    const geo = obj(v.Geo);
+    const dev = obj(v.Device);
+    const entry = obj(v.Entry);
+    const contact = obj(v.Contact);
+    const sections = Object.entries(obj(v.Sections))
+      .filter((pair): pair is [string, number] => typeof pair[1] === "number" && pair[1] > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, ms]) => `${name} ${dur(ms)}`);
+    return {
+      id,
+      startedAt: at(v.StartedAt),
+      live: !v.Ended && Date.now() - (typeof v.LastSeenAt === "number" ? v.LastSeenAt : 0) < 60_000,
+      country: geo.Country || null,
+      device: [dev.Type, dev.OS, dev.Browser].filter(Boolean).join(" · ") || null,
+      visit: typeof v.Visit === "number" ? (v.Visit > 1 ? `returning, visit #${v.Visit}` : "first time") : null,
+      link: link.Name ? { name: link.Name, for: link.For || null, code: link.Code || null } : null,
+      cameFrom: obj(v.Source).Name || entry.Ref || "Direct",
+      landedOn: entry.Section || null,
+      leftFrom: obj(v.Exit).Section || null,
+      active: dur(v.ActiveMs),
+      tabOpen: dur(v.OpenMs),
+      timeBySection: sections,
+      projectsOpened: Object.keys(obj(v.Projects)),
+      socialsClicked: Object.keys(obj(v.Socials)),
+      openedCv: Number(obj(v.Cv).Opens || 0) > 0,
+      contact: sentWords(contact.Sent) || (Number(contact.Opens || 0) > 0 ? "opened contact but sent nothing" : null),
+      ownerVisit: v.Owner === true,
+    };
+  };
+
+  /** A timeline event in words, the way the dashboard's story reads it. */
+  const describeEvent = (e: Record<string, unknown>): string => {
+    const k = String(e.k || "");
+    const v = typeof e.v === "string" ? e.v : "";
+    switch (k) {
+      case "section": return v === "book" ? "Opened the /book page" : `Moved to ${v}`;
+      case "project": return `Opened project ${v}`;
+      case "project_end": return `Closed project ${v}`;
+      case "out": {
+        const [id, kind] = v.split(":");
+        return `Followed ${kind === "live" ? "the live demo" : kind === "github" ? "the repo" : "the download"} on ${id}`;
+      }
+      case "social": return `Left for ${v}`;
+      case "social_back": return `Came back from ${v}`;
+      case "cv": return "Opened the CV";
+      case "contact": return "Opened the contact window";
+      case "contact_tab": return `Switched contact to ${v}`;
+      case "contact_sent": {
+        const words = sentWords(v);
+        return words ? words.charAt(0).toUpperCase() + words.slice(1) : `Submitted ${v}`;
+      }
+      case "copy": return `Copied ${v === "text" ? "some text" : `the ${v}`}`;
+      case "scroll": {
+        const [sec, pct] = v.split(":");
+        return `Read ${pct}% down ${sec}`;
+      }
+      case "idle": return "Went idle";
+      case "wake": return "Came back";
+      case "hide": return "Left the tab";
+      case "show": return "Returned to the tab";
+      case "rage": return v === "dead" ? "Clicked something that does nothing" : "Clicked the same spot over and over";
+      case "print": return "Printed the page";
+      case "end": return "Left";
+      default: return v ? `${k} ${v}` : k;
+    }
+  };
+
+  server.registerTool("list_visits",
+    {
+      title: "List visits (Trails)",
+      description:
+        "Recent portfolio visits, newest first - the same stories the dashboard's Trails tab shows. Each row says who (country, " +
+        "device), where they came from, which share link they used if any, how long they were active and what they did. " +
+        "Use get_visit with an id for the full step-by-step story. The owner's own visits are left out unless includeOwner is set.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(50).optional().describe("how many visits to return, default 15"),
+        linkOnly: z.boolean().optional().describe("only visits that arrived on a share link"),
+        link: z.string().max(120).optional().describe("only visits from this share link: its name, who it is for, or its code (case-insensitive, partial match)"),
+        bookPage: z.boolean().optional().describe("only visits that opened the /book page"),
+        contacted: z.boolean().optional().describe("only visits that opened contact, sent a message or booked a call"),
+        includeOwner: z.boolean().optional().describe("include the owner's own visits (hidden by default)"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ limit, linkOnly, link, bookPage, contacted, includeOwner }) => {
+      // The newest 300 are scanned and filtered here, as the dashboard does: filtering
+      // on a nested field in the query would need an index per filter combination.
+      const snap = await db().collection("Analytics/Sessions/Items").orderBy("StartedAt", "desc").limit(300).get();
+      const needle = (link || "").trim().toLowerCase();
+      const rows = snap.docs.filter((d) => {
+        const v = d.data() as Record<string, unknown>;
+        const l = obj(v.Link);
+        if (!includeOwner && v.Owner === true) return false;
+        if ((linkOnly || needle) && !l.Name) return false;
+        if (needle && ![l.Name, l.For, l.Code].some((x) => String(x || "").toLowerCase().includes(needle))) return false;
+        if (bookPage && !(Number(obj(v.Sections).book || 0) > 0 || obj(v.Entry).Section === "book")) return false;
+        const c = obj(v.Contact);
+        if (contacted && !(c.Sent || Number(c.Opens || 0) > 0)) return false;
+        return true;
+      }).slice(0, limit ?? 15);
+      return ok({
+        searched: snap.size,
+        ...(snap.size === 300 ? { note: "Only the newest 300 visits were searched." } : {}),
+        visits: rows.map((d) => visitSummary(d.id, d.data() as Record<string, unknown>)),
+      });
+    });
+
+  server.registerTool("get_visit",
+    {
+      title: "Get one visit's story (Trails)",
+      description: "The full story of one visit by id (from list_visits): every step in order with its time since arrival, plus device, entry, tags and totals.",
+      inputSchema: { id: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).describe("visit id (see list_visits)") },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ id }) => {
+      const snap = await db().doc(`Analytics/Sessions/Items/${id}`).get();
+      if (!snap.exists) return ok({ error: `No visit with id ${id}` });
+      const v = snap.data() as Record<string, unknown>;
+      const events = Array.isArray(v.Events) ? v.Events as Record<string, unknown>[] : [];
+      const dev = obj(v.Device);
+      const entry = obj(v.Entry);
+      return ok({
+        ...visitSummary(snap.id, v),
+        idle: dur(v.IdleMs),
+        timeline: events.map((e) => `${dur(e.t)}  ${describeEvent(e)}`),
+        timelineCut: v.EventsCut === true,
+        projects: v.Projects || {},
+        socials: v.Socials || {},
+        scrollDepth: v.Scroll || {},
+        who: {
+          localTime: dev.LocalTime || null, timezone: dev.Timezone || null, language: dev.Language || null,
+          screen: dev.Screen || null, window: dev.Viewport || null, theme: dev.Theme || null, touch: dev.Touch ?? null,
+        },
+        entry: { path: entry.Path || null, referrer: entry.Referrer || null, tags: entry.Utm || {} },
+        frustration: { deadClicks: v.Rage || 0, copies: v.Copies || 0, prints: v.Prints || 0 },
+        checkIns: v.Flushes || 0,
+      });
+    });
+
+  server.registerTool("list_links",
+    {
+      title: "List share links (Trails)",
+      description: "The owner's share links (temrevil.com/<code>): who each is for, how many times it was opened and when last. Use list_visits with link=<name> for the visits that came through one.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const snap = await db().collection("Analytics/Links/Items").get();
+      const links = snap.docs.map((d) => {
+        const l = d.data() as Record<string, unknown>;
+        return {
+          id: d.id, name: l.Name || null, for: l.For || null, code: l.Code || null,
+          url: l.Code ? `https://temrevil.com/${l.Code}` : null,
+          opens: l.Opens || 0, visits: l.Sessions || 0,
+          lastOpenedAt: at(l.LastOpenAt), createdAt: at(l.Created), notifyOnOpen: l.Notify === true,
+        };
+      });
+      links.sort((a, b) => String(b.lastOpenedAt || "").localeCompare(String(a.lastOpenedAt || "")));
+      return ok(links);
     });
 
   server.registerTool("treasury_overview",
