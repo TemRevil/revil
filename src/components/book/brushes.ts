@@ -222,6 +222,38 @@ function drawBg(root: HTMLElement, t0: number, animate: boolean, mood: Mood) {
         const col = i === 0 ? 'var(--accent)' : pick(['var(--accent)', 'var(--paint-ink)', '#1668d8']);
         paint(layer, fromEdge(frame, R(.25, .6), R(.3, .55), sides[i % sides.length]), w, col, t0 + i * 170, animate);
     }
+    const centre = root.querySelector<HTMLElement>('[data-paint-center]');
+    if (centre) drawAround(layer, centre, rb, s, W, t0 + n * 170, animate, mood);
+}
+
+/**
+ * Pages with no cut-out (the sign-in page): sweeps from one screen edge to the other
+ * across the element marked [data-paint-center], and a ring around it, all behind it
+ * so its glass blurs them.
+ */
+function drawAround(layer: SVGElement, centre: HTMLElement, rb: DOMRect, s: number, W: number, t0: number, animate: boolean, mood: Mood) {
+    const r = centre.getBoundingClientRect();
+    const cx = (r.left + r.width / 2 - rb.left) * s, cy = (r.top + r.height / 2 - rb.top) * s, cw = r.width * s, ch = r.height * s;
+    const big = W >= 1000 ? 1 : .6, colour = () => pick(['var(--accent)', 'var(--accent)', '#1668d8', 'var(--paint-ink)']);
+    let t = t0;
+    const sweeps = lite ? 1 : { sweep: int(2, 3), orbit: 1, slash: 2, bold: int(1, 2) }[mood];
+    for (let i = 0; i < sweeps; i++) {
+        const l2r = rand() < .5, a = l2r ? -80 : W + 80, b = l2r ? W + 80 : -80, dx = b - a;
+        const tiltY = mood === 'slash' ? R(.9, 1.5) * ch * (rand() < .5 ? 1 : -1) : R(-.35, .35) * ch;
+        const y0 = cy + R(-.7, .7) * ch - tiltY / 2, y1 = y0 + tiltY;
+        const path = bez([a, y0], [a + dx / 3, y0 + R(-.3, .3) * ch], [a + dx * 2 / 3, y1 + R(-.3, .3) * ch], [b, y1]);
+        const w = (i === 0 ? (mood === 'bold' ? R(120, 170) : R(80, 130)) : R(26, 70)) * big;
+        paint(layer, path, w, i === 0 ? 'var(--accent)' : colour(), t, animate, 1300);
+        t += 170;
+    }
+    if (!lite || rand() < .5) {
+        const n = mood === 'orbit' ? 2 : int(1, 2);
+        for (let i = 0; i < n; i++) {
+            const from = R(0, 2) * Math.PI;
+            paint(layer, ring(cx, cy, cw * R(.62, .85), ch * R(.55, .8), R(-.35, .35), from, from + R(1.1, 1.7) * Math.PI), R(16, 34) * big, colour(), t, animate, 900);
+            t += 200;
+        }
+    }
 }
 
 /** "Tem Revil" on the shirt, letter by letter like the homepage's HandwritingText. */

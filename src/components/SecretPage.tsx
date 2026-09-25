@@ -16,7 +16,7 @@ interface SecretPageProps {
 
 const SecretPage = ({ onNavigate }: SecretPageProps) => {
     const [isDark, setIsDark] = useState(false);
-    // The /book brushes from the page edges, faded out under the card ([data-paint-clear]).
+    // The /book brushes: from the page edges, across the page and around the card, behind its glass.
     const rootRef = useRef<HTMLDivElement>(null);
     const [fontsReady, setFontsReady] = useState(false);
     useEffect(() => { let alive = true; document.fonts.ready.then(() => { if (alive) setFontsReady(true); }); return () => { alive = false; }; }, []);
@@ -94,7 +94,7 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
             <div className="wall" aria-hidden="true" />
             <svg className="paint-bg" aria-hidden="true" />
         <div className="relative z-[1] w-full h-screen flex items-center justify-center p-5">
-            <div data-paint-clear className="glass-panel p-10 w-full max-w-md flex flex-col items-center gap-6 animate-fade-in">
+            <div data-paint-center className="glass-panel p-10 w-full max-w-md flex flex-col items-center gap-6 animate-fade-in">
                 <div className="relative w-30 h-30 rounded-full overflow-hidden mb-2" style={{
                     boxShadow: isDark ? '0 8px 24px rgba(0, 0, 0, 0.5)' : '0 8px 24px rgba(0, 0, 0, 0.2)',
                     border: `4px solid ${isDark ? '#ffffff20' : '#ffffff80'}`
