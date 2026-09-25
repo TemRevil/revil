@@ -4,7 +4,7 @@ import Script from 'next/script'
 import './globals.css'
 import '../lib/firebase'
 import ClientProtection from './ClientProtection'
-import projectsSnapshot from '../data/projects.snapshot.json'
+import { projectPages, tagNames } from '../utils/projectPages'
 
 // ── next/font optimization: self-hosted, subsetted, no render-blocking requests ──
 const inter = Inter({
@@ -68,23 +68,7 @@ const socialProfiles = [
   'https://instagram.com/temrevil',
 ]
 
-/** Shape of a row in src/data/projects.snapshot.json (mirrors the Firestore doc). */
-type SnapshotProject = {
-  id: string
-  Description?: string
-  'Live Link'?: string
-  'Repository Link'?: string
-  'Project Icon'?: string
-  Tags?: Record<string, string | { Name?: string }>
-}
-
-const projects = projectsSnapshot as SnapshotProject[]
-
-const tagNames = (p: SnapshotProject) =>
-  Object.values(p.Tags || {})
-    .map((t) => (typeof t === 'string' ? t : t?.Name || ''))
-    .map((t) => t.trim())
-    .filter(Boolean)
+const projects = projectPages
 
 const structuredData = {
   '@context': 'https://schema.org',
@@ -254,17 +238,21 @@ const structuredData = {
       description: 'Web and UI projects designed and built by Mohammed Ahmed (Tem Revil).',
       numberOfItems: projects.length,
       itemListOrder: 'https://schema.org/ItemListUnordered',
-      itemListElement: projects.map((p, i) => {
+      itemListElement: projects.map(({ project: p, name, slug }, i) => {
         const keywords = tagNames(p)
+        const url = `${siteUrl}/projects/${slug}`
         return {
           '@type': 'ListItem',
           position: i + 1,
+          url,
           item: {
             '@type': 'CreativeWork',
-            '@id': `${siteUrl}/#project-${encodeURIComponent(p.id.toLowerCase().replace(/\s+/g, '-'))}`,
-            name: p.id,
+            // The same node the project's own page describes in full.
+            '@id': `${url}#project`,
+            name,
+            url,
             ...(p.Description ? { description: p.Description } : {}),
-            ...(p['Live Link'] ? { url: p['Live Link'] } : {}),
+            ...(p['Live Link'] || p['Repository Link'] ? { sameAs: [p['Live Link'], p['Repository Link']].filter(Boolean) } : {}),
             ...(p['Repository Link'] ? { codeRepository: p['Repository Link'] } : {}),
             ...(p['Project Icon'] ? { image: p['Project Icon'] } : {}),
             ...(keywords.length ? { keywords: keywords.join(', ') } : {}),

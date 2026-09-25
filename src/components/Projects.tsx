@@ -11,6 +11,7 @@ import MContributorView, { Contributor } from './M-ContributorView';
 import { ProjectData as Project, TagData as Tag, ContributorData } from '../types';
 import { getStackIcon, getTechColor, isVideoFile } from '../utils/projectUtils';
 import { useTailor } from '../lib/analytics/useTailor';
+import { slugOf } from '../utils/projectSlug';
 
 interface RawContributorData {
     Name?: string;
@@ -288,7 +289,16 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
 
             <div className="p-6 flex flex-col flex-1">
                 <h3 className="heading-md mb-2.5 text-primary">
-                    {project.title}
+                    {/* A real address for the project's own page, so search engines can
+                        list it. A plain click stays here and opens the window (the card's
+                        onClick); ctrl/cmd/middle-click opens the page in a new tab. */}
+                    <a
+                        href={`/projects/${slugOf(String(project.id ?? project.title ?? ""))}`}
+                        className="text-inherit no-underline"
+                        onClick={(e) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) e.preventDefault(); }}
+                    >
+                        {project.title}
+                    </a>
                 </h3>
                 <p
                     className="text-body text-sec overflow-hidden"

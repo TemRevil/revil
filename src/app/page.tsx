@@ -1,9 +1,8 @@
-'use client'
-import dynamic from 'next/dynamic'
+import HomeApp from './HomeApp'
+import { projectPages } from '../utils/projectPages'
 
-// Disable SSR for the entire React SPA application since it relies heavily 
-// on browser APIs (window, document, animations) synchronously
-const App = dynamic(() => import('../App'), { ssr: false })
+// A server component on purpose: the <noscript> copy below is built from the project
+// snapshot at build time, and nothing of it ships to the browser as JavaScript.
 
 export default function Page() {
   return (
@@ -91,6 +90,17 @@ export default function Page() {
             </p>
           </section>
 
+          <nav aria-label="Pages">
+            <h2>Pages</h2>
+            <ul>
+              <li><a href="/book">Book a free 30 minute call</a></li>
+              <li><a href="/projects">All projects</a></li>
+              {projectPages.map((p) => (
+                <li key={p.slug}><a href={`/projects/${p.slug}`}>{p.name}</a></li>
+              ))}
+            </ul>
+          </nav>
+
           <footer>
             <h2>Contact &amp; profiles</h2>
             <ul>
@@ -103,7 +113,7 @@ export default function Page() {
           </footer>
         </article>
       </noscript>
-      <App />
+      <HomeApp />
     </>
   )
 }

@@ -457,9 +457,16 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
                 the site's strongest conversion path (the Google Meet booking modal,
                 opened on its meeting tab) is visible without hunting the navbar. */}
             {onBook && (
-                <button
-                    type="button"
-                    onClick={onBook}
+                // A link to /book so the booking page is part of the site's link graph
+                // (search engines find pages through links). A plain click keeps the
+                // quicker path, the booking window, and a new-tab click opens /book.
+                <a
+                    href="/book"
+                    onClick={(e) => {
+                        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                        e.preventDefault();
+                        onBook();
+                    }}
                     aria-label="Book a call"
                     className="group flex items-center gap-2 px-6 py-3 rounded-full font-bold text-[15px] shadow-lg transition-all active:scale-[0.98] hover:brightness-110"
                     style={{
@@ -470,7 +477,7 @@ const AvailableBadge = ({ isDark, entryDelay = 1200, isReady = true, onBook }: {
                     }}
                 >
                     <Calendar size={16} strokeWidth={2.5} /> Book a call
-                </button>
+                </a>
             )}
 
             {/* Portal tooltip */}
