@@ -1,13 +1,13 @@
 /**
  * The /book hero's paint: dry-brush strokes drawn in SVG, revealed in stop-motion steps
- * and "boiling" at 6 frames a second like hand-drawn animation. The strokes around the
+ * and "boiling" at 15 frames a second like hand-drawn animation. The strokes around the
  * owner come in from past the page edges, ring the body (far half behind, near half in
  * front) and are rejected if they would cross the face. Filters referenced here
  * (#bp-rag, #bp-boil, #bp-fabric, #bp-soft) are defined once in BookPage.
  */
 
 const NS = 'http://www.w3.org/2000/svg';
-const FPS = 6;
+const FPS = 15;
 export const FRAME = 1000 / FPS;
 
 type Pt = [number, number];
@@ -244,7 +244,7 @@ export function paintBook(root: HTMLElement, animate: boolean) {
     root.dataset.intro = 'done';
 }
 
-/** Old-animation boil: the brush edges re-roll 6 times a second. Returns a stop function. */
+/** Old-animation boil: the brush edges re-roll 15 times a second. Returns a stop function. */
 export function startBoil(turb: SVGElement) {
     let f = 0;
     const id = window.setInterval(() => {

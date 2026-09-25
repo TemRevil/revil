@@ -264,6 +264,7 @@ export default function BookPage() {
                                                     const off = b.getMeetingsForDate(sel).some(m => m.Time === hostTime) || b.isTimePassed(sel, hostTime);
                                                     return (
                                                         <button key={time} type="button" disabled={off} aria-pressed={b.selectedTime === time && !b.isCustomTime}
+                                                            aria-label={`${shortTime(time)} your time${off ? ', unavailable' : ''}`}
                                                             onClick={() => { b.setSelectedTime(time); b.setIsCustomTime(false); }}>
                                                             {shortTime(time)}
                                                         </button>
@@ -285,17 +286,17 @@ export default function BookPage() {
                                                 <label className="label-help" htmlFor="bp-name">Name *
                                                     <HintTooltip text="Your name shows on the calendar invite. A nickname is fine." isDark={isDark} />
                                                 </label>
-                                                <input id="bp-name" required autoComplete="name" placeholder="Your name" value={b.meetingData.name}
+                                                <input id="bp-name" name="name" required autoComplete="name" placeholder="Your name" value={b.meetingData.name}
                                                     onChange={e => b.setMeetingData({ ...b.meetingData, name: e.target.value })} />
                                             </div>
                                             <div className="fld">
                                                 <label className="label-help" htmlFor="bp-email">Email *</label>
-                                                <input id="bp-email" type="email" required autoComplete="email" placeholder="The Meet link goes here" value={b.meetingData.email}
+                                                <input id="bp-email" name="email" type="email" required autoComplete="email" placeholder="The Meet link goes here" value={b.meetingData.email}
                                                     onChange={e => b.setMeetingData({ ...b.meetingData, email: e.target.value })} />
                                             </div>
                                             <div className="fld">
                                                 <label className="label-help" htmlFor="bp-about">What&apos;s it about? *</label>
-                                                <textarea id="bp-about" required rows={1} placeholder="A project, a role, a podcast..." value={b.meetingData.reason}
+                                                <textarea id="bp-about" name="reason" required rows={1} placeholder="A project, a role, a podcast..." value={b.meetingData.reason}
                                                     onChange={e => b.setMeetingData({ ...b.meetingData, reason: e.target.value })} />
                                             </div>
                                         </div>
