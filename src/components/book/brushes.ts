@@ -1,9 +1,11 @@
 /**
- * The /book hero's paint: dry-brush strokes drawn in SVG, revealed in stop-motion steps
- * and "boiling" at 15 frames a second like hand-drawn animation. The strokes around the
- * owner come in from past the page edges, ring the body (far half behind, near half in
- * front) and are rejected if they would cross the face. Filters referenced here
- * (#bp-rag, #bp-boil, #bp-fabric, #bp-soft) are defined once in BookPage.
+ * The painted hero (/book and the homepage): dry-brush strokes drawn in SVG, revealed in
+ * stop-motion steps and "boiling" at 15 frames a second like hand-drawn animation. Every
+ * visit picks a different composition (a "mood", never the same one twice in a row) and
+ * rolls the count, height, width and colour of each stroke. Strokes around the owner come
+ * in from past the page edges, ring the body (far half behind, near half in front) and
+ * are rejected if they would cross the face. Phones get a lighter set (fewer strokes and
+ * bristles). Filters referenced here (#bp-rag, #bp-fabric, #bp-soft) are in PaintDefs.
  */
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -17,7 +19,9 @@ let seed = (Math.random() * 1e9 | 0) + 1;
 let uid = 0;
 const rand = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
 const R = (a: number, b: number) => a + rand() * (b - a);
-const pick = <T,>(a: T[]) => a[Math.floor(rand() * a.length)];
+const pick = <T,>(a: readonly T[]) => a[Math.floor(rand() * a.length)];
+const int = (a: number, b: number) => a + Math.floor(rand() * (b - a + 1));
+const shuffle = <T,>(a: T[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const el = (tag: string, attrs: Record<string, string | number>) => {
     const e = document.createElementNS(NS, tag);
     for (const k in attrs) e.setAttribute(k, String(attrs[k]));
@@ -26,6 +30,9 @@ const el = (tag: string, attrs: Record<string, string | number>) => {
 const stepped = (ms: number) => `steps(${Math.max(2, Math.round(ms / FRAME))}, end)`;
 
 // ---------- dry brush ----------
+/** Phones: fewer bristles per stroke (set per paint by paintBook). */
+let lite = false;
+
 function paint(svg: SVGElement, pts0: Pt[], width: number, color: string, delay: number, animate: boolean, dur?: number) {
     const d = 'M' + pts0.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
     const probe = el('path', { d }) as SVGPathElement;
@@ -48,7 +55,7 @@ function paint(svg: SVGElement, pts0: Pt[], width: number, color: string, delay:
     mask.appendChild(mp);
     svg.appendChild(mask);
     const g = el('g', { mask: `url(#${id})`, filter: 'url(#bp-rag)' });
-    const K = Math.max(8, Math.round(width / 3));
+    const K = lite ? Math.max(5, Math.round(width / 6)) : Math.max(8, Math.round(width / 3));
     for (let k = 0; k < K; k++) {
         const off = (k / (K - 1) - .5) * width + R(-1.5, 1.5), tEnd = R(.62, 1), tStart = R(0, .06), wig = R(.4, 1.6);
         let s = '';
@@ -115,7 +122,18 @@ function safe(make: () => Pt[], f: Face, pad: number) {
     return null;
 }
 
-function drawStage(root: HTMLElement, t0: number, animate: boolean) {
+const MOODS = ['sweep', 'orbit', 'slash', 'bold'] as const;
+type Mood = typeof MOODS[number];
+/** A different composition from last visit's (remembered per browser, best effort). */
+function pickMood(): Mood {
+    let last = '';
+    try { last = localStorage.getItem('revil_paint_mood') || ''; } catch { /* storage blocked */ }
+    const mood = pick(MOODS.filter(m => m !== last));
+    try { localStorage.setItem('revil_paint_mood', mood); } catch { /* storage blocked */ }
+    return mood;
+}
+
+function drawStage(root: HTMLElement, t0: number, animate: boolean, mood: Mood) {
     const stage = root.querySelector<HTMLElement>('.stage:not(.stage-back)');
     const back = root.querySelector<SVGSVGElement>('.ring-back'), front = root.querySelector<SVGSVGElement>('.ring-front');
     if (!stage || !back || !front) return t0;
@@ -125,37 +143,56 @@ function drawStage(root: HTMLElement, t0: number, animate: boolean) {
     const sr = stage.getBoundingClientRect(), br = root.getBoundingClientRect(), k0 = W / (sr.width || 1);
     const X0 = (br.left - sr.left) * k0, X1 = (br.right - sr.left) * k0;
     // Edge to edge: starts past one side of the screen, ends past the other, crossing behind.
-    const across = (yA: number, yB: number, bend: number) => {
-        const l2r = rand() < .5, y0 = H * R(yA, yB), y1 = H * R(yA, yB), a = l2r ? X0 - 80 : X1 + 80, b = l2r ? X1 + 80 : X0 - 80;
-        const dx = b - a;
-        return bez([a, y0], [a + dx / 3, y0 + R(-bend, bend) * H], [a + dx * 2 / 3, y1 + R(-bend, bend) * H], [b, y1]);
+    const across = (y0: number, y1: number, bend: number) => {
+        const l2r = rand() < .5, a = l2r ? X0 - 80 : X1 + 80, b = l2r ? X1 + 80 : X0 - 80, dx = b - a;
+        const ya = H * (l2r ? y0 : y1), yb = H * (l2r ? y1 : y0);
+        return bez([a, ya], [a + dx / 3, ya + R(-bend, bend) * H], [a + dx * 2 / 3, yb + R(-bend, bend) * H], [b, yb]);
     };
     const k = W / 520, blue = 'var(--accent)', deep = '#1668d8', ink = 'var(--paint-ink)', f = face(W, H);
+    const colour = () => pick([blue, blue, deep, ink]);
     let t = t0;
-    // Behind: long sweeps from the page edges that pass behind the body.
-    paint(back, across(.34, .5, .18), R(90, 130) * k, blue, t, animate, 1300);
-    paint(back, across(.55, .8, .2), R(50, 80) * k, ink, t += 170, animate, 1300);
-    paint(back, across(.25, .9, .25), R(24, 40) * k, pick([blue, deep]), t += 170, animate, 1300);
-    paint(back, ring(W * .52, H * .17, W * R(.3, .36), H * R(.12, .16), R(-.25, .25), Math.PI * R(.95, 1.1), Math.PI * R(1.85, 2.05)), R(18, 26) * k, pick([blue, deep]), t += 170, animate);
+
+    // Behind: long sweeps from the page edges that pass behind the body. Heights come from
+    // shuffled bands, so two sweeps rarely land on the same line.
+    const sweeps = lite ? int(1, 2) : { sweep: int(3, 4), orbit: int(1, 2), slash: int(2, 3), bold: int(1, 2) }[mood];
+    const bands = shuffle([[.22, .36], [.34, .5], [.48, .64], [.6, .78], [.74, .92]]);
+    for (let i = 0; i < sweeps; i++) {
+        const [a, b] = bands[i % bands.length], y = R(a, b);
+        const path = mood === 'slash'
+            ? (rand() < .5 ? across(R(.05, .35), R(.62, .98), .12) : across(R(.62, .98), R(.05, .35), .12))
+            : across(y, y + R(-.14, .14), R(.1, .25));
+        const w = (i === 0 ? (mood === 'bold' ? R(120, 170) : R(80, 130)) : R(22, 80)) * k;
+        paint(back, path, w, i === 0 ? blue : colour(), t, animate, 1300);
+        t += 170;
+    }
+    // A ring behind the head, now and then.
+    if (rand() < (mood === 'orbit' ? .9 : .4)) {
+        paint(back, ring(W * R(.49, .55), H * R(.14, .2), W * R(.28, .38), H * R(.1, .16), R(-.3, .3), Math.PI * R(.95, 1.1), Math.PI * R(1.85, 2.05)), R(16, 28) * k, colour(), t, animate);
+        t += 170;
+    }
     // Rings around the body: far half behind, near half across the front, never over the face.
-    [{ cy: [.5, .56], rx: [.6, .72], w: [26, 36], col: blue }, { cy: [.84, .9], rx: [.66, .78], w: [34, 48], col: pick([ink, deep]) }].forEach(r => {
-        const cx = W * R(.49, .56), cy = H * R(r.cy[0], r.cy[1]), rx = W * R(r.rx[0], r.rx[1]), ry = H * R(.05, .085), tilt = R(-.2, .2), w = R(r.w[0], r.w[1]) * k;
+    const rings = lite ? int(0, 1) : { sweep: int(1, 2), orbit: int(2, 3), slash: int(0, 1), bold: int(1, 2) }[mood];
+    shuffle([[.44, .52], [.54, .64], [.68, .78], [.82, .92]]).slice(0, rings).forEach(([a, b]) => {
+        const cx = W * R(.48, .57), cy = H * R(a, b), rx = W * R(.56, .8), ry = H * R(.045, .1), tilt = R(-.25, .25), w = R(22, 50) * k, col = colour();
         const near = safe(() => ring(cx, cy, rx, ry, tilt, -.05, Math.PI - R(.02, .1) * Math.PI), f, w);
-        paint(back, ring(cx, cy, rx, ry, tilt, Math.PI + R(.02, .12) * Math.PI, Math.PI * 2 + .05), w, r.col, t += 190, animate, 560);
-        if (near) paint(front, near, w, r.col, t + 420, animate, 560);
+        paint(back, ring(cx, cy, rx, ry, tilt, Math.PI + R(.02, .12) * Math.PI, Math.PI * 2 + .05), w, col, t += 190, animate, 560);
+        if (near) paint(front, near, w, col, t + 420, animate, 560);
         t += 420;
     });
-    // Flicks in front, from the sides of the body, checked against the face.
-    const fl = [
-        () => bezier(W * R(.05, .2), H * R(.48, .62), R(.2, .3) * W, Math.PI + R(.3, .9), .3),
-        () => bezier(W * R(.8, .92), H * R(.44, .58), R(.18, .26) * W, R(-.9, -.3), .3),
-    ];
-    fl.forEach((mk, i) => { const w = R(9, 15) * k, p = safe(mk, f, w); if (p) paint(front, p, w, i ? ink : blue, t += 140, animate); });
+    // Flicks in front, from either side of the body, checked against the face.
+    const flicks = lite ? int(0, 1) : int(mood === 'slash' ? 2 : 0, 3);
+    for (let i = 0; i < flicks; i++) {
+        const left = rand() < .5, w = R(8, 16) * k;
+        const p = safe(() => left
+            ? bezier(W * R(.02, .22), H * R(.4, .72), R(.16, .3) * W, Math.PI + R(.2, 1), .3)
+            : bezier(W * R(.78, .96), H * R(.4, .72), R(.16, .3) * W, R(-1, -.2), .3), f, w);
+        if (p) paint(front, p, w, colour(), t += 140, animate);
+    }
     return t;
 }
 
 /** Page-level strokes from the frame edges; faded out under the text, blurred behind the glass. */
-function drawBg(root: HTMLElement, t0: number, animate: boolean) {
+function drawBg(root: HTMLElement, t0: number, animate: boolean, mood: Mood) {
     const svg = root.querySelector<SVGSVGElement>('.paint-bg');
     if (!svg) return;
     const W = root.clientWidth, H = root.clientHeight;
@@ -172,9 +209,13 @@ function drawBg(root: HTMLElement, t0: number, animate: boolean) {
     const layer = el('g', { mask: `url(#${m.getAttribute('id')})` });
     svg.appendChild(layer);
     const big = W >= 1000 ? 1 : .55, frame: [number, number, number, number] = [0, 0, W, H];
-    paint(layer, fromEdge(frame, R(.45, .6), .45, ['r', 't']), 70 * big, 'var(--accent)', t0, animate);
-    paint(layer, fromEdge(frame, R(.35, .5), .5, ['r', 'b']), 40 * big, pick(['var(--accent)', 'var(--paint-ink)']), t0 + 170, animate);
-    paint(layer, fromEdge(frame, R(.25, .4), .5), 24 * big, pick(['var(--accent)', 'var(--paint-ink)']), t0 + 340, animate);
+    const n = lite ? 2 : int(mood === 'bold' ? 2 : 3, 4);
+    const sides = shuffle<('l' | 'r' | 't' | 'b')[]>([['r', 't'], ['r', 'b'], ['l', 't'], ['l', 'b'], ['t', 'b']]);
+    for (let i = 0; i < n; i++) {
+        const w = (i === 0 ? R(55, mood === 'bold' ? 110 : 85) : R(18, 48)) * big;
+        const col = i === 0 ? 'var(--accent)' : pick(['var(--accent)', 'var(--paint-ink)', '#1668d8']);
+        paint(layer, fromEdge(frame, R(.25, .6), R(.3, .55), sides[i % sides.length]), w, col, t0 + i * 170, animate);
+    }
 }
 
 /** "Tem Revil" on the shirt, letter by letter like the homepage's HandwritingText. */
@@ -231,15 +272,18 @@ function textIn(root: HTMLElement) {
 }
 
 /**
- * Full entrance. With `animate` false (reduced motion, or a redraw after resize) everything
+ * Full entrance. `phone` paints the lighter set. With `animate` false (reduced motion, or a redraw after resize) everything
  * lands at once. The page is rendered hidden (book.css gates it until data-intro="done"), so
  * the gate lifts in the same task the entrance starts: nothing shows, then vanishes, then
  * animates back in.
  */
-export function paintBook(root: HTMLElement, animate: boolean) {
+export function paintBook(root: HTMLElement, animate: boolean, phone = false) {
+    lite = phone;
+    // One composition per page load: a redraw after a resize keeps the same mood.
+    const mood = (root.dataset.mood || (root.dataset.mood = pickMood())) as Mood;
     // Paint first: drawBg measures the text boxes, which the entrance offsets while it runs.
-    drawBg(root, 900, animate);
-    drawShirt(root, drawStage(root, 1100, animate) + 200, animate);
+    drawBg(root, 900, animate, mood);
+    drawShirt(root, drawStage(root, 1100, animate, mood) + 200, animate);
     if (animate) textIn(root);
     root.dataset.intro = 'done';
 }

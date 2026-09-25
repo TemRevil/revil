@@ -148,7 +148,35 @@
   .bp .cal button { height: 56px; }
   .bp .cal { flex: 1; align-content: center; }
 }
+/* ================= homepage hero (Hero.tsx): the same hero, on its own and full width =================
+   No side column; the pills carry Book a call and sit above the site's bottom dock. */
+.bp .pill.book { color: #fff; background: var(--blue); border-color: transparent; box-shadow: 0 8px 24px rgba(59,130,246,.35); text-decoration: none; transition: filter .2s, transform .2s; }
+.bp .pill.book:hover { filter: brightness(1.1); }
+.bp .pill.book:active { transform: scale(.98); }
+.bp button.pill { font-family: inherit; color: inherit; cursor: pointer; }
+.bp.bp-home { min-height: 0; }
+.bp-home .layout { display: block; }
+.bp-home .hero { height: max(620px, 100svh); max-width: 1440px; margin: 0 auto; }
+.bp-home .this-is { top: 40px; }
+.bp-home h1.name { top: 72px; }
+.bp-home h1.name > span { font-size: clamp(72px, 23cqw, 128px); }
+.bp-home .slogan { top: 82px; font-size: clamp(17px, 5cqw, 26px); }
+.bp-home .stage { bottom: 196px; height: min(54svh, 500px); width: auto; aspect-ratio: 920 / 1286; }
+.bp-home .pills { bottom: 116px; }
+
+@container (min-width: 1000px) {
+  .bp-home .layout { grid-template-columns: 1fr; min-height: 0; }
+  .bp-home .hero { min-height: 0; height: max(760px, 100dvh); }
+  .bp-home .this-is { left: 48px; top: 8%; font-size: 48px; }
+  .bp-home h1.name { left: 40px; right: 40px; top: calc(8% + 46px); }
+  .bp-home h1.name > span { font-size: clamp(150px, 14cqw, 220px); }
+  .bp-home h1.name > span:nth-child(3) { margin-top: -24px; }
+  .bp-home .slogan { right: 48px; top: 10%; font-size: 42px; }
+  .bp-home .stage { bottom: 0; height: min(84%, 800px); left: 50%; }
+  .bp-home .pills { left: 44px; bottom: 124px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bp .dot i + i, .bp .spin { animation: none; }
-  .bp .btn-book:not(:disabled):hover { transform: none; }
+  .bp .btn-book:not(:disabled):hover, .bp .pill.book:active { transform: none; }
 }

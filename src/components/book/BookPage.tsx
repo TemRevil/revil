@@ -10,8 +10,8 @@ import useSafeAlert from '../../hooks/useSafeAlert';
 import useTheme from '../../hooks/useTheme';
 import useMeetingBooking, { getDaysInMonth } from '../../hooks/useMeetingBooking';
 import { DEFAULT_BOOK_PAGE, parseBookPage, introRuns, linksFromAccount, type BookLink, type BookPageConfig } from '../../utils/bookPage';
-import { availabilityStatus, utcOffsetHours } from '../../utils/availability';
-import { paintBook, startBoil } from './brushes';
+import { availabilityStatus } from '../../utils/availability';
+import { Chars, PaintDefs, splitSlogan, useHostClock, usePaint } from './paintKit';
 import useBookTrail from './useBookTrail';
 import { analytics } from '../../lib/analytics/collector';
 import './book.css';
@@ -20,19 +20,6 @@ const NAME_LINES = ['TEM', 'REVIL'];
 
 /** "01:00 PM" -> "1:00 PM" for display; the stored value keeps the hook's format. */
 const shortTime = (t: string) => t.replace(/^0/, '');
-
-/** Break a handwritten line at the space nearest its middle, so two short lines stack. */
-function splitSlogan(s: string): string[] {
-    if (s.length <= 12 || !s.includes(' ')) return [s];
-    const mid = s.length / 2;
-    let best = -1;
-    for (let i = 0; i < s.length; i++) if (s[i] === ' ' && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
-    return [s.slice(0, best), s.slice(best + 1)];
-}
-
-const Chars = ({ text, className }: { text: string; className: string }) => (
-    <>{[...text].map((ch, i) => <span key={i} className={className}>{ch === ' ' ? ' ' : ch}</span>)}</>
-);
 
 const LinkIcon = ({ kind }: { kind: BookLink['kind'] }) => {
     switch (kind) {
@@ -45,24 +32,9 @@ const LinkIcon = ({ kind }: { kind: BookLink['kind'] }) => {
     }
 };
 
-/** The owner's local time, from the zone set in Settings/Availability ("Current Time"). */
-const useHostClock = (tz: string) => {
-    const offset = utcOffsetHours(tz);
-    const fmt = () => new Date(Date.now() + offset * 3600000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
-    const [now, setNow] = useState(fmt);
-    useEffect(() => {
-        const tick = () => setNow(new Date(Date.now() + offset * 3600000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }));
-        tick();
-        const id = window.setInterval(tick, 15000);
-        return () => window.clearInterval(id);
-    }, [offset]);
-    return now;
-};
-
 export default function BookPage() {
     const isDark = useTheme();
     const rootRef = useRef<HTMLDivElement>(null);
-    const boilRef = useRef<SVGFETurbulenceElement>(null);
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const b = useMeetingBooking({ showAlert, via: 'book' });
     useBookTrail();
@@ -84,8 +56,8 @@ export default function BookPage() {
 
     // ---- paint: first draw animates once the photo, fonts and content are in; later
     // draws (resize, a live content edit that moves the text) land without animation.
-    const painted = useRef(false);
     const [ready, setReady] = useState(false);
+    const { boilRef, painted } = usePaint(rootRef, ready, [content, links]);
     useEffect(() => {
         const root = rootRef.current;
         const img = root?.querySelector<HTMLImageElement>('.stage img');
@@ -96,36 +68,7 @@ export default function BookPage() {
         // Failsafe: never leave the page hidden if the photo or fonts hang.
         const failsafe = window.setTimeout(() => { if (root && !painted.current) root.dataset.intro = 'done'; }, 4000);
         return () => { alive = false; window.clearTimeout(failsafe); };
-    }, [contentLoaded]);
-
-    useEffect(() => {
-        const root = rootRef.current;
-        if (!ready || !root) return;
-        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        paintBook(root, !painted.current && !reduce);
-        painted.current = true;
-    }, [ready, content, links]);
-
-    useEffect(() => {
-        const root = rootRef.current;
-        if (!root) return;
-        let w = root.clientWidth, t = 0;
-        const ro = new ResizeObserver(() => {
-            // Width only: a phone's URL bar changing the height must not repaint.
-            if (!painted.current || Math.abs(root.clientWidth - w) < 40) return;
-            w = root.clientWidth;
-            window.clearTimeout(t);
-            t = window.setTimeout(() => paintBook(root, false), 200);
-        });
-        ro.observe(root);
-        return () => { ro.disconnect(); window.clearTimeout(t); };
-    }, []);
-
-    useEffect(() => {
-        const turb = boilRef.current;
-        if (!turb || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-        return startBoil(turb);
-    }, []);
+    }, [contentLoaded, painted]);
 
     // ---- booking view data
     const { days, firstDay } = getDaysInMonth(b.calendarDate);
@@ -141,19 +84,7 @@ export default function BookPage() {
     return (
         <div ref={rootRef} className="bp">
             {alert?.show && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
-            <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
-                <defs>
-                    <filter id="bp-rag" x="-5%" y="-5%" width="110%" height="110%">
-                        <feTurbulence ref={boilRef} type="fractalNoise" baseFrequency="0.05" numOctaves={2} seed={4} result="w" />
-                        <feDisplacementMap in="SourceGraphic" in2="w" scale={6} xChannelSelector="R" yChannelSelector="G" />
-                    </filter>
-                    <filter id="bp-fabric" x="-10%" y="-10%" width="120%" height="120%">
-                        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.06" numOctaves={2} seed={9} result="f" />
-                        <feDisplacementMap in="SourceGraphic" in2="f" scale={6} xChannelSelector="R" yChannelSelector="G" />
-                    </filter>
-                    <filter id="bp-soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation={10} /></filter>
-                </defs>
-            </svg>
+            <PaintDefs boilRef={boilRef} />
             <div className="wall" aria-hidden="true" />
             <svg className="paint-bg" aria-hidden="true" />
 
