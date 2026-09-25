@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'lucide-react';
-import { GoogleAuthProvider, signInWithPopup as authSignInWithPopup, deleteUser, getAdditionalUserInfo } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup as authSignInWithPopup } from 'firebase/auth';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app from '../lib/firebase';
 import { appAuth } from '../lib/appAuth';
@@ -50,35 +50,28 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
 
         try {
             const result = await authSignInWithPopup(auth, provider);
-            const details = getAdditionalUserInfo(result);
-
-            // LOGIN-ONLY: Reject any account that doesn't already exist in Firebase Auth.
-            // signInWithPopup auto-creates accounts for OAuth providers, so we detect
-            // new users via getAdditionalUserInfo and immediately delete + sign out.
-            if (details?.isNewUser) {
-                try {
-                    await deleteUser(result.user);
-                } catch {
-                    // delete can fail (needs-recent-login / token issues) - ensure we never
-                    // leave an unrecognized account signed in regardless.
-                } finally {
-                    await auth.signOut();
-                }
-                setError('Access denied - account not recognized.');
-                return;
-            }
-
+            // Only the owner may sign in. A new or unknown account is refused below: the
+            // server deletes it (a client-side delete can fail and leave it behind).
             // Force-refresh the ID token so a freshly-minted `admin` custom claim is
             // picked up immediately (otherwise it only applies on the next token refresh,
             // and all admin Firestore/Storage writes would be rejected this session).
-            try { await result.user.getIdToken(true); } catch { /* non-fatal */ }
+            let isAdmin = false;
+            try { isAdmin = (await result.user.getIdTokenResult(true)).claims.admin === true; } catch { /* treated as not admin */ }
 
-            // Fire-and-forget login alert email
+            // Login alert. For anyone but the owner the server refuses the sign-in,
+            // deletes the account and alerts the owner instead.
             const notifyLogin = httpsCallable(getFunctions(app), 'notifyLogin');
-            notifyLogin({
+            const alert = notifyLogin({
                 userAgent: navigator.userAgent,
                 provider: result.user.providerData?.[0]?.providerId || 'google.com',
-            }).catch(() => {}); // Silent - don't block login
+            });
+            if (!isAdmin) {
+                await alert.catch(() => {});
+                await auth.signOut();
+                setError('Access denied - account not recognized.');
+                return;
+            }
+            alert.catch(() => {}); // Silent - don't block the owner's login
 
             if (onNavigate) {
                 onNavigate('dashboard');

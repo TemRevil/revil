@@ -613,8 +613,66 @@ export const notifyCanary = onDocumentWritten(
 
 // =====================================================================
 //  3. notifyLogin - Callable function triggered by dashboard on sign-in
-//     Sends an email alert with date/time/device info
+//     Sends an email alert with date/time/device info. A sign-in by anyone
+//     but the owner is refused here: the account is deleted (the page's own
+//     client-side delete can fail and leave it behind) and the owner gets a
+//     "blocked sign-in" alert, at most one per BLOCKED_ALERT_EVERY_MS so a
+//     script can't flood the inbox (every attempt is still counted).
 // =====================================================================
+const BLOCKED_ALERT_EVERY_MS = 10 * 60 * 1000;
+
+async function blockSignIn(auth: { uid: string; token?: Record<string, unknown> }, userAgent: unknown, ip: string): Promise<void> {
+  const email = String(auth.token?.email || "Unknown");
+  try {
+    await admin.auth().deleteUser(auth.uid);
+  } catch (err) {
+    console.error("[notifyLogin] could not delete blocked account:", err);
+  }
+  const ref = db.doc("Security/blockedSignIns");
+  const now = Date.now();
+  const shouldAlert = await db.runTransaction(async (tx) => {
+    const last = Number((await tx.get(ref)).data()?.lastAlertAt || 0);
+    const alert = now - last >= BLOCKED_ALERT_EVERY_MS;
+    tx.set(ref, {
+      count: admin.firestore.FieldValue.increment(1),
+      lastAttemptAt: now,
+      lastEmail: email,
+      ...(alert ? { lastAlertAt: now } : {}),
+    }, { merge: true });
+    return alert;
+  });
+  console.warn("[notifyLogin] blocked a non-admin sign-in", { email, alerted: shouldAlert });
+  if (!shouldAlert) return;
+  const when = new Date(now).toLocaleString("en-US", { timeZone: "Europe/Istanbul", dateStyle: "full", timeStyle: "medium" });
+  const html = emailTemplate({
+    title: "Blocked sign-in",
+    preheader: `Someone who isn't you tried to sign in: ${email}`,
+    bodyHtml: `
+        <h2>Blocked sign-in</h2>
+        <p>An account that isn't yours signed in on the admin page. It was refused and deleted; it never reached any private data.</p>
+        <div class="divider"></div>
+        <div>
+          <div class="info-row"><div class="info-label">Account</div><div class="info-value">${escHtml(email)}</div></div>
+          <div class="info-row"><div class="info-label">When</div><div class="info-value">${escHtml(when)}</div></div>
+          <div class="info-row"><div class="info-label">IP Address</div><div class="info-value">${escHtml(ip)}</div></div>
+          <div class="info-row" style="border:none"><div class="info-label">Device</div><div class="info-value" style="font-size:13px;color:#888">${escHtml(String(userAgent || "Unknown"))}</div></div>
+        </div>
+        <div class="divider"></div>
+        <p style="font-size:13px;color:#888">Further attempts within 10 minutes are counted but not emailed.</p>
+      `,
+    footerNote: `Security alert from <a href="https://temrevil.com">temrevil.com</a>`,
+  });
+  try {
+    await createTransporter().sendMail({
+      from: `"Revil Security" <${HELLO_EMAIL}>`,
+      to: smtpUser.value(),
+      subject: `Blocked sign-in: ${email}`,
+      html,
+    });
+  } catch (err) {
+    console.error("[notifyLogin] blocked-sign-in alert failed:", err);
+  }
+}
 export const notifyLogin = onCall(
   {
     region: "us-central1",
@@ -622,11 +680,16 @@ export const notifyLogin = onCall(
     enforceAppCheck: true,
   },
   async (request) => {
-    // Only the owner gets a login alert - and the gate fails closed.
-    await requireAdmin(request.auth, "Only the portfolio owner receives login alerts.");
-    const auth = request.auth!; // requireAdmin threw if this was missing
-
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+    const auth = request.auth;
     const { userAgent, provider } = request.data || {};
+    // Only the owner may sign in - and the gate fails closed. Anyone else is removed.
+    try {
+      await requireAdmin(auth, "Access denied.");
+    } catch {
+      await blockSignIn(auth, userAgent, request.rawRequest?.ip || "Unknown");
+      throw new HttpsError("permission-denied", "Access denied - account not recognized.");
+    }
 
     const now = new Date();
     const dateStr = now.toLocaleString("en-US", {

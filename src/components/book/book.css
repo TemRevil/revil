@@ -49,7 +49,7 @@
 .bp .stage .shirt { mix-blend-mode: multiply; }
 .bp .pills { position: absolute; left: 12px; right: 12px; bottom: 14px; z-index: 6; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .bp .pill { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 99px; font-size: 13px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums;
-  background: var(--pill-bg); border: 1px solid var(--pill-border); box-shadow: var(--pill-shadow); backdrop-filter: blur(30px); }
+  background: var(--pill-bg); border: 1px solid var(--pill-border); box-shadow: var(--pill-shadow); -webkit-backdrop-filter: blur(30px) saturate(1.4); backdrop-filter: blur(30px) saturate(1.4); }
 .bp .dot { position: relative; width: 12px; height: 12px; }
 .bp .dot i { position: absolute; inset: 0; border-radius: 50%; background: var(--dot, var(--success)); }
 .bp .pill .zone { color: var(--text-muted); font-weight: 600; }
@@ -151,8 +151,9 @@
 }
 /* ================= homepage hero (Hero.tsx): the same hero, on its own and full width =================
    No side column; the pills carry Book a call and sit above the site's bottom dock. */
-.bp .pill.book { color: #fff; background: var(--blue); border-color: transparent; box-shadow: 0 8px 24px rgba(59,130,246,.35); text-decoration: none; transition: filter .2s, transform .2s; }
-.bp .pill.book:hover { filter: brightness(1.1); }
+/* Book a call: tinted glass, so the paint behind it shows through blurred like the other pills. */
+.bp .pill.book { color: #fff; background: rgba(51,149,255,.55); border-color: rgba(255,255,255,.18); box-shadow: 0 8px 24px rgba(59,130,246,.3); text-decoration: none; transition: background-color .2s, transform .2s; }
+.bp .pill.book:hover { background: rgba(51,149,255,.75); }
 .bp .pill.book:active { transform: scale(.98); }
 .bp button.pill { font-family: inherit; color: inherit; cursor: pointer; }
 .bp.bp-home { min-height: 0; }

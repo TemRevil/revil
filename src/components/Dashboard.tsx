@@ -42,7 +42,11 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     // admin-only reads/writes that Firestore would reject with permission-denied.
     useEffect(() => {
         const off = onAuthStateChanged(appAuth(), (user) => {
-            if (!user) onNavigate?.('home');
+            if (!user) { onNavigate?.('home'); return; }
+            // Signed in but not the owner: sign out and leave.
+            user.getIdTokenResult().then(r => {
+                if (r.claims.admin !== true) { appAuth().signOut().catch(() => {}); onNavigate?.('home'); }
+            }).catch(() => onNavigate?.('home'));
         });
         return () => off();
     }, [onNavigate]);

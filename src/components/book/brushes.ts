@@ -207,7 +207,7 @@ function drawBg(root: HTMLElement, t0: number, animate: boolean, mood: Mood) {
     const rb = root.getBoundingClientRect(), s = W / (rb.width || 1);
     const m = el('mask', { id: 'bps' + (++uid), maskUnits: 'userSpaceOnUse', x: -5000, y: -5000, width: 10000, height: 10000 });
     m.appendChild(el('rect', { x: -200, y: -200, width: W + 400, height: H + 400, fill: '#fff' }));
-    root.querySelectorAll('.pitch, .builds, .reach, .pills, .slogan, [data-paint-clear]').forEach(n => {
+    root.querySelectorAll('.pitch, .builds, .reach, .slogan, [data-paint-clear]').forEach(n => {
         const r = n.getBoundingClientRect();
         m.appendChild(el('rect', { x: (r.left - rb.left) * s - 12, y: (r.top - rb.top) * s - 12, width: r.width * s + 24, height: r.height * s + 24, rx: 20, fill: '#000', filter: 'url(#bp-soft)' }));
     });
