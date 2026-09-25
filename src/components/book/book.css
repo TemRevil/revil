@@ -38,7 +38,8 @@
 .bp h1.name > span:nth-child(2) { align-self: flex-start; margin-left: -4px; }
 .bp h1.name > span:nth-child(3) { align-self: flex-end; margin-top: -8px; }
 .bp .name-char, .bp .ch { display: inline-block; }
-.bp .slogan { position: absolute; right: 10px; top: 60px; z-index: 6; font-family: var(--font-permanent-marker), cursive; font-size: 17px; line-height: 1; text-align: right; color: var(--accent); transform: rotate(-3deg); transform-origin: right center; }
+.bp .slogan { position: absolute; right: 10px; top: 60px; z-index: 6; font-family: var(--font-permanent-marker), cursive; font-size: 17px; line-height: 1; text-align: right; color: var(--accent); transform: rotate(-3deg); transform-origin: right center;
+  text-shadow: 0 0 16px var(--bg-primary), 0 0 5px var(--bg-primary); }
 .bp .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .bp .stage { position: absolute; left: 50%; bottom: 0; width: 318px; height: 444px; transform: translateX(-50%); z-index: 2; }
 .bp .stage > * { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -160,7 +161,7 @@
 .bp-home .this-is { top: 40px; }
 .bp-home h1.name { top: 72px; }
 .bp-home h1.name > span { font-size: clamp(72px, 23cqw, 128px); }
-.bp-home .slogan { top: 82px; font-size: clamp(17px, 5cqw, 26px); }
+.bp-home .slogan { top: 82px; font-size: clamp(21px, 6.2cqw, 32px); }
 .bp-home .stage { bottom: 196px; height: min(54svh, 500px); width: auto; aspect-ratio: 920 / 1286; }
 .bp-home .pills { bottom: 116px; }
 
@@ -171,7 +172,7 @@
   .bp-home h1.name { left: 40px; right: 40px; top: calc(8% + 46px); }
   .bp-home h1.name > span { font-size: clamp(150px, 14cqw, 220px); }
   .bp-home h1.name > span:nth-child(3) { margin-top: -24px; }
-  .bp-home .slogan { right: 48px; top: 10%; font-size: 42px; }
+  .bp-home .slogan { right: 48px; top: 10%; font-size: clamp(52px, 4.4cqw, 68px); }
   .bp-home .stage { bottom: 0; height: min(84%, 800px); left: 50%; }
   .bp-home .pills { left: 44px; bottom: 124px; }
 }

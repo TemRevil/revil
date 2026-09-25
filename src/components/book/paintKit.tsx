@@ -48,7 +48,7 @@ export const PaintDefs = ({ boilRef }: { boilRef: RefObject<SVGFETurbulenceEleme
             </filter>
             <filter id="bp-fabric" x="-10%" y="-10%" width="120%" height="120%">
                 <feTurbulence type="fractalNoise" baseFrequency="0.02 0.06" numOctaves={2} seed={9} result="f" />
-                <feDisplacementMap in="SourceGraphic" in2="f" scale={6} xChannelSelector="R" yChannelSelector="G" />
+                <feDisplacementMap in="SourceGraphic" in2="f" scale={3.5} xChannelSelector="R" yChannelSelector="G" />
             </filter>
             <filter id="bp-soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation={10} /></filter>
         </defs>

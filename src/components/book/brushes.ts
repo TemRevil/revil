@@ -4,7 +4,7 @@
  * visit picks a different composition (a "mood", never the same one twice in a row) and
  * rolls the count, height, width and colour of each stroke. Strokes around the owner come
  * in from past the page edges, ring the body (far half behind, near half in front) and
- * are rejected if they would cross the face. Phones get a lighter set (fewer strokes and
+ * are rejected if they would cross the face or the name on the shirt. Phones get a lighter set (fewer strokes and
  * bristles). Filters referenced here (#bp-rag, #bp-fabric, #bp-soft) are in PaintDefs.
  */
 
@@ -114,11 +114,17 @@ function ring(cx: number, cy: number, rx: number, ry: number, tilt: number, from
     }
     return out;
 }
-/** The face (hair to chin) in stage coordinates. Nothing painted in FRONT may enter it. */
-const face = (W: number, H: number): Face => ({ cx: W * .53, cy: H * .2, rx: W * .23, ry: H * .23 });
-const hitsFace = (pts: Pt[], f: Face, pad: number) => pts.some(([x, y]) => ((x - f.cx) / (f.rx + pad)) ** 2 + ((y - f.cy) / (f.ry + pad)) ** 2 < 1);
-function safe(make: () => Pt[], f: Face, pad: number) {
-    for (let i = 0; i < 40; i++) { const p = make(); if (!hitsFace(p, f, pad)) return p; }
+/**
+ * What nothing painted in FRONT may enter, in stage coordinates: the face (hair to chin)
+ * and "Tem Revil" on the shirt (drawShirt: centred at .545W, .7H, about .68W wide).
+ */
+const keepClear = (W: number, H: number): Face[] => [
+    { cx: W * .53, cy: H * .2, rx: W * .23, ry: H * .23 },
+    { cx: W * .545, cy: H * .69, rx: W * .42, ry: H * .08 },
+];
+const hits = (pts: Pt[], zones: Face[], pad: number) => zones.some(f => pts.some(([x, y]) => ((x - f.cx) / (f.rx + pad)) ** 2 + ((y - f.cy) / (f.ry + pad)) ** 2 < 1));
+function safe(make: () => Pt[], zones: Face[], pad: number) {
+    for (let i = 0; i < 40; i++) { const p = make(); if (!hits(p, zones, pad)) return p; }
     return null;
 }
 
@@ -148,7 +154,7 @@ function drawStage(root: HTMLElement, t0: number, animate: boolean, mood: Mood) 
         const ya = H * (l2r ? y0 : y1), yb = H * (l2r ? y1 : y0);
         return bez([a, ya], [a + dx / 3, ya + R(-bend, bend) * H], [a + dx * 2 / 3, yb + R(-bend, bend) * H], [b, yb]);
     };
-    const k = W / 520, blue = 'var(--accent)', deep = '#1668d8', ink = 'var(--paint-ink)', f = face(W, H);
+    const k = W / 520, blue = 'var(--accent)', deep = '#1668d8', ink = 'var(--paint-ink)', f = keepClear(W, H);
     const colour = () => pick([blue, blue, deep, ink]);
     let t = t0;
 
@@ -170,7 +176,7 @@ function drawStage(root: HTMLElement, t0: number, animate: boolean, mood: Mood) 
         paint(back, ring(W * R(.49, .55), H * R(.14, .2), W * R(.28, .38), H * R(.1, .16), R(-.3, .3), Math.PI * R(.95, 1.1), Math.PI * R(1.85, 2.05)), R(16, 28) * k, colour(), t, animate);
         t += 170;
     }
-    // Rings around the body: far half behind, near half across the front, never over the face.
+    // Rings around the body: far half behind, near half across the front, never over the face or the shirt's name.
     const rings = lite ? int(0, 1) : { sweep: int(1, 2), orbit: int(2, 3), slash: int(0, 1), bold: int(1, 2) }[mood];
     shuffle([[.44, .52], [.54, .64], [.68, .78], [.82, .92]]).slice(0, rings).forEach(([a, b]) => {
         const cx = W * R(.48, .57), cy = H * R(a, b), rx = W * R(.56, .8), ry = H * R(.045, .1), tilt = R(-.25, .25), w = R(22, 50) * k, col = colour();
@@ -179,7 +185,7 @@ function drawStage(root: HTMLElement, t0: number, animate: boolean, mood: Mood) 
         if (near) paint(front, near, w, col, t + 420, animate, 560);
         t += 420;
     });
-    // Flicks in front, from either side of the body, checked against the face.
+    // Flicks in front, from either side of the body, checked against the face and the shirt's name.
     const flicks = lite ? int(0, 1) : int(mood === 'slash' ? 2 : 0, 3);
     for (let i = 0; i < flicks; i++) {
         const left = rand() < .5, w = R(8, 16) * k;
@@ -201,7 +207,7 @@ function drawBg(root: HTMLElement, t0: number, animate: boolean, mood: Mood) {
     const rb = root.getBoundingClientRect(), s = W / (rb.width || 1);
     const m = el('mask', { id: 'bps' + (++uid), maskUnits: 'userSpaceOnUse', x: -5000, y: -5000, width: 10000, height: 10000 });
     m.appendChild(el('rect', { x: -200, y: -200, width: W + 400, height: H + 400, fill: '#fff' }));
-    root.querySelectorAll('.pitch, .builds, .reach, .pills').forEach(n => {
+    root.querySelectorAll('.pitch, .builds, .reach, .pills, .slogan').forEach(n => {
         const r = n.getBoundingClientRect();
         m.appendChild(el('rect', { x: (r.left - rb.left) * s - 12, y: (r.top - rb.top) * s - 12, width: r.width * s + 24, height: r.height * s + 24, rx: 20, fill: '#000', filter: 'url(#bp-soft)' }));
     });
@@ -242,12 +248,12 @@ function drawShirt(root: HTMLElement, t0: number, animate: boolean) {
         t.setAttribute('x', String(x));
         x += widths[i];
         t.style.fill = '#1f6fe0'; t.style.stroke = '#1f6fe0'; t.style.strokeWidth = '1.5'; t.style.paintOrder = 'stroke fill';
-        if (!animate) { t.style.fillOpacity = '.92'; t.style.strokeOpacity = '.4'; return; }
+        if (!animate) { t.style.fillOpacity = '1'; t.style.strokeOpacity = '.55'; return; }
         const Ls = fs * 5, start = t0 + i * 80;
         t.style.strokeDasharray = String(Ls); t.style.strokeDashoffset = String(Ls); t.style.fillOpacity = '0';
         t.animate([{ strokeDashoffset: Ls }, { strokeDashoffset: 0 }], { duration: 240, delay: start, easing: 'ease-in-out', fill: 'forwards' });
-        t.animate([{ fillOpacity: 0 }, { fillOpacity: .92 }], { duration: 200, delay: start + 90, easing: 'ease-out', fill: 'forwards' });
-        t.animate([{ strokeOpacity: 1 }, { strokeOpacity: .4 }], { duration: 180, delay: start + 110, fill: 'forwards' });
+        t.animate([{ fillOpacity: 0 }, { fillOpacity: 1 }], { duration: 200, delay: start + 90, easing: 'ease-out', fill: 'forwards' });
+        t.animate([{ strokeOpacity: 1 }, { strokeOpacity: .55 }], { duration: 180, delay: start + 110, fill: 'forwards' });
     });
 }
 
