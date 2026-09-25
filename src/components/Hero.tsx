@@ -115,7 +115,43 @@ const StatusPill = ({ isDark, label, color, projects }: { isDark: boolean; label
     // breaks on transformed elements in Chrome.
     const slideOffset = tooltipVisible ? 0 : (tooltipPos.flipBelow ? -10 : 10);
 
+    // The arrow sits beside the list, not inside it: a backdrop-filter inside another one
+    // only sees its parent, so it never blurred the page. A clipped triangle, not a rotated
+    // square, for the same Chrome transform issue as above.
+    const edge = typeof tooltipPos.bottom === 'number' ? tooltipPos.bottom - slideOffset : 0;
+    const arrow = (
+        <div
+            aria-hidden
+            style={{
+                position: 'fixed',
+                left: tooltipPos.left + tooltipPos.arrowLeft - 10,
+                ...(tooltipPos.flipBelow
+                    ? { top: (typeof tooltipPos.top === 'number' ? tooltipPos.top + slideOffset : 0) - 10 }
+                    : { bottom: edge - 10 }),
+                width: 20,
+                height: 10,
+                zIndex: 60,
+                pointerEvents: 'none',
+                opacity: tooltipVisible ? 1 : 0,
+                transition: tooltipVisible
+                    ? 'opacity 0s, top 0.3s cubic-bezier(0.32, 0.72, 0, 1), bottom 0.3s cubic-bezier(0.32, 0.72, 0, 1)'
+                    : 'opacity 0.3s cubic-bezier(0.32, 0.72, 0, 1), top 0.3s cubic-bezier(0.32, 0.72, 0, 1), bottom 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+                clipPath: tooltipPos.flipBelow ? 'polygon(50% 0, 100% 100%, 0 100%)' : 'polygon(0 0, 100% 0, 50% 100%)',
+                background: glass,
+                backdropFilter: 'blur(30px) saturate(1.4)',
+                WebkitBackdropFilter: 'blur(30px) saturate(1.4)',
+            }}
+        >
+            <svg width="20" height="10" viewBox="0 0 20 10" style={{ display: 'block' }}>
+                <polyline points={tooltipPos.flipBelow ? '0,10 10,0 20,10' : '0,0 10,10 20,0'} fill="none"
+                    stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'} strokeWidth="1.5" />
+            </svg>
+        </div>
+    );
+
     const tooltip = tooltipMounted && hasList ? createPortal(
+        <>
+        {arrow}
         <div
             ref={tooltipRef}
             role="dialog"
@@ -146,21 +182,6 @@ const StatusPill = ({ isDark, label, color, projects }: { isDark: boolean; label
                 boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.2)' : '0 8px 32px rgba(0, 0, 0, 0.05)',
             }}
         >
-            <div
-                style={{
-                    position: 'absolute',
-                    left: tooltipPos.arrowLeft,
-                    transform: 'translateX(-50%) rotate(45deg)',
-                    width: 14,
-                    height: 14,
-                    ...(tooltipPos.flipBelow
-                        ? { top: -7, borderLeft: line, borderTop: line }
-                        : { bottom: -7, borderRight: line, borderBottom: line }),
-                    background: glass,
-                    backdropFilter: 'blur(30px) saturate(1.4)',
-                    WebkitBackdropFilter: 'blur(30px) saturate(1.4)',
-                }}
-            />
             <div className="flex items-center gap-3 mb-4 pb-3" style={{ borderBottom: line }}>
                 <Briefcase size={15} className="text-info" />
                 <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-muted">Availability Status</span>
@@ -185,7 +206,8 @@ const StatusPill = ({ isDark, label, color, projects }: { isDark: boolean; label
                     </div>
                 )}
             </div>
-        </div>,
+        </div>
+        </>,
         document.body
     ) : null;
 
