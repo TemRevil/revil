@@ -110,6 +110,7 @@ const StatusPill = ({ isDark, label, color, projects }: { isDark: boolean; label
     const shown = projects.slice(0, 3);
     const restCount = projects.length - 3;
     const line = isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.06)';
+    const glass = isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)';
     // Slide offset (px) applied via top/bottom, NOT transform: backdrop-filter blur
     // breaks on transformed elements in Chrome.
     const slideOffset = tooltipVisible ? 0 : (tooltipPos.flipBelow ? -10 : 10);
@@ -137,15 +138,12 @@ const StatusPill = ({ isDark, label, color, projects }: { isDark: boolean; label
                 pointerEvents: tooltipVisible ? 'auto' : 'none',
                 borderRadius: 28,
                 padding: window.innerWidth <= 380 ? 16 : 24,
-                background: isDark
-                    ? 'linear-gradient(160deg, rgba(25, 25, 40, 0.7) 0%, rgba(10, 10, 15, 0.88) 100%)'
-                    : 'linear-gradient(160deg, rgba(255, 255, 255, 0.72) 0%, rgba(240, 240, 255, 0.9) 100%)',
-                backdropFilter: 'blur(80px) saturate(200%)',
-                WebkitBackdropFilter: 'blur(80px) saturate(200%)',
-                border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.06)',
-                boxShadow: isDark
-                    ? '0 32px 80px rgba(0, 0, 0, 0.55), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)'
-                    : '0 32px 80px rgba(0, 0, 0, 0.1), inset 0 0.5px 0 rgba(255, 255, 255, 0.65)',
+                // The pills' glass (book.css .pill), so the paint shows through blurred.
+                background: glass,
+                backdropFilter: 'blur(30px) saturate(1.4)',
+                WebkitBackdropFilter: 'blur(30px) saturate(1.4)',
+                border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.08)',
+                boxShadow: isDark ? '0 8px 32px rgba(0, 0, 0, 0.2)' : '0 8px 32px rgba(0, 0, 0, 0.05)',
             }}
         >
             <div
@@ -158,9 +156,9 @@ const StatusPill = ({ isDark, label, color, projects }: { isDark: boolean; label
                     ...(tooltipPos.flipBelow
                         ? { top: -7, borderLeft: line, borderTop: line }
                         : { bottom: -7, borderRight: line, borderBottom: line }),
-                    background: isDark ? 'rgba(12, 12, 20, 0.88)' : 'rgba(242, 242, 255, 0.9)',
-                    backdropFilter: 'blur(80px)',
-                    WebkitBackdropFilter: 'blur(80px)',
+                    background: glass,
+                    backdropFilter: 'blur(30px) saturate(1.4)',
+                    WebkitBackdropFilter: 'blur(30px) saturate(1.4)',
                 }}
             />
             <div className="flex items-center gap-3 mb-4 pb-3" style={{ borderBottom: line }}>
