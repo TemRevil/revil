@@ -1,3 +1,4 @@
+import { preload } from 'react-dom'
 import HomeApp from './HomeApp'
 import { projectPages } from '../utils/projectPages'
 
@@ -5,6 +6,10 @@ import { projectPages } from '../utils/projectPages'
 // snapshot at build time, and nothing of it ships to the browser as JavaScript.
 
 export default function Page() {
+  // The hero photo is rendered by the client app, so the browser would only ask for it
+  // once the JS has run (~4s on a slow phone). A <link rel=preload> in the HTML starts it
+  // with the first requests instead.
+  preload('/book/tem-cutout.webp', { as: 'image', fetchPriority: 'high' })
   return (
     <>
       {/* GEO fallback - the visible app is a client-rendered SPA (ssr:false), so AI

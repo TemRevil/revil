@@ -142,6 +142,14 @@ function App() {
   // Deliberately geometry-based rather than IntersectionObserver: one mechanism instead of
   // two, and it stays correct when the page isn't compositing (IO callbacks don't fire then).
   const [mountedSections, setMountedSections] = useState<Set<Section>>(() => new Set<Section>(['home']));
+  // Set once the hero's entrance has played (or 10s in, whichever is first). The work that
+  // isn't on screen yet - pre-mounting Stack/Projects, warming their chunks - waits for it:
+  // those modules import Firebase, and its reCAPTCHA stutters the entrance on a phone.
+  const [heroSettled, setHeroSettled] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setHeroSettled(true), 10000);
+    return () => clearTimeout(id);
+  }, []);
   useEffect(() => {
     if (!mobileScroll) return;
     const root = mobileScrollRef.current;
@@ -171,18 +179,15 @@ function App() {
     compute();
     root.addEventListener('scroll', compute, { passive: true });
     window.addEventListener('resize', compute);
-    // Safety net: once the first paint has settled, mount the rest regardless of scrolling.
-    // Lazy-mounting exists to keep the FIRST render cheap, not to gate content forever - so
-    // a section can never end up permanently blank if a scroll event is missed.
-    const settle = setTimeout(() => setMountedSections(prev => (
-      prev.size === MOBILE_STACK.length ? prev : new Set<Section>(MOBILE_STACK)
-    )), 2000);
     return () => {
-      clearTimeout(settle);
       root.removeEventListener('scroll', compute);
       window.removeEventListener('resize', compute);
     };
   }, [mobileScroll]);
+  // Safety net: once the hero has settled, everything is mounted regardless of scrolling.
+  // Lazy-mounting exists to keep the FIRST render cheap, not to gate content forever - so
+  // a section can never end up permanently blank if a scroll event is missed.
+  const isMounted = (id: Section) => heroSettled || mountedSections.has(id);
 
   // Widening past the phone breakpoint hands the reader back to the section switcher,
   // which only knows `currentSection` - and the phone page leaves that on whatever it
@@ -296,7 +301,7 @@ function App() {
   // fallback. Runs in idle time → keeps the eager bundle as small as today.
   // SecretPage/Dashboard are intentionally left cold (admin-only).
   useEffect(() => {
-    if (appLoading) return;
+    if (appLoading || !heroSettled) return;
     let cancelled = false;
     const warm = () => {
       if (cancelled) return;
@@ -311,11 +316,12 @@ function App() {
       cancelled = true;
       if (hasRIC) window.cancelIdleCallback(handle); else clearTimeout(handle);
     };
-  }, [appLoading]);
+  }, [appLoading, heroSettled]);
 
 
 
   const handleHeroAnimationComplete = useCallback(() => {
+    setHeroSettled(true);
     const isInterviewerMode = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('revil_interviewer_mode') === 'true' : false;
     // Read the section from a ref at fire-time - the user may have navigated away
     // during the ~3s hero entrance, and we must not pop the CV modal over another page.
@@ -681,10 +687,10 @@ function App() {
               <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} onOpenContact={openContactModal} />
             </section>
             <section id="mobsec-stack" data-mobsec="stack" className="relative min-h-screen isolate">
-              {mountedSections.has('stack') && <Suspense fallback={null}><Stack /></Suspense>}
+              {isMounted('stack') && <Suspense fallback={null}><Stack /></Suspense>}
             </section>
             <section id="mobsec-projects" data-mobsec="projects" className="relative min-h-screen isolate">
-              {mountedSections.has('projects') && (
+              {isMounted('projects') && (
                 <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={false} embedded /></Suspense>
               )}
             </section>

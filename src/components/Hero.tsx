@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Briefcase, Calendar } from 'lucide-react';
-import { watchDoc } from '../lib/liveDoc';
+import { holdFirebase, watchDoc } from '../lib/liveDoc';
 import { availabilityStatus } from '../utils/availability';
 import { useSettings } from '../contexts/SettingsContext';
 import useTheme from '../hooks/useTheme';
@@ -267,6 +267,14 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     // The admin's drag-sort order (map order for legacy data).
     const projects = Object.values(handledData?.projects || {}).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
+    // Firebase waits for the entrance (see holdFirebase); 10s caps it if the entrance never runs.
+    const [entranceDone] = useState(() => {
+        let done = () => { };
+        const p = new Promise<void>(r => { done = r; setTimeout(r, 10000); });
+        holdFirebase(p);
+        return done;
+    });
+
     // Everything the first screen draws is already here (the profile is seeded), so the
     // loader can lift at once; live data fills in the pills when Firebase arrives.
     useEffect(() => {
@@ -309,9 +317,9 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     useEffect(() => { onAnimationCompleteRef.current = onAnimationComplete; }, [onAnimationComplete]);
     useEffect(() => {
         if (!ready) return;
-        const id = window.setTimeout(() => onAnimationCompleteRef.current?.(), 2600);
+        const id = window.setTimeout(() => { entranceDone(); onAnimationCompleteRef.current?.(); }, 2600);
         return () => window.clearTimeout(id);
-    }, [ready]);
+    }, [ready, entranceDone]);
 
     return (
         <div ref={rootRef} className="bp bp-home">

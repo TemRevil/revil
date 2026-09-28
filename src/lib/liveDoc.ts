@@ -6,8 +6,18 @@
 type Firebase = typeof import('./firebase');
 
 let loading: Promise<Firebase> | null = null;
+let held: Promise<unknown> = Promise.resolve();
 
-/** Loads lib/firebase once, after the page has loaded and the main thread has a gap. */
+/**
+ * Keeps Firebase from loading until `until` settles. reCAPTCHA alone is ~1s of main-thread
+ * work on a phone, and its long tasks stutter the hero's stroke animation (stroke-dashoffset
+ * runs on the main thread), so the hero holds it until its entrance has played.
+ */
+export function holdFirebase(until: Promise<unknown>): void {
+    held = Promise.all([held, until]);
+}
+
+/** Loads lib/firebase once: after the page has loaded, the main thread has a gap and no hold remains. */
 export function loadFirebase(): Promise<Firebase> {
     if (!loading) {
         loading = new Promise<void>((resolve) => {
@@ -17,7 +27,7 @@ export function loadFirebase(): Promise<Firebase> {
             };
             if (document.readyState === 'complete') idle();
             else window.addEventListener('load', idle, { once: true });
-        }).then(() => import('./firebase'));
+        }).then(() => held).then(() => import('./firebase'));
     }
     return loading;
 }
