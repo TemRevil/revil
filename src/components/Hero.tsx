@@ -297,7 +297,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     const [loaderGone, setLoaderGone] = useState(false);
     useEffect(() => {
         if (!isReady) return;
-        const id = window.setTimeout(() => setLoaderGone(true), 500);
+        const id = window.setTimeout(() => setLoaderGone(true), 150);
         return () => window.clearTimeout(id);
     }, [isReady]);
     const ready = loaderGone && assetsReady;

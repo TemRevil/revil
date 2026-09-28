@@ -300,9 +300,10 @@ function textIn(root: HTMLElement) {
     root.querySelectorAll<HTMLElement>('.name-char').forEach((c, i) => c.animate(
         [{ opacity: 0, transform: 'translateY(20px)', filter: 'blur(12px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
         { duration: 700, delay: 300 + i * 60, easing: ease, fill: 'backwards' }));
+    // The photo comes in with the name, not after it: it is the page's largest paint.
     root.querySelector<HTMLElement>('.stage img')?.animate(
         [{ opacity: 0, transform: 'scale(.97)', filter: 'blur(16px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-        { duration: 1200, delay: 600, easing: ease, fill: 'backwards' });
+        { duration: 1200, delay: 300, easing: ease, fill: 'backwards' });
     // The side column and the pills: a soft fade out of blur, one after another.
     [...root.querySelectorAll<HTMLElement>('.side > *'), ...root.querySelectorAll<HTMLElement>('.pills > *')].forEach((n, i) => n.animate(
         [{ opacity: 0, transform: 'translateY(14px)', filter: 'blur(10px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
