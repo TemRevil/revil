@@ -165,6 +165,25 @@ function countryName(code: string): string {
 }
 
 /**
+ * The caller's real IP address, or "" when there is none.
+ *
+ * x-forwarded-for on Google's front end is "<whatever the caller sent>, <real
+ * client IP>, <load balancer IP>" - GFE APPENDS, it does not replace. So the
+ * leftmost entry is attacker-written (send `X-Forwarded-For: 8.8.8.8` and every
+ * country figure in the dashboard becomes whatever you like); the trustworthy
+ * one is second from the end, the last hop before Google's own address.
+ */
+export function clientIp(
+  headers: Record<string, string | string[] | undefined>,
+  fallbackIp?: string,
+): string {
+  const raw = headers["x-forwarded-for"];
+  const chain = Array.isArray(raw) ? raw.join(",") : (raw || "");
+  const hops = chain.split(",").map((h) => h.trim()).filter(Boolean);
+  return (hops.length >= 2 ? hops[hops.length - 2] : hops[0]) || (fallbackIp || "").trim();
+}
+
+/**
  * Resolve the caller's country from the request headers.
  * Returns null when the address is private, unparseable, or simply unlisted.
  */
@@ -172,15 +191,7 @@ export function lookupCountry(
   headers: Record<string, string | string[] | undefined>,
   fallbackIp?: string,
 ): { Code: string; Country: string } | null {
-  // x-forwarded-for on Google's front end is "<whatever the caller sent>, <real
-  // client IP>, <load balancer IP>" - GFE APPENDS, it does not replace. So the
-  // leftmost entry is attacker-written (send `X-Forwarded-For: 8.8.8.8` and every
-  // country figure in the dashboard becomes whatever you like); the trustworthy
-  // one is second from the end, the last hop before Google's own address.
-  const raw = headers["x-forwarded-for"];
-  const chain = Array.isArray(raw) ? raw.join(",") : (raw || "");
-  const hops = chain.split(",").map((h) => h.trim()).filter(Boolean);
-  const ip = (hops.length >= 2 ? hops[hops.length - 2] : hops[0]) || (fallbackIp || "").trim();
+  const ip = clientIp(headers, fallbackIp);
   if (!ip) return null;
 
   load();

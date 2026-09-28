@@ -18,9 +18,21 @@ setGlobalOptions({ maxInstances: 10 });
 // enforceAppCheck: only requests carrying a valid Firebase App Check token
 // (reCAPTCHA Enterprise on the live site, debug token on localhost) may invoke
 // this. Blocks direct/scripted calls that would otherwise spam the calendar.
+//
+// Admin only. App Check proves a request came from the site, not who sent it -
+// every visitor's browser gets a valid token - and this forwards create, update
+// AND cancel for any event on the owner's calendar. Public bookings go through
+// `bookMeeting` in the main functions codebase, which validates the booking and
+// only ever creates.
 export const syncMeeting = onCall(
     { enforceAppCheck: true, secrets: [meetingSyncUrl] },
     async (request) => {
+        if (!request.auth) {
+            throw new HttpsError("unauthenticated", "Sign in required.");
+        }
+        if (request.auth.token.admin !== true) {
+            throw new HttpsError("permission-denied", "Admin only.");
+        }
         const payload = request.data;
         logger.info("Syncing meeting with payload:", payload);
 

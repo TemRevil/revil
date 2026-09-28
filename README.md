@@ -103,6 +103,9 @@ browser. Functions in `functions/` deploy from this repo:
 
 | Function | Trigger | What it does |
 | :--- | :--- | :--- |
+| `submitContact` | Callable (public, App Check) | Validates and rate-limits a contact-form message, then stores it in `Settings/Canary` |
+| `bookMeeting` | Callable (public, App Check) | Validates and rate-limits a booking, checks the slot is free, creates the Calendar event + Meet link and stores the meeting |
+| `cleanupAttachments` | Scheduled (daily) | Deletes contact-form uploads that no message points to, once they are a day old |
 | `notifyCanary` | Firestore write on `Settings/Canary` | Emails the owner on a new message/booking, auto-acknowledges the guest, and rebuilds the public busy-slot mirror |
 | `sendReceipt` | Callable (admin) | Emails a client receipt built in the dashboard, BCC'ing the owner |
 | `sendReply` | Callable (admin) | Sends a branded reply (with attachments) to a contact message |
@@ -111,12 +114,17 @@ browser. Functions in `functions/` deploy from this repo:
 | `llm` | Callable (admin) | Proxies the dashboard assistant so the provider key stays server-side |
 | `mcp` | HTTPS | Remote **MCP server** (OAuth 2.1) letting an AI client read and manage the portfolio, treasury, bookings and receipts |
 
+Visitors cannot write to Firestore directly: the contact form and the booking
+form call `submitContact` and `bookMeeting`, which check every field and apply a
+site-wide cooldown plus a per-IP limit before writing with the Admin SDK.
+
 **`syncMeeting`** lives in a **second codebase**, `functions-meeting/`, because it
-runs on a different Node runtime (24) to the main backend (22). It is a thin App
-Check-gated proxy that forwards to a Google Apps Script, which owns the actual
-Google Calendar event and its Meet link. Both the public booking form and the
-dashboard call it, and the MCP booking tools reach the same script so a cancel or
-reschedule updates the guest's invite too.
+runs on a different Node runtime (24) to the main backend (22). It is a thin
+admin-only, App Check-gated proxy that forwards to a Google Apps Script, which owns
+the actual Google Calendar event and its Meet link. The dashboard calls it to
+create, move and cancel meetings; public bookings go through `bookMeeting`, which
+posts to the same script. The MCP booking tools reach the same script too, so a
+cancel or reschedule updates the guest's invite.
 
 ```bash
 firebase deploy --only functions:meeting   # deploy the syncMeeting codebase
@@ -124,9 +132,9 @@ firebase deploy --only functions:mcp       # deploy one function from `default`
 ```
 
 ```text
-Visitor books  ──►  syncMeeting  ──►  Apps Script  ──►  Google Calendar + Meet
-       │                                                        │
-       └──►  Settings/Canary  ──►  notifyCanary  ──►  emails + public busy slots
+Visitor books  ──►  bookMeeting  ──►  Apps Script  ──►  Google Calendar + Meet
+                         │
+                         └──►  Settings/Canary  ──►  notifyCanary  ──►  emails + public busy slots
 ```
 
 ### Secrets

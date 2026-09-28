@@ -7,15 +7,6 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.admin == true;
     }
 
-    // Rate-limit helper for a named timestamp field (Canary uses separate fields)
-    function notRateLimitedField(fieldName, cooldownSecs) {
-      let lastWrite = resource == null
-        ? request.time - duration.value(cooldownSecs + 1, 's')
-        : resource.data.get(fieldName, request.time - duration.value(cooldownSecs + 1, 's'));
-      return request.resource.data[fieldName] == request.time
-        && request.time >= lastWrite + duration.value(cooldownSecs, 's');
-    }
-
     // Allow public read access to core portfolio data.
     // The Views map stays publicly READABLE (the project modal shows those counts)
     // but is no longer publicly writable: the trackSession Cloud Function raises it
@@ -39,47 +30,17 @@ service cloud.firestore {
 
     match /Settings/Canary {
       // PII-bearing doc: holds visitor names, emails, phone numbers, messages,
-      // attachment URLs and live Meet links. Admin-read ONLY. Public booking
-      // availability is exposed via the sanitized Settings/BookedSlots doc
-      // (Date + Time only), which a Cloud Function mirrors from Meetings here.
-      allow read: if isAdmin();
-      // Admin has full write access
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        // Only allow modifications to Emails, Meetings, and their rate-limit timestamps
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['Emails', 'Meetings', 'lastEmailWrite', 'lastMeetingWrite'])
-        // --- Email rate-limiting: max 2 per minute (30s cooldown) ---
-        && (
-          // If Emails didn't change, skip email rate-limit check
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['Emails'])
-          || (
-            request.resource.data.Emails.size() <= 50
-            && notRateLimitedField('lastEmailWrite', 30)
-            // Anti-wipe: every existing submission must survive the write. A public
-            // caller can only ADD a new email entry, never shrink/replace the map —
-            // blocks `updateDoc(Canary,{Emails:{}})` from erasing the whole inbox
-            // (size()==0 would otherwise pass the <=50 cap).
-            && request.resource.data.Emails.keys().hasAll(resource.data.get('Emails', {}).keys())
-          )
-        )
-        // --- Meeting rate-limiting: max 1 per 5 minutes (300s cooldown) ---
-        && (
-          // If Meetings didn't change, skip meeting rate-limit check
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['Meetings'])
-          || (
-            request.resource.data.Meetings.size() <= 100
-            && notRateLimitedField('lastMeetingWrite', 300)
-            // Anti-wipe: existing bookings must survive (public callers only ADD).
-            // Erasing Meetings would also clear the public BookedSlots mirror that a
-            // Cloud Function derives from it, freeing genuinely-taken slots for
-            // double-booking while the real Calendar events still exist.
-            && request.resource.data.Meetings.keys().hasAll(resource.data.get('Meetings', {}).keys())
-          )
-        )
-        // Ensure document doesn't grow unbounded (Firestore 1MB limit safety)
-        && request.resource.size() < 500 * 1024
-      );
+      // attachment URLs and live Meet links. Admin ONLY, for reads and writes.
+      // Public booking availability is exposed via the sanitized Settings/BookedSlots
+      // doc (Date + Time only), which a Cloud Function mirrors from Meetings here.
+      //
+      // Visitors used to update this doc directly under a rules-level rate limit.
+      // Rules cannot check the one new entry inside a map, so any field, type or
+      // length got through, and the cooldown timestamps were publicly writable (one
+      // request could jam both forms). The contact form and bookings now go through
+      // the submitContact / bookMeeting Cloud Functions, which validate and
+      // rate-limit every submission and write here with the Admin SDK.
+      allow read, write: if isAdmin();
     }
 
     // Treasury — private finances, split into documents:
@@ -108,11 +69,15 @@ service cloud.firestore {
     }
 
     // Public-readable Settings content docs (Account bio, Availability,
-    // HandledProjects, Developer, Tech Stack, BookedSlots, etc.). Canary is the
-    // one private exception (its admin-only block is above; rules are additive, so
-    // it must be excluded here or a blanket public read would re-grant access).
+    // HandledProjects, Developer, Tech Stack, BookedSlots, BookPage). Canary and MCP
+    // stay private (rules are additive, so a blanket public read here would
+    // re-grant access to them).
+    //
+    // Listed by name rather than "everything but Canary", so a doc added later (or
+    // Settings/MCP, whose switches are nobody else's business) is private by default.
     match /Settings/{settingsDoc} {
-      allow read: if settingsDoc != 'Canary';
+      allow read: if settingsDoc in ['Account', 'Availability', 'BookedSlots', 'BookPage',
+                                     'Developer', 'HandledProjects', 'Tech Stack'];
       allow write: if isAdmin();
     }
 
@@ -144,6 +109,19 @@ service cloud.firestore {
       allow create, update: if false;
     }
 
+    // Rate-limit state for the public submission functions (hashed visitor IPs).
+    // Written only by the Admin SDK; no client needs it.
+    match /RateLimits/{docId} {
+      allow read, write: if false;
+    }
+
+    // MCP audit log - one record per tool call, written only by the mcp function
+    // (Admin SDK). The dashboard may read it and clear entries, but never create or
+    // edit one, so the log cannot be forged from a browser.
+    match /McpAudit/{entryId} {
+      allow read, delete: if isAdmin();
+    }
+
     // Secure everything else (require admin access).
     //
     // This CANNOT be a bare `match /{document=**}`. Firestore rules are additive -
@@ -155,14 +133,15 @@ service cloud.firestore {
     // Settings/Canary from the public Settings read.
     //
     // So the catch-all names the top-level collection in a single-segment variable
-    // and subtracts those two. Everything under them is governed only by their own
+    // and subtracts those two, plus RateLimits and McpAudit (only functions write
+    // them). Everything under them is governed only by their own
     // blocks above; the dashboard's real needs there (share links read/write, visit
     // stories read/delete) are granted explicitly and still work.
     match /{coll}/{doc} {
-      allow read, write: if isAdmin() && coll != 'MCP' && coll != 'Analytics';
+      allow read, write: if isAdmin() && !(coll in ['MCP', 'Analytics', 'RateLimits', 'McpAudit']);
     }
     match /{coll}/{doc}/{rest=**} {
-      allow read, write: if isAdmin() && coll != 'MCP' && coll != 'Analytics';
+      allow read, write: if isAdmin() && !(coll in ['MCP', 'Analytics', 'RateLimits', 'McpAudit']);
     }
   }
 }

@@ -41,10 +41,10 @@ import {
 const smtpUser = defineSecret("SMTP_USER");
 const resendKey = defineSecret("RESEND_API_KEY");
 // Google Apps Script endpoint that actually creates/updates/cancels the Google Calendar
-// event (the deployed `syncMeeting` callable is just an App Check-gated proxy to it).
+// event (the deployed `syncMeeting` callable is an admin-only, App Check-gated proxy to it).
 // Held as a secret, NOT in the repo: this repo is public, and anyone with the URL could
 // manipulate the owner's calendar.
-const meetingSyncUrl = defineSecret("MEETING_SYNC_URL");
+export const meetingSyncUrl = defineSecret("MEETING_SYNC_URL");
 const HELLO_EMAIL = "hello@temrevil.com";
 function createTransporter(): Transporter {
   return nodemailer.createTransport({

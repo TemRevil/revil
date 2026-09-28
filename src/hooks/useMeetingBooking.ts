@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type React from 'react';
-import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 // firebase/functions is dynamic-imported inside the submit handler (not statically) so
 // it stays OUT of the eager first-paint bundle - M-Contact is imported eagerly by App.tsx.
 import app, { db } from '../lib/firebase';
@@ -28,11 +28,8 @@ export interface Meeting {
   timestamp?: number;
 }
 
-interface MeetingFunctionResponse {
-  status: string;
-  message?: string;
+interface BookMeetingResponse {
   link?: string;
-  id?: string;
 }
 
 type ShowAlert = (next: { type: AlertType; message: string; duration?: number }) => void;
@@ -56,7 +53,7 @@ export const getDaysInMonth = (date: Date) => {
 /**
  * The public "book a 30 minute call" flow: host availability + booked slots from
  * Firestore, time-zone conversion, the calendar's bookable days, and the submit
- * (Calendar event via the syncMeeting function, then the Settings/Canary write).
+ * (the bookMeeting function creates the Calendar event and records the meeting).
  * Shared by the contact modal (M-Contact) and the standalone /book page, so both
  * book through exactly the same rules.
  *
@@ -392,92 +389,24 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
 
       // Start time in UTC = (local hours - userOffset)
       const startDateUTC = new Date(Date.UTC(y, m, d, hours, minutes) - (userTimezone * 3600000));
-      const endDateUTC = new Date(startDateUTC.getTime() + 3600000); // 1 hour later
 
-      // 2. Call Firebase Function (firebase/functions loaded on demand)
+      // 2. Book it. The bookMeeting function validates the request, checks the slot
+      // is still free, creates the Calendar event + Meet link and records the meeting
+      // (host Date/Time are derived server-side from the same UTC instant). Visitors
+      // cannot write Settings/Canary themselves. firebase/functions loads on demand.
       const { httpsCallable, getFunctions } = await import('firebase/functions');
-      const syncMeeting = httpsCallable(getFunctions(app), 'syncMeeting');
-      const response = await syncMeeting({
+      const bookMeeting = httpsCallable(getFunctions(app), 'bookMeeting');
+      const response = await bookMeeting({
         name: meetingData.name,
         email: meetingData.email.trim(),
         reason: meetingData.reason,
         startTime: startDateUTC.toISOString(),
-        endTime: endDateUTC.toISOString()
+        userLocalTime: selectedTime,
+        userTimezone,
+        via,
       });
-
-      const result = response.data as MeetingFunctionResponse;
-
-      if (result.status === 'error') {
-        throw new Error(result.message);
-      }
-
-      // 3. Get the Meet Link and Event ID
-      const meetLink = result.link;
-      const googleEventId = result.id;
-
-      // 4. Save to Firebase.
-      // Canary is admin-read-only, so the public client can't read it to compute a
-      // sequential ID. We use a collision-resistant client-generated ID and a blind
-      // updateDoc (matches the rate-limited public-update rule) - no read of Canary
-      // required. IDs are opaque map keys; nothing depends on them being sequential.
-      const docRef = doc(db, 'Settings', 'Canary');
-      const meetingId = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
-      // Derive the stored host-perspective Date + Time from the SAME UTC instant the
-      // calendar event was created at (startDateUTC), shifted into the host's zone.
-      // Computing them independently from selectedDate/selectedTime drops the day on a
-      // cross-midnight timezone wrap, which would store the meeting on the wrong day
-      // and free the genuinely-taken slot in the public BookedSlots mirror.
-      const hostInstant = new Date(startDateUTC.getTime() + hostOffset * 3600000);
-      const hY = hostInstant.getUTCFullYear();
-      const hMo = hostInstant.getUTCMonth();
-      const hD = hostInstant.getUTCDate();
-      const hH = hostInstant.getUTCHours();
-      const hMin = hostInstant.getUTCMinutes();
-      const dateStr = `${hD.toString().padStart(2, '0')}/${(hMo + 1).toString().padStart(2, '0')}/${hY}`;
-      const hostPeriod = hH >= 12 ? 'PM' : 'AM';
-      const hostDisplayH = hH % 12 || 12;
-      const hostPerspecTime = `${hostDisplayH.toString().padStart(2, '0')}:${hMin.toString().padStart(2, '0')} ${hostPeriod}`;
-
-      const payload = {
-        Date: dateStr,
-        Time: hostPerspecTime,
-        UserLocalTime: selectedTime,
-        UserTimezone: userTimezone,
-        Email: meetingData.email.trim(),
-        "What For": meetingData.reason,
-        Name: meetingData.name,
-        timestamp: Date.now(),
-        MeetingLink: meetLink,
-        GoogleEventId: googleEventId, // Store the ID for reliable deletion/updates
-        Via: via
-      };
-
-      try {
-        await updateDoc(docRef, { [`Meetings.${meetingId}`]: payload, lastMeetingWrite: serverTimestamp() });
-        window.dispatchEvent(new CustomEvent('revil:contact_sent', { detail: { kind: 'meeting', via } }));
-      } catch (writeErr) {
-        // The calendar event + guest invite already exist, but persisting the meeting
-        // to Firestore failed - most commonly the rules' 300s global booking cooldown
-        // rejecting a second booking made site-wide within 5 minutes. Roll the event
-        // back so we don't leave an orphaned invite for a slot the public mirror never
-        // marks busy (which a later visitor could then double-book).
-        if (googleEventId) {
-          try {
-            await syncMeeting({
-              action: 'cancel',
-              eventId: googleEventId,
-              email: meetingData.email.trim(),
-              name: meetingData.name,
-              startTime: startDateUTC.toISOString(),
-            });
-          } catch { /* best-effort rollback; the host can still cancel from the dashboard */ }
-        }
-        if ((writeErr as { code?: string })?.code === 'permission-denied') {
-          throw new Error('Another booking just came in - please wait a few minutes and try again.');
-        }
-        throw writeErr;
-      }
+      const meetLink = (response.data as BookMeetingResponse)?.link || '';
+      window.dispatchEvent(new CustomEvent('revil:contact_sent', { detail: { kind: 'meeting', via } }));
 
       // Confirm to the GUEST in their own perspective (their picked day + local time).
       setBookingSuccess({ date: formatDateDDMMYYYY(selectedDate), time: selectedTime || '', link: meetLink || '' });
