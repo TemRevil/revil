@@ -6,7 +6,7 @@ import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, 
 // handlers below (not statically) so they stay OUT of the eager first-paint
 // bundle - M-Contact is imported eagerly by App.tsx, so a static import here
 // would pull both SDKs into the critical chunk.
-import app from '../lib/firebase';
+import { loadFirebase } from '../lib/liveDoc';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
 import useMeetingBooking, { getDaysInMonth, isValidEmail, type Meeting } from '../hooks/useMeetingBooking';
@@ -182,6 +182,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     setIsSubmitting(true);
 
     try {
+      const { default: app } = await loadFirebase();
       // 1. Handle File Uploads (outside transaction to prevent duplicate uploads on retry)
       const uploadedFiles: { name: string, url: string }[] = [];
       if (formData.attachments.length > 0) {

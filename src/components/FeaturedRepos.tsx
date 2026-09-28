@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Star, GitFork, ArrowUpRight, GitBranch } from 'lucide-react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { watchDoc } from '../lib/liveDoc';
 
 const GITHUB_USERNAME = 'TemRevil';
 
@@ -317,13 +316,13 @@ const FeaturedRepos = () => {
             else if (showLoading && isMounted) setIsLoading(false);
         };
 
-        const unsubFirestore = onSnapshot(
-            doc(db, 'Settings', 'Developer'),
-            (snap) => {
-                const names: string[] = snap.exists() ? (snap.data().featuredRepos ?? []) : [];
+        const unsubFirestore = watchDoc(
+            ['Settings', 'Developer'],
+            (data) => {
+                const names = (data?.featuredRepos ?? []) as string[];
                 load(names);
             },
-            (err) => { console.warn('[FeaturedRepos] Firestore listener error:', err); },
+            (err) => { console.warn('[FeaturedRepos] Firestore read error:', err); },
         );
 
         return () => {

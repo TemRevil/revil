@@ -1,7 +1,6 @@
 import { createElement, useEffect, useRef, useState, useMemo } from 'react';
 import anime from 'animejs';
-import { db } from '../lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { watchDoc } from '../lib/liveDoc';
 import { Github, Instagram, Linkedin, Twitter, Facebook, Mail, Link as LinkIcon, Twitch, Youtube, Code } from 'lucide-react';
 import { useSocialTracker } from '../hooks/useSocialTracker';
 import { useSettings } from '../contexts/SettingsContext';
@@ -221,9 +220,8 @@ const Stack = () => {
 
     // Fetch Stack Items
     useEffect(() => {
-        const unsubStack = onSnapshot(doc(db, 'Settings', 'Tech Stack'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
+        const unsubStack = watchDoc(['Settings', 'Tech Stack'], (data) => {
+            if (data) {
 
                 const items = Object.entries(data)
                     .sort(([a], [b]) => Number(a) - Number(b))

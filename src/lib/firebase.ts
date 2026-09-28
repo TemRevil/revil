@@ -1,53 +1,16 @@
-import { initializeApp } from "firebase/app";
 import {
     initializeFirestore,
     persistentLocalCache,
     persistentSingleTabManager
 } from 'firebase/firestore';
-import { initializeAppCheck, ReCaptchaEnterpriseProvider, type AppCheck } from 'firebase/app-check';
+// The app and App Check live in ./firebaseApp (the public pages load only that);
+// importing it first keeps App Check registered before the first Firestore read.
+import app, { appCheck } from './firebaseApp';
 
-const firebaseConfig = {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-    measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-
-// Initialize App Check with reCAPTCHA Enterprise - EAGERLY, before any Firestore
-// read. This ordering is REQUIRED: Firestore App Check enforcement is on, so a read
-// issued before App Check is registered goes out with no token and is rejected
-// (permission-denied) with no auto-retry. Hero/SettingsContext attach Firestore
-// listeners on mount, so App Check must already exist here. (Do NOT defer this.)
-// Runs only in the browser - SSR/build skips it. Exported so non-SDK callers (the
-// raw fetch() to syncSession) can grab a token for the X-Firebase-AppCheck header.
-let appCheck: AppCheck | undefined;
-if (typeof window !== 'undefined') {
-    // Enable a FIXED debug token on localhost (see .env.local) so it persists across
-    // sessions - register it ONCE in the Firebase console. Falling back to `true`
-    // makes Firebase mint a random token that must be re-registered each time.
-    if (process.env.NODE_ENV === 'development') {
-        // @ts-expect-error - Firebase debug token flag
-        self.FIREBASE_APPCHECK_DEBUG_TOKEN = process.env.NEXT_PUBLIC_APPCHECK_DEBUG_TOKEN || true;
-    }
-
-    appCheck = initializeAppCheck(app, {
-        provider: new ReCaptchaEnterpriseProvider('6LeyDfQsAAAAANACZEBPx9luTXrgcY9zHPF_4uE5'),
-        isTokenAutoRefreshEnabled: true,
-    });
-}
 export { appCheck };
 
-// Initialize Firestore with on-disk persistence, ONE TAB AT A TIME. Firestore is the
-// only Firebase SDK (besides App Check) kept in the eager bundle - the public site
-// reads data on first paint. Auth / Storage / Functions are split into on-demand
-// chunks (see the lazy accessors used by the contact form, SecretPage, and the
-// admin dashboard) so they never block initial load.
+// Initialize Firestore with on-disk persistence, ONE TAB AT A TIME. Only the sign-in
+// page and the admin dashboard load it; the public pages read over REST (lib/liveDoc).
 //
 // The tab manager is SINGLE, never multiple, and that is a correctness fix rather
 // than a preference. Under the multi-tab manager only one tab talks to the network:

@@ -2,9 +2,8 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import anime from 'animejs';
 import { X, Search } from 'lucide-react';
-import { db } from '../lib/firebase';
+import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { sanitizeSvg } from '../lib/sanitize';
-import { collection, onSnapshot, doc } from 'firebase/firestore';
 
 import MProjectView from './M-ProjectView';
 import MContributorView, { Contributor } from './M-ContributorView';
@@ -348,9 +347,9 @@ const Projects = () => {
     // Fetch Data
     useEffect(() => {
         // Contributors
-        const unsubDoc = onSnapshot(doc(db, 'Tags', 'Contributors'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
+        const unsubDoc = watchDoc(['Tags', 'Contributors'], (doc) => {
+            if (doc) {
+                const data = doc as Record<string, RawContributorData>;
                 const loaded = Object.entries(data)
                     .filter(([, val]) => val && typeof val === 'object' && (val as RawContributorData).Name)
                     .map(([id, val]: [string, RawContributorData]): Contributor => ({
@@ -368,9 +367,9 @@ const Projects = () => {
             }
         });
 
-        const unsubCol = onSnapshot(collection(db, 'Tags', 'Contributors', 'Profiles'), (snapshot) => {
-            const loaded = snapshot.docs.map(d => {
-                const val = d.data();
+        const unsubCol = watchCollection(['Tags', 'Contributors', 'Profiles'], (docs) => {
+            const loaded = docs.map(d => {
+                const val = d;
                 return {
                     id: d.id,
                     name: val.Name || val.name || '',
@@ -387,9 +386,9 @@ const Projects = () => {
         });
 
         // Tags
-        const unsubTags = onSnapshot(doc(db, 'Tags', 'Tags'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
+        const unsubTags = watchDoc(['Tags', 'Tags'], (doc) => {
+            if (doc) {
+                const data = doc as Record<string, RawTagData>;
                 const loaded = Object.entries(data).map(([id, val]: [string, RawTagData]): Tag => ({
                     id,
                     name: val.Name || 'Untitled',
@@ -410,8 +409,8 @@ const Projects = () => {
     const [rawProjects, setRawProjects] = useState<FirestoreProject[]>([]);
 
     useEffect(() => {
-        const unsub = onSnapshot(collection(db, 'Projects'), (snapshot) => {
-            setRawProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const unsub = watchCollection(['Projects'], (docs) => {
+            setRawProjects(docs as FirestoreProject[]);
         });
         return () => unsub();
     }, []);

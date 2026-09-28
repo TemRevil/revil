@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { X, Mail, Phone, MapPin, Globe, Github, Linkedin, Instagram, ExternalLink, FileText } from 'lucide-react';
-import { collection, onSnapshot, doc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { ProjectData as FullProject } from '../types';
 import { useSocialTracker } from '../hooks/useSocialTracker';
 
@@ -56,9 +55,8 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
 
     // Fetch Contributors
     useEffect(() => {
-        const unsubDoc = onSnapshot(doc(db, 'Tags', 'Contributors'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
+        const unsubDoc = watchDoc(['Tags', 'Contributors'], (data) => {
+            if (data) {
                 const loaded = Object.entries(data)
                     .filter(([, val]) => val && typeof val === 'object' && ((val as Record<string, unknown>).Name || (val as Record<string, unknown>).name))
                     .map(([id, val]: [string, unknown]) => {
@@ -79,9 +77,9 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             }
         });
 
-        const unsubCol = onSnapshot(collection(db, 'Tags', 'Contributors', 'Profiles'), (snapshot) => {
-            const loaded = snapshot.docs.map(d => {
-                const val = d.data();
+        const unsubCol = watchCollection(['Tags', 'Contributors', 'Profiles'], (docs) => {
+            const loaded = docs.map(d => {
+                const val = d;
                 return {
                     id: d.id,
                     name: val.Name || val.name,
@@ -104,9 +102,8 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
 
     // Fetch Tech Stack
     useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'Settings', 'Tech Stack'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
+        const unsub = watchDoc(['Settings', 'Tech Stack'], (data) => {
+            if (data) {
                 const items = Object.entries(data)
                     .sort(([a], [b]) => Number(a) - Number(b))
                     .map(([id, val]: [string, unknown]) => {
@@ -125,9 +122,9 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
 
     // Fetch Projects from Firestore
     useEffect(() => {
-        const unsub = onSnapshot(collection(db, 'Projects'), (snapshot) => {
-            const loaded = snapshot.docs.map(doc => {
-                const data = doc.data();
+        const unsub = watchCollection(['Projects'], (docs) => {
+            const loaded = docs.map(doc => {
+                const data = doc;
                 const rawStack = data.Stack || [];
                 const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack))
                     .map((t: unknown) => {
@@ -196,10 +193,9 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
 
     // Fetch Social Links from Firestore
     useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'Settings', 'Account'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                if (data && data['Social Links']) {
+        const unsub = watchDoc(['Settings', 'Account'], (data) => {
+            if (data) {
+                if (data['Social Links']) {
                     const links = Object.entries(data['Social Links'])
                         .filter(([name]) => !name.toLowerCase().includes('instagram'))
                         .map(([name, url]) => ({

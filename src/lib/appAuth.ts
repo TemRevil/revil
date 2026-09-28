@@ -1,5 +1,5 @@
 import { initializeAuth, getAuth, browserSessionPersistence, browserPopupRedirectResolver, type Auth } from 'firebase/auth';
-import app from './firebase';
+import app from './firebaseApp';
 
 /**
  * Session-only authentication: the signed-in session lives in sessionStorage,

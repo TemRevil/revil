@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { watchDoc } from '../lib/liveDoc';
 import { sanitizeSvg } from '../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor } from '../utils/projectUtils';
 import { ProjectData as Project, ContributorData as Contributor, TagData as TagItem } from '../types';
@@ -564,9 +563,9 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
 
     // Fetch Global Tags for Icons/Colors
     useEffect(() => {
-        const unsub = onSnapshot(doc(db, 'Tags', 'Tags'), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data() as Record<string, { Name?: string; Color?: string; Icon?: string }>;
+        const unsub = watchDoc(['Tags', 'Tags'], (doc) => {
+            if (doc) {
+                const data = doc as Record<string, { Name?: string; Color?: string; Icon?: string }>;
                 const loaded = Object.entries(data).map(([id, val]): TagItem => ({
                     id,
                     name: val.Name || 'Untitled',
@@ -589,8 +588,6 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     useEffect(() => {
         if (!project.id) return;
 
-        const projectRef = doc(db, 'Projects', String(project.id));
-
         const resolveTag = (t: string | { name?: string; Name?: string; color?: string; Color?: string; iconSvg?: string; Icon?: string } | null | undefined) => {
             if (!t) return { name: 'Unknown', color: '#60a5fa', iconSvg: '' };
             const name = typeof t === 'string' ? t : (t.name || t.Name || 'Unix');
@@ -604,10 +601,10 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
             };
         };
 
-        // Subscribe to real-time updates for views AND project details
-        const unsub = onSnapshot(projectRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data() as {
+        // Fresh views AND project details, read when the project opens
+        const unsub = watchDoc(['Projects', String(project.id)], (doc) => {
+            if (doc) {
+                const data = doc as {
                     Views?: Record<string, number>;
                     Stack?: string[] | Record<string, unknown>;
                     Tags?: Record<string, string | { Name?: string; Color?: string; Icon?: string }>;

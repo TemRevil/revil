@@ -104,7 +104,7 @@ type ProxyResult = { ok?: boolean; status?: number; data?: unknown; provider?: P
 async function callProxy(payload: Record<string, unknown>): Promise<ProxyResult> {
     const [{ getFunctions, httpsCallable }, appMod] = await Promise.all([
         import('firebase/functions'),
-        import('./firebase'),
+        import('./firebaseApp'),
     ]);
     const fns = getFunctions(appMod.default, 'us-central1');
     const res = await httpsCallable(fns, 'llm')(payload);
