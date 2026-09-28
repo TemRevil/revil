@@ -1,22 +1,56 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, Clock, Video, Check, ChevronLeft, ChevronRight, Globe, Loader2 } from 'lucide-react';
-import { db } from '../../lib/firebase';
-import Alert from '../Alert';
-import Select from '../Select';
-import CustomTimePicker from '../CustomTimePicker';
-import HintTooltip from '../HintTooltip';
+import { holdFirebase, watchDoc } from '../../lib/liveDoc';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import useTheme from '../../hooks/useTheme';
 import useMeetingBooking, { getDaysInMonth } from '../../hooks/useMeetingBooking';
-import { DEFAULT_BOOK_PAGE, parseBookPage, introRuns, linksFromAccount, type BookLink, type BookPageConfig } from '../../utils/bookPage';
+import { parseBookPage, introRuns, linksFromAccount, type BookLink } from '../../utils/bookPage';
 import { availabilityStatus } from '../../utils/availability';
 import { Chars, PaintDefs, splitSlogan, useHostClock, usePaint } from './paintKit';
 import useBookTrail from './useBookTrail';
 import { analytics } from '../../lib/analytics/collector';
+import bookSnapshot from '../../data/book.snapshot.json';
 import './book.css';
 
+// The alert and the day's form (the time zone list, the custom time picker, the hints) are
+// the only parts that need motion / anime.js, and none of them is on the first screen: the
+// alert follows an action, the form waits for the owner's hours. They load as their own
+// chunks once the page has painted.
+const loadAlert = () => import('../Alert');
+const loadSelect = () => import('../Select');
+const loadTimePicker = () => import('../CustomTimePicker');
+const loadHint = () => import('../HintTooltip');
+const Alert = lazy(loadAlert);
+const Select = lazy(loadSelect);
+const CustomTimePicker = lazy(loadTimePicker);
+const HintTooltip = lazy(loadHint);
+
+// This page's chunk arrives after the window's load event, so Firebase would otherwise start
+// loading (with App Check's ~350KB reCAPTCHA) while the photo and fonts are still coming in.
+// It waits for the entrance instead: see the photo's fade-in below.
+let photoShowing: () => void = () => { };
+holdFirebase(new Promise<void>((resolve) => { photoShowing = resolve; }));
+
 const NAME_LINES = ['TEM', 'REVIL'];
+
+// The page draws before Firebase has loaded, with what it said last time in this browser,
+// else the build's snapshot (scripts/sync-projects.mjs). The live documents replace it as
+// soon as they arrive.
+const PAGE_KEY = 'revil_book_page';
+const LINKS_KEY = 'revil_book_links';
+function seed(key: string, fallback: Record<string, unknown>): Record<string, unknown> {
+    try {
+        const cached = JSON.parse(localStorage.getItem(key) || 'null');
+        if (cached && typeof cached === 'object') return cached;
+    } catch { /* ignore */ }
+    return fallback;
+}
+const remember = (key: string, value: unknown) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ } };
+
+/** The day's panel while the owner's hours (or the form's chunk) are on their way. */
+const DayLoading = () => (
+    <p className="empty loading" role="status"><Loader2 size={16} className="spin" aria-hidden="true" />Loading open times...</p>
+);
 
 /** "01:00 PM" -> "1:00 PM" for display; the stored value keeps the hook's format. */
 const shortTime = (t: string) => t.replace(/^0/, '');
@@ -42,38 +76,62 @@ export default function BookPage() {
     const status = availabilityStatus(b.hostAvailability);
 
     // What the page says about the owner, edited from the dashboard (Canary → Options).
-    const [content, setContent] = useState<BookPageConfig>(DEFAULT_BOOK_PAGE);
-    const [contentLoaded, setContentLoaded] = useState(false);
-    useEffect(() => onSnapshot(doc(db, 'Settings', 'BookPage'),
-        (snap) => { setContent(parseBookPage(snap.exists() ? snap.data() : null)); setContentLoaded(true); },
-        () => setContentLoaded(true)), []);
+    // Seeded (see seed()), so the first paint never waits for Firestore.
+    const [content, setContent] = useState(() => parseBookPage(seed(PAGE_KEY, bookSnapshot.page)));
+    useEffect(() => watchDoc(['Settings', 'BookPage'],
+        (data) => { setContent(parseBookPage(data)); remember(PAGE_KEY, data ?? {}); },
+        () => { /* offline / blocked: keep the seeded copy */ }), []);
 
     // Links are the site's own (dashboard Settings → Social Links + contact email).
-    const [links, setLinks] = useState<BookLink[]>(() => linksFromAccount(null));
-    useEffect(() => onSnapshot(doc(db, 'Settings', 'Account'),
-        (snap) => setLinks(linksFromAccount(snap.exists() ? snap.data() : null)),
-        () => { /* offline / blocked: keep the portfolio link */ }), []);
+    const [links, setLinks] = useState<BookLink[]>(() => linksFromAccount(seed(LINKS_KEY, bookSnapshot.account)));
+    useEffect(() => watchDoc(['Settings', 'Account'],
+        (data) => { setLinks(linksFromAccount(data)); remember(LINKS_KEY, { Email: data?.Email, 'Social Links': data?.['Social Links'] }); },
+        () => { /* offline / blocked: keep the seeded links */ }), []);
 
-    // ---- paint: first draw animates once the photo, fonts and content are in; later
-    // draws (resize, a live content edit that moves the text) land without animation.
+    // ---- paint: first draw animates once the photo and fonts are in; later draws
+    // (resize, a live content edit that moves the text) land without animation.
     const [ready, setReady] = useState(false);
     const { boilRef, painted } = usePaint(rootRef, ready, [content, links]);
     useEffect(() => {
         const root = rootRef.current;
         const img = root?.querySelector<HTMLImageElement>('.stage img');
         let alive = true;
-        const timeout = new Promise(r => setTimeout(r, 1500));
-        Promise.all([document.fonts.ready, img?.decode().catch(() => { }), Promise.race([timeout, new Promise<void>(r => { if (contentLoaded) r(); })])])
+        Promise.all([document.fonts.ready, img?.decode().catch(() => { })])
             .then(() => { if (alive) setReady(true); });
         // Failsafe: never leave the page hidden if the photo or fonts hang.
-        const failsafe = window.setTimeout(() => { if (root && !painted.current) root.dataset.intro = 'done'; }, 4000);
+        const failsafe = window.setTimeout(() => {
+            if (root && !painted.current) root.dataset.intro = 'done';
+            photoShowing();
+        }, 4000);
         return () => { alive = false; window.clearTimeout(failsafe); };
-    }, [contentLoaded, painted]);
+    }, [painted]);
+    // Once the photo has faded in (the page's largest paint; textIn in brushes.ts runs it
+    // from 300ms to 1.5s into the entrance), let Firebase and the deferred chunks load: the
+    // reCAPTCHA script alone is ~350KB to parse, and on a phone that stalls the entrance.
+    // usePaint's effect has already started the entrance by the time this runs.
+    useEffect(() => {
+        if (!ready) return;
+        let released = false;
+        const release = () => {
+            if (released) return;
+            released = true;
+            photoShowing();
+            void Promise.all([loadAlert(), loadSelect(), loadTimePicker(), loadHint()]).catch(() => { /* lazy() retries on render */ });
+        };
+        const fades = rootRef.current?.querySelector('.stage img')?.getAnimations() ?? [];
+        Promise.all(fades.map(a => a.finished)).then(release, release);
+        // A background tab doesn't run the fade; don't hold the booking back for it.
+        const t = window.setTimeout(release, 3000);
+        return () => window.clearTimeout(t);
+    }, [ready]);
 
     // ---- booking view data
     const { days, firstDay } = getDaysInMonth(b.calendarDate);
     const sel = b.selectedDate;
-    const dayOpen = !!sel && b.isDayBookable(sel);
+    // Until the owner's hours and booked slots arrive, no day is offered: the defaults
+    // would open the wrong days and then take them back.
+    const isOpen = (date: Date) => b.loaded && b.isDayBookable(date);
+    const dayOpen = !!sel && isOpen(sel);
     const pickedLabel = sel && b.selectedTime
         ? `Book ${sel.toLocaleDateString('en-US', { weekday: 'short' })} ${sel.getDate()} ${sel.toLocaleDateString('en-US', { month: 'short' })} at ${shortTime(b.selectedTime)}`
         : 'Pick a time';
@@ -83,12 +141,12 @@ export default function BookPage() {
 
     return (
         <div ref={rootRef} className="bp">
-            {alert?.show && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
+            {alert?.show && <Suspense fallback={null}><Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} /></Suspense>}
             <PaintDefs boilRef={boilRef} />
             <div className="wall" aria-hidden="true" />
             <svg className="paint-bg" aria-hidden="true" />
 
-            <div className="layout">
+            <main className="layout">
                 <section className="hero">
                     <div className="this-is" aria-hidden="true" data-write><Chars text="THIS IS" className="ch" /></div>
                     <h1 className="name">
@@ -142,12 +200,12 @@ export default function BookPage() {
                                     </button>
                                 </div>
                             </div>
-                            <div className="cal">
+                            <div className="cal" aria-busy={!b.loaded}>
                                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="dow" aria-hidden="true">{d}</div>)}
                                 {Array.from({ length: firstDay }).map((_, i) => <span key={`e${i}`} />)}
                                 {Array.from({ length: days }).map((_, i) => {
                                     const date = new Date(b.calendarDate.getFullYear(), b.calendarDate.getMonth(), i + 1);
-                                    const open = b.isDayBookable(date);
+                                    const open = isOpen(date);
                                     const isSel = sel?.toDateString() === date.toDateString();
                                     const booked = b.getMeetingsForDate(date).length;
                                     return (
@@ -177,10 +235,12 @@ export default function BookPage() {
                                         )}
                                         <button type="button" className="again" onClick={() => b.setBookingSuccess(null)}>Book another call</button>
                                     </div>
+                                ) : !b.loaded ? (
+                                    <DayLoading />
                                 ) : !dayOpen ? (
                                     <p className="empty">Nothing open on this day. Pick a date that isn&apos;t greyed out.</p>
                                 ) : (
-                                    <>
+                                    <Suspense fallback={<DayLoading />}>
                                         <div>
                                             <div className="label-help muted"><Globe size={14} aria-hidden="true" />Your time zone
                                                 <HintTooltip text="Detected automatically. Change it and the times below follow." isDark={isDark} />
@@ -234,7 +294,7 @@ export default function BookPage() {
                                         <button type="submit" className="btn-book" disabled={!canSubmit}>
                                             {b.isSubmitting ? <><Loader2 size={16} className="spin" aria-hidden="true" />Booking...</> : pickedLabel}
                                         </button>
-                                    </>
+                                    </Suspense>
                                 )}
                             </div>
                         </div>
@@ -255,7 +315,7 @@ export default function BookPage() {
                         </nav>
                     )}
                 </section>
-            </div>
+            </main>
         </div>
     );
 }
