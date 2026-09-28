@@ -28,6 +28,7 @@ const HELLO_EMAIL = "hello@temrevil.com";
 export { mcp } from "./mcp.js";
 import { meetingSyncUrl } from "./mcp.js";
 import { clientIp } from "./geoip.js";
+import { bookingRefusal, parseAvailability, utcOffsetHours, wallClock, DEFAULT_HOST_TZ } from "./booking.js";
 
 // ── Shapes of the Firestore records these functions read ─────────────
 interface EmailEntry {
@@ -747,26 +748,6 @@ export const submitContact = onCall(
   },
 );
 
-/** Settings/Availability "Current Time" is shown as e.g. "(UTC+03:00) Istanbul". */
-function hostOffsetHours(tzStr: unknown): number {
-  const match = /UTC([+-]\d{2}):(\d{2})/.exec(String(tzStr || ""));
-  if (!match) return 0;
-  const hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  return hours + (minutes / 60) * (hours < 0 ? -1 : 1);
-}
-
-/** The host wall-clock "DD/MM/YYYY" + "hh:mm AM/PM" the site stores meetings under. */
-function hostDateTime(startUtc: Date, hostOffset: number): { date: string; time: string } {
-  const h = new Date(startUtc.getTime() + hostOffset * 3600000);
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const hh = h.getUTCHours();
-  return {
-    date: `${pad(h.getUTCDate())}/${pad(h.getUTCMonth() + 1)}/${h.getUTCFullYear()}`,
-    time: `${pad(hh % 12 || 12)}:${pad(h.getUTCMinutes())} ${hh >= 12 ? "PM" : "AM"}`,
-  };
-}
-
 async function postToCalendar(payload: Record<string, unknown>): Promise<{ status?: string; link?: string; id?: string; message?: string }> {
   const url = (meetingSyncUrl.value() || "").trim();
   if (!url) throw new HttpsError("failed-precondition", "Meeting sync is not configured.");
@@ -803,16 +784,15 @@ export const bookMeeting = onCall(
 
     const start = new Date(typeof d.startTime === "string" ? d.startTime : NaN);
     const now = Date.now();
-    if (Number.isNaN(start.getTime()) || start.getUTCSeconds() !== 0 || start.getUTCMilliseconds() !== 0) {
+    if (Number.isNaN(start.getTime())) {
       throw new HttpsError("invalid-argument", "Invalid meeting time.");
-    }
-    if (start.getTime() <= now || start.getTime() > now + 366 * 86400000) {
-      throw new HttpsError("invalid-argument", "That time slot is no longer available. Please pick another.");
     }
     const end = new Date(start.getTime() + MEETING_MS);
 
     const availability = (await db.doc("Settings/Availability").get()).data() || {};
-    const host = hostDateTime(start, hostOffsetHours(availability["Current Time"]));
+    const cfg = parseAvailability(availability);
+    const hostOffset = utcOffsetHours(availability["Current Time"] ?? DEFAULT_HOST_TZ);
+    const host = wallClock(start.getTime(), hostOffset);
     const key = ipKey(request.rawRequest);
     const rlRef = db.doc("RateLimits/meeting");
     const canaryRef = db.doc("Settings/Canary");
@@ -824,6 +804,9 @@ export const bookMeeting = onCall(
       if (meetings.length >= MEETINGS_CAP) {
         throw new HttpsError("resource-exhausted", `Bookings are full right now - please email ${HELLO_EMAIL}.`);
       }
+      // The same day and time rules the booking calendar applies (booking.ts).
+      const refusal = bookingRefusal({ startMs: start.getTime(), nowMs: now, userTimezone, hostOffset, cfg, meetings });
+      if (refusal) throw new HttpsError("failed-precondition", refusal);
       if (meetings.some((m) => m && m.Date === host.date && m.Time === host.time)) {
         throw new HttpsError("already-exists", "That time slot is no longer available. Please pick another.");
       }
