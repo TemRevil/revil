@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { Plus, Briefcase, Calendar } from 'lucide-react';
-import { db } from '../lib/firebase';
+import { watchDoc } from '../lib/liveDoc';
 import { availabilityStatus } from '../utils/availability';
 import { useSettings } from '../contexts/SettingsContext';
 import useTheme from '../hooks/useTheme';
@@ -244,8 +243,9 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     const isDark = useTheme();
     const hasNotifiedLoaded = useRef(false);
 
-    // Shared Settings/Account listener (single Firestore connection for all components)
-    const { account, accountLoading } = useSettings();
+    // Shared Settings/Account listener. Seeded from the last copy / the build snapshot, so
+    // the hero never waits for Firebase to show the name and title.
+    const { account } = useSettings();
     const profileName = (account?.name || 'Tem Revil').trim();
     const profileTitle = account?.title || 'a Front-End';
     const [firstName, ...rest] = profileName.split(/\s+/);
@@ -257,8 +257,8 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     const [availData, setAvailData] = useState<AvailabilityData | null>(null);
     const [handledData, setHandledData] = useState<HandledData | null>(null);
     useEffect(() => {
-        const unsubAvail = onSnapshot(doc(db, 'Settings', 'Availability'), (snap) => { if (snap.exists()) setAvailData(snap.data()); });
-        const unsubHandled = onSnapshot(doc(db, 'Settings', 'HandledProjects'), (snap) => { if (snap.exists()) setHandledData(snap.data()); });
+        const unsubAvail = watchDoc(['Settings', 'Availability'], (data) => { if (data) setAvailData(data as AvailabilityData); });
+        const unsubHandled = watchDoc(['Settings', 'HandledProjects'], (data) => { if (data) setHandledData(data as HandledData); });
         return () => { unsubAvail(); unsubHandled(); };
     }, []);
     const status = availabilityStatus(availData?.['Current Availability']);
@@ -267,24 +267,24 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     // The admin's drag-sort order (map order for legacy data).
     const projects = Object.values(handledData?.projects || {}).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-    // Notify parent that initial data is ready
+    // Everything the first screen draws is already here (the profile is seeded), so the
+    // loader can lift at once; live data fills in the pills when Firebase arrives.
     useEffect(() => {
-        if (!accountLoading && onLoaded && !hasNotifiedLoaded.current) {
+        if (onLoaded && !hasNotifiedLoaded.current) {
             hasNotifiedLoaded.current = true;
             onLoaded();
         }
-    }, [accountLoading, onLoaded]);
+    }, [onLoaded]);
 
-    // ---- paint: once the loader is gone and the photo, fonts and profile are in.
+    // ---- paint: once the loader is gone and the photo and fonts are in.
     const [assetsReady, setAssetsReady] = useState(false);
     useEffect(() => {
         const img = rootRef.current?.querySelector<HTMLImageElement>('.stage img');
         let alive = true;
-        const timeout = new Promise(r => setTimeout(r, 1500));
-        Promise.all([document.fonts.ready, img?.decode().catch(() => { }), Promise.race([timeout, new Promise<void>(r => { if (!accountLoading) r(); })])])
+        Promise.all([document.fonts.ready, img?.decode().catch(() => { })])
             .then(() => { if (alive) setAssetsReady(true); });
         return () => { alive = false; };
-    }, [accountLoading]);
+    }, []);
     // A beat after the loader lifts, so the entrance isn't spent behind its fade.
     const [loaderGone, setLoaderGone] = useState(false);
     useEffect(() => {

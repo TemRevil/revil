@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { getToken } from 'firebase/app-check';
-import { appCheck } from '../lib/firebase';
+import { loadFirebase } from '../lib/liveDoc';
 import { analytics } from '../lib/analytics/collector';
 import { EMPTY_TAILOR, type LinkTailor } from '../lib/analytics/types';
 
@@ -77,7 +76,9 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
         analytics.start({
             section: currentSection,
             code: /^[A-Za-z0-9_-]{4,32}$/.test(code) ? code : '',
+            // Firebase loads off the first paint; the recorder waits for it here.
             getToken: async () => {
+                const [{ appCheck }, { getToken }] = await Promise.all([loadFirebase(), import('firebase/app-check')]);
                 if (!appCheck) return '';
                 const { token } = await getToken(appCheck, false);
                 return token;
@@ -105,7 +106,6 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     // Keep the App Check token warm: the final flush fires during unload, where
     // there is no room to await one.
     useEffect(() => {
-        if (!appCheck) return;
         analytics.warmToken();
         const id = setInterval(() => analytics.warmToken(), 20 * 60 * 1000);
         return () => clearInterval(id);
