@@ -318,8 +318,11 @@ function textIn(root: HTMLElement) {
  */
 export function paintBook(root: HTMLElement, animate: boolean, phone = false) {
     lite = phone;
-    // One composition per page load: a redraw after a resize keeps the same mood.
+    // One composition per page load: a redraw (a resize, or the name or availability text
+    // arriving after the entrance) replays the same random rolls, so the strokes are only
+    // re-fitted to the new layout, never swapped for new ones.
     const mood = (root.dataset.mood || (root.dataset.mood = pickMood())) as Mood;
+    seed = Number(root.dataset.seed || (root.dataset.seed = String(seed)));
     // Paint first: drawBg measures the text boxes, which the entrance offsets while it runs.
     drawBg(root, 900, animate, mood);
     drawShirt(root, drawStage(root, 1100, animate, mood) + 200, animate);
