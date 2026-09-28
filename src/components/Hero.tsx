@@ -319,6 +319,9 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
         const id = window.setTimeout(() => { entranceDone(); onAnimationCompleteRef.current?.(); }, 2600);
         return () => window.clearTimeout(id);
     }, [ready, entranceDone]);
+    // A phone first renders the desktop layout, then remounts the hero in the phone one:
+    // the unmounted hero lets go of its hold, or Firebase waited for the 10s cap there.
+    useEffect(() => () => entranceDone(), [entranceDone]);
 
     return (
         <div ref={rootRef} className="bp bp-home">
