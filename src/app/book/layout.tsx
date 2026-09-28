@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { preload } from 'react-dom'
 
 const siteUrl = 'https://temrevil.com'
 const pageUrl = `${siteUrl}/book`
@@ -153,6 +154,9 @@ const structuredData = {
 }
 
 export default function BookLayout({ children }: { children: React.ReactNode }) {
+  // The cutout is the page's largest paint, but the client-only page only asks for it once
+  // its JavaScript has run. Announcing it in the HTML head lets it download alongside that.
+  preload(image.url, { as: 'image', fetchPriority: 'high' })
   return (
     <>
       <script

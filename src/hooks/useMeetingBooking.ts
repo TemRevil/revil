@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type React from 'react';
-import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
-// firebase/functions is dynamic-imported inside the submit handler (not statically) so
-// it stays OUT of the eager first-paint bundle - M-Contact is imported eagerly by App.tsx.
-import app, { db } from '../lib/firebase';
+// Firebase is reached only through lib/liveDoc: the listeners attach once it has loaded
+// off the first paint, and the submit handler imports Firestore + Functions on demand, so
+// /book draws without waiting for the SDK (or App Check's reCAPTCHA).
+import { loadFirebase, watchDoc } from '../lib/liveDoc';
 import type { AlertType } from '../components/Alert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, buildHostSlots, isWorkingDay } from '../utils/availability';
 import { timezoneOptions, localOffset } from '../utils/timezones';
@@ -156,10 +156,9 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
 
   // Sync Host Availability & Timezone
   useEffect(() => {
-    const unsubscribeAvailability = onSnapshot(doc(db, 'Settings', 'Availability'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data['Current Time']) {
+    const unsubscribeAvailability = watchDoc(['Settings', 'Availability'], (data) => {
+      if (data) {
+        if (typeof data['Current Time'] === 'string' && data['Current Time']) {
           setHostTimezoneString(data['Current Time']);
         }
         setHostAvailability(data['Current Availability']);
@@ -179,9 +178,8 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
     // NOT Settings/Canary - Canary holds visitor PII and is admin-read-only.
     // BookedSlots carries only { Date, Time } per booking, which is all the public
     // calendar needs to grey out taken slots. A Cloud Function keeps it in sync.
-    const unsubscribeMeetings = onSnapshot(doc(db, 'Settings', 'BookedSlots'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+    const unsubscribeMeetings = watchDoc(['Settings', 'BookedSlots'], (data) => {
+      if (data) {
         const slots = (data.Slots || []) as Array<{ Date?: string; Time?: string }>;
         const meetingsList = slots
           .filter((s) => s && s.Date && s.Time)
@@ -394,8 +392,10 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
       const startDateUTC = new Date(Date.UTC(y, m, d, hours, minutes) - (userTimezone * 3600000));
       const endDateUTC = new Date(startDateUTC.getTime() + 3600000); // 1 hour later
 
-      // 2. Call Firebase Function (firebase/functions loaded on demand)
-      const { httpsCallable, getFunctions } = await import('firebase/functions');
+      // 2. Call Firebase Function (Firebase, Firestore and Functions loaded on demand)
+      const [{ default: app, db }, { doc, updateDoc, serverTimestamp }, { httpsCallable, getFunctions }] = await Promise.all([
+        loadFirebase(), import('firebase/firestore'), import('firebase/functions'),
+      ]);
       const syncMeeting = httpsCallable(getFunctions(app), 'syncMeeting');
       const response = await syncMeeting({
         name: meetingData.name,
@@ -524,6 +524,9 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
     meetingData, setMeetingData, isSubmitting, bookingSuccess, setBookingSuccess,
     userTimezone, setUserTimezone, tzOptions, hostTimezoneString, hostAvailability,
     availConfig, timeSlots, convertedSlots,
+    // The owner's real hours and booked slots are in (until then the calendar only knows
+    // the defaults, so /book shows it as loading rather than offering the wrong days).
+    loaded: availLoaded && slotsLoaded,
     getMeetingsForDate, convertTimeToUser, isTimePassed, hasFreeSlots, isDayBookable,
     handleMeetingSubmit, validateCustomTime, isCustomTimeUnavailable,
   };
