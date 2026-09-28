@@ -1,5 +1,3 @@
-// GENERATED from src/utils/bookingRules.ts by scripts/sync-booking-rules.mjs - edit that file.
-
 /**
  * Public booking rules - the ONE definition of which days and times a visitor may book.
  *

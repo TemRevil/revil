@@ -10,7 +10,6 @@ import app from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
 import useMeetingBooking, { getDaysInMonth, isValidEmail, type Meeting } from '../hooks/useMeetingBooking';
-import { isWorkingDay } from '../utils/availability';
 import Select from './Select';
 import CustomTimePicker from './CustomTimePicker';
 import HintTooltip from './HintTooltip';
@@ -47,8 +46,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     selectedDate, setSelectedDate, selectedTime, setSelectedTime, isCustomTime, setIsCustomTime,
     meetingData, setMeetingData, isSubmitting: isBooking, bookingSuccess, setBookingSuccess,
     userTimezone, setUserTimezone, tzOptions,
-    availConfig, timeSlots, convertedSlots,
-    getMeetingsForDate, convertTimeToUser, isTimePassed,
+    convertedSlots, daySlots,
+    getMeetingsForDate, meetingTimeForVisitor, isDayBookable,
     handleMeetingSubmit, validateCustomTime, isCustomTimeUnavailable,
   } = useMeetingBooking({ showAlert, enabled: activeTab === 'meeting' });
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
@@ -548,13 +547,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               const hasMeetings = meetingsForDay.length > 0;
                               const isPast = date < today;
                               const isTooFar = date > limitDate;
-                              const hasFreeSlots = timeSlots.some((hostTime) => {
-                                const isBusy = getMeetingsForDate(date).some(m => m.Time === hostTime);
-                                const passed = isTimePassed(date, hostTime);
-                                return !isBusy && !passed;
-                              });
-
-                              const isBookable = !isPast && !isTooFar && hasFreeSlots && isWorkingDay(availConfig, date);
+                              const isBookable = isDayBookable(date);
 
                               return (
                                 <div
@@ -598,7 +591,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   {hasMeetings && !isSelected && (
                                     <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginTop: '2px' }}>
                                       {meetingsForDay.slice(0, 3).map((m: Meeting, idx) => (
-                                        <div key={idx} title={`${convertTimeToUser(m.Time)} - Booked`} style={{
+                                        <div key={idx} title={`${meetingTimeForVisitor(m)} - Booked`} style={{
                                           width: '4px', height: '4px', borderRadius: '50%',
                                           background: '#10b981', // Slot taken (guest identity is private)
                                           position: 'relative', zIndex: 1
@@ -713,7 +706,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                     <div key={i} className="flex items-center gap-3 py-1" style={{ borderBottom: i === getMeetingsForDate(selectedDate).length - 1 ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)') }}>
                                       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px rgba(16, 185, 129, 0.5)' }} />
                                       <div className="flex-1">
-                                        <div className="text-sm font-semibold text-primary">{convertTimeToUser(m.Time)} - <span style={{ opacity: 0.7 }}>Booked</span></div>
+                                        <div className="text-sm font-semibold text-primary">{meetingTimeForVisitor(m)} - <span style={{ opacity: 0.7 }}>Booked</span></div>
                                       </div>
                                     </div>
                                   ))}
@@ -721,15 +714,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               )}
 
                               {/* Time Slots & Form */}
-                              {selectedDate && (() => {
-                                const isPast = selectedDate < new Date(new Date().setHours(0, 0, 0, 0));
-                                const hasFreeSlots = timeSlots.some((hostTime) => {
-                                  const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
-                                  const passed = isTimePassed(selectedDate, hostTime);
-                                  return !isBusy && !passed;
-                                });
-                                return !isPast && hasFreeSlots && isWorkingDay(availConfig, selectedDate);
-                              })() && (
+                              {selectedDate && isDayBookable(selectedDate) && (
                                   <>
                                     {/* Timezone Selection (Before Available Slots) */}
                                     <div style={{ position: 'relative', marginBottom: '24px' }}>
@@ -756,11 +741,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                     <div>
                                       <h3 className="heading-sm mb-3 flex items-center gap-2"><Clock size={16} /> Available Slots</h3>
                                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px' }}>
-                                        {convertedSlots.map((time, idx) => {
-                                          const hostTime = timeSlots[idx];
-                                          const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
-                                          const passed = isTimePassed(selectedDate, hostTime);
-                                          const isDisabled = isBusy || passed;
+                                        {daySlots(selectedDate).map(({ label: time, taken, passed }) => {
+                                          const isDisabled = taken || passed;
                                           const isActive = selectedTime === time && !isCustomTime;
                                           return (
                                             <button key={time} onClick={() => { setSelectedTime(time); setIsCustomTime(false); }} disabled={isDisabled}

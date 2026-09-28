@@ -28,7 +28,7 @@ const HELLO_EMAIL = "hello@temrevil.com";
 export { mcp } from "./mcp.js";
 import { meetingSyncUrl } from "./mcp.js";
 import { clientIp } from "./geoip.js";
-import { bookingRefusal, parseAvailability, utcOffsetHours, wallClock, DEFAULT_HOST_TZ } from "./booking.js";
+import { bookingRefusal, isTaken, parseAvailability, utcOffsetHours, wallClock, DEFAULT_HOST_TZ } from "./booking.js";
 
 // ── Shapes of the Firestore records these functions read ─────────────
 interface EmailEntry {
@@ -633,14 +633,24 @@ const MEETINGS_CAP = 100;
 const MAX_ATTACHMENTS = 5;
 const MEETING_MS = 3600000;
 
-interface RateLimits { cooldownMs: number; perIp: number; windowMs: number }
-// Site-wide cooldowns are the same as the old rules had (30s / 5min). The per-IP
-// caps are new: one address can no longer use up the whole site's quota.
+interface RateLimits {
+  cooldownMs: number;
+  /** Accepted submissions per IP per window. */
+  perIp: number;
+  windowMs: number;
+  /** Attempts per IP per window, failed ones included (for work that can fail after the reservation). */
+  triesPerIp?: number;
+}
+// Site-wide cooldowns are the same as the old rules had (30s / 5min). The per-IP caps
+// are new: one address can no longer use up the whole site's quota. A booking that fails
+// (Calendar error, recording error) is refunded, so a typo does not cost a visitor one
+// of their bookings; the attempts cap is what still bounds how often one address can
+// make the Calendar script run.
 const CONTACT_LIMITS: RateLimits = { cooldownMs: 30_000, perIp: 3, windowMs: 3_600_000 };
-const MEETING_LIMITS: RateLimits = { cooldownMs: 300_000, perIp: 2, windowMs: 86_400_000 };
+const MEETING_LIMITS: RateLimits = { cooldownMs: 300_000, perIp: 3, windowMs: 86_400_000, triesPerIp: 10 };
 
-/** RateLimits/{kind}: the last accepted submission, plus recent ones per hashed IP. */
-interface RateDoc { last?: number; ips?: Record<string, number[]> }
+/** RateLimits/{kind}: the last accepted submission, plus recent ones (and attempts) per hashed IP. */
+interface RateDoc { last?: number; ips?: Record<string, number[]>; tries?: Record<string, number[]> }
 
 /** Hashed so the rate-limit doc never stores a raw visitor IP. */
 function ipKey(rawRequest: { headers: Record<string, string | string[] | undefined>; ip?: string }): string {
@@ -657,16 +667,52 @@ function takeRateSlot(prev: RateDoc, key: string, limits: RateLimits, now: numbe
   if (typeof prev.last === "number" && now - prev.last < limits.cooldownMs) {
     throw new HttpsError("resource-exhausted", busyMessage);
   }
-  const ips: Record<string, number[]> = {};
-  for (const [k, times] of Object.entries(prev.ips || {})) {
-    const recent = (Array.isArray(times) ? times : []).filter((t) => typeof t === "number" && now - t < limits.windowMs);
-    if (recent.length) ips[k] = recent;
-  }
+  const recent = (byIp: Record<string, number[]> | undefined) => {
+    const out: Record<string, number[]> = {};
+    for (const [k, times] of Object.entries(byIp || {})) {
+      const kept = (Array.isArray(times) ? times : []).filter((t) => typeof t === "number" && now - t < limits.windowMs);
+      if (kept.length) out[k] = kept;
+    }
+    return out;
+  };
+  const ips = recent(prev.ips);
   if ((ips[key] || []).length >= limits.perIp) {
     throw new HttpsError("resource-exhausted", "You've sent a few already - please try again later.");
   }
   ips[key] = [...(ips[key] || []), now];
-  return { last: now, ips };
+  if (limits.triesPerIp === undefined) return { last: now, ips };
+
+  const tries = recent(prev.tries);
+  if ((tries[key] || []).length >= limits.triesPerIp) {
+    throw new HttpsError("resource-exhausted", `Too many attempts today - please email ${HELLO_EMAIL} instead.`);
+  }
+  tries[key] = [...(tries[key] || []), now];
+  return { last: now, ips, tries };
+}
+
+/**
+ * Undoes a reservation that did not become a booking: the caller's booking is removed
+ * from their per-IP count (the attempt stays counted) and the site-wide cooldown goes
+ * back to what it was - unless another reservation has been made since.
+ */
+async function refundRateSlot(ref: FirebaseFirestore.DocumentReference, key: string, stamp: number, prevLast: number | undefined): Promise<void> {
+  try {
+    await db.runTransaction(async (tx) => {
+      const cur = ((await tx.get(ref)).data() || {}) as RateDoc;
+      const ips = { ...(cur.ips || {}) };
+      const left = (ips[key] || []).filter((t) => t !== stamp);
+      if (left.length) ips[key] = left;
+      else delete ips[key];
+      const next: RateDoc = { ...cur, ips };
+      if (cur.last === stamp) {
+        if (prevLast === undefined) delete next.last;
+        else next.last = prevLast;
+      }
+      tx.set(ref, next);
+    });
+  } catch (err) {
+    console.error("Failed to refund booking reservation:", err);
+  }
 }
 
 /** A trimmed string of at most `max` characters, or a clear invalid-argument error. */
@@ -798,26 +844,27 @@ export const bookMeeting = onCall(
     const canaryRef = db.doc("Settings/Canary");
 
     // 1. Reserve: slot free, under the cap, and not rate limited.
+    const stamp = now;
     const prevLast = await db.runTransaction(async (tx) => {
       const [rl, canary] = await Promise.all([tx.get(rlRef), tx.get(canaryRef)]);
       const meetings = Object.values((canary.data() as CanaryDoc | undefined)?.Meetings || {});
       if (meetings.length >= MEETINGS_CAP) {
         throw new HttpsError("resource-exhausted", `Bookings are full right now - please email ${HELLO_EMAIL}.`);
       }
-      // The same day and time rules the booking calendar applies (booking.ts).
-      const refusal = bookingRefusal({ startMs: start.getTime(), nowMs: now, userTimezone, hostOffset, cfg, meetings });
-      if (refusal) throw new HttpsError("failed-precondition", refusal);
-      if (meetings.some((m) => m && m.Date === host.date && m.Time === host.time)) {
+      if (isTaken(start.getTime(), hostOffset, meetings)) {
         throw new HttpsError("already-exists", "That time slot is no longer available. Please pick another.");
       }
+      // The same day and time rules the booking calendar draws from (booking.ts,
+      // generated from src/utils/bookingRules.ts).
+      const refusal = bookingRefusal(start.getTime(), { nowMs: now, userTimezone, hostOffset, cfg, meetings });
+      if (refusal) throw new HttpsError("failed-precondition", refusal);
       const prev = (rl.data() || {}) as RateDoc;
       tx.set(rlRef, takeRateSlot(prev, key, MEETING_LIMITS, now,
         "Another booking just came in - please wait a few minutes and try again."));
       return prev.last;
     });
-    // A failed booking gives the site-wide slot back (the per-IP count stays spent).
-    const release = () => rlRef.update({ last: prevLast ?? admin.firestore.FieldValue.delete() })
-      .catch((err) => console.error("Failed to release booking cooldown:", err));
+    // A failed booking gives back the site-wide slot and the caller's booking count.
+    const release = () => refundRateSlot(rlRef, key, stamp, prevLast);
 
     // 2. Calendar event + Meet link.
     let event: { link?: string; id?: string };

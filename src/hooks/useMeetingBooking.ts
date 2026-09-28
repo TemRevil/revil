@@ -5,7 +5,12 @@ import { doc, onSnapshot } from 'firebase/firestore';
 // it stays OUT of the eager first-paint bundle - M-Contact is imported eagerly by App.tsx.
 import app, { db } from '../lib/firebase';
 import type { AlertType } from '../components/Alert';
-import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, buildHostSlots, isWorkingDay } from '../utils/availability';
+import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../utils/availability';
+import {
+  BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type PresetSlot,
+  bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, isDayOpen, meetingInstant,
+  presetSlotsForDay, utcOffsetHours, visitorTimeToInstant, wallClock,
+} from '../utils/bookingRules';
 import { timezoneOptions, localOffset } from '../utils/timezones';
 
 /** Pragmatic email validator: requires local@domain.tld and rejects whitespace.
@@ -34,12 +39,11 @@ interface BookMeetingResponse {
 
 type ShowAlert = (next: { type: AlertType; message: string; duration?: number }) => void;
 
-const getOffsetFromUTCString = (tzStr: string) => {
-  const match = tzStr.match(/UTC([+-]\d{2}):(\d{2})/);
-  if (!match) return 0;
-  const hours = parseInt(match[1]);
-  const minutes = parseInt(match[2]);
-  return hours + (minutes / 60) * (hours < 0 ? -1 : 1);
+/** The calendar's day cells are local Dates; only their y/m/d matter (the visitor's day). */
+const dayOf = (date: Date) => dayIndex(date.getFullYear(), date.getMonth(), date.getDate());
+const dateOfDay = (day: number) => {
+  const u = new Date(day * DAY_MS);
+  return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate());
 };
 
 export const getDaysInMonth = (date: Date) => {
@@ -79,18 +83,25 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
   const [existingMeetings, setExistingMeetings] = useState<Meeting[]>([]);
   const [bookingSuccess, setBookingSuccess] = useState<{ date: string, time: string, link: string } | null>(null);
 
-  const today = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
+  // Timezone States
+  const [hostTimezoneString, setHostTimezoneString] = useState(DEFAULT_HOST_TZ);
+  // The owner's "Current Availability" percent, for pages that show the status pill.
+  const [hostAvailability, setHostAvailability] = useState<unknown>(undefined);
+  const [userTimezone, setUserTimezone] = useState<number>(localOffset);
+  // The visitor's own row is named after their city rather than a stand-in
+  // abbreviation, so someone in Cairo is not told they are on Moscow time.
+  const tzOptions = useMemo(() => timezoneOptions(), []);
+
+  // The visitor's today, in the timezone they picked - the same "today" bookMeeting
+  // measures the 45-day window from.
+  const [openedAt] = useState(() => Date.now());
+  const today = useMemo(() => dateOfDay(dayIndexAt(openedAt, userTimezone)), [openedAt, userTimezone]);
 
   const limitDate = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() + 45); // 1.5 months limit
+    const d = new Date(today);
+    d.setDate(d.getDate() + BOOKING_WINDOW_DAYS); // 1.5 months limit
     return d;
-  }, []);
+  }, [today]);
 
   const isPrevMonthDisabled = useMemo(() => {
     const prevM = new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1);
@@ -108,14 +119,6 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
       (calendarDate.getFullYear() === today.getFullYear() && calendarDate.getMonth() > today.getMonth());
   }, [calendarDate, today]);
 
-  // Timezone States
-  const [hostTimezoneString, setHostTimezoneString] = useState('UTC+02:00 (EET)'); // Default
-  // The owner's "Current Availability" percent, for pages that show the status pill.
-  const [hostAvailability, setHostAvailability] = useState<unknown>(undefined);
-  const [userTimezone, setUserTimezone] = useState<number>(localOffset);
-  // The visitor's own row is named after their city rather than a stand-in
-  // abbreviation, so someone in Cairo is not told they are on Moscow time.
-  const tzOptions = useMemo(() => timezoneOptions(), []);
 
   // Resets below are adjusted during render (React's documented pattern) rather than in
   // effects, so the stale value never paints for a frame before being cleared.
@@ -149,7 +152,6 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
   // never self-corrects when the real config arrives a moment later.
   const [availLoaded, setAvailLoaded] = useState(false);
   const [slotsLoaded, setSlotsLoaded] = useState(false);
-  const timeSlots = useMemo(() => buildHostSlots(availConfig), [availConfig]);
 
   // Sync Host Availability & Timezone
   useEffect(() => {
@@ -212,96 +214,37 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
     return `${day}/${month}/${year}`;
   }, []);
 
+  const hostOffset = utcOffsetHours(hostTimezoneString);
+
+  // Everything the booking rules need, read fresh on each call so "passed" and "today"
+  // follow the clock while the page stays open.
+  const dayContext = useCallback((): DayContext => ({
+    nowMs: Date.now(), userTimezone, hostOffset, cfg: availConfig, meetings: existingMeetings,
+  }), [userTimezone, hostOffset, availConfig, existingMeetings]);
+
+  /** Bookings that start on this visitor day (the calendar's "booked" dots). */
   const getMeetingsForDate = useCallback((date: Date) => {
-    const dateStr = formatDateDDMMYYYY(date);
-    return existingMeetings.filter(m => m.Date === dateStr);
-  }, [existingMeetings, formatDateDDMMYYYY]);
+    const day = dayOf(date);
+    return existingMeetings.filter((m) => {
+      const at = meetingInstant(m, hostOffset);
+      return at !== null && dayIndexAt(at, userTimezone) === day;
+    });
+  }, [existingMeetings, hostOffset, userTimezone]);
 
-  const hostOffset = getOffsetFromUTCString(hostTimezoneString);
-  const offsetDiff = userTimezone - hostOffset;
+  /** A booked meeting's start time, as the visitor sees it. */
+  const meetingTimeForVisitor = useCallback((m: Meeting) => {
+    const at = meetingInstant(m, hostOffset);
+    return at === null ? m.Time : wallClock(at, userTimezone).time;
+  }, [hostOffset, userTimezone]);
 
-  // Convert "09:00 AM" strings to User's Perspective. Memoized on offsetDiff (its only
-  // dependency) so the derived slot list below has a stable input.
-  const convertTimeToUser = useCallback((hostTimeStr: string) => {
-    const [time, period] = hostTimeStr.split(' ');
-    const [h, mins] = time.split(':').map(Number);
-    let hour = Number.isNaN(h) ? 0 : h;
-    const minute = Number.isNaN(mins) ? 0 : mins;
-    if (period === 'PM' && hour !== 12) hour += 12;
-    if (period === 'AM' && hour === 12) hour = 0;
+  /** The owner's preset slots that fall on this visitor day, each marked taken/passed. */
+  const daySlots = useCallback((date: Date): PresetSlot[] => presetSlotsForDay(dayOf(date), dayContext()), [dayContext]);
 
-    let totalMinutes = hour * 60 + minute + offsetDiff * 60;
-    // Normalize to 24h
-    totalMinutes = (totalMinutes + 1440) % 1440;
+  // The selected day's preset times, as the visitor sees them.
+  const convertedSlots = useMemo(() => (selectedDate ? daySlots(selectedDate).map(s => s.label) : []), [selectedDate, daySlots]);
 
-    const newH = Math.floor(totalMinutes / 60);
-    const newM = totalMinutes % 60;
-    const newPeriod = newH >= 12 ? 'PM' : 'AM';
-    const displayH = newH % 12 || 12;
-    return `${displayH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')} ${newPeriod}`;
-  }, [offsetDiff]);
-
-  // Convert User's Selected Slot back to Host's Perspective for Saving/Checking
-  const convertTimeToHost = (userTimeStr: string) => {
-    const [time, period] = userTimeStr.split(' ');
-    const [h, mins] = time.split(':').map(Number);
-    let hour = Number.isNaN(h) ? 0 : h;
-    const minute = Number.isNaN(mins) ? 0 : mins;
-    if (period === 'PM' && hour !== 12) hour += 12;
-    if (period === 'AM' && hour === 12) hour = 0;
-
-    let totalMinutes = hour * 60 + minute - offsetDiff * 60;
-    totalMinutes = (totalMinutes + 1440) % 1440;
-
-    const newH = Math.floor(totalMinutes / 60);
-    const newM = totalMinutes % 60;
-    const newPeriod = newH >= 12 ? 'PM' : 'AM';
-    const displayH = newH % 12 || 12;
-    return `${displayH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')} ${newPeriod}`;
-  };
-
-  // Converted slots for the UI
-  const convertedSlots = useMemo(() => timeSlots.map(convertTimeToUser), [timeSlots, convertTimeToUser]);
-
-  // Check if a time slot has already passed
-  const isTimePassed = useCallback((date: Date, hostTimeStr: string) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
-
-    if (checkDate > today) return false;
-    if (checkDate < today) return true;
-
-    // It's today, check the hour
-    const [time, period] = hostTimeStr.split(' ');
-    let [h] = time.split(':').map(Number);
-    if (period === 'PM' && h !== 12) h += 12;
-    if (period === 'AM' && h === 12) h = 0;
-
-    // Get current time in host's perspective
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const hostNow = new Date(utc + (3600000 * hostOffset));
-
-    const slotTime = h * 60 + (typeof (time.split(':').map(Number)[1]) === 'number' ? time.split(':').map(Number)[1] : 0);
-    const currentTime = hostNow.getHours() * 60 + hostNow.getMinutes();
-
-    // Add 30 mins buffer so they don't book a meeting starting "right now"
-    return currentTime + 30 > slotTime;
-  }, [hostOffset]);
-
-  /** At least one host slot on this day is neither booked nor already passed. */
-  const hasFreeSlots = useCallback((date: Date) => timeSlots.some((hostTime) => {
-    const isBusy = getMeetingsForDate(date).some(m => m.Time === hostTime);
-    return !isBusy && !isTimePassed(date, hostTime);
-  }), [timeSlots, getMeetingsForDate, isTimePassed]);
-
-  /** A day the visitor can pick: inside the booking window, a working day, with a free slot. */
-  const isDayBookable = useCallback((date: Date) =>
-    date >= today && date <= limitDate && hasFreeSlots(date) && isWorkingDay(availConfig, date),
-  [today, limitDate, hasFreeSlots, availConfig]);
+  /** A day the visitor can pick: inside the booking window, with a preset slot still free. */
+  const isDayBookable = useCallback((date: Date) => isDayOpen(dayOf(date), dayContext()), [dayContext]);
 
   // Automatically find the next available day ONCE, when the booking view first shows
   const hasAutoMoved = useRef(false);
@@ -310,10 +253,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
     // otherwise it moves off the stale 9-17 default and latches on the wrong day.
     if (!selectedDate || !enabled || hasAutoMoved.current || !availLoaded || !slotsLoaded) return;
 
-    const checkAvailable = (date: Date) => isWorkingDay(availConfig, date) && hasFreeSlots(date);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const checkAvailable = isDayBookable;
 
     if (selectedDate < today || !checkAvailable(selectedDate)) {
       let searchDate = new Date(selectedDate);
@@ -337,7 +277,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
       }
     }
     hasAutoMoved.current = true;
-  }, [selectedDate, hasFreeSlots, enabled, availConfig, availLoaded, slotsLoaded]);
+  }, [selectedDate, isDayBookable, today, enabled, availLoaded, slotsLoaded]);
 
   useEffect(() => {
     return () => { hasAutoMoved.current = false; };
@@ -348,20 +288,18 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
 
     // Basic Validation
     if (!selectedDate || !selectedTime) return;
-    // Guard: the selected slot must still be a currently-offered, non-passed, and
-    // still-free slot (defends against a slot that became unavailable after
-    // selection - e.g. another visitor booked it while this view was open, in
-    // which case the button greys out but selectedTime persists).
-    // isTimePassed/busy checks take the host-perspective time - convert first.
-    const selectedHostTime = convertTimeToHost(selectedTime);
-    const slotNowBusy = getMeetingsForDate(selectedDate).some(m => m.Time === selectedHostTime);
-    // Fixed slots must still be one of the currently-offered times; a custom (free)
-    // slot is exempt from that membership check, but both must be non-passed and free.
+    // Guard: the selected slot must still be on offer (defends against a slot that
+    // became unavailable after selection - e.g. another visitor booked it while this
+    // view was open, in which case the button greys out but selectedTime persists).
+    // A preset time must still be one of the day's slots; a custom time is exempt
+    // from that, and both go through the same rules bookMeeting enforces.
+    const startMs = visitorTimeToInstant(dayOf(selectedDate), selectedTime, userTimezone);
     const notOffered = !isCustomTime && !convertedSlots.includes(selectedTime);
-    if (notOffered || isTimePassed(selectedDate, selectedHostTime) || slotNowBusy) {
+    const refusal = startMs === null ? 'Invalid meeting time.' : bookingRefusal(startMs, dayContext());
+    if (notOffered || refusal || startMs === null) {
       setSelectedTime(null);
       setIsCustomTime(false);
-      showAlert({ type: 'warning', message: 'That time slot is no longer available. Please pick another.' });
+      showAlert({ type: 'warning', message: refusal || 'That time slot is no longer available. Please pick another.' });
       return;
     }
     if (!meetingData.email || !isValidEmail(meetingData.email)) {
@@ -372,23 +310,8 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
     setIsSubmitting(true);
 
     try {
-      // 1. Calculate Timestamps (UTC Based on Selected Timezone)
-      const timeParts = selectedTime.split(' ');
-      const [hoursStr, minutesStr] = timeParts[0].split(':');
-      let hours = parseInt(hoursStr);
-      const minutes = parseInt(minutesStr);
-      const isPM = timeParts[1] === 'PM';
-
-      if (isPM && hours !== 12) hours += 12;
-      if (!isPM && hours === 12) hours = 0;
-
-      // selectedDate is a local Date, only y/m/d are used from it
-      const y = selectedDate.getFullYear();
-      const m = selectedDate.getMonth();
-      const d = selectedDate.getDate();
-
-      // Start time in UTC = (local hours - userOffset)
-      const startDateUTC = new Date(Date.UTC(y, m, d, hours, minutes) - (userTimezone * 3600000));
+      // 1. The instant the visitor picked: their day + time, in the timezone they chose.
+      const startDateUTC = new Date(startMs);
 
       // 2. Book it. The bookMeeting function validates the request, checks the slot
       // is still free, creates the Calendar event + Meet link and records the meeting
@@ -424,27 +347,18 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
     }
   };
 
-  // Validate a proposed custom (free) time with the SAME passed/busy checks the fixed
-  // slots get (in the host's perspective). Returns an error message, or null to allow.
-  const validateCustomTime = (t: string): string | null => {
+  // Validate a proposed custom (free) time with the same rules bookMeeting applies:
+  // 30+ minutes away, on one of the owner's working days, not already taken. Returns an
+  // error message, or null to allow.
+  const validateCustomTime = useCallback((t: string): string | null => {
     if (!selectedDate) return null;
-    const hostT = convertTimeToHost(t);
-    if (isTimePassed(selectedDate, hostT)) return 'That time has already passed, pick a later one.';
-    if (getMeetingsForDate(selectedDate).some(m => m.Time === hostT)) return 'That time overlaps an existing booking, pick another.';
-    return null;
-  };
+    const at = visitorTimeToInstant(dayOf(selectedDate), t, userTimezone);
+    return at === null ? 'Invalid time.' : customTimeRefusal(at, dayContext());
+  }, [selectedDate, userTimezone, dayContext]);
 
-  // Same rule as validateCustomTime, as a boolean: the picker greys these out so a passed
-  // or already-booked time can't be composed at all, instead of only being rejected on Set.
-  const isCustomTimeUnavailable = useCallback((t: string): boolean => {
-    if (!selectedDate) return false;
-    const hostT = convertTimeToHost(t);
-    return isTimePassed(selectedDate, hostT)
-      || getMeetingsForDate(selectedDate).some(m => m.Time === hostT);
-    // convertTimeToHost/getMeetingsForDate are recreated each render; the picker only
-    // reads this while open, so the extra identity churn is harmless.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, isTimePassed, offsetDiff, existingMeetings]);
+  // Same rule as a boolean: the picker greys these out so an unavailable time can't be
+  // composed at all, instead of only being rejected on Set.
+  const isCustomTimeUnavailable = useCallback((t: string): boolean => validateCustomTime(t) !== null, [validateCustomTime]);
 
   return {
     today, limitDate,
@@ -452,8 +366,8 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
     selectedDate, setSelectedDate, selectedTime, setSelectedTime, isCustomTime, setIsCustomTime,
     meetingData, setMeetingData, isSubmitting, bookingSuccess, setBookingSuccess,
     userTimezone, setUserTimezone, tzOptions, hostTimezoneString, hostAvailability,
-    availConfig, timeSlots, convertedSlots,
-    getMeetingsForDate, convertTimeToUser, isTimePassed, hasFreeSlots, isDayBookable,
+    availConfig, convertedSlots, daySlots,
+    getMeetingsForDate, meetingTimeForVisitor, isDayBookable,
     handleMeetingSubmit, validateCustomTime, isCustomTimeUnavailable,
   };
 }

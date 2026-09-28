@@ -190,9 +190,8 @@ export default function BookPage() {
                                         <div>
                                             <h4 className="slots-title"><Clock size={16} aria-hidden="true" />Available slots</h4>
                                             <div className="slots">
-                                                {b.convertedSlots.map((time, idx) => {
-                                                    const hostTime = b.timeSlots[idx];
-                                                    const off = b.getMeetingsForDate(sel).some(m => m.Time === hostTime) || b.isTimePassed(sel, hostTime);
+                                                {b.daySlots(sel).map(({ label: time, taken, passed }) => {
+                                                    const off = taken || passed;
                                                     return (
                                                         <button key={time} type="button" disabled={off} aria-pressed={b.selectedTime === time && !b.isCustomTime}
                                                             aria-label={`${shortTime(time)} your time${off ? ', unavailable' : ''}`}
