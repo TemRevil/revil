@@ -45,6 +45,7 @@ const HintTooltip = ({ text, isDark, size = 14 }: Props) => {
             <span
                 ref={iconRef}
                 tabIndex={0}
+                role="img"
                 aria-label={text}
                 onMouseEnter={() => { place(); setShow(true); }}
                 onMouseLeave={() => setShow(false)}
