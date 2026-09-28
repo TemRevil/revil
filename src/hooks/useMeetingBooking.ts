@@ -5,7 +5,7 @@ import type React from 'react';
 // /book draws without waiting for the SDK (or App Check's reCAPTCHA).
 import { loadFirebase, watchDoc } from '../lib/liveDoc';
 import type { AlertType } from '../components/Alert';
-import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../utils/availability';
+import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, rememberHostStatus, seedHostStatus } from '../utils/availability';
 import {
   BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type PresetSlot,
   bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, isDayOpen, meetingInstant,
@@ -84,9 +84,10 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
   const [bookingSuccess, setBookingSuccess] = useState<{ date: string, time: string, link: string } | null>(null);
 
   // Timezone States
-  const [hostTimezoneString, setHostTimezoneString] = useState(DEFAULT_HOST_TZ);
+  const [hostSeed] = useState(seedHostStatus);
+  const [hostTimezoneString, setHostTimezoneString] = useState(hostSeed['Current Time'] || DEFAULT_HOST_TZ);
   // The owner's "Current Availability" percent, for pages that show the status pill.
-  const [hostAvailability, setHostAvailability] = useState<unknown>(undefined);
+  const [hostAvailability, setHostAvailability] = useState<unknown>(hostSeed['Current Availability']);
   const [userTimezone, setUserTimezone] = useState<number>(localOffset);
   // The visitor's own row is named after their city rather than a stand-in
   // abbreviation, so someone in Cairo is not told they are on Moscow time.
@@ -161,6 +162,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
           setHostTimezoneString(data['Current Time']);
         }
         setHostAvailability(data['Current Availability']);
+        rememberHostStatus(data);
         setAvailConfig(parseAvailabilityConfig(data));
       } else {
         setAvailConfig(DEFAULT_AVAILABILITY);

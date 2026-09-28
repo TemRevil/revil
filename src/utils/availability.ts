@@ -10,6 +10,7 @@
 // the bookMeeting function shares, so the dashboard, the calendar and the server
 // read Settings/Availability the same way.
 import { parseAvailability, type AvailabilityConfig } from './bookingRules';
+import hostStatusSnapshot from '../data/availability.snapshot.json';
 export { DEFAULT_AVAILABILITY, utcOffsetHours, type AvailabilityConfig } from './bookingRules';
 
 export const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
@@ -46,4 +47,32 @@ export function availabilityStatus(raw: unknown): { percent: number; label: stri
     const color = percent >= 100 ? '#22c55e' : percent >= 75 ? '#a3e635' : percent >= 50 ? '#facc15' : percent >= 25 ? '#fb923c' : '#f87171';
     const label = percent >= 100 ? 'Available' : percent > 0 ? 'Handled' : 'Busy';
     return { percent, label, color };
+}
+
+/** The two Settings/Availability fields the status and clock pills show. */
+export interface HostStatus {
+    'Current Availability'?: string;
+    'Current Time'?: string;
+}
+
+const HOST_STATUS_KEY = 'revil_host_status';
+
+/**
+ * What the pills draw with before Firebase has loaded: the last visit's copy, else the
+ * build's snapshot (scripts/sync-projects.mjs). Without it they showed a hardcoded
+ * "Available" and UTC+02:00, then switched a few seconds in when the live doc arrived.
+ */
+export function seedHostStatus(): HostStatus {
+    try {
+        const cached = JSON.parse(localStorage.getItem(HOST_STATUS_KEY) || 'null');
+        if (cached && typeof cached === 'object') return { ...hostStatusSnapshot, ...cached };
+    } catch { /* storage blocked */ }
+    return { ...hostStatusSnapshot };
+}
+
+export function rememberHostStatus(data: Record<string, unknown>): void {
+    const pick = (k: keyof HostStatus) => (typeof data[k] === 'string' && data[k] ? { [k]: data[k] } : {});
+    try {
+        localStorage.setItem(HOST_STATUS_KEY, JSON.stringify({ ...pick('Current Availability'), ...pick('Current Time') }));
+    } catch { /* storage blocked */ }
 }

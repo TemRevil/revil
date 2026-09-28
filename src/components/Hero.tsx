@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Briefcase, Calendar } from 'lucide-react';
 import { holdFirebase, watchDoc } from '../lib/liveDoc';
-import { availabilityStatus } from '../utils/availability';
+import { availabilityStatus, rememberHostStatus, seedHostStatus, type HostStatus } from '../utils/availability';
 import { useSettings } from '../contexts/SettingsContext';
 import useTheme from '../hooks/useTheme';
 import { Chars, PaintDefs, splitSlogan, useHostClock, usePaint } from './book/paintKit';
@@ -12,11 +12,6 @@ interface HeroProject {
     name?: string;
     status?: string;
     order?: number;
-}
-
-interface AvailabilityData {
-    'Current Availability'?: string;
-    'Current Time'?: string;
 }
 
 // Public sanitized handled-projects mirror (Settings/HandledProjects), written
@@ -254,15 +249,19 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
 
     // Availability % + time zone live in Settings/Availability; the handled-projects list
     // comes from the public, sanitized Settings/HandledProjects mirror.
-    const [availData, setAvailData] = useState<AvailabilityData | null>(null);
+    const [availData, setAvailData] = useState<HostStatus>(seedHostStatus);
     const [handledData, setHandledData] = useState<HandledData | null>(null);
     useEffect(() => {
-        const unsubAvail = watchDoc(['Settings', 'Availability'], (data) => { if (data) setAvailData(data as AvailabilityData); });
+        const unsubAvail = watchDoc(['Settings', 'Availability'], (data) => {
+            if (!data) return;
+            setAvailData(data as HostStatus);
+            rememberHostStatus(data);
+        });
         const unsubHandled = watchDoc(['Settings', 'HandledProjects'], (data) => { if (data) setHandledData(data as HandledData); });
         return () => { unsubAvail(); unsubHandled(); };
     }, []);
-    const status = availabilityStatus(availData?.['Current Availability']);
-    const zone = (availData?.['Current Time'] || 'UTC+02:00').split(' ')[0];
+    const status = availabilityStatus(availData['Current Availability']);
+    const zone = (availData['Current Time'] || 'UTC+02:00').split(' ')[0];
     const clock = useHostClock(zone);
     // The admin's drag-sort order (map order for legacy data).
     const projects = Object.values(handledData?.projects || {}).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));

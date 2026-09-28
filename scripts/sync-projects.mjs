@@ -2,7 +2,8 @@
  * Snapshot the public `Projects` collection into src/data/projects.snapshot.json, and the
  * hero's name + title (Settings/Account) into src/data/account.snapshot.json, and what
  * /book says (Settings/BookPage + the Account email and social links) into
- * src/data/book.snapshot.json.
+ * src/data/book.snapshot.json, and the status percent + time zone (Settings/Availability)
+ * into src/data/availability.snapshot.json.
  *
  * WHY: the site is a static export whose content is fetched from Firestore at RUNTIME,
  * so the prerendered HTML ships empty. AI crawlers (GPTBot / ClaudeBot / PerplexityBot)
@@ -13,7 +14,8 @@
  * The account snapshot is what the homepage hero draws with before Firebase has loaded
  * (it no longer waits for Firestore to show the page), so refresh it after renaming. The
  * book snapshot does the same for /book: refresh it after editing the page in Canary →
- * Options or the links in Settings.
+ * Options or the links in Settings. The availability snapshot seeds the status and clock
+ * pills (both pages); a returning visitor gets the last live copy instead.
  *
  * We can't fetch this in CI with the public key: App Check is enforced on Firestore, so
  * anonymous REST reads 403 even though the rules are `allow read: if true`. Hence the
@@ -34,6 +36,7 @@ const DATA = resolve(dirname(fileURLToPath(import.meta.url)), '../src/data');
 const OUT = resolve(DATA, 'projects.snapshot.json');
 const ACCOUNT_OUT = resolve(DATA, 'account.snapshot.json');
 const BOOK_OUT = resolve(DATA, 'book.snapshot.json');
+const HOST_STATUS_OUT = resolve(DATA, 'availability.snapshot.json');
 
 /** Firestore REST tags every value with its type; unwrap to what doc.data() returns. */
 function decode(v) {
@@ -109,3 +112,8 @@ const book = {
 };
 writeFileSync(BOOK_OUT, JSON.stringify(book, null, 2) + '\n', 'utf8');
 console.log(`Wrote the /book text + links -> ${BOOK_OUT}`);
+
+const availability = await settingsDoc('Availability');
+const hostStatus = { 'Current Availability': availability['Current Availability'], 'Current Time': availability['Current Time'] };
+writeFileSync(HOST_STATUS_OUT, JSON.stringify(hostStatus, null, 2) + '\n', 'utf8');
+console.log(`Wrote the status + time zone pills -> ${HOST_STATUS_OUT}`);
