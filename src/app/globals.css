@@ -242,6 +242,13 @@ textarea,
    3. ANIMATED BACKGROUND BLOBS
    ======================================== */
 
+/* A page switch slides and scales whole sections. On their own GPU layers they are painted
+   once and moved, instead of repainted on every frame (with the hero's brush filters that
+   ran at ~10fps). Only while switching: a lasting will-change would pin fixed children. */
+main[data-switching] > [id^="section-"] {
+  will-change: transform;
+}
+
 .blob-container {
   position: absolute;
   inset: 0;

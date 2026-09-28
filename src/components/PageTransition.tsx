@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import anime from 'animejs';
+import { useBoilHold } from './book/paintKit';
 
 interface PageTransitionProps {
     isTransitioning: boolean;
@@ -11,6 +12,7 @@ interface PageTransitionProps {
 }
 
 const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplete, nextSectionName = '', direction = 0 }: PageTransitionProps) => {
+    useBoilHold(isTransitioning);
     const curtainRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
     const [fontSize, setFontSize] = useState(Math.min(window.innerWidth / 6, 100));

@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { utcOffsetHours } from '../../utils/availability';
-import { paintBook, startBoil } from './brushes';
+import { holdBoil, paintBook, startBoil } from './brushes';
 
 /** Phones paint once with the lighter set and skip the 15fps boil. */
 const PHONE_QUERY = '(max-width: 767px)';
@@ -37,6 +37,9 @@ export const useHostClock = (tz: string) => {
     }, [offset]);
     return now;
 };
+
+/** Holds the brushes' boil while `on` (see holdBoil): for anything that animates over the hero. */
+export const useBoilHold = (on = true) => useEffect(() => (on ? holdBoil() : undefined), [on]);
 
 /** The brush filters. #bp-rag's turbulence is the one the boil re-seeds. */
 export const PaintDefs = ({ boilRef }: { boilRef: RefObject<SVGFETurbulenceElement | null> }) => (

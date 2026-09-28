@@ -5,6 +5,7 @@ import { X, Mail, Phone, MapPin, Globe, Github, Linkedin, Instagram, ExternalLin
 import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { ProjectData as FullProject } from '../types';
 import { useSocialTracker } from '../hooks/useSocialTracker';
+import { useBoilHold } from './book/paintKit';
 
 interface CVProject {
     id: string;
@@ -24,6 +25,7 @@ interface MCVProps {
 }
 
 const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
+    useBoilHold();
     const { trackClick } = useSocialTracker();
     const [projects, setProjects] = useState<CVProject[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);

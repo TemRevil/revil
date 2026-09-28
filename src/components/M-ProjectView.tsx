@@ -7,6 +7,7 @@ import { sanitizeSvg } from '../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor } from '../utils/projectUtils';
 import { ProjectData as Project, ContributorData as Contributor, TagData as TagItem } from '../types';
 import useTheme from '../hooks/useTheme';
+import { useBoilHold } from './book/paintKit';
 
 // These are utility functions exported from this file
 interface MProjectViewProps {
@@ -456,6 +457,7 @@ const ProjectMediaImage = ({ src }: { src: string }) => {
 };
 
 const MProjectView = ({ project: initialProject, onClose, onContributorClick }: MProjectViewProps) => {
+    useBoilHold();
     const [project, setProject] = useState<Project>(initialProject);
     // Re-sync local project state when a different project is passed in. Adjusting during
     // render (React's documented pattern) instead of in an effect avoids the extra render

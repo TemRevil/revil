@@ -433,10 +433,13 @@ function App() {
     setShowContributorModal(true);
   }, []);
 
+  // The hero's entrance waits for the page curtain as it waits for the loader: painting it
+  // under the curtain's blur spent the frames the curtain needed, and hid half the entrance.
+  const heroReady = !appLoading && !isTransitioning;
   const renderSection = () => {
     switch (currentSection) {
       case 'home':
-        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} onOpenContact={openContactModal} />;
+        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} onOpenContact={openContactModal} />;
       case 'stack':
         return <Suspense fallback={null}><Stack /></Suspense>;
       case 'projects':
@@ -446,9 +449,9 @@ function App() {
       case 'dashboard':
         return <Suspense fallback={null}><Dashboard onNavigate={navigateTo} /></Suspense>;
       case 'view_link':
-        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} onOpenContact={openContactModal} />;
+        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} onOpenContact={openContactModal} />;
       default:
-        return <Hero onAnimationComplete={handleHeroAnimationComplete} isReady={!appLoading} />;
+        return <Hero onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} />;
     }
   };
 
@@ -655,6 +658,7 @@ function App() {
     <main
       ref={mainRef}
       className="relative w-full h-screen overflow-hidden"
+      data-switching={isTransitioning || undefined}
       style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}

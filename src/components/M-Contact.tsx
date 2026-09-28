@@ -14,6 +14,7 @@ import Select from './Select';
 import CustomTimePicker from './CustomTimePicker';
 import HintTooltip from './HintTooltip';
 import useTheme from '../hooks/useTheme';
+import { useBoilHold } from './book/paintKit';
 
 interface MContactProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ interface MContactProps {
 }
 
 const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MContactProps, 'isOpen'>) => {
+    useBoilHold();
   const isDark = useTheme();
   const [formData, setFormData] = useState({
     name: '',

@@ -28,6 +28,10 @@ const el = (tag: string, attrs: Record<string, string | number>) => {
     return e;
 };
 const stepped = (ms: number) => `steps(${Math.max(2, Math.round(ms / FRAME))}, end)`;
+/** Snaps a time to the 15fps grid, so every stroke steps on the same frames: the brushes repaint 15 times a second, not on every frame of the entrance. */
+const onGrid = (ms: number) => Math.max(1, Math.round(ms / FRAME)) * FRAME;
+/** The entrance's start, on that grid of the page clock (set per paint by paintBook). */
+let gridStart = 0;
 
 // ---------- dry brush ----------
 /** Phones: fewer bristles per stroke (set per paint by paintBook). */
@@ -73,10 +77,11 @@ function paint(svg: SVGElement, pts0: Pt[], width: number, color: string, delay:
     }
     svg.appendChild(g);
     if (animate) {
-        const ms = dur || (500 + L * .45);
+        const ms = onGrid(dur || (500 + L * .45));
         mp.style.strokeDasharray = String(L);
         mp.style.strokeDashoffset = String(L);
-        mp.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0 }], { duration: ms, delay, easing: stepped(ms), fill: 'forwards' });
+        const a = mp.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0 }], { duration: ms, delay: onGrid(delay), easing: stepped(ms), fill: 'forwards' });
+        a.startTime = gridStart;
     }
 }
 
@@ -318,6 +323,7 @@ function textIn(root: HTMLElement) {
  */
 export function paintBook(root: HTMLElement, animate: boolean, phone = false) {
     lite = phone;
+    gridStart = Math.ceil(Number(document.timeline.currentTime) / FRAME) * FRAME;
     // One composition per page load: a redraw (a resize, or the name or availability text
     // arriving after the entrance) replays the same random rolls, so the strokes are only
     // re-fitted to the new layout, never swapped for new ones.
@@ -330,11 +336,32 @@ export function paintBook(root: HTMLElement, animate: boolean, phone = false) {
     root.dataset.intro = 'done';
 }
 
-/** Old-animation boil: the brush edges re-roll 15 times a second. Returns a stop function. */
+/** How many things are animating over the brushes right now (an open modal, the page curtain). */
+let holds = 0;
+/**
+ * Freezes the boil until the returned release is called. Each boil step repaints the
+ * brush layer's full-screen noise filter on the GPU, which takes the frames a modal or
+ * the page curtain needs to open smoothly, and the brushes sit under glass or a curtain
+ * meanwhile anyway.
+ */
+export function holdBoil() {
+    holds++;
+    let held = true;
+    return () => { if (held) { held = false; holds--; } };
+}
+
+/**
+ * Old-animation boil: the brush edges re-roll 15 times a second. It steps on the same
+ * 15fps grid of the page clock as the entrance strokes (see paint), so both repaint the
+ * brushes on the same frames. Returns a stop function.
+ */
 export function startBoil(turb: SVGElement) {
-    let f = 0;
-    const id = window.setInterval(() => {
-        if (!document.hidden) turb.setAttribute('seed', String(4 + (f++ % 3)));
-    }, FRAME);
-    return () => window.clearInterval(id);
+    let raf = 0, last = -1;
+    const tick = (now: number) => {
+        const f = Math.floor(now / FRAME);
+        if (f !== last && !holds) { last = f; turb.setAttribute('seed', String(4 + (f % 3))); }
+        raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
 }
