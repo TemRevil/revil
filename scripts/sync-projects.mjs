@@ -1,11 +1,19 @@
 /**
- * Snapshot the public `Projects` collection into src/data/projects.snapshot.json.
+ * Snapshot the public `Projects` collection into src/data/projects.snapshot.json, and the
+ * hero's name + title (Settings/Account) into src/data/account.snapshot.json, and what
+ * /book says (Settings/BookPage + the Account email and social links) into
+ * src/data/book.snapshot.json.
  *
  * WHY: the site is a static export whose content is fetched from Firestore at RUNTIME,
  * so the prerendered HTML ships empty. AI crawlers (GPTBot / ClaudeBot / PerplexityBot)
  * do NOT execute JavaScript, so they never see the portfolio work. This snapshot is read
  * at BUILD time and baked into the page's JSON-LD, so crawlers get the real projects.
  * The app still live-updates from Firestore via onSnapshot on top of it.
+ *
+ * The account snapshot is what the homepage hero draws with before Firebase has loaded
+ * (it no longer waits for Firestore to show the page), so refresh it after renaming. The
+ * book snapshot does the same for /book: refresh it after editing the page in Canary →
+ * Options or the links in Settings.
  *
  * We can't fetch this in CI with the public key: App Check is enforced on Firestore, so
  * anonymous REST reads 403 even though the rules are `allow read: if true`. Hence the
@@ -22,7 +30,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'temrevil1';
-const OUT = resolve(dirname(fileURLToPath(import.meta.url)), '../src/data/projects.snapshot.json');
+const DATA = resolve(dirname(fileURLToPath(import.meta.url)), '../src/data');
+const OUT = resolve(DATA, 'projects.snapshot.json');
+const ACCOUNT_OUT = resolve(DATA, 'account.snapshot.json');
+const BOOK_OUT = resolve(DATA, 'book.snapshot.json');
 
 /** Firestore REST tags every value with its type; unwrap to what doc.data() returns. */
 function decode(v) {
@@ -75,3 +86,26 @@ const projects = documents
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(projects, null, 2) + '\n', 'utf8');
 console.log(`Wrote ${projects.length} projects -> ${OUT}`);
+
+/** One Settings document, decoded. */
+async function settingsDoc(id) {
+    const r = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/Settings/${id}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!r.ok) throw new Error(`Firestore ${r.status}: ${await r.text()}`);
+    return decodeFields((await r.json()).fields || {});
+}
+
+const account = await settingsDoc('Account');
+const { name, title } = account;
+writeFileSync(ACCOUNT_OUT, JSON.stringify({ name, title }, null, 2) + '\n', 'utf8');
+console.log(`Wrote the account name + title -> ${ACCOUNT_OUT}`);
+
+const { slogan, intro, tags } = await settingsDoc('BookPage');
+const book = {
+    page: { slogan, intro, tags },
+    account: { Email: account.Email, 'Social Links': account['Social Links'] },
+};
+writeFileSync(BOOK_OUT, JSON.stringify(book, null, 2) + '\n', 'utf8');
+console.log(`Wrote the /book text + links -> ${BOOK_OUT}`);

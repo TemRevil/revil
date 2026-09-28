@@ -7,8 +7,9 @@
     "node": "22"
   },
   "scripts": {
-    "prebuild": "node scripts/refresh-geoip.mjs --if-missing",
+    "prebuild": "node scripts/refresh-geoip.mjs --if-missing && node scripts/sync-booking-rules.mjs",
     "build": "tsc",
+    "sync-booking-rules": "node scripts/sync-booking-rules.mjs",
     "refresh-geoip": "node scripts/refresh-geoip.mjs",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",

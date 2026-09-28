@@ -36,15 +36,16 @@ import {
   buildReceiptHtml, receiptNumber, type ReceiptLine,
   buildItemizedReceiptHtml, revReceiptNumber,
 } from "./receipt";
+import { parseAvailability } from "./booking";
 
 // Email (Resend SMTP relay) - mirrors index.ts, so the MCP send-receipt tool can email.
 const smtpUser = defineSecret("SMTP_USER");
 const resendKey = defineSecret("RESEND_API_KEY");
 // Google Apps Script endpoint that actually creates/updates/cancels the Google Calendar
-// event (the deployed `syncMeeting` callable is just an App Check-gated proxy to it).
+// event (the deployed `syncMeeting` callable is an admin-only, App Check-gated proxy to it).
 // Held as a secret, NOT in the repo: this repo is public, and anyone with the URL could
 // manipulate the owner's calendar.
-const meetingSyncUrl = defineSecret("MEETING_SYNC_URL");
+export const meetingSyncUrl = defineSecret("MEETING_SYNC_URL");
 const HELLO_EMAIL = "hello@temrevil.com";
 function createTransporter(): Transporter {
   return nodemailer.createTransport({
@@ -735,10 +736,8 @@ function readEntries<T extends object>(s: DocumentSnapshot): Array<T & { id: str
   return Object.entries(map).map(([id, v]) => ({ id, ...v }));
 }
 
-// ── Availability (working days + hours) - mirrors src/utils/availability.ts ──
+// ── Availability (working days + hours) - parsed by booking.ts, which mirrors src/utils/availability.ts ──
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4, 5, 6];
-const DEFAULT_HOURS = [9, 10, 11, 12, 14, 15, 16, 17];
 
 function sortUnique(arr: number[]): number[] {
   return [...new Set(arr)].sort((a, b) => a - b);
@@ -749,14 +748,7 @@ function hourLabel(h: number): string {
 }
 async function readAvailability(): Promise<{ workingDays: number[]; hours: number[] }> {
   const snap = await db().doc("Settings/Availability").get();
-  const d = (snap.data() || {}) as Record<string, unknown>;
-  const workingDays = Array.isArray(d.workingDays)
-    ? sortUnique(d.workingDays.filter((x): x is number => typeof x === "number" && x >= 0 && x <= 6))
-    : DEFAULT_WORKING_DAYS;
-  const hours = Array.isArray(d.hours)
-    ? sortUnique(d.hours.filter((x): x is number => typeof x === "number" && Number.isInteger(x) && x >= 0 && x <= 23))
-    : DEFAULT_HOURS;
-  return { workingDays, hours };
+  return parseAvailability(snap.data());
 }
 
 /** One of the owner's meeting categories, as stored under Settings/Canary.Categories. */

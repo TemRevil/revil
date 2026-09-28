@@ -1,60 +1,10 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter, Archivo_Black, Permanent_Marker, Caveat, Kalam } from 'next/font/google'
 import Script from 'next/script'
+import './fonts.css'
 import './globals.css'
-import '../lib/firebase'
 import ClientProtection from './ClientProtection'
 import { projectPages, tagNames } from '../utils/projectPages'
 
-// ── next/font optimization: self-hosted, subsetted, no render-blocking requests ──
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-inter',
-  display: 'swap',
-})
-
-const archivoBlack = Archivo_Black({
-  subsets: ['latin'],
-  weight: '400',
-  variable: '--font-archivo-black',
-  display: 'swap',
-})
-
-const permanentMarker = Permanent_Marker({
-  subsets: ['latin'],
-  weight: '400',
-  variable: '--font-permanent-marker',
-  display: 'swap',
-})
-
-// Caveat + Kalam are used only below the fold (Developer/Projects/Stack/PageTransition),
-// never in the above-the-fold Hero. preload:false stops them from emitting render-blocking
-// <link rel=preload as=font> in <head> (~100KB) that would compete with the LCP element.
-// display:'swap' still renders them gracefully when their sections appear.
-const caveat = Caveat({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-caveat',
-  display: 'swap',
-  preload: false,
-})
-
-const kalam = Kalam({
-  subsets: ['latin'],
-  weight: ['400', '700'],
-  variable: '--font-kalam',
-  display: 'swap',
-  preload: false,
-})
-
-const fontVariables = [
-  inter.variable,
-  archivoBlack.variable,
-  permanentMarker.variable,
-  caveat.variable,
-  kalam.variable,
-].join(' ')
 
 const siteUrl = 'https://temrevil.com'
 const siteName = 'Tem Revil'
@@ -397,7 +347,7 @@ export default function RootLayout({
   const csp = `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com https://firebasestorage.googleapis.com https://www.gstatic.com https://images.unsplash.com https://avatars.githubusercontent.com; media-src 'self' https://firebasestorage.googleapis.com https://*.firebasestorage.app; connect-src 'self' https://mcp.temrevil.com https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com https://www.google.com https://images.unsplash.com https://github-contributions-api.jogruber.de https://github.com https://api.github.com https://open.er-api.com https://api.anthropic.com https://api.openai.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://www.google.com; base-uri 'self'; form-action 'self' https://*.cloudfunctions.net https://*.a.run.app;`;
 
   return (
-    <html lang="en" className={`dark ${fontVariables}`} suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         {/* Theme - applied BEFORE first paint so the whole app (incl. the dashboard,
             which doesn't mount the Navbar) reflects the saved/system preference on
@@ -426,6 +376,10 @@ export default function RootLayout({
           httpEquiv="Content-Security-Policy"
           content={csp}
         />
+        {/* The three faces the first screen draws with (fonts.css). */}
+        <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/archivo-black-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/permanent-marker-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <meta name="mobile-web-app-capable" content="yes" />
         <script
           type="application/ld+json"

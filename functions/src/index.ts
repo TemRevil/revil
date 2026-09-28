@@ -1,6 +1,8 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import admin from "firebase-admin";
+import { createHash } from "node:crypto";
 import nodemailer, { type Transporter } from "nodemailer";
 import { defineSecret } from "firebase-functions/params";
 
@@ -24,6 +26,9 @@ const HELLO_EMAIL = "hello@temrevil.com";
 // Remote MCP server (agentic portfolio access over OAuth) - defined in its own
 // module and re-exported so `firebase deploy --only functions:mcp` works.
 export { mcp } from "./mcp.js";
+import { meetingSyncUrl } from "./mcp.js";
+import { clientIp } from "./geoip.js";
+import { bookingRefusal, isTaken, parseAvailability, utcOffsetHours, wallClock, DEFAULT_HOST_TZ } from "./booking.js";
 
 // ── Shapes of the Firestore records these functions read ─────────────
 interface EmailEntry {
@@ -316,13 +321,13 @@ async function sendGuestAck(
 // =====================================================================
 // NOTE - `syncMeeting` Cloud Function is NOT defined here.
 // It is deployed to this Firebase project from a separate codebase and is called
-// from src/components/M-Contact.tsx (public meeting booking) and
-// src/components/dashboard/D-Canary.tsx (admin cancel). It wraps the Google
-// Calendar API to create/cancel events with Meet links.
+// from src/components/dashboard/D-Canary.tsx (admin create/update/cancel). It
+// wraps the Google Calendar API to create/cancel events with Meet links, and is
+// admin-only. Public bookings go through `bookMeeting` below instead.
 //
 // If you redeploy this functions folder, run with `--only` flags to avoid
 // removing syncMeeting:
-//   firebase deploy --only functions:trackSession,functions:notifyCanary,functions:notifyLogin
+//   firebase deploy --only functions:trackSession,functions:notifyCanary,functions:notifyLogin,functions:submitContact,functions:bookMeeting,functions:cleanupAttachments
 // =====================================================================
 
 // =====================================================================
@@ -608,6 +613,334 @@ export const notifyCanary = onDocumentWritten(
     } catch (err) {
       console.error("Failed to mirror booked slots:", err);
     }
+  },
+);
+
+// =====================================================================
+//  2b. Public submissions - submitContact, bookMeeting, cleanupAttachments
+//
+//  The contact form and the booking form used to write straight into
+//  Settings/Canary, guarded only by security rules. Rules cannot check the one
+//  new entry inside a map, so any field, type or length got through, and the
+//  cooldown timestamps themselves were publicly writable (one request could jam
+//  both forms for good). Visitors now have NO write access to Canary at all: they
+//  call these functions, which validate every field, rate-limit per IP and
+//  site-wide, and write through the Admin SDK. notifyCanary still does the emails.
+// =====================================================================
+
+const CONTACT_INBOX_CAP = 50;
+const MEETINGS_CAP = 100;
+const MAX_ATTACHMENTS = 5;
+const MEETING_MS = 3600000;
+
+interface RateLimits {
+  cooldownMs: number;
+  /** Accepted submissions per IP per window. */
+  perIp: number;
+  windowMs: number;
+  /** Attempts per IP per window, failed ones included (for work that can fail after the reservation). */
+  triesPerIp?: number;
+}
+// Site-wide cooldowns are the same as the old rules had (30s / 5min). The per-IP caps
+// are new: one address can no longer use up the whole site's quota. A booking that fails
+// (Calendar error, recording error) is refunded, so a typo does not cost a visitor one
+// of their bookings; the attempts cap is what still bounds how often one address can
+// make the Calendar script run.
+const CONTACT_LIMITS: RateLimits = { cooldownMs: 30_000, perIp: 3, windowMs: 3_600_000 };
+const MEETING_LIMITS: RateLimits = { cooldownMs: 300_000, perIp: 3, windowMs: 86_400_000, triesPerIp: 10 };
+
+/** RateLimits/{kind}: the last accepted submission, plus recent ones (and attempts) per hashed IP. */
+interface RateDoc { last?: number; ips?: Record<string, number[]>; tries?: Record<string, number[]> }
+
+/** Hashed so the rate-limit doc never stores a raw visitor IP. */
+function ipKey(rawRequest: { headers: Record<string, string | string[] | undefined>; ip?: string }): string {
+  const ip = clientIp(rawRequest.headers, rawRequest.ip) || "unknown";
+  return createHash("sha256").update(ip).digest("hex").slice(0, 16);
+}
+
+/**
+ * Checks the site-wide cooldown and the caller's per-IP quota, and returns the
+ * doc to write back if the submission is allowed. Entries older than the window
+ * are pruned on every write, so the doc stays small.
+ */
+function takeRateSlot(prev: RateDoc, key: string, limits: RateLimits, now: number, busyMessage: string): RateDoc {
+  if (typeof prev.last === "number" && now - prev.last < limits.cooldownMs) {
+    throw new HttpsError("resource-exhausted", busyMessage);
+  }
+  const recent = (byIp: Record<string, number[]> | undefined) => {
+    const out: Record<string, number[]> = {};
+    for (const [k, times] of Object.entries(byIp || {})) {
+      const kept = (Array.isArray(times) ? times : []).filter((t) => typeof t === "number" && now - t < limits.windowMs);
+      if (kept.length) out[k] = kept;
+    }
+    return out;
+  };
+  const ips = recent(prev.ips);
+  if ((ips[key] || []).length >= limits.perIp) {
+    throw new HttpsError("resource-exhausted", "You've sent a few already - please try again later.");
+  }
+  ips[key] = [...(ips[key] || []), now];
+  if (limits.triesPerIp === undefined) return { last: now, ips };
+
+  const tries = recent(prev.tries);
+  if ((tries[key] || []).length >= limits.triesPerIp) {
+    throw new HttpsError("resource-exhausted", `Too many attempts today - please email ${HELLO_EMAIL} instead.`);
+  }
+  tries[key] = [...(tries[key] || []), now];
+  return { last: now, ips, tries };
+}
+
+/**
+ * Undoes a reservation that did not become a booking: the caller's booking is removed
+ * from their per-IP count (the attempt stays counted) and the site-wide cooldown goes
+ * back to what it was - unless another reservation has been made since.
+ */
+async function refundRateSlot(ref: FirebaseFirestore.DocumentReference, key: string, stamp: number, prevLast: number | undefined): Promise<void> {
+  try {
+    await db.runTransaction(async (tx) => {
+      const cur = ((await tx.get(ref)).data() || {}) as RateDoc;
+      const ips = { ...(cur.ips || {}) };
+      const left = (ips[key] || []).filter((t) => t !== stamp);
+      if (left.length) ips[key] = left;
+      else delete ips[key];
+      const next: RateDoc = { ...cur, ips };
+      if (cur.last === stamp) {
+        if (prevLast === undefined) delete next.last;
+        else next.last = prevLast;
+      }
+      tx.set(ref, next);
+    });
+  } catch (err) {
+    console.error("Failed to refund booking reservation:", err);
+  }
+}
+
+/** A trimmed string of at most `max` characters, or a clear invalid-argument error. */
+function textField(v: unknown, label: string, max: number, required: boolean): string {
+  if (v === undefined || v === null || v === "") {
+    if (required) throw new HttpsError("invalid-argument", `${label} is required.`);
+    return "";
+  }
+  if (typeof v !== "string") throw new HttpsError("invalid-argument", `${label} must be text.`);
+  const s = v.trim();
+  if (required && !s) throw new HttpsError("invalid-argument", `${label} is required.`);
+  if (s.length > max) throw new HttpsError("invalid-argument", `${label} is too long (max ${max} characters).`);
+  return s;
+}
+
+function emailField(v: unknown): string {
+  const s = textField(v, "Email", 254, true);
+  if (!GUEST_EMAIL_RE.test(s)) throw new HttpsError("invalid-argument", "Please enter a valid email address.");
+  return s;
+}
+
+/** Same key shape the site always used for Emails/Meetings map entries. */
+function entryId(): string {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Only an upload the visitor really made to emails/<folder>/<file> in our bucket. */
+const ATTACHMENT_PATH_RE = /^emails\/[A-Za-z0-9_-]{1,40}\/[^/]{1,200}$/;
+
+async function attachmentsField(v: unknown): Promise<Array<{ name: string; url: string }>> {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) throw new HttpsError("invalid-argument", "Attachments must be a list.");
+  if (v.length > MAX_ATTACHMENTS) throw new HttpsError("invalid-argument", `At most ${MAX_ATTACHMENTS} attachments.`);
+  const out: Array<{ name: string; url: string }> = [];
+  for (const f of v) {
+    const file = (f || {}) as { name?: unknown; url?: unknown };
+    const name = textField(file.name, "Attachment name", 200, true);
+    const url = safeAttachmentUrl(file.url);
+    const path = url ? getStoragePathFromUrl(url) : null;
+    if (!url || !path || !ATTACHMENT_PATH_RE.test(path)) {
+      throw new HttpsError("invalid-argument", "An attachment link is not valid.");
+    }
+    const [exists] = await admin.storage().bucket().file(path).exists();
+    if (!exists) throw new HttpsError("invalid-argument", "An attachment is missing - please attach it again.");
+    out.push({ name, url });
+  }
+  return out;
+}
+
+export const submitContact = onCall(
+  { region: "us-central1", enforceAppCheck: true },
+  async (request) => {
+    const d = (request.data || {}) as Record<string, unknown>;
+    const entry: EmailEntry = {
+      Name: textField(d.name, "Name", 100, true),
+      Email: emailField(d.email),
+      "Files Attached": await attachmentsField(d.files),
+      Message: textField(d.message, "Message", 5000, true),
+      Number: textField(d.number, "Phone number", 40, false),
+      Whatsapp: d.whatsapp === true,
+      Timestamp: Date.now(),
+    };
+    const key = ipKey(request.rawRequest);
+
+    await db.runTransaction(async (tx) => {
+      const rlRef = db.doc("RateLimits/contact");
+      const canaryRef = db.doc("Settings/Canary");
+      const [rl, canary] = await Promise.all([tx.get(rlRef), tx.get(canaryRef)]);
+      const emails = (canary.data() as CanaryDoc | undefined)?.Emails || {};
+      if (Object.keys(emails).length >= CONTACT_INBOX_CAP) {
+        throw new HttpsError("resource-exhausted", `The inbox is full right now - please email ${HELLO_EMAIL} directly.`);
+      }
+      const next = takeRateSlot((rl.data() || {}) as RateDoc, key, CONTACT_LIMITS, Date.now(),
+        "Another message just came in - please try again in a minute.");
+      tx.set(rlRef, next);
+      tx.set(canaryRef, { Emails: { [entryId()]: entry } }, { merge: true });
+    });
+    return { ok: true };
+  },
+);
+
+async function postToCalendar(payload: Record<string, unknown>): Promise<{ status?: string; link?: string; id?: string; message?: string }> {
+  const url = (meetingSyncUrl.value() || "").trim();
+  if (!url) throw new HttpsError("failed-precondition", "Meeting sync is not configured.");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000),
+  });
+  const data = await res.json().catch(() => ({})) as { status?: string; link?: string; id?: string; message?: string };
+  if (!res.ok || data.status === "error") {
+    throw new HttpsError("internal", data.message || `Calendar sync failed (HTTP ${res.status}).`);
+  }
+  return data;
+}
+
+/**
+ * Public booking. Validates the request, reserves the site-wide booking slot,
+ * creates the Calendar event (with Meet link) and records the meeting in Canary.
+ * If recording fails the event is cancelled again, so there is never an invite
+ * for a slot the public calendar does not show as taken.
+ */
+export const bookMeeting = onCall(
+  { region: "us-central1", enforceAppCheck: true, secrets: [meetingSyncUrl] },
+  async (request) => {
+    const d = (request.data || {}) as Record<string, unknown>;
+    const name = textField(d.name, "Name", 100, true);
+    const email = emailField(d.email);
+    const reason = textField(d.reason, "Reason", 1000, false);
+    const userLocalTime = textField(d.userLocalTime, "Local time", 20, false);
+    const userTimezone = typeof d.userTimezone === "number" && Number.isFinite(d.userTimezone) &&
+      Math.abs(d.userTimezone) <= 14 ? d.userTimezone : 0;
+    const via = d.via === "book" ? "book" : "contact";
+
+    const start = new Date(typeof d.startTime === "string" ? d.startTime : NaN);
+    const now = Date.now();
+    if (Number.isNaN(start.getTime())) {
+      throw new HttpsError("invalid-argument", "Invalid meeting time.");
+    }
+    const end = new Date(start.getTime() + MEETING_MS);
+
+    const availability = (await db.doc("Settings/Availability").get()).data() || {};
+    const cfg = parseAvailability(availability);
+    const hostOffset = utcOffsetHours(availability["Current Time"] ?? DEFAULT_HOST_TZ);
+    const host = wallClock(start.getTime(), hostOffset);
+    const key = ipKey(request.rawRequest);
+    const rlRef = db.doc("RateLimits/meeting");
+    const canaryRef = db.doc("Settings/Canary");
+
+    // 1. Reserve: slot free, under the cap, and not rate limited.
+    const stamp = now;
+    const prevLast = await db.runTransaction(async (tx) => {
+      const [rl, canary] = await Promise.all([tx.get(rlRef), tx.get(canaryRef)]);
+      const meetings = Object.values((canary.data() as CanaryDoc | undefined)?.Meetings || {});
+      if (meetings.length >= MEETINGS_CAP) {
+        throw new HttpsError("resource-exhausted", `Bookings are full right now - please email ${HELLO_EMAIL}.`);
+      }
+      if (isTaken(start.getTime(), hostOffset, meetings)) {
+        throw new HttpsError("already-exists", "That time slot is no longer available. Please pick another.");
+      }
+      // The same day and time rules the booking calendar draws from (booking.ts,
+      // generated from src/utils/bookingRules.ts).
+      const refusal = bookingRefusal(start.getTime(), { nowMs: now, userTimezone, hostOffset, cfg, meetings });
+      if (refusal) throw new HttpsError("failed-precondition", refusal);
+      const prev = (rl.data() || {}) as RateDoc;
+      tx.set(rlRef, takeRateSlot(prev, key, MEETING_LIMITS, now,
+        "Another booking just came in - please wait a few minutes and try again."));
+      return prev.last;
+    });
+    // A failed booking gives back the site-wide slot and the caller's booking count.
+    const release = () => refundRateSlot(rlRef, key, stamp, prevLast);
+
+    // 2. Calendar event + Meet link.
+    let event: { link?: string; id?: string };
+    try {
+      event = await postToCalendar({ name, email, reason, startTime: start.toISOString(), endTime: end.toISOString() });
+    } catch (err) {
+      await release();
+      if (err instanceof HttpsError) {
+        throw /Invalid attendee email/i.test(err.message)
+          ? new HttpsError("invalid-argument", "Invalid Email Address provided.")
+          : err;
+      }
+      throw new HttpsError("internal", "Could not book meeting");
+    }
+
+    // 3. Record it (notifyCanary sends the emails and updates BookedSlots).
+    try {
+      const entry = {
+        Date: host.date,
+        Time: host.time,
+        UserLocalTime: userLocalTime,
+        UserTimezone: userTimezone,
+        Email: email,
+        "What For": reason,
+        Name: name,
+        timestamp: Date.now(),
+        MeetingLink: typeof event.link === "string" ? event.link : "",
+        GoogleEventId: typeof event.id === "string" ? event.id : "",
+        Via: via,
+      };
+      await canaryRef.set({ Meetings: { [entryId()]: entry } }, { merge: true });
+    } catch (err) {
+      console.error("Failed to record meeting, cancelling the calendar event:", err);
+      if (event.id) {
+        await postToCalendar({ action: "cancel", eventId: event.id, email, name, startTime: start.toISOString() })
+          .catch((e) => console.error("Rollback cancel failed:", e));
+      }
+      await release();
+      throw new HttpsError("internal", "Could not book meeting");
+    }
+
+    return { link: typeof event.link === "string" ? event.link : "" };
+  },
+);
+
+/**
+ * Deletes contact-form uploads that no message points to, once they are a day
+ * old. Storage rules cannot count uploads, so this is what stops `emails/` from
+ * becoming free public file hosting (uploads that were never sent with a message).
+ */
+export const cleanupAttachments = onSchedule(
+  { schedule: "every day 04:00", timeZone: "Europe/Istanbul", region: "us-central1" },
+  async () => {
+    const canary = (await db.doc("Settings/Canary").get()).data() as CanaryDoc | undefined;
+    const keep = new Set<string>();
+    for (const e of Object.values(canary?.Emails || {})) {
+      for (const f of e?.["Files Attached"] || []) {
+        const path = f?.url ? getStoragePathFromUrl(f.url) : null;
+        if (path) keep.add(path);
+      }
+    }
+    const cutoff = Date.now() - 86400000;
+    const [files] = await admin.storage().bucket().getFiles({ prefix: "emails/" });
+    let deleted = 0;
+    for (const file of files) {
+      if (keep.has(file.name)) continue;
+      const created = Date.parse(String(file.metadata?.timeCreated || ""));
+      if (!Number.isFinite(created) || created > cutoff) continue;
+      try {
+        await file.delete();
+        deleted++;
+      } catch (err) {
+        console.error(`Failed to delete orphaned attachment ${file.name}:`, err);
+      }
+    }
+    console.log(`cleanupAttachments: deleted ${deleted} orphaned file(s)`);
   },
 );
 

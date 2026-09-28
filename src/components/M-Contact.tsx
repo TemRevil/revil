@@ -2,16 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, Globe } from 'lucide-react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 // firebase/storage + firebase/functions are dynamic-imported inside the submit
 // handlers below (not statically) so they stay OUT of the eager first-paint
 // bundle - M-Contact is imported eagerly by App.tsx, so a static import here
 // would pull both SDKs into the critical chunk.
-import app, { db } from '../lib/firebase';
+import app from '../lib/firebase';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
 import useMeetingBooking, { getDaysInMonth, isValidEmail, type Meeting } from '../hooks/useMeetingBooking';
-import { isWorkingDay } from '../utils/availability';
 import Select from './Select';
 import CustomTimePicker from './CustomTimePicker';
 import HintTooltip from './HintTooltip';
@@ -48,8 +46,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     selectedDate, setSelectedDate, selectedTime, setSelectedTime, isCustomTime, setIsCustomTime,
     meetingData, setMeetingData, isSubmitting: isBooking, bookingSuccess, setBookingSuccess,
     userTimezone, setUserTimezone, tzOptions,
-    availConfig, timeSlots, convertedSlots,
-    getMeetingsForDate, convertTimeToUser, isTimePassed,
+    convertedSlots, daySlots,
+    getMeetingsForDate, meetingTimeForVisitor, isDayBookable,
     handleMeetingSubmit, validateCustomTime, isCustomTimeUnavailable,
   } = useMeetingBooking({ showAlert, enabled: activeTab === 'meeting' });
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
@@ -194,33 +192,30 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
         // Index-prefixed so two attachments with the SAME filename get two paths.
         // They used to collide, and the second upload quietly overwrote the first -
         // leaving two entries in the email pointing at one file. It also matters now
-        // that the storage rule is `create` rather than `write`: a colliding path is
-        // an update, which is (correctly) refused.
+        // that storage.rules only lets a visitor upload to a path that is still empty:
+        // a colliding path is (correctly) refused.
         for (const [i, file] of formData.attachments.entries()) {
-          const fileRef = ref(storage, `emails/${uniqueFolderId}/${i}_${file.name}`);
+          // storage.rules caps the object name at 200 characters; keep the tail so
+          // the extension survives.
+          const fileRef = ref(storage, `emails/${uniqueFolderId}/${i}_${file.name.slice(-150)}`);
           const snapshot = await uploadBytes(fileRef, file);
           const downloadURL = await getDownloadURL(snapshot.ref);
-          uploadedFiles.push({ name: file.name, url: downloadURL });
+          uploadedFiles.push({ name: file.name.slice(-200), url: downloadURL });
         }
       }
 
-      // 2. Save the message. Canary is admin-read-only, so (like the booking path)
-      // we use a collision-resistant client ID + blind updateDoc instead of a
-      // read-modify-write transaction. The email key is an opaque map key.
-      const docRef = doc(db, 'Settings', 'Canary');
-      const emailId = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
-      const payload = {
-        Name: formData.name,
-        Email: formData.email,
-        "Files Attached": uploadedFiles,
-        Message: formData.message,
-        Number: formData.number,
-        Whatsapp: formData.hasWhatsapp,
-        Timestamp: Date.now()
-      };
-
-      await updateDoc(docRef, { [`Emails.${emailId}`]: payload, lastEmailWrite: serverTimestamp() });
+      // 2. Send the message. Visitors cannot write Settings/Canary; the
+      // submitContact function validates the message, rate-limits it and stores it.
+      const { httpsCallable, getFunctions } = await import('firebase/functions');
+      const submitContact = httpsCallable(getFunctions(app), 'submitContact');
+      await submitContact({
+        name: formData.name,
+        email: formData.email.trim(),
+        message: formData.message,
+        number: formData.number,
+        whatsapp: formData.hasWhatsapp,
+        files: uploadedFiles,
+      });
       window.dispatchEvent(new CustomEvent('revil:contact_sent', { detail: { kind: 'message' } }));
 
       showAlert({ type: 'success', message: "Message sent! I'll get back to you soon." });
@@ -236,7 +231,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
     } catch (error) {
       console.error("Error sending message:", error);
-      showAlert({ type: 'error', message: "Failed to send message. Please try again." });
+      // The function's own messages (rate limit, a field too long) are written for
+      // visitors; anything else gets the generic one.
+      const { code, message } = (error || {}) as { code?: string; message?: string };
+      const readable = code === 'functions/resource-exhausted' || code === 'functions/invalid-argument';
+      showAlert({ type: 'error', message: readable && message ? message : "Failed to send message. Please try again." });
     } finally {
       setIsSubmitting(false);
     }
@@ -548,13 +547,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               const hasMeetings = meetingsForDay.length > 0;
                               const isPast = date < today;
                               const isTooFar = date > limitDate;
-                              const hasFreeSlots = timeSlots.some((hostTime) => {
-                                const isBusy = getMeetingsForDate(date).some(m => m.Time === hostTime);
-                                const passed = isTimePassed(date, hostTime);
-                                return !isBusy && !passed;
-                              });
-
-                              const isBookable = !isPast && !isTooFar && hasFreeSlots && isWorkingDay(availConfig, date);
+                              const isBookable = isDayBookable(date);
 
                               return (
                                 <div
@@ -598,7 +591,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                   {hasMeetings && !isSelected && (
                                     <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginTop: '2px' }}>
                                       {meetingsForDay.slice(0, 3).map((m: Meeting, idx) => (
-                                        <div key={idx} title={`${convertTimeToUser(m.Time)} - Booked`} style={{
+                                        <div key={idx} title={`${meetingTimeForVisitor(m)} - Booked`} style={{
                                           width: '4px', height: '4px', borderRadius: '50%',
                                           background: '#10b981', // Slot taken (guest identity is private)
                                           position: 'relative', zIndex: 1
@@ -713,7 +706,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                     <div key={i} className="flex items-center gap-3 py-1" style={{ borderBottom: i === getMeetingsForDate(selectedDate).length - 1 ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)') }}>
                                       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px rgba(16, 185, 129, 0.5)' }} />
                                       <div className="flex-1">
-                                        <div className="text-sm font-semibold text-primary">{convertTimeToUser(m.Time)} - <span style={{ opacity: 0.7 }}>Booked</span></div>
+                                        <div className="text-sm font-semibold text-primary">{meetingTimeForVisitor(m)} - <span style={{ opacity: 0.7 }}>Booked</span></div>
                                       </div>
                                     </div>
                                   ))}
@@ -721,15 +714,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                               )}
 
                               {/* Time Slots & Form */}
-                              {selectedDate && (() => {
-                                const isPast = selectedDate < new Date(new Date().setHours(0, 0, 0, 0));
-                                const hasFreeSlots = timeSlots.some((hostTime) => {
-                                  const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
-                                  const passed = isTimePassed(selectedDate, hostTime);
-                                  return !isBusy && !passed;
-                                });
-                                return !isPast && hasFreeSlots && isWorkingDay(availConfig, selectedDate);
-                              })() && (
+                              {selectedDate && isDayBookable(selectedDate) && (
                                   <>
                                     {/* Timezone Selection (Before Available Slots) */}
                                     <div style={{ position: 'relative', marginBottom: '24px' }}>
@@ -756,11 +741,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                                     <div>
                                       <h3 className="heading-sm mb-3 flex items-center gap-2"><Clock size={16} /> Available Slots</h3>
                                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px' }}>
-                                        {convertedSlots.map((time, idx) => {
-                                          const hostTime = timeSlots[idx];
-                                          const isBusy = getMeetingsForDate(selectedDate).some(m => m.Time === hostTime);
-                                          const passed = isTimePassed(selectedDate, hostTime);
-                                          const isDisabled = isBusy || passed;
+                                        {daySlots(selectedDate).map(({ label: time, taken, passed }) => {
+                                          const isDisabled = taken || passed;
                                           const isActive = selectedTime === time && !isCustomTime;
                                           return (
                                             <button key={time} onClick={() => { setSelectedTime(time); setIsCustomTime(false); }} disabled={isDisabled}
