@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
-import { getToken } from 'firebase/app-check';
-import { appCheck } from '../../lib/firebase';
+import { loadFirebase } from '../../lib/liveDoc';
 import { analytics } from '../../lib/analytics/collector';
 import { BOOK_SECTION } from '../../lib/analytics/types';
 
@@ -17,8 +16,11 @@ export default function useBookTrail() {
         analytics.start({
             section: BOOK_SECTION,
             code: '',
+            // Firebase loads off the first paint; the recorder waits for it here.
             getToken: async () => {
+                const { appCheck } = await loadFirebase();
                 if (!appCheck) return '';
+                const { getToken } = await import('firebase/app-check');
                 const { token } = await getToken(appCheck, false);
                 return token;
             },
@@ -26,11 +28,8 @@ export default function useBookTrail() {
 
         // Keep the App Check token warm: the final flush fires during unload, where
         // there is no room to await one.
-        let warm: ReturnType<typeof setInterval> | undefined;
-        if (appCheck) {
-            analytics.warmToken();
-            warm = setInterval(() => analytics.warmToken(), 20 * 60 * 1000);
-        }
+        analytics.warmToken();
+        const warm = setInterval(() => analytics.warmToken(), 20 * 60 * 1000);
 
         const onSent = (e: Event) => {
             const d = (e as CustomEvent).detail as { kind?: string; via?: string } | undefined;
@@ -38,7 +37,7 @@ export default function useBookTrail() {
         };
         window.addEventListener('revil:contact_sent', onSent);
         return () => {
-            if (warm) clearInterval(warm);
+            clearInterval(warm);
             window.removeEventListener('revil:contact_sent', onSent);
         };
     }, []);

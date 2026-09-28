@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { watchDoc } from '../lib/liveDoc';
+import accountSnapshot from '../data/account.snapshot.json';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -20,6 +20,18 @@ interface SettingsContextValue {
     accountLoading: boolean;
 }
 
+// The hero draws with the name + title before Firebase has loaded: the last copy this
+// browser saw, else the build's snapshot (scripts/sync-projects.mjs). The live document
+// replaces it as soon as it arrives.
+const CACHE_KEY = 'revil_account';
+function seedAccount(): AccountData {
+    try {
+        const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+        if (cached && typeof cached === 'object') return { ...accountSnapshot, ...cached };
+    } catch { /* ignore */ }
+    return { ...accountSnapshot };
+}
+
 // ── Context ────────────────────────────────────────────────────────────
 
 const SettingsContext = createContext<SettingsContextValue>({
@@ -30,15 +42,16 @@ const SettingsContext = createContext<SettingsContextValue>({
 // ── Provider ───────────────────────────────────────────────────────────
 
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
-    const [account, setAccount] = useState<AccountData | null>(null);
+    const [account, setAccount] = useState<AccountData | null>(seedAccount);
     const [accountLoading, setAccountLoading] = useState(true);
 
     useEffect(() => {
-        const unsub = onSnapshot(
-            doc(db, 'Settings', 'Account'),
-            (snap) => {
-                if (snap.exists()) {
-                    setAccount(snap.data() as AccountData);
+        const unsub = watchDoc(
+            ['Settings', 'Account'],
+            (data) => {
+                if (data) {
+                    setAccount(data as AccountData);
+                    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ name: data.name, title: data.title })); } catch { /* ignore */ }
                 }
                 setAccountLoading(false);
             },

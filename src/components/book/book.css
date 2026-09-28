@@ -111,6 +111,7 @@
 .bp .spin { animation: bp-spin 1s linear infinite; }
 @keyframes bp-spin { to { transform: rotate(360deg); } }
 .bp .empty { margin: 8px 0 0; font-size: .95rem; line-height: 1.5; color: var(--text-muted); }
+.bp .empty.loading { display: flex; align-items: center; gap: 8px; }
 .bp .done { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; padding: 24px 4px; }
 .bp .done .tick { width: 60px; height: 60px; border-radius: 50%; background: var(--success); color: #fff; display: grid; place-items: center; }
 .bp .done h3 { margin: 0; font-size: 1.4rem; font-weight: 700; }
