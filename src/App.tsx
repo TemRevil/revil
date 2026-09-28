@@ -155,7 +155,10 @@ function App() {
     const root = mobileScrollRef.current;
     if (!root) return;
     const MOUNT_AHEAD = 600;
-    const compute = () => {
+    // `scrolled` is false for the first pass: Stack sits one screen down, inside MOUNT_AHEAD,
+    // so it would mount (and pull in Firebase + the Caveat font) during the hero's entrance.
+    // Until the reader scrolls, heroSettled mounts the rest instead.
+    const compute = (scrolled: boolean) => {
       const vh = window.innerHeight;
       const mid = vh / 2;
       let active: Section = 'home';
@@ -165,7 +168,7 @@ function App() {
         if (!el) continue;
         const r = el.getBoundingClientRect();
         if (r.top <= mid && r.bottom >= mid) active = id;
-        if (r.top <= vh + MOUNT_AHEAD && r.bottom >= -MOUNT_AHEAD) reached.push(id);
+        if (scrolled && r.top <= vh + MOUNT_AHEAD && r.bottom >= -MOUNT_AHEAD) reached.push(id);
       }
       setMobileActiveSection(prev => (prev === active ? prev : active));
       setMountedSections(prev => {
@@ -176,12 +179,14 @@ function App() {
         return next;
       });
     };
-    compute();
-    root.addEventListener('scroll', compute, { passive: true });
-    window.addEventListener('resize', compute);
+    const onScroll = () => compute(true);
+    const onResize = () => compute(false);
+    compute(false);
+    root.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onResize);
     return () => {
-      root.removeEventListener('scroll', compute);
-      window.removeEventListener('resize', compute);
+      root.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
     };
   }, [mobileScroll]);
   // Safety net: once the hero has settled, everything is mounted regardless of scrolling.
