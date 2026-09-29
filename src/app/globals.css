@@ -242,6 +242,48 @@ textarea,
    3. ANIMATED BACKGROUND BLOBS
    ======================================== */
 
+/* Time slots (the contact modal's booking): a grid that adds a row when the slots don't
+   fit, and one look for every slot, the Custom one included. */
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+.slot-chip {
+  padding: 10px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.dark .slot-chip {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+.slot-chip:hover:not(:disabled):not([aria-pressed="true"]) {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(0, 0, 0, 0.06);
+}
+.dark .slot-chip:hover:not(:disabled):not([aria-pressed="true"]) {
+  background: rgba(255, 255, 255, 0.06);
+}
+.slot-chip[aria-pressed="true"] {
+  border-color: rgb(59, 130, 246);
+  background: rgba(59, 130, 246, 0.12);
+  color: rgb(59, 130, 246);
+}
+.slot-chip:disabled {
+  opacity: 0.3;
+  text-decoration: line-through;
+  cursor: default;
+}
+
 /* A page switch slides and scales whole sections. On their own GPU layers they are painted
    once and moved, instead of repainted on every frame (with the hero's brush filters that
    ran at ~10fps). Only while switching: a lasting will-change would pin fixed children. */

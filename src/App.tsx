@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
-import { LayoutGroup, AnimatePresence, motion } from 'motion/react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransition } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import Hero from './components/Hero';
 import Navbar from './components/Navbar';
 import PageTransition from './components/PageTransition';
@@ -399,7 +399,10 @@ function App() {
     setIsTransitioning(false);
   }, []);
 
-  const openContactModal = useCallback(() => setIsContactModalOpen(true), []);
+  // Modals open in a transition: the first time one renders, its lazy chunk suspends for a
+  // moment, and outside a transition React then holds the reveal back ~300ms (its fallback
+  // throttle), so the first open felt dead for a third of a second.
+  const openContactModal = useCallback(() => startTransition(() => setIsContactModalOpen(true)), []);
   const closeContactModal = useCallback(() => {
     setIsContactModalOpen(false);
     // Drop the deep-link hash on close so refreshing doesn't reopen it and the URL stays
@@ -420,18 +423,18 @@ function App() {
     return () => window.removeEventListener('hashchange', openIfBookingHash);
   }, [openContactModal]);
 
-  const openCVModal = useCallback(() => setIsCVModalOpen(true), []);
+  const openCVModal = useCallback(() => startTransition(() => setIsCVModalOpen(true)), []);
   const closeCVModal = useCallback(() => setIsCVModalOpen(false), []);
 
-  const handleProjectClick = useCallback((project: Project) => {
+  const handleProjectClick = useCallback((project: Project) => startTransition(() => {
     setSelectedProject(project);
     setShowProjectModal(true);
-  }, []);
+  }), []);
 
-  const handleContributorClick = useCallback((contributor: Contributor) => {
+  const handleContributorClick = useCallback((contributor: Contributor) => startTransition(() => {
     setSelectedContributor(contributor as unknown as ContributorViewData);
     setShowContributorModal(true);
-  }, []);
+  }), []);
 
   // The hero's entrance waits for the page curtain as it waits for the loader: painting it
   // under the curtain's blur spent the frames the curtain needed, and hid half the entrance.
@@ -773,7 +776,7 @@ function App() {
           <ChevronRight size={20} />
         </button>
       )}
-      <LayoutGroup>
+      <>
         {(currentSection !== 'dashboard') && (
           <Navbar
             onNavigate={handleNavbarNav}
@@ -781,7 +784,6 @@ function App() {
             onOpenContact={openContactModal}
             isContactOpen={isContactModalOpen}
             onOpenCV={openCVModal}
-            isCVOpen={isCVModalOpen}
           />
         )}
         <ErrorBoundary fallback={modalErrorFallback}>
@@ -829,7 +831,7 @@ function App() {
             </AnimatePresence>
           </Suspense>
         </ErrorBoundary>
-      </LayoutGroup>
+      </>
       <PageTransition
         isTransitioning={isTransitioning}
         onCurtainCovered={handleCurtainCovered}

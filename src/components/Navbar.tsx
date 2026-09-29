@@ -1,7 +1,6 @@
 import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText, Zap, Rocket } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'motion/react';
 
 type NavigateSection = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
@@ -13,7 +12,6 @@ interface NavbarProps {
     onOpenContact?: () => void;
     isContactOpen?: boolean;
     onOpenCV?: () => void;
-    isCVOpen?: boolean;
 }
 
 interface TooltipProps {
@@ -121,7 +119,7 @@ const Tooltip = ({ text, icon, show, isDark }: TooltipProps) => {
     );
 };
 
-const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false, onOpenCV, isCVOpen = false }: NavbarProps) => {
+const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false, onOpenCV }: NavbarProps) => {
     const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
 
     // Initialize theme
@@ -313,39 +311,21 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         className="relative"
                         style={{ width: isMobile ? '36px' : '48px', height: isMobile ? '36px' : '48px' }}
                     >
-                        <motion.button
+                        <button
                             className={`
                                 btn-icon absolute inset-0 flex items-center justify-center
                                 ${isMobile ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'}
                                 text-muted hover:text-primary hover:bg-[rgba(0,0,0,0.04)] dark:hover:bg-[rgba(255,255,255,0.1)]
                                 hover:scale-110 transition-all duration-200
                             `}
-                            style={{
-                                zIndex: isCVOpen ? 0 : 1,
-                                opacity: isCVOpen ? 0 : 1,
-                                pointerEvents: isCVOpen ? 'none' : 'auto',
-                            }}
                             onClick={onOpenCV}
                             aria-label="Open digital CV"
                             onMouseEnter={() => setHoveredTab('cv')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            {!isCVOpen && (
-                                <motion.div layoutId="cv-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
-                                    <FileText size={20} strokeWidth={2.5} />
-                                </motion.div>
-                            )}
-                        </motion.button>
+                            <FileText size={iconSize} strokeWidth={2} />
+                        </button>
                         <Tooltip text="Digital CV" icon={<FileText size={14} strokeWidth={2} />} show={tip(hoveredTab === 'cv' && !isSubnavHovered)} isDark={isDark} />
-
-                        {isCVOpen && (
-                            <div className={`
-                                flex items-center justify-center opacity-20 pointer-events-none
-                                ${isMobile ? 'p-2' : 'p-3'}
-                            `}>
-                                <FileText size={iconSize} strokeWidth={2} className="opacity-0" />
-                            </div>
-                        )}
                     </div>
                 </div>
 
@@ -365,39 +345,21 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                         className="relative"
                         style={{ width: isMobile ? '36px' : '48px', height: isMobile ? '36px' : '48px' }}
                     >
-                        <motion.button
+                        <button
                             className={`
                                 btn-icon absolute inset-0 flex items-center justify-center
                                 ${isMobile ? 'p-2 rounded-xl' : 'p-3 rounded-2xl'}
                                 text-muted hover:text-primary hover:bg-[rgba(0,0,0,0.04)] dark:hover:bg-[rgba(255,255,255,0.1)]
                                 hover:scale-110 transition-all duration-200
                             `}
-                            style={{
-                                zIndex: isContactOpen ? 0 : 1,
-                                opacity: isContactOpen ? 0 : 1,
-                                pointerEvents: isContactOpen ? 'none' : 'auto',
-                            }}
                             onClick={onOpenContact}
                             aria-label="Open contact form"
                             onMouseEnter={() => setHoveredTab('mail')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            {!isContactOpen && (
-                                <motion.div layoutId="contact-icon" className="flex items-center justify-center" transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}>
-                                    <Mail size={24} strokeWidth={2} />
-                                </motion.div>
-                            )}
-                        </motion.button>
+                            <Mail size={iconSize} strokeWidth={2} />
+                        </button>
                         <Tooltip text="Contact" icon={<Mail size={14} strokeWidth={2} />} show={tip((hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)) && !isSubnavHovered)} isDark={isDark} />
-
-                        {isContactOpen && (
-                            <div className={`
-                                flex items-center justify-center opacity-20 pointer-events-none
-                                ${isMobile ? 'p-2' : 'p-3'}
-                            `}>
-                                <Mail size={iconSize} strokeWidth={2} className="opacity-0" />
-                            </div>
-                        )}
                     </div>
 
                     <button

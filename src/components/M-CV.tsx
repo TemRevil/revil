@@ -6,6 +6,7 @@ import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { ProjectData as FullProject } from '../types';
 import { useSocialTracker } from '../hooks/useSocialTracker';
 import { useBoilHold } from './book/paintKit';
+import { blurFade } from '../lib/modalMotion';
 
 interface CVProject {
     id: string;
@@ -251,11 +252,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             {/* Modal Container */}
             <div className="fixed inset-0 z-[1501] flex items-center justify-center p-4 md:p-12 pointer-events-none">
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.3, y: 400 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.3, y: 400 }}
-                    transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}
-                    style={{ transformOrigin: 'bottom center' }}
+                    {...blurFade}
                     onClick={(e) => e.stopPropagation()}
                     className="glass-panel-deep relative w-full max-w-5xl h-full max-h-[85vh] overflow-hidden pointer-events-auto flex flex-col border border-black/5 dark:border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.1)] dark:shadow-[0_30px_60px_rgba(0,0,0,0.5)]"
                 >
@@ -263,13 +260,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                     <div className="p-6 pb-0 flex flex-col gap-4 relative z-10 shrink-0 font-sans">
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
-                                <motion.div
-                                    layoutId="cv-icon"
-                                    className="flex items-center justify-center"
-                                    transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}
-                                >
-                                    <FileText size={26} strokeWidth={2} className="text-blue-500" />
-                                </motion.div>
+                                <FileText size={26} strokeWidth={2} className="text-blue-500" aria-hidden="true" />
                                 <h2 className="text-2xl font-bold text-primary m-0 tracking-tight" style={{ fontSize: '1.5rem' }}>
                                     Fast Report
                                 </h2>

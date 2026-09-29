@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, Globe } from 'lucide-react';
@@ -14,6 +14,7 @@ import Select from './Select';
 import CustomTimePicker from './CustomTimePicker';
 import HintTooltip from './HintTooltip';
 import useTheme from '../hooks/useTheme';
+import { blurFade } from '../lib/modalMotion';
 import { useBoilHold } from './book/paintKit';
 
 interface MContactProps {
@@ -261,18 +262,6 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     };
   }, [onClose]);
 
-  // Entry/exit for the modal box: the two boxes rise up from the bottom (the taskbar-window
-  // feel), scaling up from bottom-center. Running ALONGSIDE it, the shared "contact-icon"
-  // element flies from the dock button into the header - so the whole thing reads as coming
-  // up from the dock. (The mobile header has always paired this rise with the icon morph, so
-  // they coexist fine.)
-  const modalMotion = useMemo(() => ({
-    initial: { opacity: 0, scale: 0.3, y: 400 },
-    animate: { opacity: 1, scale: 1, y: 0 },
-    exit: { opacity: 0, scale: 0.3, y: 400 },
-    transformOrigin: 'bottom center',
-    transition: { type: 'spring' as const, damping: 30, stiffness: 350, mass: 1 },
-  }), []);
 
 
   return createPortal(
@@ -302,10 +291,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           aria-modal="true"
           aria-labelledby="contact-modal-title"
           layout
-          initial={modalMotion.initial}
-          animate={modalMotion.animate}
-          exit={modalMotion.exit}
-          transition={modalMotion.transition}
+          {...blurFade}
           className={isMobile ? "glass-panel-deep" : ""}
           style={{
             // Responsive but bounded: scales with the viewport, never below a usable
@@ -317,7 +303,6 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
             height: isMobile ? '90dvh' : 'min(760px, 92vh)',
             maxWidth: isMobile ? '90vw' : '94vw',
             maxHeight: isMobile ? '90dvh' : '92vh',
-            transformOrigin: modalMotion.transformOrigin,
             overflow: isMobile ? 'hidden' : 'visible',
             borderRadius: isMobile ? '16px' : '0',
             display: 'flex',
@@ -341,18 +326,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
               <div className="p-6 pb-0 flex flex-col gap-4">
                 <div className="flex-row-between mb-4">
                   <div className="flex items-center gap-3">
-                    <motion.div
-                      layoutId="contact-icon"
-                      className="flex items-center justify-center"
-                      transition={{
-                        type: 'spring',
-                        damping: 30,
-                        stiffness: 350,
-                        mass: 1
-                      }}
-                    >
-                      <Mail size={24} strokeWidth={2} />
-                    </motion.div>
+                    <Mail size={24} strokeWidth={2} aria-hidden="true" />
                     <h2 id="contact-modal-title" className="heading-md m-0 font-bold" style={{ fontSize: '1.5rem' }}>
                       Contact Me
                     </h2>
@@ -411,13 +385,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
                       {!isMobile && (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', width: '100%' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <motion.div
-                              layoutId="contact-icon"
-                              className="flex items-center justify-center text-primary"
-                              transition={{ type: 'spring', damping: 30, stiffness: 350, mass: 1 }}
-                            >
-                              <Mail size={22} />
-                            </motion.div>
+                            <Mail size={22} className="text-primary" aria-hidden="true" />
                             <h2 style={{ fontSize: 'clamp(1.15rem, 0.85rem + 1.1vw, 1.45rem)', fontWeight: 700, margin: 0 }}>Contact Me</h2>
                           </div>
                           {!selectedDate && (
@@ -743,41 +711,18 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
                                     <div>
                                       <h3 className="heading-sm mb-3 flex items-center gap-2"><Clock size={16} /> Available Slots</h3>
-                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '16px' }}>
-                                        {daySlots(selectedDate).map(({ label: time, taken, passed }) => {
-                                          const isDisabled = taken || passed;
-                                          const isActive = selectedTime === time && !isCustomTime;
-                                          return (
-                                            <button key={time} onClick={() => { setSelectedTime(time); setIsCustomTime(false); }} disabled={isDisabled}
-                                              style={{
-                                                padding: '10px 8px', borderRadius: '12px',
-                                                border: `1px solid ${isActive ? 'rgb(59, 130, 246)' : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)')}`,
-                                                background: isActive ? 'rgba(59, 130, 246, 0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-                                                color: isActive ? 'rgb(59, 130, 246)' : 'var(--text-primary)',
-                                                fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                                                opacity: isDisabled ? 0.3 : 1,
-                                                textDecoration: isDisabled ? 'line-through' : 'none'
-                                              }}
-                                              onMouseEnter={(e) => {
-                                                if (!isActive && !isDisabled) {
-                                                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
-                                                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-                                                }
-                                              }}
-                                              onMouseLeave={(e) => {
-                                                if (!isActive && !isDisabled) {
-                                                  e.currentTarget.style.borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-                                                  e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)';
-                                                }
-                                              }}
-                                            >{time}</button>
-                                          );
-                                        })}
+                                      <div className="slot-grid" style={{ marginBottom: '16px' }}>
+                                        {daySlots(selectedDate).map(({ label: time, taken, passed }) => (
+                                          <button key={time} type="button" className="slot-chip" disabled={taken || passed}
+                                            aria-pressed={selectedTime === time && !isCustomTime}
+                                            onClick={() => { setSelectedTime(time); setIsCustomTime(false); }}
+                                          >{time}</button>
+                                        ))}
 
-                                        {/* Custom (free) slot, always last. The chip morphs into a glassy
-                                            time picker so the visitor can propose any time, not just the
-                                            host's fixed hours. */}
+                                        {/* Custom (free) slot, always last: a time picker so the visitor can
+                                            propose any time, not just the host's fixed hours. */}
                                         <CustomTimePicker
+                                          className="slot-chip"
                                           isDark={isDark}
                                           active={isCustomTime}
                                           value={selectedTime}

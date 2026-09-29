@@ -1,8 +1,9 @@
-import { useId, useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence, LayoutGroup } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Clock, X, Plus } from 'lucide-react';
 import Select from './Select';
+import { blurFade } from '../lib/modalMotion';
 
 interface Props {
     isDark: boolean;
@@ -24,6 +25,9 @@ interface Props {
     /** Base z-index for the backdrop; the modal sits at +1. Raise it above a host modal
      *  that stacks higher than the default (e.g. Canary's reschedule modal at z 2000). */
     zIndex?: number;
+    /** The host's slot styling, so the chip is one more slot in its grid (aria-pressed marks it chosen). */
+    className?: string;
+    style?: CSSProperties;
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1));
@@ -31,14 +35,12 @@ const MINUTES = ['00', '15', '30', '45'];
 const PERIODS = ['AM', 'PM'];
 
 /**
- * The "Custom" (free) slot: a dashed chip that lives at the end of a slots grid and,
- * on click, MORPHS into a glassy time-picker modal via a shared layout id - the button
- * itself grows into the modal in place (not a separate popup that appears elsewhere).
- * Inside it uses the reusable glassy <Select> for Hour / Minute / Period, so there are
- * no native inputs. Reused by the public booking modal and Canary's reschedule modal.
+ * The "Custom" (free) slot: the last slot of a slots grid, styled by the host like the
+ * others. On click a glassy time picker fades in over it out of a blur. Inside it uses the
+ * reusable glassy <Select> for Hour / Minute / Period, so there are no native inputs.
+ * Reused by the public booking modal, /book and Canary's reschedule modal.
  */
-const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, isUnavailable, zIndex = 1500 }: Props) => {
-    const lid = useId(); // unique shared-layout id (safe if two instances ever mount)
+const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, isUnavailable, zIndex = 1500, className, style }: Props) => {
     const [open, setOpen] = useState(false);
     const [h, setH] = useState('10');
     const [m, setM] = useState('00');
@@ -47,8 +49,7 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
     const [anchor, setAnchor] = useState({ top: 0, left: 0, width: 340 });
 
     const openPicker = () => {
-        // Anchor the modal over the chip so the morph grows out of the button "in place",
-        // clamped to stay fully on screen.
+        // Anchor the picker over the chip, clamped to stay fully on screen.
         const el = chipRef.current;
         if (el) {
             const r = el.getBoundingClientRect();
@@ -117,30 +118,18 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
     const chipActive = active && !!value;
 
     return (
-        <LayoutGroup>
-            {/* When open, the chip has morphed into the modal - a hidden placeholder keeps
-                its grid cell so the surrounding slots don't reflow. */}
-            {open ? (
-                <div aria-hidden style={{ visibility: 'hidden', padding: '10px 8px', fontSize: '0.75rem', fontWeight: 600 }}>Custom</div>
-            ) : (
-                <motion.button
-                    ref={chipRef}
-                    layoutId={lid}
-                    type="button"
-                    onClick={openPicker}
-                    aria-label="Pick a custom time"
-                    style={{
-                        padding: '10px 8px', borderRadius: 12,
-                        border: `1px dashed ${chipActive ? 'rgb(59,130,246)' : (isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.2)')}`,
-                        background: chipActive ? 'rgba(59,130,246,0.12)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-                        color: chipActive ? 'rgb(59,130,246)' : 'var(--text-primary)',
-                        fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                    }}
-                >
-                    {chipActive ? value : (<><Plus size={13} /> Custom</>)}
-                </motion.button>
-            )}
+        <>
+            <button
+                ref={chipRef}
+                type="button"
+                onClick={openPicker}
+                aria-pressed={chipActive}
+                aria-label={chipActive ? `Custom time, ${value}` : 'Pick a custom time'}
+                className={className}
+                style={style}
+            >
+                {chipActive ? value : (<><Plus size={13} aria-hidden="true" style={{ verticalAlign: '-2px', marginRight: 3 }} />Custom</>)}
+            </button>
 
             {createPortal(
                 <AnimatePresence>
@@ -155,12 +144,11 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
                                 style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex }}
                             />
                             <motion.div
-                                layoutId={lid}
+                                {...blurFade}
                                 role="dialog"
                                 aria-modal="true"
                                 aria-label="Pick a custom time"
                                 onClick={(e) => e.stopPropagation()}
-                                transition={{ type: 'spring', damping: 30, stiffness: 340, mass: 0.9 }}
                                 className="glass-panel-deep"
                                 style={{
                                     position: 'fixed', top: anchor.top, left: anchor.left, width: anchor.width, zIndex: zIndex + 1,
@@ -168,15 +156,7 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
                                     boxShadow: isDark ? '0 30px 80px rgba(0,0,0,0.6)' : '0 30px 80px rgba(0,0,0,0.28)',
                                 }}
                             >
-                                {/* Contents fade in just after the box has grown, so they don't smear
-                                    during the morph. */}
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ delay: 0.08, duration: 0.18 }}
-                                    style={{ display: 'flex', flexDirection: 'column', gap: 18 }}
-                                >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                         <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
                                             <Clock size={18} /> Custom Time
@@ -219,14 +199,14 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
                                             Set Time
                                         </button>
                                     </div>
-                                </motion.div>
+                                </div>
                             </motion.div>
                         </>
                     )}
                 </AnimatePresence>,
                 document.body
             )}
-        </LayoutGroup>
+        </>
     );
 };
 

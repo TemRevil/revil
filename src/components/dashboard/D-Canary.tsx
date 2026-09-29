@@ -421,6 +421,8 @@ const DCanary = () => {
         || editingMeeting.date.toDateString() !== editOriginal.date.toDateString()
         || (editingMeeting.category || '') !== (editOriginal.category || '')
     ));
+    // The edited time is one typed into the Custom slot, not one of the fixed hours.
+    const customOn = !!editingMeeting?.time && !TIME_OPTIONS.includes(editingMeeting.time);
 
     const handleDelete = async (id: string, meeting?: Meeting) => {
         setIsLoading(true);
@@ -1856,12 +1858,16 @@ const DCanary = () => {
                                                             );
                                                         })}
 
-                                                        {/* Custom (free) slot: the chip morphs into a glassy picker so
-                                                            you can reschedule to any time, not just the fixed hours.
+                                                        {/* Custom (free) slot, styled like the others: a picker so you can
+                                                            reschedule to any time, not just the fixed hours.
                                                             zIndex clears this modal's own z-[2000]. */}
                                                         <CustomTimePicker
+                                                            className="h-9 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer whitespace-nowrap"
+                                                            style={customOn
+                                                                ? { background: '#3b82f6', color: '#fff', borderColor: '#3b82f6' }
+                                                                : { background: 'transparent', color: isDark ? '#fff' : '#000', borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)' }}
                                                             isDark={isDark}
-                                                            active={!!editingMeeting.time && !TIME_OPTIONS.includes(editingMeeting.time)}
+                                                            active={customOn}
                                                             value={editingMeeting.time}
                                                             zIndex={2100}
                                                             validate={(t) => {
