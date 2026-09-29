@@ -39,7 +39,13 @@ const SEQ_KEY = 'revil_sid_seq';
 const HELLO_KEY = 'revil_sid_hello';
 const VID_KEY = 'revil_vid';
 const VISITS_KEY = 'revil_visits';
-export const OPT_OUT_KEY = 'revil_no_track';
+/**
+ * Marks the owner's own browser, set on reaching the dashboard. It replaced
+ * `revil_no_track`, which the sign-in page also set: any visitor who opened that
+ * page went untracked for good, so the old key is dropped rather than trusted.
+ */
+const OPT_OUT_KEY = 'revil_owner';
+const OLD_OPT_OUT_KEY = 'revil_no_track';
 
 const EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]{2,}/;
 const PHONE_RE = /(?:\+?\d[\d\s()-]{7,}\d)/;
@@ -102,6 +108,9 @@ const safeLocal = {
     },
     set(key: string, value: string): void {
         try { localStorage.setItem(key, value); } catch { /* private mode - the visit still records, it just won't be recognised next time */ }
+    },
+    remove(key: string): void {
+        try { localStorage.removeItem(key); } catch { /* private mode - nothing was stored */ }
     },
 };
 const safeSession = {
@@ -261,6 +270,7 @@ class Collector {
         onTailor?: (tailor: LinkTailor, link: { Name: string; For: string } | null) => void;
     }): void {
         if (this.started || typeof window === 'undefined') return;
+        safeLocal.remove(OLD_OPT_OUT_KEY);
         if (safeLocal.get(OPT_OUT_KEY) === '1') return;   // the owner's own browser
         if (looksAutomated()) return;
 
@@ -318,9 +328,11 @@ class Collector {
     private onTailor?: (tailor: LinkTailor, link: { Name: string; For: string } | null) => void;
 
     stop(reason: 'owner' | 'end' = 'end'): void {
+        // Marked even when nothing was recording: a page load that opens straight on
+        // the dashboard never starts a visit, and its browser is still the owner's.
+        if (reason === 'owner') safeLocal.set(OPT_OUT_KEY, '1');
         if (!this.started || this.stopped) return;
         this.stopped = true;
-        if (reason === 'owner') safeLocal.set(OPT_OUT_KEY, '1');
         this.flush(true, true, reason === 'owner');
         this.detach();
     }

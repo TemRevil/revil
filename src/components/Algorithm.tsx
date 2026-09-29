@@ -113,9 +113,12 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
     // ── the app's own vocabulary ─────────────────────────────────────────
     useEffect(() => {
-        if (currentSection === 'dashboard' || currentSection === 'secret') {
-            // This browser belongs to the owner. Close the visit and stop counting
-            // their own traffic from here on.
+        // Only the dashboard proves this browser is the owner's: it takes the owner's
+        // account. The sign-in page does not - anyone can open it from the tab on the
+        // right edge - and treating it as proof hid real visits (a link's card counted
+        // the visit while Trails hid the story) and stopped tracking that visitor for good.
+        if (currentSection === 'dashboard') {
+            // Close the visit and stop counting the owner's own traffic from here on.
             analytics.stop('owner');
             return;
         }

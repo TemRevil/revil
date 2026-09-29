@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps } from 'recharts';
-import { doc, onSnapshot, updateDoc, collection, getDocs, setDoc, deleteDoc, query, orderBy, limit as fsLimit, where } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, collection, getDocs, setDoc, deleteDoc, query, orderBy, limit as fsLimit, where, increment } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import FileImage from '../FileImage';
 import Loader from '../reactbits/Loader';
@@ -1065,11 +1065,24 @@ const DTrails = () => {
     };
 
     const deleteStory = async (id: string) => {
+        const story = sessions.find(s => s.Id === id);
         try {
             await deleteDoc(doc(db, 'Analytics', 'Sessions', 'Items', id));
+            // The link counted this visit; take it back so its card agrees with the
+            // list. An owner visit was never counted. A removed link has no card.
+            const linkId = story && !story.Owner ? story.Link?.Id : undefined;
+            let recounted = true;
+            if (linkId && links.some(l => l.id === linkId)) {
+                await updateDoc(doc(db, 'Analytics', 'Links', 'Items', linkId), {
+                    Opens: increment(-1),
+                    Sessions: increment(-1),
+                }).catch(() => { recounted = false; });
+            }
             setOpenStoryId(null);
             setPendingStory('');
-            showAlert({ type: 'success', message: 'Visit deleted.' });
+            showAlert(recounted
+                ? { type: 'success', message: 'Visit deleted.' }
+                : { type: 'error', message: 'Visit deleted, but its link still counts it.' });
         } catch {
             showAlert({ type: 'error', message: 'Could not delete that visit.' });
         }

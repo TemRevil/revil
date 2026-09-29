@@ -98,6 +98,7 @@ function describe(e: SessionEvent): string {
     }
     if (e.k === 'copy') return `Copied ${e.v === 'text' ? 'some text' : `your ${e.v}`}`;
     if (e.k === 'section' && e.v === BOOK_SECTION) return 'Opened the book page (/book)';
+    if (e.k === 'section' && e.v === 'secret') return 'Opened the sign-in page';
     if (e.k === 'contact_sent') {
         if (e.v === 'book') return 'Booked a call on the book page (/book)';
         if (e.v === 'meeting') return 'Booked a call in the contact modal';

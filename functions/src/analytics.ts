@@ -675,100 +675,25 @@ async function applyFlush(ctx: {
   // Owner visits are recorded (so the tab that flipped the switch has a record)
   // but never counted: they would drown the real numbers.
   if (!owner && !existing?.Owner) {
-    const dayPatch: Record<string, unknown> = {
-      ActiveMs: FV.increment(activeMs),
-      Projects: FV.increment(sumBy(projects, "Opens")),
-      Socials: FV.increment(sumBy(socials, "Clicks")),
-      Contacts: FV.increment(contactOpens),
-      Cv: FV.increment(cvOpens),
-    };
-    const totalsPatch: Record<string, unknown> = {
-      LastAt: now,
-      Events: FV.increment(events.length),
-      Projects: FV.increment(sumBy(projects, "Opens")),
-      Socials: FV.increment(sumBy(socials, "Clicks")),
-      Contacts: FV.increment(contactOpens),
-      Cv: FV.increment(cvOpens),
-    };
-
-    if (isNew) {
-      dayPatch.Sessions = FV.increment(1);
-      totalsPatch.Sessions = FV.increment(1);
-      if (visit <= 1) {
-        dayPatch.Visitors = FV.increment(1);
-        totalsPatch.Visitors = FV.increment(1);
-      } else {
-        dayPatch.Returning = FV.increment(1);
-      }
-      if (geo) dayPatch.Countries = { [geo.Code]: FV.increment(1) };
-      if (source) {
-        const sourceKey = safeKey(source.Name);
-        if (sourceKey) {
-          dayPatch.Sources = { [sourceKey]: FV.increment(1) };
-          // One document per origin, the same shape the socials rollup uses, so the
-          // dashboard can list them without reading every session back.
-          batch.set(db().doc(`${SOURCES}/${sourceKey}`), {
-            Name: source.Name,
-            Kind: source.Kind,
-            Sessions: FV.increment(1),
-            LastAt: now,
-          }, { merge: true });
-        }
-      }
-      const deviceType = safeKey(device.Type);
-      if (deviceType) dayPatch.Devices = { [deviceType]: FV.increment(1) };
-      if (linkRow) {
-        dayPatch.LinkOpens = FV.increment(1);
-        totalsPatch.LinkOpens = FV.increment(1);
-      }
-    }
-
-    batch.set(db().doc(`${DAYS}/${day}`), dayPatch, { merge: true });
-    batch.set(db().doc(TOTALS), totalsPatch, { merge: true });
-
-    // Per-project engagement stays on the project itself: the public project modal
-    // shows these counts. What changed is that only this function can write them.
-    //
-    // The id comes from the caller's payload and only ever passed safeKey(), which
-    // says the string is a legal document id - not that the project exists. Combined
-    // with merge:true (a create when absent) and the Admin SDK's rules bypass, that
-    // let anyone holding an App Check token post junk ids and have them appear as
-    // real documents in the PUBLICLY READABLE Projects collection, 60 per request.
-    // So: only raise counters on a project that is already there.
-    const projectIds = Object.keys(projects);
-    if (projectIds.length) {
-      const refs = projectIds.map((id) => db().doc(`Projects/${id}`));
-      const snaps = await db().getAll(...refs);
-      const known = new Set(snaps.filter((snap) => snap.exists).map((snap) => snap.id));
-
-      for (const [projectId, row] of Object.entries(projects)) {
-        if (!known.has(projectId)) continue; // unknown id - drop it, never create it
-        const views: Record<string, unknown> = {};
-        if (row.Opens) views.Project = FV.increment(row.Opens);
-        if (row.Live) views.Live = FV.increment(row.Live);
-        if (row.Github) views.Github = FV.increment(row.Github);
-        if (row.Download) views.Download = FV.increment(row.Download);
-        if (Object.keys(views).length) {
-          batch.set(db().doc(`Projects/${projectId}`), { Views: views }, { merge: true });
-        }
-      }
-    }
-
-    for (const [name, row] of Object.entries(socials)) {
-      batch.set(db().doc(`${SOCIALS}/${name}`), {
-        Clicks: FV.increment(row.Clicks),
-        AwayMs: FV.increment(row.AwayMs),
-        LastAt: now,
-      }, { merge: true });
-    }
-
-    if (isNew && linkRow) {
-      batch.set(db().doc(`${LINKS}/${linkRow.id}`), {
-        Opens: FV.increment(1),
-        Sessions: FV.increment(1),
-        LastOpenAt: now,
-      }, { merge: true });
-    }
+    await addCounts(batch, {
+      opened: isNew,
+      visit,
+      countryCode: geo?.Code || "",
+      source,
+      deviceType: safeKey(device.Type) || "",
+      linkId: isNew && linkRow ? linkRow.id : "",
+      activeMs,
+      projects,
+      socials,
+      contactOpens,
+      cvOpens,
+      events: events.length,
+    }, 1, day, now);
+  } else if (owner && existing && !existing.Owner) {
+    // Recognised as the owner part-way through the visit: every flush before this
+    // one was counted as a stranger's. Take them back out, or the totals and the
+    // link's card would count a visit that Trails hides as the owner's own.
+    await addCounts(batch, countedSoFar(existing), -1, dayOf(existing.StartedAt), now);
   }
 
   await batch.commit();
@@ -796,6 +721,167 @@ async function applyFlush(ctx: {
     ...(tailor ? { tailor } : {}),
     ...(linkRow ? { link: { Name: str(linkRow.data.Name, 120), For: str(linkRow.data.For, 120) } } : {}),
   };
+}
+
+// ── counting ─────────────────────────────────────────────────────────
+/** What one visit adds to the rollups: a flush's deltas, or a whole visit so far. */
+interface Counts {
+  /** The visit itself: sessions, visitors, country, source, device, link open. */
+  opened: boolean;
+  visit: number;
+  countryCode: string;
+  source: { Name: string; Kind: SourceKind } | null;
+  deviceType: string;
+  linkId: string;
+  activeMs: number;
+  projects: Record<string, Record<string, number>>;
+  socials: Record<string, Record<string, number>>;
+  contactOpens: number;
+  cvOpens: number;
+  events: number;
+}
+
+/**
+ * Add a visit's counts to the day, the totals, the projects, the socials, the
+ * sources and its link (sign 1), or take them back out (sign -1). Taking back
+ * never creates a document: a link or project removed since stays removed.
+ */
+async function addCounts(
+  batch: admin.firestore.WriteBatch,
+  c: Counts,
+  sign: 1 | -1,
+  day: string,
+  now: number,
+): Promise<void> {
+  const inc = (n: number) => FV.increment(sign * n);
+  const projectOpens = sumBy(c.projects, "Opens");
+  const socialClicks = sumBy(c.socials, "Clicks");
+
+  const dayPatch: Record<string, unknown> = {
+    ActiveMs: inc(c.activeMs),
+    Projects: inc(projectOpens),
+    Socials: inc(socialClicks),
+    Contacts: inc(c.contactOpens),
+    Cv: inc(c.cvOpens),
+  };
+  const totalsPatch: Record<string, unknown> = {
+    Events: inc(c.events),
+    Projects: inc(projectOpens),
+    Socials: inc(socialClicks),
+    Contacts: inc(c.contactOpens),
+    Cv: inc(c.cvOpens),
+  };
+  if (sign > 0) totalsPatch.LastAt = now;
+
+  if (c.opened) {
+    dayPatch.Sessions = inc(1);
+    totalsPatch.Sessions = inc(1);
+    if (c.visit <= 1) {
+      dayPatch.Visitors = inc(1);
+      totalsPatch.Visitors = inc(1);
+    } else {
+      dayPatch.Returning = inc(1);
+    }
+    if (c.countryCode) dayPatch.Countries = { [c.countryCode]: inc(1) };
+    const sourceKey = c.source ? safeKey(c.source.Name) : null;
+    if (c.source && sourceKey) {
+      dayPatch.Sources = { [sourceKey]: inc(1) };
+      // One document per origin, the same shape the socials rollup uses, so the
+      // dashboard can list them without reading every session back.
+      batch.set(db().doc(`${SOURCES}/${sourceKey}`), sign > 0
+        ? { Name: c.source.Name, Kind: c.source.Kind, Sessions: inc(1), LastAt: now }
+        : { Sessions: inc(1) }, { merge: true });
+    }
+    if (c.deviceType) dayPatch.Devices = { [c.deviceType]: inc(1) };
+    if (c.linkId) {
+      dayPatch.LinkOpens = inc(1);
+      totalsPatch.LinkOpens = inc(1);
+    }
+  }
+
+  batch.set(db().doc(`${DAYS}/${day}`), dayPatch, { merge: true });
+  batch.set(db().doc(TOTALS), totalsPatch, { merge: true });
+
+  // Per-project engagement stays on the project itself: the public project modal
+  // shows these counts. What changed is that only this function can write them.
+  //
+  // The id comes from the caller's payload and only ever passed safeKey(), which
+  // says the string is a legal document id - not that the project exists. Combined
+  // with merge:true (a create when absent) and the Admin SDK's rules bypass, that
+  // let anyone holding an App Check token post junk ids and have them appear as
+  // real documents in the PUBLICLY READABLE Projects collection, 60 per request.
+  // So: only raise counters on a project that is already there.
+  const projectIds = Object.keys(c.projects);
+  if (projectIds.length) {
+    const refs = projectIds.map((id) => db().doc(`Projects/${id}`));
+    const snaps = await db().getAll(...refs);
+    const known = new Set(snaps.filter((snap) => snap.exists).map((snap) => snap.id));
+
+    for (const [projectId, row] of Object.entries(c.projects)) {
+      if (!known.has(projectId)) continue; // unknown id - drop it, never create it
+      const views: Record<string, unknown> = {};
+      if (row.Opens) views.Project = inc(row.Opens);
+      if (row.Live) views.Live = inc(row.Live);
+      if (row.Github) views.Github = inc(row.Github);
+      if (row.Download) views.Download = inc(row.Download);
+      if (Object.keys(views).length) {
+        batch.set(db().doc(`Projects/${projectId}`), { Views: views }, { merge: true });
+      }
+    }
+  }
+
+  for (const [name, row] of Object.entries(c.socials)) {
+    batch.set(db().doc(`${SOCIALS}/${name}`), {
+      Clicks: inc(row.Clicks || 0),
+      AwayMs: inc(row.AwayMs || 0),
+      ...(sign > 0 ? { LastAt: now } : {}),
+    }, { merge: true });
+  }
+
+  if (c.opened && c.linkId) {
+    const linkRef = db().doc(`${LINKS}/${c.linkId}`);
+    if (sign > 0 || (await linkRef.get()).exists) {
+      batch.set(linkRef, {
+        Opens: inc(1),
+        Sessions: inc(1),
+        ...(sign > 0 ? { LastOpenAt: now } : {}),
+      }, { merge: true });
+    }
+  }
+}
+
+/** Everything a visit has had counted so far, read back from its story. */
+function countedSoFar(s: Record<string, unknown>): Counts {
+  const obj = (v: unknown): Record<string, unknown> => (isObj(v) ? v : {});
+  const rows = (v: unknown, fields: string[]): Record<string, Record<string, number>> => {
+    const out: Record<string, Record<string, number>> = {};
+    for (const [key, row] of Object.entries(obj(v))) {
+      if (!safeKey(key) || !isObj(row)) continue;
+      out[key] = Object.fromEntries(fields.map((f) => [f, num(row[f], Number.MAX_SAFE_INTEGER)]));
+    }
+    return out;
+  };
+  const source = obj(s.Source);
+  return {
+    opened: true,
+    visit: Math.max(1, num(s.Visit, 100000)),
+    countryCode: safeKey(obj(s.Geo).Code) || "",
+    source: typeof source.Name === "string" ? { Name: source.Name, Kind: source.Kind as SourceKind } : null,
+    deviceType: safeKey(obj(s.Device).Type) || "",
+    linkId: str(obj(s.Link).Id, 40),
+    activeMs: num(s.ActiveMs, Number.MAX_SAFE_INTEGER),
+    projects: rows(s.Projects, ["Opens", "Live", "Github", "Download"]),
+    socials: rows(s.Socials, ["Clicks", "AwayMs"]),
+    contactOpens: num(obj(s.Contact).Opens, Number.MAX_SAFE_INTEGER),
+    cvOpens: num(obj(s.Cv).Opens, Number.MAX_SAFE_INTEGER),
+    events: Array.isArray(s.Events) ? s.Events.length : 0,
+  };
+}
+
+/** The UTC day a visit began on, the day its opening flush was counted under. */
+function dayOf(startedAt: unknown): string {
+  const at = num(startedAt, Number.MAX_SAFE_INTEGER);
+  return at ? new Date(at).toISOString().slice(0, 10) : todayKey();
 }
 
 // ── small shapers ────────────────────────────────────────────────────
