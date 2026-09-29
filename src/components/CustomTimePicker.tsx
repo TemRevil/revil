@@ -129,7 +129,7 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
                 style={style}
             >
                 {chipActive ? value : (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                         <Plus size={13} aria-hidden="true" />Custom
                     </span>
                 )}
