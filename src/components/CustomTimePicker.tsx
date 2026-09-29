@@ -128,7 +128,11 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
                 className={className}
                 style={style}
             >
-                {chipActive ? value : (<><Plus size={13} aria-hidden="true" style={{ verticalAlign: '-2px', marginRight: 3 }} />Custom</>)}
+                {chipActive ? value : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                        <Plus size={13} aria-hidden="true" />Custom
+                    </span>
+                )}
             </button>
 
             {createPortal(
