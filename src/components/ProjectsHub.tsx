@@ -128,7 +128,7 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
                            Embedded mode (mobile single-scroll page): sticks to the bottom of the
                            viewport WITHIN the Projects section instead of floating over everything. */
                         className={embedded
-                            ? 'sticky bottom-[90px] z-40 mx-auto w-fit mb-4'
+                            ? 'sticky bottom-[90px] md:bottom-[106px] z-40 mx-auto w-fit mb-4'
                             : 'fixed bottom-[90px] md:bottom-[106px] left-1/2 -translate-x-1/2 z-50'}
                         onMouseEnter={handleSubnavEnter}
                         onMouseLeave={handleSubnavLeave}

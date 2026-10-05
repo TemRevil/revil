@@ -115,23 +115,27 @@ function App() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextSection, setNextSection] = useState<Section>('home');
 
-  // Phone layout: instead of swapping full-screen sections with a curtain/slide, the
-  // public sections (home, stack, projects) live in ONE smooth-scrolling page. Desktop
+  // Touch layout: instead of swapping full-screen sections with a curtain/slide, the
+  // public sections (home, stack, projects) live in ONE smooth-scrolling page. That is
+  // phones and every touch screen, tablets included: the switcher pages on a wheel and on
+  // a long swipe from a section's end, and on an iPad the hero has no end to reach, so a
+  // swipe only rubber-banded and the page looked like all there was. A mouse or trackpad
   // keeps the section switcher. `mobileActiveSection` tracks which one is in view so the
   // navbar highlight follows the scroll (a scroll-spy sets it below).
-  const [isMobile, setIsMobile] = useState(false);
+  const [scrollLayout, setScrollLayout] = useState(false);
   const [mobileActiveSection, setMobileActiveSection] = useState<Section>('home');
   const mobileScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 767px)');
-    const update = () => setIsMobile(mq.matches);
+    // any-pointer, not pointer: an iPad with a trackpad attached still has a touch screen.
+    const mq = window.matchMedia('(max-width: 767px), (any-pointer: coarse)');
+    const update = () => setScrollLayout(mq.matches);
     update();
     mq.addEventListener('change', update);
     return () => mq.removeEventListener('change', update);
   }, []);
-  // True when we should show the single-scroll phone page instead of the switcher.
-  const mobileScroll = isMobile && PUBLIC_SCROLL_SECTIONS.includes(currentSection);
+  // True when we should show the single-scroll page instead of the switcher.
+  const mobileScroll = scrollLayout && PUBLIC_SCROLL_SECTIONS.includes(currentSection);
 
   // One scroll pass drives BOTH concerns for the phone page (3 rects per scroll, passive):
   //   1. Lazy-mount - only Hero renders up front; Stack and Projects mount once they come
@@ -194,7 +198,7 @@ function App() {
   // a section can never end up permanently blank if a scroll event is missed.
   const isMounted = (id: Section) => heroSettled || mountedSections.has(id);
 
-  // Widening past the phone breakpoint hands the reader back to the section switcher,
+  // Leaving the touch layout (widening past the phone breakpoint) hands the reader back to the section switcher,
   // which only knows `currentSection` - and the phone page leaves that on whatever it
   // started as while the reader scrolls. So resizing mid-page threw them back to the top
   // of home from wherever they had got to. Carry the scroll-spy's answer over as they
@@ -202,10 +206,10 @@ function App() {
   // opens the dashboard, which must not drag them back to a public section.
   // Adjusted during render rather than in an effect, so the switcher never paints home
   // for a frame before correcting itself.
-  const [wasMobile, setWasMobile] = useState(false);
-  if (wasMobile !== isMobile) {
-    setWasMobile(isMobile);
-    if (wasMobile
+  const [wasScrollLayout, setWasScrollLayout] = useState(false);
+  if (wasScrollLayout !== scrollLayout) {
+    setWasScrollLayout(scrollLayout);
+    if (wasScrollLayout
       && PUBLIC_SCROLL_SECTIONS.includes(currentSection)
       && !sameView(currentSection, mobileActiveSection)) {
       setCurrentSection(mobileActiveSection);
@@ -381,17 +385,17 @@ function App() {
     }
   }, [currentSection, isTransitioning]);
 
-  // Navbar taps: on the phone scroll page, a public-section tap smooth-scrolls to it
+  // Navbar taps: on the touch scroll page, a public-section tap smooth-scrolls to it
   // (no swap/curtain); everything else (secret, dashboard, or desktop) uses the switcher.
   const handleNavbarNav = useCallback((section: Section) => {
-    if (isMobile && PUBLIC_SCROLL_SECTIONS.includes(section) && PUBLIC_SCROLL_SECTIONS.includes(currentSectionRef.current)) {
+    if (scrollLayout && PUBLIC_SCROLL_SECTIONS.includes(section) && PUBLIC_SCROLL_SECTIONS.includes(currentSectionRef.current)) {
       const target = section === 'view_link' ? 'home' : section;
       document.getElementById(`mobsec-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setMobileActiveSection(target as Section);
     } else {
       navigateTo(section);
     }
-  }, [isMobile, navigateTo]);
+  }, [scrollLayout, navigateTo]);
 
   const handleCurtainCovered = useCallback(() => { }, []);
 
