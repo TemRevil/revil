@@ -183,7 +183,7 @@ export default function BookPage() {
                                 <h2 id="bp-title">Book a call</h2>
                             </div>
                             <ul className="meta">
-                                <li><Clock size={15} aria-hidden="true" />30 minutes</li>
+                                <li><Clock size={15} aria-hidden="true" />60 minutes</li>
                                 <li><Video size={15} aria-hidden="true" />Google Meet</li>
                                 <li><Check size={15} aria-hidden="true" />Free</li>
                             </ul>

@@ -5,7 +5,7 @@ const siteUrl = 'https://temrevil.com'
 const pageUrl = `${siteUrl}/book`
 const title = 'Book a call | Tem Revil'
 const description =
-  'Book a free 30 minute Google Meet call with Tem Revil (Mohammed Ahmed), frontend and AI engineer from El Mansoura, Egypt: your project, a role, a collab or a podcast. Pick a time in your own time zone.'
+  'Book a free 60 minute Google Meet call with Tem Revil (Mohammed Ahmed), frontend and AI engineer from El Mansoura, Egypt: your project, a role, a collab or a podcast. Pick a time in your own time zone.'
 const image = { url: '/book/tem-cutout.webp', width: 920, height: 1286, alt: 'Tem Revil (Mohammed Ahmed)' }
 
 // Nested metadata replaces the root's openGraph/twitter objects wholesale, so every
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     type: 'website',
     url: pageUrl,
     title: 'Book a call with Tem Revil',
-    description: 'A free 30 minute Google Meet call. Pick a time in your own time zone.',
+    description: 'A free 60 minute Google Meet call. Pick a time in your own time zone.',
     siteName: 'Tem Revil',
     locale: 'en_US',
     images: [image],
@@ -37,13 +37,13 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Book a call with Tem Revil',
-    description: 'A free 30 minute Google Meet call. Pick a time in your own time zone.',
+    description: 'A free 60 minute Google Meet call. Pick a time in your own time zone.',
     images: [image.url],
   },
   other: {
-    subject: 'Book a free 30 minute call with Tem Revil',
+    subject: 'Book a free 60 minute call with Tem Revil',
     summary:
-      'Booking page for Mohammed Ahmed (Tem Revil), frontend and AI engineer. Free 30 minute Google Meet calls about projects, roles, collaborations and podcasts.',
+      'Booking page for Mohammed Ahmed (Tem Revil), frontend and AI engineer. Free 60 minute Google Meet calls about projects, roles, collaborations and podcasts.',
   },
 }
 
@@ -68,7 +68,7 @@ const structuredData = {
       mainEntity: { '@id': `${pageUrl}#service` },
       potentialAction: {
         '@type': 'ScheduleAction',
-        name: 'Book a free 30 minute call',
+        name: 'Book a free 60 minute call',
         target: {
           '@type': 'EntryPoint',
           urlTemplate: pageUrl,
@@ -83,10 +83,10 @@ const structuredData = {
     {
       '@type': 'Service',
       '@id': `${pageUrl}#service`,
-      name: 'Free 30 minute call with Tem Revil',
+      name: 'Free 60 minute call with Tem Revil',
       serviceType: 'Consultation call',
       description:
-        'A free 30 minute video call on Google Meet with Mohammed Ahmed (Tem Revil) about a project, a role, a collaboration or a podcast. The invite and Meet link are emailed after booking.',
+        'A free 60 minute video call on Google Meet with Mohammed Ahmed (Tem Revil) about a project, a role, a collaboration or a podcast. The invite and Meet link are emailed after booking.',
       provider: { '@id': `${siteUrl}/#person` },
       areaServed: 'Worldwide',
       availableChannel: {
@@ -129,7 +129,7 @@ const structuredData = {
           name: 'How long is the call and what does it cost?',
           acceptedAnswer: {
             '@type': 'Answer',
-            text: 'The call is 30 minutes on Google Meet and it is free.',
+            text: 'The call is 60 minutes on Google Meet and it is free.',
           },
         },
         {

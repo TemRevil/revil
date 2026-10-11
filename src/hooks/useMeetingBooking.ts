@@ -55,7 +55,7 @@ export const getDaysInMonth = (date: Date) => {
 };
 
 /**
- * The public "book a 30 minute call" flow: host availability + booked slots from
+ * The public "book a 60 minute call" flow: host availability + booked slots from
  * Firestore, time-zone conversion, the calendar's bookable days, and the submit
  * (the bookMeeting function creates the Calendar event and records the meeting).
  * Shared by the contact modal (M-Contact) and the standalone /book page, so both

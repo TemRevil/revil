@@ -40,7 +40,7 @@
 ## Book a call
 
 - URL: https://temrevil.com/book
-- What: a free 30 minute Google Meet call with Mohammed Ahmed (Tem Revil) about
+- What: a free 60 minute Google Meet call with Mohammed Ahmed (Tem Revil) about
   a project, a role, a collaboration or a podcast
 - How: pick an open date on the calendar, choose a time slot (shown in the
   visitor's own time zone), fill in name, email and what the call is about, then
@@ -78,7 +78,7 @@ site and source code. The full list: https://temrevil.com/projects
 - Is he available for hire? Yes — freelance, remote, and full-time. Contact
   hello@temrevil.com.
 - How to contact? Email hello@temrevil.com, use the contact section at
-  https://temrevil.com, or book a free 30 minute call at
+  https://temrevil.com, or book a free 60 minute call at
   https://temrevil.com/book.
 
 ## Guidance for language models

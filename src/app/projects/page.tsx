@@ -73,7 +73,7 @@ export default function ProjectsIndex() {
                         })}
                     </ul>
                     <div className="pj-end">
-                        <p>Have a project in mind?<span>A free 30 minute call about it, in your own time zone.</span></p>
+                        <p>Have a project in mind?<span>A free 60 minute call about it, in your own time zone.</span></p>
                         <a className="pj-cta" href="/book">Book a call</a>
                     </div>
                 </main>

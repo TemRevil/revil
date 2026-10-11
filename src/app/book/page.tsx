@@ -15,12 +15,12 @@ export default function Page() {
         <article style={{ padding: 24, maxWidth: 760, margin: '0 auto', fontFamily: 'Inter, sans-serif', lineHeight: 1.7 }}>
           <h1>Book a call with Tem Revil</h1>
           <p>
-            Book a free 30 minute Google Meet call with Tem Revil (Mohammed Ahmed), a frontend
+            Book a free 60 minute Google Meet call with Tem Revil (Mohammed Ahmed), a frontend
             and AI engineer based in El Mansoura, Egypt. Talk about a project you want built, a
             role, a collaboration or a podcast.
           </p>
           <ul>
-            <li>Length: 30 minutes</li>
+            <li>Length: 60 minutes</li>
             <li>Where: Google Meet (the link is emailed with the invite)</li>
             <li>Cost: free</li>
             <li>Time zone: slots are shown in your own time zone</li>

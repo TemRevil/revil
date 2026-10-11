@@ -98,7 +98,7 @@ export default function Page() {
           <nav aria-label="Pages">
             <h2>Pages</h2>
             <ul>
-              <li><a href="/book">Book a free 30 minute call</a></li>
+              <li><a href="/book">Book a free 60 minute call</a></li>
               <li><a href="/projects">All projects</a></li>
               {projectPages.map((p) => (
                 <li key={p.slug}><a href={`/projects/${p.slug}`}>{p.name}</a></li>

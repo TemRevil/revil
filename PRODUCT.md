@@ -26,7 +26,7 @@ A frontend and AI engineer who builds motion-rich web apps and puts AI to work i
 ## Capabilities and Constraints
 
 - Next.js 16 static export on Hostinger; Firebase (Firestore, Functions, Storage, Auth) behind it. A push to main deploys the site.
-- Booking: 30 min, free, Google Meet link generated automatically. Host working days and hours are converted to the guest's time zone. Busy slots come from Settings/BookedSlots. The guest can suggest a custom time. Fields: name, email, what it's about.
+- Booking: 60 min, free, Google Meet link generated automatically. Host working days and hours are converted to the guest's time zone. Busy slots come from Settings/BookedSlots. The guest can suggest a custom time. Fields: name, email, what it's about.
 - Share links can tailor what a visitor sees (Analytics/Links, Tailor).
 
 ## Brand Commitments

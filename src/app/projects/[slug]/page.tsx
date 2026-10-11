@@ -155,7 +155,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                     )}
 
                     <div className="pj-end">
-                        <p>Want something like {name} built?<span>A free 30 minute call about your project, in your own time zone.</span></p>
+                        <p>Want something like {name} built?<span>A free 60 minute call about your project, in your own time zone.</span></p>
                         <a className="pj-cta" href="/book">Book a call</a>
                     </div>
                 </main>
