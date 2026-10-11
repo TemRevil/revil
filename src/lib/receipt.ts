@@ -1,4 +1,14 @@
-import { Currency, formatMoney } from './treasury';
+/**
+ * The light receipt / payment request - the ONE builder for it. The dashboard's receipt
+ * modal and the AI's send_treasury_receipt tool both use it, so a receipt looks and adds
+ * up the same whoever sends it. The functions build copies this file to
+ * functions/src/receipt.ts (functions/scripts/sync-shared.mjs): edit it here. It may only
+ * import ./money and ./html.
+ */
+import {
+    type Currency, type MoneyIncome, type MoneyProject, type Rates,
+    convert, formatMoney, hasInstallments, projectContractTotal, projectPayments, projectReceived,
+} from './money';
 import { escapeHtml as esc } from './html';
 
 export interface ReceiptLine {
@@ -59,6 +69,83 @@ export function receiptNumber(d = new Date()): string {
     const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
     return `RCP-${ymd}-${rand}`;
 }
+
+/**
+ * One project billed in full (the whole contract, not a single installment or month), in
+ * the receipt currency `cur`. A retainer's Paid is capped at one month's rate: its lifetime
+ * total against a per-month price read as Price 3,000 / Paid 18,000.
+ */
+export function projectReceiptLine(
+    p: MoneyProject & { name?: string },
+    income: MoneyIncome[],
+    rates: Rates,
+    cur: Currency,
+): ReceiptLine {
+    const cvt = (n: number) => convert(n, p.priceCurrency, cur, rates);
+    const receivedNative = projectReceived(p, income, rates);
+    const priceNative = p.monthly ? (p.priceAmount || 0) : projectContractTotal(p);
+    return {
+        name: p.name || 'Project',
+        note: p.monthly
+            ? 'Monthly retainer'
+            : hasInstallments(p)
+                ? `${p.installmentMonths} installments${p.installmentPercent ? ` (+${p.installmentPercent}%)` : ''}`
+                : undefined,
+        price: cvt(priceNative),
+        paid: cvt(p.monthly ? Math.min(receivedNative, priceNative) : receivedNative),
+        balance: p.monthly ? null : cvt(Math.max(0, priceNative - receivedNative)),
+    };
+}
+
+/** One payment behind a receipt's Paid figure. `date` is '' for the undated legacy amount. */
+export interface ReceiptPaymentRow<T extends MoneyIncome = MoneyIncome> {
+    date: string;
+    amount: number;
+    project: string;
+    /** The income entry it came from (absent for the legacy amount). */
+    entry?: T;
+}
+
+/**
+ * The real payments behind the receipt, oldest first, in the receipt currency - read
+ * straight out of the income log rather than typed. A project is routinely settled over
+ * several dates, so this is a list, not a date.
+ *
+ * A line that bills ONE payment (`onePayment`: an installment, or any retainer, whose Paid
+ * is one month) lists only the most recent payment, because that is the one it confirms.
+ */
+export function receiptPaymentRows<T extends MoneyIncome>(
+    projects: (MoneyProject & { name?: string })[],
+    income: T[],
+    rates: Rates,
+    cur: Currency,
+    onePayment: (p: MoneyProject) => boolean,
+): ReceiptPaymentRow<T>[] {
+    return projects
+        .flatMap(p => {
+            const all = projectPayments(p, income);
+            const one = onePayment(p);
+            const rows: ReceiptPaymentRow<T>[] = (one ? all.slice(-1) : all).map(i => ({
+                date: i.date || '',
+                amount: convert(i.amount || 0, i.currency, cur, rates),
+                project: p.name || 'Project',
+                entry: i,
+            }));
+            // The legacy per-project paidAmount predates the income log and carries no date,
+            // yet projectReceived still counts it - so a whole-project breakdown that ignored
+            // it would not add up to the Paid figure printed right above it. Give it a row.
+            const legacy = p.paidAmount || 0;
+            if (!one && legacy > 0) {
+                rows.unshift({ date: '', amount: convert(legacy, p.priceCurrency, cur, rates), project: p.name || 'Project' });
+            }
+            return rows;
+        })
+        // Undated rows sort to the front, which is where they belong - they are the oldest.
+        .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** How an undated (legacy) payment row is labelled on a receipt. */
+export const LEGACY_PAYMENT_LABEL = 'Recorded before the payment log';
 
 const ACCENT = '#3395ff';
 const INK = '#0f172a';

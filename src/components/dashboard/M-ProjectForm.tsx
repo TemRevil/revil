@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ProjectData, TagData, ContributorData } from '../../types';
 import FileImage from '../FileImage';
 import { useObjectURL } from '../../hooks/useObjectURL';
+import useTheme from '../../hooks/useTheme';
 
 interface ProjectFormData extends Omit<ProjectData, 'images' | 'icon'> {
     images: (File | string)[];
@@ -84,7 +85,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
         listing: 0
     });
 
-    const [isDark, setIsDark] = useState(true);
+    const isDark = useTheme();
     const [selectTagOpen, setSelectTagOpen] = useState(false);
     const [selectContribOpen, setSelectContribOpen] = useState(false);
     const [availableTags, setAvailableTags] = useState<TagData[]>([]);
@@ -95,14 +96,6 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
     const imagesInputRef = useRef<HTMLInputElement>(null);
 
     // --- EFFECTS ---
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
-
     // Fetch Tags and Contributors from Firebase
     useEffect(() => {
         const unsubTags = onSnapshot(doc(db, 'Tags', 'Tags'), (snapshot) => {

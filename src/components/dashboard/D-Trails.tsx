@@ -18,8 +18,9 @@ import RollingNumber from '../RollingNumber';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
 import MStory, { DeviceIcon, Flag, isLive, loadFlagFont } from './M-Story';
-import { formatMs, sawBookPage, sentLabel, type SessionDoc, type LinkDoc, type TotalsDoc } from '../../lib/analytics/types';
+import { formatMs, sawBookPage, sentLabel, type SessionDoc, type LinkDoc, type TotalsDoc, type DayDoc, type SocialStatsDoc } from '../../lib/analytics/types';
 import { STORY_KEY } from '../Algorithm';
+import useTheme from '../../hooks/useTheme';
 
 /**
  * Trails - what people actually did on the portfolio.
@@ -49,10 +50,8 @@ interface LinkRow extends LinkDoc {
     url: string;
 }
 
-interface SocialRow {
+interface SocialRow extends Pick<SocialStatsDoc, 'Clicks' | 'AwayMs'> {
     name: string;
-    Clicks: number;
-    AwayMs: number;
 }
 
 interface SourceRow {
@@ -732,7 +731,7 @@ const STORY_FILTERS: Array<{ id: StoryFilter; label: string }> = [
 
 const DTrails = () => {
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     const [isLoading, setIsLoading] = useState(false);
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
 
@@ -779,14 +778,6 @@ const DTrails = () => {
         return () => window.removeEventListener('resize', onResize);
     }, []);
 
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
-
     // ── data ─────────────────────────────────────────────────────────────
     useEffect(() => {
         // Every listener below reads /Analytics, which the rules open to the admin
@@ -811,7 +802,7 @@ const DTrails = () => {
             const rows = snap.docs
                 .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d.id))
                 .map(d => {
-                    const v = d.data() as Record<string, number>;
+                    const v = d.data() as Partial<DayDoc>;
                     return {
                         date: d.id,
                         value: Number(v.Sessions || 0),
@@ -843,7 +834,7 @@ const DTrails = () => {
 
         const socialsUnsub = onSnapshot(collection(db, 'Analytics', 'Socials', 'Items'), snap => {
             setSocials(snap.docs
-                .map(d => ({ name: d.id, ...(d.data() as { Clicks: number; AwayMs: number }) }))
+                .map(d => ({ name: d.id, ...(d.data() as SocialStatsDoc) }))
                 .sort((a, b) => (b.Clicks || 0) - (a.Clicks || 0)));
         }, onDenied);
 

@@ -7,6 +7,7 @@ const firebaseIcon = '/svgs/firebase.svg'; // served from public/ (see M-StackIt
 import { motion, AnimatePresence } from 'motion/react';
 
 import { ContributorData } from '../../types';
+import { getCroppedImg, readFileAsDataUrl, type CropArea } from '../../utils/cropImage';
 
 interface MContributorFormProps {
     isOpen: boolean;
@@ -14,70 +15,6 @@ interface MContributorFormProps {
     onSave: (data: ContributorData) => void;
     initialData?: ContributorData | null;
 }
-
-interface CropArea {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-}
-
-// Helper to create the cropped image
-const createImage = (url: string): Promise<HTMLImageElement> =>
-    new Promise((resolve, reject) => {
-        const image = new Image();
-        image.addEventListener('load', () => resolve(image));
-        image.addEventListener('error', (error) => reject(error));
-        image.src = url;
-    });
-
-const getCroppedImg = (imageSrc: string, pixelCrop: CropArea): Promise<File> => {
-    return new Promise((resolve, reject) => {
-        (async () => {
-            try {
-                const image = await createImage(imageSrc);
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-
-                if (!ctx) {
-                    reject(new Error('No 2d context'));
-                    return;
-                }
-
-                if (!pixelCrop || pixelCrop.width <= 0 || pixelCrop.height <= 0) {
-                    reject(new Error(`Invalid crop dimensions`));
-                    return;
-                }
-
-                canvas.width = pixelCrop.width;
-                canvas.height = pixelCrop.height;
-
-                ctx.drawImage(
-                    image,
-                    pixelCrop.x,
-                    pixelCrop.y,
-                    pixelCrop.width,
-                    pixelCrop.height,
-                    0,
-                    0,
-                    pixelCrop.width,
-                    pixelCrop.height
-                );
-
-                canvas.toBlob((blob) => {
-                    if (!blob) {
-                        reject(new Error('Canvas is empty'));
-                        return;
-                    }
-                    const file = new File([blob], 'cropped_image.webp', { type: 'image/webp' });
-                    resolve(file);
-                }, 'image/webp');
-            } catch (e) {
-                reject(e);
-            }
-        })();
-    });
-};
 
 const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributorFormProps) => {
     const [name, setName] = useState('');
@@ -140,19 +77,10 @@ const MContributorForm = ({ isOpen, onClose, onSave, initialData }: MContributor
         setCroppedAreaPixels(croppedAreaPixels);
     }, []);
 
-    const readFile = (file: File) => {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.addEventListener('load', () => resolve(reader.result), false);
-            reader.readAsDataURL(file);
-        });
-    };
-
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files?.[0]) {
             const file = e.target.files[0];
-            const imageDataUrl = await readFile(file);
-            setOriginalImageSrc(imageDataUrl as string);
+            setOriginalImageSrc(await readFileAsDataUrl(file));
             setIsCropping(true);
             e.target.value = '';
         }

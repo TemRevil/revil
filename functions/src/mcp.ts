@@ -28,34 +28,26 @@ import { defineSecret } from "firebase-functions/params";
 import admin from "firebase-admin";
 import { randomBytes, createHash } from "crypto";
 import { z } from "zod";
-import nodemailer, { type Transporter } from "nodemailer";
 import type { Response } from "express";
 import type { DocumentSnapshot } from "firebase-admin/firestore";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
-  buildReceiptHtml, receiptNumber, type ReceiptLine,
-  buildItemizedReceiptHtml, revReceiptNumber,
+  buildReceiptHtml, receiptNumber, projectReceiptLine, receiptPaymentRows, LEGACY_PAYMENT_LABEL, type ReceiptLine,
 } from "./receipt";
+import { buildItemizedReceiptHtml, revReceiptNumber } from "./itemizedReceipt";
+import {
+  type Currency, type Rates, CURRENCIES, DEFAULT_RATES, convert, computeTotals, hasInstallments,
+  installmentMonthlyAmount, nextMonthlyPaymentDate, projectContractTotal, projectBalance,
+  projectPaymentStatus, projectReceived, accountBalance,
+} from "./money";
 import { parseAvailability } from "./booking";
+import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail";
 
-// Email (Resend SMTP relay) - mirrors index.ts, so the MCP send-receipt tool can email.
-const smtpUser = defineSecret("SMTP_USER");
-const resendKey = defineSecret("RESEND_API_KEY");
 // Google Apps Script endpoint that actually creates/updates/cancels the Google Calendar
 // event (the deployed `syncMeeting` callable is an admin-only, App Check-gated proxy to it).
 // Held as a secret, NOT in the repo: this repo is public, and anyone with the URL could
 // manipulate the owner's calendar.
 export const meetingSyncUrl = defineSecret("MEETING_SYNC_URL");
-const HELLO_EMAIL = "hello@temrevil.com";
-function createTransporter(): Transporter {
-  return nodemailer.createTransport({
-    host: "smtp.resend.com",
-    port: 465,
-    secure: true,
-    auth: { user: "resend", pass: resendKey.value() },
-  });
-}
-
 // The MCP server class is loaded via dynamic import() below (the SDK is ESM-only),
 // which resolves to the package's ESM build. Type against that same build - a plain
 // `import type` from a CommonJS module resolves to the CJS build, whose McpServer is
@@ -198,93 +190,17 @@ async function mcpConfig(): Promise<McpCfg> {
   };
 }
 
-// ── treasury math + time helpers (mirrors src/lib/treasury.ts) ──────
-type Rates = Record<string, number>;
-const DEFAULT_RATES: Rates = { USD: 1, EGP: 48, EUR: 0.92 };
-
-interface Account { id?: string; name?: string; type?: string; currency: string; openingBalance?: number; archived?: boolean; order?: number; createdAt?: number; notes?: string; }
-interface Income { id?: string; amount?: number; currency: string; date?: string; note?: string; projectId?: string; accountId?: string; monthlyPayment?: boolean; createdAt?: number; }
-interface Expense { id?: string; label?: string; amount?: number; currency: string; category?: string; date?: string; recurring?: boolean; projectId?: string; accountId?: string; clientPaid?: boolean; notes?: string; createdAt?: number; }
-interface Project { id?: string; name?: string; client?: string; clientEmail?: string; monthly?: boolean; priceAmount?: number; priceCurrency: string; paidAmount?: number; nextPaymentDate?: string; startDate?: string; endDate?: string | null; pausedAt?: string | null; closedAt?: string | null; closedReason?: string; status?: string; installmentMonths?: number; installmentPercent?: number; }
-interface TreasurySettings { rates?: Rates; [k: string]: unknown; }
-
-/** Convert between currencies using units-per-USD rates. */
-function convert(amount: number, from: string, to: string, rates?: Rates): number {
-  if (!amount || from === to) return amount || 0;
-  const fr = (rates && rates[from]) || DEFAULT_RATES[from];
-  const tr = (rates && rates[to]) || DEFAULT_RATES[to];
-  return (amount / fr) * tr;
-}
+// ── treasury records + time helpers. The money math is ./money, generated from the
+// dashboard's src/lib/money.ts, so every figure here is the one the dashboard shows. ──
+interface Account { id?: string; name?: string; type?: string; currency: Currency; openingBalance?: number; archived?: boolean; excludeFromNetProfit?: boolean; order?: number; createdAt?: number; notes?: string; }
+interface Income { id?: string; amount?: number; currency: Currency; date?: string; note?: string; projectId?: string; accountId?: string; monthlyPayment?: boolean; createdAt?: number; }
+interface Expense { id?: string; label?: string; amount?: number; currency: Currency; category?: string; date?: string; recurring?: boolean; projectId?: string; accountId?: string; clientPaid?: boolean; notes?: string; createdAt?: number; }
+interface Project { id?: string; name?: string; client?: string; clientEmail?: string; monthly?: boolean; priceAmount?: number; priceCurrency: Currency; paidAmount?: number; nextPaymentDate?: string; startDate?: string; endDate?: string | null; pausedAt?: string | null; closedAt?: string | null; closedReason?: string; status?: string; installmentMonths?: number; installmentPercent?: number; }
+interface TreasurySettings { rates?: Rates; displayCurrency?: Currency; [k: string]: unknown; }
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
 
-/** Advance a 'YYYY-MM-DD' by one calendar month, clamping the day. */
-function addOneMonth(dateStr: string): string {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  if (isNaN(d.getTime())) return dateStr;
-  const day = d.getUTCDate();
-  const lastDayNext = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 2, 0)).getUTCDate();
-  const nd = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, Math.min(day, lastDayNext)));
-  return nd.toISOString().slice(0, 10);
-}
-
-/** Next due date for a monthly retainer once a payment is confirmed. */
-function nextMonthlyDate(proj: Project, paymentDate: string): string {
-  const valid = (s?: string): boolean => !!s && !isNaN(new Date(`${s}T00:00:00Z`).getTime());
-  const anchor = valid(proj.nextPaymentDate) ? proj.nextPaymentDate!
-    : valid(proj.startDate) ? proj.startDate!
-    : valid(paymentDate) ? paymentDate
-    : new Date().toISOString().slice(0, 10);
-  return addOneMonth(anchor);
-}
-
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
-
-/**
- * Total received by a project = legacy paidAmount + linked income. For a monthly
- * retainer this counts ONLY the month's payments (monthlyPayment); one-off/goodwill
- * income linked to it stays out of the retainer tally (but is still real earned money).
- */
-function projectReceived(p: Project, income: Income[], rates: Rates): number {
-  const sum = income
-    .filter((i) => i.projectId === p.id && (!p.monthly || i.monthlyPayment))
-    .reduce((s, i) => s + convert(i.amount || 0, i.currency, p.priceCurrency, rates), 0);
-  return (p.paidAmount || 0) + sum;
-}
-
-/** True when the project is billed as a fixed-total installment plan. */
-function hasInstallments(p: Project): boolean {
-  return !p.monthly && (p.installmentMonths || 0) > 1;
-}
-
-/**
- * The full amount owed: the contracted price PLUS any installment surcharge (a % of the
- * WHOLE price). Mirrors projectContractTotal() in src/lib/treasury.ts - keep the two in
- * step. With no plan the surcharge is x1, so this is just priceAmount.
- */
-function projectContractTotal(p: Project): number {
-  const price = p.priceAmount || 0;
-  return hasInstallments(p) ? price * (1 + (p.installmentPercent || 0) / 100) : price;
-}
-
-/** Derived payment status (the app never stores this - it computes it live). */
-function projectPaymentStatus(p: Project, income: Income[], rates: Rates): string {
-  if (!p.priceAmount) return "unpaid";
-  const r = projectReceived(p, income, rates);
-  // Measured against price + surcharge, not the raw price, or a plan with an extra
-  // charge would read as "paid" while the client still owes the surcharge.
-  if (r >= projectContractTotal(p)) return "paid";
-  if (r > 0) return "partial";
-  return "unpaid";
-}
-
-/** Running balance of an account in its own currency. */
-function accountBalance(acc: Account, income: Income[], expenses: Expense[], rates: Rates): number {
-  let bal = acc.openingBalance || 0;
-  for (const i of income) if (i.accountId === acc.id) bal += convert(i.amount || 0, i.currency, acc.currency, rates);
-  for (const e of expenses) if (e.accountId === acc.id && !e.clientPaid) bal -= convert(e.amount || 0, e.currency, acc.currency, rates);
-  return bal;
-}
 
 interface TimeInfo { date: string; time: string; offsetLabel: string; weekday: string; pretty: string; }
 
@@ -1094,7 +1010,9 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
     });
 
   server.registerTool("treasury_overview",
-    { title: "Treasury overview", description: "Treasury projects, expenses, income, accounts (with balances) and currency settings.", inputSchema: {}, annotations: { readOnlyHint: true } },
+    { title: "Treasury overview", description: "Treasury projects, expenses, income, accounts (with balances) and currency settings. " +
+      "`totals` are the dashboard's own summary figures (earned, outstanding, contracted, spent, net) in its display currency - quote those for overall questions instead of adding projects up. " +
+      "A closed project's unpaid balance is `writtenOff`, not `outstanding`: the client walked away, so it is not money still owed.", inputSchema: {}, annotations: { readOnlyHint: true } },
     async () => {
       const [proj, spend, inc, acc, settings] = await Promise.all([
         db().doc("Treasury/projects").get(),
@@ -1106,15 +1024,22 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       const settingsData = (settings.data() || {}) as TreasurySettings;
       const rates = settingsData.rates || DEFAULT_RATES;
       const income = readEntries<Income>(inc), expenses = readEntries<Expense>(spend);
-      const accounts = readEntries<Account>(acc).map((a) => ({ ...a, balance: accountBalance(a, income, expenses, rates) }));
+      const rawAccounts = readEntries<Account>(acc), rawProjects = readEntries<Project>(proj);
+      const accounts = rawAccounts.map((a) => ({ ...a, balance: accountBalance(a, income, expenses, rates) }));
       // payment status is DERIVED from linked income (the app doesn't store it);
       // overwrite the legacy raw paidAmount/paymentStatus with the real figures.
-      const projects = readEntries<Project>(proj).map((p) => {
+      const projects = rawProjects.map((p) => {
         const received = round2(projectReceived(p, income, rates));
         const paymentStatus = p.monthly ? "monthly" : projectPaymentStatus(p, income, rates);
         // Owed = price + installment surcharge (identical to price when there's no plan).
         const total = round2(projectContractTotal(p));
-        const outstanding = p.monthly ? null : round2(Math.max(0, total - received));
+        const balance = p.monthly ? null : round2(projectBalance(p, income, rates));
+        // A closed project ended without the client paying the rest. The dashboard writes
+        // that balance off (it is not money still coming), so it is reported apart here
+        // too - otherwise "how much am I owed?" would count debt that is already gone.
+        const closed = p.status === "closed";
+        const outstanding = balance === null ? null : closed ? 0 : balance;
+        const writtenOff = closed && balance ? balance : 0;
         // Spell the plan out so the model can answer "how much per month?" directly
         // instead of re-deriving it (and getting the surcharge wrong).
         const installments = hasInstallments(p)
@@ -1122,13 +1047,25 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
             months: p.installmentMonths,
             percent: p.installmentPercent || 0,
             total,
-            perMonth: round2(total / (p.installmentMonths as number)),
+            perMonth: round2(installmentMonthlyAmount(p)),
           }
           : null;
-        return { ...p, paidAmount: received, received, paymentStatus, total, outstanding, installments };
+        return { ...p, paidAmount: received, received, paymentStatus, total, outstanding, writtenOff, installments };
       });
+      // The same five figures as the dashboard's summary cards, in its display currency.
+      const displayCurrency = CURRENCIES.find((c) => c === settingsData.displayCurrency) || "USD";
+      const t = computeTotals({ config: { displayCurrency, rates }, projects: rawProjects, income, expenses, accounts: rawAccounts });
+      const totals = {
+        currency: t.currency,
+        earned: round2(t.earned),
+        outstanding: round2(t.outstanding),
+        contracted: round2(t.contracted),
+        spent: round2(t.spent),
+        net: round2(t.net),
+      };
       return ok({
         serverTime: time.pretty,
+        totals,
         projects,
         expenses,
         income,
@@ -1849,8 +1786,10 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
     {
       title: "Send a receipt",
       description:
-        "Build a Tem Revil receipt for ONE or MORE treasury projects and email it to the customer. " +
-        "Pass projectIds (from treasury_overview). The receipt shows each project's price / paid / balance and totals. " +
+        "Build a Tem Revil receipt (or payment request) for ONE or MORE treasury projects and email it to the customer. " +
+        "Pass projectIds (from treasury_overview). It is the dashboard's own receipt: each project's price / paid / balance, totals, " +
+        "and the dated payments from the income log. kind 'paid' thanks them for money received; kind 'due' asks for the balance " +
+        "(defaults to 'paid' when anything has been received, else 'due'). " +
         "`to` defaults to the FIRST project's saved customer email (set it with add/update_treasury_project's clientEmail); " +
         "pass `to` to override. currency defaults to the first project's currency (others are converted at current rates); " +
         "date defaults to today. ALWAYS confirm the recipient and the amounts with the owner before sending - this sends a real email. " +
@@ -1862,6 +1801,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         currency: z.enum(["USD", "EGP", "EUR"]).optional().describe("receipt currency; defaults to the first project's currency"),
         date: z.string().optional().describe("issue date YYYY-MM-DD; defaults today"),
         note: z.string().optional().describe("optional note printed on the receipt"),
+        kind: z.enum(["paid", "due"]).optional().describe("'paid' = receipt for money received; 'due' = payment request for the balance"),
+        dueBy: z.string().optional().describe("kind 'due' only: settle-by date YYYY-MM-DD"),
       },
       annotations: { destructiveHint: false },
     },
@@ -1888,35 +1829,25 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       }
       const cur = a.currency || first.priceCurrency || "USD";
 
-      const lines: ReceiptLine[] = selected.map((p) => {
-        const cvt = (n: number) => convert(n, p.priceCurrency, cur, rates);
-        const priceNative = p.monthly ? (p.priceAmount || 0) : projectContractTotal(p);
-        const paidNative = projectReceived(p, income, rates);
-        const balNative = p.monthly ? null : Math.max(0, priceNative - paidNative);
-        return {
-          name: p.name || "Project",
-          note: p.monthly
-            ? "Monthly retainer"
-            : hasInstallments(p)
-              ? `${p.installmentMonths} installments${p.installmentPercent ? ` (+${p.installmentPercent}%)` : ""}`
-              : undefined,
-          price: round2(cvt(priceNative)),
-          paid: round2(cvt(paidNative)),
-          balance: balNative === null ? null : round2(cvt(balNative)),
-        };
-      });
+      const lines: ReceiptLine[] = selected.map((p) => projectReceiptLine(p, income, rates, cur));
       const totals = lines.reduce(
         (t, l) => ({ price: t.price + l.price, paid: t.paid + l.paid, balance: t.balance + (l.balance || 0) }),
         { price: 0, paid: 0, balance: 0 },
       );
 
       // Issue date defaults to the server's own current local date (never a client guess).
-      const dateStr = a.date || time.date;
-      const dateLabel = (() => {
-        const dt = new Date(`${dateStr}T00:00:00`);
-        return isNaN(dt.getTime()) ? dateStr : dt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-      })();
+      const humanDate = (iso: string) => {
+        const dt = new Date(`${iso}T00:00:00`);
+        return isNaN(dt.getTime()) ? iso : dt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      };
+      const dateLabel = humanDate(a.date || time.date);
       const receiptNo = receiptNumber();
+      const kind = a.kind || (totals.paid > 0 ? "paid" : "due");
+      // The dated payments behind the Paid figure, as the dashboard lists them. Only the
+      // day: an entry's clock time is the moment it was typed in, in the owner's timezone,
+      // which the server cannot honestly reconstruct.
+      const payments = receiptPaymentRows(selected, income, rates, cur, (p) => !!p.monthly)
+        .map((r) => ({ dateLabel: r.date ? humanDate(r.date) : LEGACY_PAYMENT_LABEL, amount: r.amount, note: selected.length > 1 ? r.project : undefined }));
 
       const html = buildReceiptHtml({
         receiptNo,
@@ -1928,6 +1859,10 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         totals,
         note: a.note,
         converted: selected.some((p) => p.priceCurrency !== cur),
+        kind,
+        paidOnLabel: kind === "paid" && payments.length === 1 && payments[0].dateLabel !== LEGACY_PAYMENT_LABEL ? payments[0].dateLabel : undefined,
+        dueByLabel: kind === "due" && a.dueBy ? humanDate(a.dueBy) : undefined,
+        payments,
       });
 
       try {
@@ -1938,7 +1873,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
           to,
           bcc: owner && owner.toLowerCase() !== to.toLowerCase() ? owner : undefined,
           replyTo: HELLO_EMAIL,
-          subject: `Receipt ${receiptNo} from Tem Revil`,
+          subject: kind === "due" ? `Payment request ${receiptNo} from Tem Revil` : `Receipt ${receiptNo} from Tem Revil`,
           html,
         });
       } catch (err) {
@@ -2052,7 +1987,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         const settings = (sdoc.data() || {}) as TreasurySettings;
         const rates = settings.rates || DEFAULT_RATES;
         const distinct = [...new Set(lines.map((l) => l.currency))];
-        const baseCur = (typeof settings.defaultCurrency === "string" ? settings.defaultCurrency : "EGP");
+        const baseCur: Currency = CURRENCIES.find((c) => c === settings.defaultCurrency) || "EGP";
         const gc = a.grandTotalCurrency || (distinct.length > 1 ? baseCur : undefined);
         if (gc) {
           const amount = round2(lines.reduce((s, l) => s + convert(l.amount || 0, l.currency, gc, rates), 0));
@@ -2160,7 +2095,7 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
         const pdoc = await db().doc("Treasury/projects").get();
         const proj = pdoc.exists ? (pdoc.data()?.entries || {})[a.projectId] : null;
         if (proj && proj.monthly) {
-          nextPaymentDate = nextMonthlyDate(proj, date);
+          nextPaymentDate = nextMonthlyPaymentDate(proj, date);
           await db().doc("Treasury/projects").set(
             { entries: { [a.projectId]: { nextPaymentDate } }, lastWrite: SERVER_TIMESTAMP() },
             { merge: true },

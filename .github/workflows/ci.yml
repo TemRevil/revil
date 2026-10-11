@@ -41,6 +41,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Shared code synced into functions
+        run: node functions/scripts/sync-shared.mjs --check
+
       - name: Type-check
         run: npx tsc --noEmit
 

@@ -1,81 +1,239 @@
+// GENERATED from src/lib/receipt.ts by scripts/sync-shared.mjs - edit that file.
+
 /**
- * Receipt HTML builder for the Cloud Functions side (used by the MCP send tool). Kept in
- * sync with src/lib/receipt.ts on the frontend - same layout, so a receipt sent by the AI
- * looks identical to one built in the dashboard. Currency here is a plain string (the
- * functions treasury types use string currencies).
+ * The light receipt / payment request - the ONE builder for it. The dashboard's receipt
+ * modal and the AI's send_treasury_receipt tool both use it, so a receipt looks and adds
+ * up the same whoever sends it. The functions build copies this file to
+ * functions/src/receipt.ts (functions/scripts/sync-shared.mjs): edit it here. It may only
+ * import ./money and ./html.
  */
-
-const CURRENCY_SYMBOL: Record<string, string> = { USD: "$", EGP: "E£", EUR: "€" };
-
-/** Matches src/lib/treasury.ts formatMoney. */
-function formatMoney(amount: number, currency: string): string {
-  const rounded = Math.round((amount + Number.EPSILON) * 100) / 100;
-  const hasFraction = Math.abs(rounded % 1) > 0.001;
-  const num = new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: hasFraction ? 2 : 0,
-    maximumFractionDigits: 2,
-  }).format(rounded);
-  return `${CURRENCY_SYMBOL[currency] || ""}${num}`;
-}
+import {
+    type Currency, type MoneyIncome, type MoneyProject, type Rates,
+    convert, formatMoney, hasInstallments, projectContractTotal, projectPayments, projectReceived,
+} from './money';
+import { escapeHtml as esc } from './html';
 
 export interface ReceiptLine {
-  name: string;
-  note?: string;
-  price: number;
-  paid: number;
-  balance: number | null;
+    name: string;
+    /** Small muted note under the name, e.g. "Monthly retainer" or "6 installments". */
+    note?: string;
+    price: number;
+    paid: number;
+    /** null renders as a dash (e.g. a retainer has no fixed balance). */
+    balance: number | null;
 }
 
 export interface ReceiptData {
-  receiptNo: string;
-  dateLabel: string;
-  customerName?: string;
-  customerEmail?: string;
-  currency: string;
-  lines: ReceiptLine[];
-  totals: { price: number; paid: number; balance: number };
-  note?: string;
-  converted?: boolean;
+    receiptNo: string;
+    /** Human date, e.g. "16 July 2026". */
+    dateLabel: string;
+    customerName?: string;
+    customerEmail?: string;
+    /** The single currency every amount below is expressed in. */
+    currency: Currency;
+    lines: ReceiptLine[];
+    totals: { price: number; paid: number; balance: number };
+    /** Optional free-text note printed under the table. */
+    note?: string;
+    /** true when lines were converted from mixed currencies into `currency`. */
+    converted?: boolean;
+    /**
+     * true when every line bills ONE payment (an installment, or a retainer month) rather
+     * than the whole contract. Only swaps the totals labels - "Balance due" would be a lie
+     * when the figure is what remains on the plan, not what this receipt asks for. All the
+     * arithmetic is unchanged, and omitting it keeps today's wording exactly.
+     */
+    perPayment?: boolean;
+    /**
+     * What this document IS:
+     *   'paid' - money already received. Reads "Thank you for your payment" and states when
+     *            it arrived. This is a confirmation.
+     *   'due'  - money still owed. Reads as a request and leads with the amount due.
+     * Defaults to 'paid', which is how every receipt sent before this existed behaved.
+     */
+    kind?: 'paid' | 'due';
+    /** For kind 'paid': when the money arrived, e.g. "8 August 2026, 5:00 PM". */
+    paidOnLabel?: string;
+    /** For kind 'due': when it should be settled, e.g. "22 August 2026". Optional. */
+    dueByLabel?: string;
+    /**
+     * The individual payments behind the Paid figure, oldest first, straight from the
+     * income log - a project is routinely settled over several dates. Rendered as a dated
+     * breakdown only when there are two or more; a lone payment is already fully described
+     * by the banner's date, and a second table saying the same thing is just noise.
+     */
+    payments?: { dateLabel: string; amount: number; note?: string }[];
 }
 
-const esc = (s: string): string =>
-  String(s ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-
+/** A stable-ish receipt number: RCP-YYYYMMDD-XXXX. */
 export function receiptNumber(d = new Date()): string {
-  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-  const r = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `RCP-${ymd}-${r}`;
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return `RCP-${ymd}-${rand}`;
 }
 
-const ACCENT = "#3395ff";
-const INK = "#0f172a";
-const MUTE = "#64748b";
-const LINE = "#e6e9ef";
+/**
+ * One project billed in full (the whole contract, not a single installment or month), in
+ * the receipt currency `cur`. A retainer's Paid is capped at one month's rate: its lifetime
+ * total against a per-month price read as Price 3,000 / Paid 18,000.
+ */
+export function projectReceiptLine(
+    p: MoneyProject & { name?: string },
+    income: MoneyIncome[],
+    rates: Rates,
+    cur: Currency,
+): ReceiptLine {
+    const cvt = (n: number) => convert(n, p.priceCurrency, cur, rates);
+    const receivedNative = projectReceived(p, income, rates);
+    const priceNative = p.monthly ? (p.priceAmount || 0) : projectContractTotal(p);
+    return {
+        name: p.name || 'Project',
+        note: p.monthly
+            ? 'Monthly retainer'
+            : hasInstallments(p)
+                ? `${p.installmentMonths} installments${p.installmentPercent ? ` (+${p.installmentPercent}%)` : ''}`
+                : undefined,
+        price: cvt(priceNative),
+        paid: cvt(p.monthly ? Math.min(receivedNative, priceNative) : receivedNative),
+        balance: p.monthly ? null : cvt(Math.max(0, priceNative - receivedNative)),
+    };
+}
 
+/** One payment behind a receipt's Paid figure. `date` is '' for the undated legacy amount. */
+export interface ReceiptPaymentRow<T extends MoneyIncome = MoneyIncome> {
+    date: string;
+    amount: number;
+    project: string;
+    /** The income entry it came from (absent for the legacy amount). */
+    entry?: T;
+}
+
+/**
+ * The real payments behind the receipt, oldest first, in the receipt currency - read
+ * straight out of the income log rather than typed. A project is routinely settled over
+ * several dates, so this is a list, not a date.
+ *
+ * A line that bills ONE payment (`onePayment`: an installment, or any retainer, whose Paid
+ * is one month) lists only the most recent payment, because that is the one it confirms.
+ */
+export function receiptPaymentRows<T extends MoneyIncome>(
+    projects: (MoneyProject & { name?: string })[],
+    income: T[],
+    rates: Rates,
+    cur: Currency,
+    onePayment: (p: MoneyProject) => boolean,
+): ReceiptPaymentRow<T>[] {
+    return projects
+        .flatMap(p => {
+            const all = projectPayments(p, income);
+            const one = onePayment(p);
+            const rows: ReceiptPaymentRow<T>[] = (one ? all.slice(-1) : all).map(i => ({
+                date: i.date || '',
+                amount: convert(i.amount || 0, i.currency, cur, rates),
+                project: p.name || 'Project',
+                entry: i,
+            }));
+            // The legacy per-project paidAmount predates the income log and carries no date,
+            // yet projectReceived still counts it - so a whole-project breakdown that ignored
+            // it would not add up to the Paid figure printed right above it. Give it a row.
+            const legacy = p.paidAmount || 0;
+            if (!one && legacy > 0) {
+                rows.unshift({ date: '', amount: convert(legacy, p.priceCurrency, cur, rates), project: p.name || 'Project' });
+            }
+            return rows;
+        })
+        // Undated rows sort to the front, which is where they belong - they are the oldest.
+        .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** How an undated (legacy) payment row is labelled on a receipt. */
+export const LEGACY_PAYMENT_LABEL = 'Recorded before the payment log';
+
+const ACCENT = '#3395ff';
+const INK = '#0f172a';
+const MUTE = '#64748b';
+const LINE = '#e6e9ef';
+
+/**
+ * Build a self-contained, email-safe receipt as a full HTML document. Table-based layout
+ * with inline styles (no flex/grid, no external CSS) so it survives Gmail/Outlook. The
+ * SAME string is what the preview shows, what Download saves, and what the send function
+ * emails - so there's one source of truth and no drift.
+ */
 export function buildReceiptHtml(d: ReceiptData): string {
-  const cur = d.currency;
-  const money = (n: number) => formatMoney(n, cur);
+    const cur = d.currency;
+    const money = (n: number) => formatMoney(n, cur);
+    // A receipt confirms money received; a statement asks for money owed. Same table, but
+    // the client must be able to tell which one landed in their inbox at a glance.
+    const isDue = d.kind === 'due';
 
-  const rows = d.lines.map((l) => `
+    // When the money arrived. One payment is named by its date; several are summarised here
+    // and itemised in the breakdown below, because "received on 3 June, 12 July and 8 August"
+    // in a banner is unreadable.
+    const paid = d.payments || [];
+    const when = paid.length > 1
+        ? `across ${paid.length} payments`
+        : d.paidOnLabel ? `on ${esc(d.paidOnLabel)}` : '';
+
+    const banner = isDue
+        ? `
+        <tr><td style="padding:20px 28px 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px">
+            <tr><td style="padding:14px 16px">
+              <div style="color:#9a3412;font-size:14px;font-weight:800">Payment requested</div>
+              <div style="color:#b45309;font-size:13px;margin-top:3px">
+                ${money(d.totals.balance)} outstanding${d.dueByLabel ? ` &middot; due by ${esc(d.dueByLabel)}` : ''}.
+              </div>
+            </td></tr>
+          </table>
+        </td></tr>`
+        : `
+        <tr><td style="padding:20px 28px 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px">
+            <tr><td style="padding:14px 16px">
+              <div style="color:#166534;font-size:14px;font-weight:800">Thank you for your payment</div>
+              <div style="color:#15803d;font-size:13px;margin-top:3px">
+                ${money(d.totals.paid)} received${when ? ` ${when}` : ''}.
+              </div>
+            </td></tr>
+          </table>
+        </td></tr>`;
+
+    const rows = d.lines.map((l) => `
         <tr>
           <td style="padding:14px 16px;border-bottom:1px solid ${LINE};vertical-align:top">
             <div style="font-weight:700;color:${INK};font-size:14px">${esc(l.name)}</div>
-            ${l.note ? `<div style="color:${MUTE};font-size:12px;margin-top:2px">${esc(l.note)}</div>` : ""}
+            ${l.note ? `<div style="color:${MUTE};font-size:12px;margin-top:2px">${esc(l.note)}</div>` : ''}
           </td>
           <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:${INK};font-size:14px;white-space:nowrap">${money(l.price)}</td>
           <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:#16a34a;font-size:14px;white-space:nowrap">${money(l.paid)}</td>
-          <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:${l.balance && l.balance > 0 ? "#d97706" : MUTE};font-weight:700;font-size:14px;white-space:nowrap">${l.balance === null ? "&ndash;" : money(l.balance)}</td>
-        </tr>`).join("");
+          <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:${l.balance && l.balance > 0 ? '#d97706' : MUTE};font-weight:700;font-size:14px;white-space:nowrap">${l.balance === null ? '&ndash;' : money(l.balance)}</td>
+        </tr>`).join('');
 
-  const totalRow = (label: string, value: string, opts: { strong?: boolean; color?: string } = {}) => `
+    // Dated proof of every payment, so a client settling in instalments can reconcile the
+    // Paid figure against their own bank statement line by line.
+    const paymentsBlock = paid.length > 1 ? `
+        <tr><td style="padding:16px 28px 0">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${LINE};border-radius:12px;overflow:hidden">
+            <tr style="background:#f8fafc">
+              <td style="padding:10px 16px;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Payments received</td>
+              <td style="padding:10px 16px;text-align:right;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Amount</td>
+            </tr>
+            ${paid.map((p) => `
+            <tr>
+              <td style="padding:10px 16px;border-top:1px solid ${LINE};color:${INK};font-size:13px">${esc(p.dateLabel)}${p.note ? `<span style="color:${MUTE}"> &middot; ${esc(p.note)}</span>` : ''}</td>
+              <td style="padding:10px 16px;border-top:1px solid ${LINE};text-align:right;color:#16a34a;font-size:13px;font-weight:700;white-space:nowrap">${money(p.amount)}</td>
+            </tr>`).join('')}
+          </table>
+        </td></tr>` : '';
+
+    const totalRow = (label: string, value: string, opts: { strong?: boolean; color?: string } = {}) => `
         <tr>
           <td style="padding:6px 16px;text-align:right;color:${MUTE};font-size:13px">${label}</td>
-          <td style="padding:6px 16px;text-align:right;color:${opts.color || INK};font-size:${opts.strong ? "18px" : "14px"};font-weight:${opts.strong ? "800" : "600"};white-space:nowrap">${value}</td>
+          <td style="padding:6px 16px;text-align:right;color:${opts.color || INK};font-size:${opts.strong ? '18px' : '14px'};font-weight:${opts.strong ? '800' : '600'};white-space:nowrap">${value}</td>
         </tr>`;
 
-  return `<!doctype html>
+    return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -87,19 +245,21 @@ export function buildReceiptHtml(d: ReceiptData): string {
     <tr><td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 40px rgba(15,23,42,0.08)">
 
+        <!-- header -->
         <tr><td style="background:${INK};padding:26px 28px">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="color:#fff;font-size:20px;font-weight:800;letter-spacing:.5px">TEM&nbsp;REVIL</td>
-            <td style="text-align:right;color:${ACCENT};font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase">Receipt</td>
+            <td style="text-align:right;color:${ACCENT};font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase">${isDue ? 'Invoice' : 'Receipt'}</td>
           </tr></table>
         </td></tr>
 
+        <!-- meta -->
         <tr><td style="padding:24px 28px 8px">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="vertical-align:top">
               <div style="color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Billed to</div>
-              <div style="color:${INK};font-size:15px;font-weight:700;margin-top:4px">${d.customerName ? esc(d.customerName) : "&ndash;"}</div>
-              ${d.customerEmail ? `<div style="color:${MUTE};font-size:13px;margin-top:2px">${esc(d.customerEmail)}</div>` : ""}
+              <div style="color:${INK};font-size:15px;font-weight:700;margin-top:4px">${d.customerName ? esc(d.customerName) : '&ndash;'}</div>
+              ${d.customerEmail ? `<div style="color:${MUTE};font-size:13px;margin-top:2px">${esc(d.customerEmail)}</div>` : ''}
             </td>
             <td style="vertical-align:top;text-align:right">
               <div style="color:${MUTE};font-size:12px">No. <span style="color:${INK};font-weight:700">${esc(d.receiptNo)}</span></div>
@@ -108,6 +268,8 @@ export function buildReceiptHtml(d: ReceiptData): string {
           </tr></table>
         </td></tr>
 
+${banner}
+        <!-- line items -->
         <tr><td style="padding:16px 28px 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${LINE};border-radius:12px;overflow:hidden">
             <tr style="background:#f8fafc">
@@ -120,20 +282,26 @@ export function buildReceiptHtml(d: ReceiptData): string {
           </table>
         </td></tr>
 
+        <!-- totals -->
         <tr><td style="padding:14px 28px 4px">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            ${totalRow("Total price", money(d.totals.price))}
-            ${totalRow("Total paid", money(d.totals.paid), { color: "#16a34a" })}
-            ${totalRow("Balance due", money(d.totals.balance), { strong: true, color: d.totals.balance > 0 ? "#d97706" : "#16a34a" })}
+            ${totalRow(d.perPayment ? 'This receipt' : 'Total price', money(d.totals.price))}
+            ${totalRow(isDue ? 'Paid to date' : 'Paid', money(d.totals.paid), { color: '#16a34a' })}
+            ${totalRow(
+                isDue ? 'Amount due' : (d.perPayment ? 'Remaining on plan' : 'Balance due'),
+                money(d.totals.balance),
+                { strong: true, color: d.totals.balance > 0 ? '#d97706' : '#16a34a' },
+            )}
           </table>
         </td></tr>
+${paymentsBlock}
+        ${d.converted ? `<tr><td style="padding:2px 28px 0"><div style="color:${MUTE};font-size:11px;text-align:right">Amounts converted to ${cur} at current rates.</div></td></tr>` : ''}
+        ${d.note ? `<tr><td style="padding:16px 28px 0"><div style="background:#f8fafc;border:1px solid ${LINE};border-radius:12px;padding:14px 16px;color:${INK};font-size:13px;line-height:1.55">${esc(d.note)}</div></td></tr>` : ''}
 
-        ${d.converted ? `<tr><td style="padding:2px 28px 0"><div style="color:${MUTE};font-size:11px;text-align:right">Amounts converted to ${cur} at current rates.</div></td></tr>` : ""}
-        ${d.note ? `<tr><td style="padding:16px 28px 0"><div style="background:#f8fafc;border:1px solid ${LINE};border-radius:12px;padding:14px 16px;color:${INK};font-size:13px;line-height:1.55">${esc(d.note)}</div></td></tr>` : ""}
-
+        <!-- footer -->
         <tr><td style="padding:24px 28px 28px">
           <div style="border-top:1px solid ${LINE};padding-top:18px;color:${MUTE};font-size:12px;line-height:1.6">
-            Thank you. Questions about this receipt? Reply to <a href="mailto:hello@temrevil.com" style="color:${ACCENT};text-decoration:none;font-weight:600">hello@temrevil.com</a>.
+            ${isDue ? 'Questions about this invoice?' : 'Thank you. Questions about this receipt?'} Reply to <a href="mailto:hello@temrevil.com" style="color:${ACCENT};text-decoration:none;font-weight:600">hello@temrevil.com</a>.
             <div style="margin-top:6px"><a href="https://temrevil.com" style="color:${MUTE};text-decoration:none">temrevil.com</a> &middot; Tem Revil</div>
           </div>
         </td></tr>
@@ -141,238 +309,6 @@ export function buildReceiptHtml(d: ReceiptData): string {
       </table>
     </td></tr>
   </table>
-</body>
-</html>`;
-}
-
-
-/**
- * Itemized (dark) receipt - used ONLY by the MCP send_itemized_receipt tool.
- * The dashboard builder was simplified to the single light template, so this no longer
- * mirrors anything on the frontend: this file is now the sole owner of it.
- */
-// ── Itemized (dark) receipt ───────────────────────────────────────────
-// The hand-built style used for issued receipts: a dated work log, free-form
-// line items that each carry their own currency, and one total per currency
-// (never converted).
-
-export interface ItemizedLine {
-    label: string;
-    /** Small muted caption under the label, e.g. "RooleTask - July 2026". */
-    caption?: string;
-    /**
-     * How many units. Omit (or 1) for a plain single-amount line - the "n x price"
-     * breakdown is only printed when BOTH qty and unitPrice are set.
-     */
-    qty?: number;
-    /** Price of ONE unit, in `currency`. Only meaningful alongside `qty`. */
-    unitPrice?: number;
-    /**
-     * The line total, and the figure that is displayed and summed. Always present, so
-     * every existing caller and every total keeps working untouched. When qty/unitPrice
-     * are supplied this should equal qty * unitPrice (lineTotal() enforces that).
-     */
-    amount: number;
-    currency: string;
-    /** Dated sub-entries nested under this item (e.g. what shipped for this project). */
-    details?: WorkLogEntry[];
-}
-
-/**
- * The authoritative money for a line. Recomputes from qty x unitPrice when both are
- * present so the printed "3 x $50.00" can never disagree with the printed total (or with
- * a stale `amount` passed by a caller); falls back to `amount` otherwise.
- */
-export function lineTotal(l: Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>): number {
-    return l.qty != null && l.unitPrice != null
-        ? Math.round((l.qty * l.unitPrice + Number.EPSILON) * 100) / 100
-        : (l.amount || 0);
-}
-
-export interface WorkLogEntry {
-    /** Short date chip, e.g. "2 Jul". */
-    date: string;
-    text: string;
-}
-
-export interface ItemizedReceiptData {
-    receiptNo: string;
-    /** Human date, e.g. "13 July 2026". */
-    dateLabel: string;
-    customerName?: string;
-    /** Second line under the customer, e.g. "RooleTask project". */
-    customerSubtitle?: string;
-    /** Heading for the work log, e.g. "Development fixes - July 2026". */
-    workLogTitle?: string;
-    workLog?: WorkLogEntry[];
-    lines: ItemizedLine[];
-    /**
-     * Optional single grand total that converts every line into one currency, shown as an
-     * emphasized row under the per-currency totals. Use when the customer wants one figure.
-     */
-    grandTotal?: { currency: string; amount: number; note?: string };
-    /** Optional free-text note above the footer. */
-    note?: string;
-}
-
-/**
- * REV-YYYY-MMDD-XXXX, matching the numbering used on issued receipts.
- *
- * The four random characters are the point: without them every receipt issued on
- * the same day carried the SAME number, so two clients billed on one afternoon both
- * held "REV-2026-0920" and any reference to a receipt by number was ambiguous - in
- * the receipt history as well as in the customer's own records. `receiptNumber()`
- * above has always appended a suffix for exactly this reason.
- */
-export function revReceiptNumber(d = new Date()): string {
-    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-    const r = Math.random().toString(36).slice(2, 6).toUpperCase();
-    return `REV-${ymd}-${r}`;
-}
-
-// Dark receipt palette. Every text tone is checked against the surface it actually sits
-// on (card #141414 / chip #1a1a1a) and clears WCAG AA 4.5:1, because this gets emailed and
-// printed - the old ad-hoc greys (#555 at 2.47:1, #666 at 3.21:1, #777 at 4.11:1) rendered
-// washed out. Four named tones replace the nine one-off hexes that were here before.
-const D_CARD = '#141414';
-// Surfaces were nearly invisible against the card (chip #1a1a1a was 1.06:1, hairlines
-// #1e1e1e/#222 about 1.13:1), so the total pills read as floating text. Lifted just enough
-// to separate without turning into boxes; one token now draws every hairline.
-const D_BORDER = '#2b2b2b';
-const D_ROW = '#2b2b2b';
-const D_CHIP = '#282828';
-const D_TEXT = '#ececec';   // 15.6:1 - primary (item names, amounts)
-const D_SOFT = '#c8c8c8';   // 11.0:1 - body copy (work log)
-const D_MUTED = '#a0a0a0';  //  7.0:1 - values, notes, nested details
-const D_FAINT = '#8a8a8a';  //  5.3:1 - labels, captions, footer (was #555/#666/#777)
-// Filled grand-total row: white on the brand #3395ff is only 3.05:1, which fails for the
-// 13px label, so the fill is one step deeper. White on this is 4.95:1 and still reads blue.
-const D_ACCENT_FILL = '#1f6fd0';
-
-/** Quantities print bare: 3 stays "3", 0.5 stays "0.5" (never "3.000"). */
-const fmtQty = (n: number): string => String(Math.round(n * 1000) / 1000);
-
-/** Per-currency presentation: $/EUR prefix, everything else suffixed. Always 2dp. */
-function itemMoney(amount: number, currency: string): string {
-    const n = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        .format(Math.round(((amount || 0) + Number.EPSILON) * 100) / 100);
-    if (currency === 'USD') return `$${n}`;
-    if (currency === 'EUR') return `€${n}`;
-    return `${n} ${currency}`;
-}
-
-/**
- * Build the dark, itemized receipt as a full HTML document. Table-based with inline
- * styles so it survives Gmail/Outlook. Same string for preview, download and email.
- */
-export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
-    // One total per currency, in the order each currency first appears.
-    const order: string[] = [];
-    const byCur = new Map<string, number>();
-    for (const l of d.lines) {
-        if (!byCur.has(l.currency)) { order.push(l.currency); byCur.set(l.currency, 0); }
-        byCur.set(l.currency, (byCur.get(l.currency) || 0) + lineTotal(l));
-    }
-
-    const workLog = (d.workLog || []).filter(w => w.date.trim() || w.text.trim());
-    const workLogHtml = workLog.length ? `
-      <tr><td style="padding:24px 32px;border-bottom:1px solid ${D_BORDER}">
-        ${d.workLogTitle ? `<div style="font-size:11px;color:${D_FAINT};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:14px">${esc(d.workLogTitle)}</div>` : ''}
-        <div style="font-size:14px;line-height:1.7;color:${D_SOFT}">
-          ${workLog.map((w, i) => `<div style="${i < workLog.length - 1 ? 'margin-bottom:10px' : ''}"><span style="color:${ACCENT};font-weight:700">${esc(w.date)}</span> &nbsp;${esc(w.text)}</div>`).join('')}
-        </div>
-      </td></tr>` : '';
-
-    const itemRows = d.lines.map(l => {
-        const details = (l.details || []).filter(x => x.date.trim() || x.text.trim());
-        return `
-          <tr>
-            <td style="padding:14px 0;border-top:1px solid ${D_ROW};font-size:14px;color:${D_TEXT}">
-              ${esc(l.label)}
-              ${l.caption ? `<div style="font-size:12px;color:${D_FAINT};margin-top:3px">${esc(l.caption)}</div>` : ''}
-              ${l.qty != null && l.unitPrice != null ? `<div style="font-size:12px;color:${D_MUTED};margin-top:3px">${esc(fmtQty(l.qty))} &times; ${esc(itemMoney(l.unitPrice, l.currency))}</div>` : ''}
-              ${details.length ? `<div style="margin-top:9px;padding-left:12px;border-left:2px solid ${D_BORDER}">${details.map(x => `<div style="font-size:12px;line-height:1.65;color:${D_MUTED};margin-top:5px"><span style="color:${ACCENT};font-weight:700">${esc(x.date)}</span> &nbsp;${esc(x.text)}</div>`).join('')}</div>` : ''}
-            </td>
-            <td style="padding:14px 0;border-top:1px solid ${D_ROW};font-size:14px;color:#fff;font-weight:700;text-align:right;white-space:nowrap;vertical-align:top">${esc(itemMoney(lineTotal(l), l.currency))}</td>
-          </tr>`;
-    }).join('');
-
-    const totalRows = order.map((cur, i) => `
-          ${i > 0 ? '<tr><td style="height:8px" colspan="2"></td></tr>' : ''}
-          <tr>
-            <td style="padding:10px 16px;background:${D_CHIP};border-radius:10px 0 0 10px;font-size:13px;color:${D_MUTED}">Total (${esc(cur)})</td>
-            <td style="padding:10px 16px;background:${D_CHIP};border-radius:0 10px 10px 0;font-size:16px;font-weight:800;color:#fff;text-align:right;white-space:nowrap">${esc(itemMoney(byCur.get(cur) || 0, cur))}</td>
-          </tr>`).join('');
-
-    // Optional emphasized grand total (accent-filled) after the per-currency rows.
-    const g = d.grandTotal;
-    const grandRow = g ? `
-          <tr><td style="height:10px" colspan="2"></td></tr>
-          <tr>
-            <td style="padding:12px 16px;background:${D_ACCENT_FILL};border-radius:10px 0 0 10px;font-size:13px;color:#fff;font-weight:700">Total (${esc(g.currency)})</td>
-            <td style="padding:12px 16px;background:${D_ACCENT_FILL};border-radius:0 10px 10px 0;font-size:18px;font-weight:800;color:#fff;text-align:right;white-space:nowrap">${esc(itemMoney(g.amount, g.currency))}</td>
-          </tr>` : '';
-    const totalsNote = g
-        ? `<div style="font-size:11px;color:${D_FAINT};margin-top:14px;text-align:center">${esc(g.note || `Grand total converts all amounts to ${g.currency} at current rates.`)}</div>`
-        : (order.length > 1 ? `<div style="font-size:11px;color:${D_FAINT};margin-top:14px;text-align:center">Amounts are itemized per currency and not converted.</div>` : '');
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="color-scheme" content="dark"/>
-<title>Receipt from Revil</title>
-</head>
-<body style="margin:0;padding:0;background:#0a0a0a;color:${D_TEXT};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-  <div style="max-width:640px;margin:0 auto;padding:40px 20px">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${D_CARD};border:1px solid ${D_BORDER};border-radius:16px;border-collapse:separate;overflow:hidden">
-
-      <tr><td style="padding:32px 32px 24px;border-bottom:1px solid ${D_BORDER}">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td style="vertical-align:top">
-            <div style="font-size:24px;font-weight:800;color:#fff;letter-spacing:-0.5px">Revil<span style="color:${ACCENT}">.</span></div>
-            <div style="font-size:12px;color:${D_FAINT};margin-top:4px">Mohammed Ahmed &middot; temrevil.com</div>
-          </td>
-          <td style="vertical-align:top;text-align:right">
-            <div style="font-size:13px;font-weight:700;color:${ACCENT};text-transform:uppercase;letter-spacing:1px">Receipt</div>
-            <div style="font-size:12px;color:${D_MUTED};margin-top:6px">${esc(d.receiptNo)}</div>
-            <div style="font-size:12px;color:${D_MUTED}">${esc(d.dateLabel)}</div>
-          </td>
-        </tr></table>
-      </td></tr>
-
-      <tr><td style="padding:24px 32px;border-bottom:1px solid ${D_BORDER}">
-        <div style="font-size:11px;color:${D_FAINT};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Bill to</div>
-        <div style="font-size:16px;font-weight:700;color:#fff">${d.customerName ? esc(d.customerName) : '&ndash;'}</div>
-        ${d.customerSubtitle ? `<div style="font-size:13px;color:${D_MUTED};margin-top:2px">${esc(d.customerSubtitle)}</div>` : ''}
-      </td></tr>
-${workLogHtml}
-      <tr><td style="padding:24px 32px">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-          <tr style="font-size:11px;color:${D_FAINT};text-transform:uppercase;letter-spacing:0.5px">
-            <td style="padding:0 0 12px;text-align:left">Item</td>
-            <td style="padding:0 0 12px;text-align:right">Amount</td>
-          </tr>
-${itemRows}
-        </table>
-      </td></tr>
-
-      <tr><td style="padding:8px 32px 28px">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
-${totalRows}${grandRow}
-        </table>
-        ${totalsNote}
-        ${d.note ? `<div style="font-size:12px;color:${D_MUTED};margin-top:16px;background:${D_CHIP};border:1px solid ${D_BORDER};border-radius:10px;padding:12px 14px;line-height:1.6">${esc(d.note)}</div>` : ''}
-      </td></tr>
-
-      <tr><td style="padding:22px 32px;border-top:1px solid ${D_BORDER};text-align:center">
-        <div style="font-size:12px;color:${D_FAINT}">Thank you. &mdash; Revil</div>
-        <div style="font-size:12px;color:${ACCENT};margin-top:4px">hello@temrevil.com &middot; temrevil.com</div>
-      </td></tr>
-
-    </table>
-  </div>
 </body>
 </html>`;
 }

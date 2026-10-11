@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, X, Info, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import useTheme from '../../hooks/useTheme';
 
 export type ConfirmType = 'danger' | 'warning' | 'info' | 'success';
 
@@ -26,15 +26,7 @@ const MConfirmModal = ({
     onConfirm,
     onClose
 }: MConfirmModalProps) => {
-    const [isDark, setIsDark] = useState(false);
-
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
+    const isDark = useTheme();
 
     const getTypeStyles = () => {
         switch (type) {

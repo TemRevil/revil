@@ -13,6 +13,7 @@ import MContributorForm from './M-ContributorForm';
 import { createPortal } from 'react-dom';
 import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
+import useTheme from '../../hooks/useTheme';
 
 interface RawFirestoreTag {
     Name?: string;
@@ -35,7 +36,7 @@ interface RawFirestoreContributor {
 
 const DTags = () => {
     const [isLoading, setIsLoading] = useState(false);
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [activeSection, setActiveSection] = useState<'tags' | 'contributors'>('tags');
     const [tags, setTags] = useState<TagData[]>([]);
@@ -94,13 +95,8 @@ const DTags = () => {
     };
 
     useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
         const handleResize = () => setWindowWidth(window.innerWidth);
-
-        checkTheme();
         window.addEventListener('resize', handleResize);
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 
         // Real-time data from central documents
         const unsubTags = onSnapshot(doc(db, 'Tags', 'Tags'),
@@ -178,7 +174,6 @@ const DTags = () => {
 
         return () => {
             window.removeEventListener('resize', handleResize);
-            observer.disconnect();
             unsubTags();
             unsubContributorsDoc();
             unsubContributorsCol();

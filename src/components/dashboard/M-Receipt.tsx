@@ -5,11 +5,13 @@ import { X, Receipt, Send, Download, Loader2, Check } from 'lucide-react';
 import app from '../../lib/firebase';
 import {
     Currency, CURRENCIES, TreasuryProject, TreasuryIncome, Rates,
-    convert, projectReceived, projectContractTotal, hasInstallments, formatMoney,
+    convert, projectReceived, hasInstallments, formatMoney,
     installmentMonthlyAmount, installmentTotal, installmentsPaidCount, retainerPaymentsCount,
-    projectPayments, paymentTimeLabel,
+    paymentTimeLabel,
 } from '../../lib/treasury';
-import { buildReceiptHtml, receiptNumber, ReceiptData } from '../../lib/receipt';
+import {
+    buildReceiptHtml, receiptNumber, projectReceiptLine, receiptPaymentRows, LEGACY_PAYMENT_LABEL, type ReceiptData,
+} from '../../lib/receipt';
 import Select from '../Select';
 import DatePicker from '../DatePicker';
 
@@ -126,39 +128,17 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
      * A whole-project line lists every payment; a per-payment line (one installment, one
      * retainer month) lists only the most recent, because that is the payment it confirms.
      */
-    const loggedPayments = useMemo(() => selectedProjects
-        .flatMap(p => {
-            const all = projectPayments(p, income);
-            // Which payments actually back the Paid figure on this line. A retainer's Paid is
-            // capped at one month's rate whichever scope is chosen (a lifetime total against a
-            // per-month price reads as nonsense), so only ever its latest payment - listing six
-            // months of history beside a one-month Paid would not add up.
-            const onePayment = !!p.monthly || (!!perPayment[p.id] && hasInstallments(p));
-            const rows = (onePayment ? all.slice(-1) : all).map(i => {
-                const time = paymentTimeLabel(i);
-                return {
-                    date: i.date,
-                    dateLabel: `${humanDate(i.date)}${time ? `, ${time}` : ''}`,
-                    amount: convert(i.amount || 0, i.currency, receiptCurrency, rates),
-                    project: p.name,
-                };
-            });
-            // The legacy per-project paidAmount predates the income log and carries no date,
-            // yet projectReceived still counts it - so a whole-project breakdown that ignored
-            // it would not add up to the Paid figure printed right above it. Give it a row.
-            const legacy = p.paidAmount || 0;
-            if (!onePayment && legacy > 0) {
-                rows.unshift({
-                    date: '',
-                    dateLabel: 'Recorded before the payment log',
-                    amount: convert(legacy, p.priceCurrency, receiptCurrency, rates),
-                    project: p.name,
-                });
-            }
-            return rows;
-        })
-        // Undated rows sort to the front, which is where they belong - they are the oldest.
-        .sort((a, b) => (a.date || '').localeCompare(b.date || '')),
+    const loggedPayments = useMemo(() => receiptPaymentRows(
+        selectedProjects, income, rates, receiptCurrency,
+        // Which payments actually back the Paid figure on this line. A retainer's Paid is
+        // capped at one month's rate whichever scope is chosen (a lifetime total against a
+        // per-month price reads as nonsense), so only ever its latest payment - listing six
+        // months of history beside a one-month Paid would not add up.
+        (p) => !!p.monthly || (!!perPayment[p.id as string] && hasInstallments(p)),
+    ).map(r => {
+        const time = r.entry ? paymentTimeLabel(r.entry) : '';
+        return { ...r, dateLabel: r.date ? `${humanDate(r.date)}${time ? `, ${time}` : ''}` : LEGACY_PAYMENT_LABEL };
+    }),
     [selectedProjects, income, perPayment, receiptCurrency, rates]);
 
     // Nothing DATED means there is nothing to derive a date from, so the manual fields take
@@ -218,20 +198,8 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
             };
         }
 
-        const priceNative = p.monthly ? (p.priceAmount || 0) : projectContractTotal(p);
-        return {
-            title: p.name,
-            subtitle: p.monthly
-                ? 'Monthly retainer'
-                : hasInstallments(p)
-                    ? `${p.installmentMonths} installments${p.installmentPercent ? ` (+${p.installmentPercent}%)` : ''}`
-                    : undefined,
-            price: cvt(priceNative),
-            // A retainer's lifetime total is not "paid" against one month's rate - showing
-            // it made a 6-month retainer read as Price 3,000 / Paid 18,000.
-            paid: cvt(p.monthly ? Math.min(receivedNative, priceNative) : receivedNative),
-            balance: (p.monthly ? null : cvt(Math.max(0, priceNative - receivedNative))) as number | null,
-        };
+        const line = projectReceiptLine(p, income, rates, cur);
+        return { title: line.name, subtitle: line.note, price: line.price, paid: line.paid, balance: line.balance };
     }, [income, rates, perPayment, periodLabel, kind]);
 
     const data: ReceiptData = useMemo(() => {

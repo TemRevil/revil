@@ -18,6 +18,8 @@ import Select from '../Select';
 import SaveBar from './SaveBar';
 import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
+import { createImage, getCroppedImg, readFileAsDataUrl, type CropArea } from '../../utils/cropImage';
+import useTheme from '../../hooks/useTheme';
 // Replaced failing ui-avatars.com with a local icon-based placeholder logic
 
 
@@ -28,73 +30,6 @@ interface StackItem {
     name: string;
     icon: string;
 }
-
-
-// Helper to create the cropped image
-const createImage = (url: string, useCrossOrigin: boolean = true): Promise<HTMLImageElement> =>
-    new Promise((resolve, reject) => {
-        const image = new Image();
-        if (useCrossOrigin && url.startsWith('http')) {
-            image.setAttribute('crossOrigin', 'anonymous');
-        }
-        image.addEventListener('load', () => resolve(image));
-        image.addEventListener('error', (error) => reject(error));
-        // Add a timestamp to bypass local cache which might have stored a non-CORS response
-        const cacheBuster = url.includes('?') ? `&t=${Date.now()}` : `?t=${Date.now()}`;
-        const finalUrl = url.startsWith('http') ? (url + cacheBuster) : url;
-        image.src = finalUrl;
-    });
-
-const getCroppedImg = (imageSrc: string, pixelCrop: unknown): Promise<File> => {
-    return new Promise((resolve, reject) => {
-        (async () => {
-            try {
-                const image = await createImage(imageSrc);
-
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-
-                if (!ctx) {
-                    reject(new Error('No 2d context'));
-                    return;
-                }
-
-                const pc = pixelCrop as { width?: number; height?: number; x?: number; y?: number } | null;
-                if (!pc || pc.width === undefined || pc.height === undefined || pc.width <= 0 || pc.height <= 0) {
-                    reject(new Error(`Invalid crop dimensions: ${JSON.stringify(pixelCrop)}`));
-                    return;
-                }
-                canvas.width = pc.width as number;
-                canvas.height = pc.height as number;
-
-                ctx.drawImage(
-                    image,
-                    pc.x as number,
-                    pc.y as number,
-                    pc.width as number,
-                    pc.height as number,
-                    0,
-                    0,
-                    pc.width as number,
-                    pc.height as number
-                );
-
-                canvas.toBlob((blob) => {
-                    if (!blob) {
-                        console.error('[getCroppedImg] canvas.toBlob returned null');
-                        reject(new Error('Canvas is empty'));
-                        return;
-                    }
-
-                    const file = new File([blob], 'cropped.webp', { type: 'image/webp' });
-                    resolve(file);
-                }, 'image/webp');
-            } catch (e) {
-                reject(e);
-            }
-        })();
-    });
-};
 
 /* "Projects Being Handled" is now managed in the Treasury page (D-Treasury),
    which mirrors the public subset into Settings/Availability. */
@@ -439,19 +374,12 @@ export default function DSettings() {
     // Cropper State
     const [crop, setCrop] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
-    const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ width: number; height: number; x: number; y: number } | null>(null);
+    const [croppedAreaPixels, setCroppedAreaPixels] = useState<CropArea | null>(null);
     const [isCropping, setIsCropping] = useState(false);
     const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
 
     // Detect dark mode to adjust cropper background
-    const [isDark, setIsDark] = useState(false);
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
+    const isDark = useTheme();
 
     // Custom Alert State
     const [alert, setAlert] = useState<{ show: boolean; type: AlertType; message: string }>({
@@ -921,23 +849,14 @@ export default function DSettings() {
             }
 
             const file = e.target.files[0];
-            const imageDataUrl = await readFile(file);
-            setOriginalImageSrc(imageDataUrl as string);
+            setOriginalImageSrc(await readFileAsDataUrl(file));
             setIsCropping(true);
             e.target.value = '';
         }
     };
 
-    const readFile = (file: File) => {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.addEventListener('load', () => resolve(reader.result), false);
-            reader.readAsDataURL(file);
-        });
-    };
-
-    const onCropComplete = useCallback((_croppedArea: unknown, croppedAreaPixels: unknown) => {
-        setCroppedAreaPixels(croppedAreaPixels as { width: number; height: number; x: number; y: number });
+    const onCropComplete = useCallback((_croppedArea: CropArea, croppedAreaPixels: CropArea) => {
+        setCroppedAreaPixels(croppedAreaPixels);
     }, []);
 
     const handleCropSave = async () => {

@@ -75,6 +75,3 @@ export const projectPages: ProjectPage[] = (() => {
 })();
 
 export const projectPageUrl = (slug: string) => `${SITE_URL}/projects/${slug}`;
-
-/** The page address for a Firestore project id, or null when the build has no page for it. */
-export const slugForId = (id: string) => projectPages.find((p) => p.project.id === id)?.slug ?? null;

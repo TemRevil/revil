@@ -7,6 +7,7 @@ import { appAuth } from '../lib/appAuth';
 import { useSettings } from '../contexts/SettingsContext';
 import { PaintDefs, usePaint } from './book/paintKit';
 import './book/book.css';
+import useTheme from '../hooks/useTheme';
 
 type SecretNavigate = (section: 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link') => void;
 
@@ -15,7 +16,7 @@ interface SecretPageProps {
 }
 
 const SecretPage = ({ onNavigate }: SecretPageProps) => {
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     // The /book brushes: from the page edges, across the page and around the card, behind its glass.
     const rootRef = useRef<HTMLDivElement>(null);
     const [fontsReady, setFontsReady] = useState(false);
@@ -34,14 +35,6 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
         name: account?.name || 'Action Center',
         title: account?.title || 'Authorized Revil Only'
     };
-
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

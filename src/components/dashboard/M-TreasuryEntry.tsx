@@ -17,6 +17,7 @@ import DatePicker from '../DatePicker';
 import Select from '../Select';
 import Toggle from '../Toggle';
 import ElasticSlider from '../reactbits/ElasticSlider';
+import useTheme from '../../hooks/useTheme';
 
 type Mode = 'project' | 'expense' | 'income';
 
@@ -44,7 +45,7 @@ const NO_PROJECT = '- No project -';
 const NO_ACCOUNT = '- No account -';
 
 const MTreasuryEntry = ({ mode, config, project, expense, income, projects, accounts, expenseList, incomeList, rates, nextOrder, onSaveProject, onSaveExpense, onSaveIncome, onDelete, onClose }: Props) => {
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     // "Money" = income or expense in ONE modal; the toggle picks which.
     const isMoney = mode !== 'project';
     const [kind, setKind] = useState<'income' | 'expense'>(mode === 'expense' ? 'expense' : 'income');
@@ -212,14 +213,6 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
     const isEdit = mode === 'project' ? !!project : mode === 'expense' ? !!expense : !!income;
     const titleLabel = mode === 'project' ? 'Project' : isEdit ? (kind === 'expense' ? 'Expense' : 'Income') : 'Money';
     const HeaderIcon = mode === 'project' ? Briefcase : kind === 'expense' ? Receipt : Banknote;
-
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };

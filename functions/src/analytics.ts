@@ -22,17 +22,13 @@
 
 import { onRequest } from "firebase-functions/v2/https";
 import admin from "firebase-admin";
-import nodemailer, { type Transporter } from "nodemailer";
-import { defineSecret } from "firebase-functions/params";
 import { lookupCountry } from "./geoip.js";
+import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail.js";
+import { escapeHtml as escHtml } from "./html.js";
 
 const db = () => admin.firestore();
 const FV = admin.firestore.FieldValue;
 
-// Mirrors index.ts / mcp.ts: each module declares the secrets it actually uses.
-const smtpUser = defineSecret("SMTP_USER");
-const resendKey = defineSecret("RESEND_API_KEY");
-const HELLO_EMAIL = "hello@temrevil.com";
 const SITE = "https://temrevil.com";
 
 const SESSIONS = "Analytics/Sessions/Items";
@@ -253,25 +249,6 @@ function todayKey(): string {
 }
 
 // ── email ────────────────────────────────────────────────────────────
-function createTransporter(): Transporter {
-  return nodemailer.createTransport({
-    host: "smtp.resend.com",
-    port: 465,
-    secure: true,
-    auth: { user: "resend", pass: resendKey.value() },
-  });
-}
-
-function escHtml(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  return String(v)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 interface OpenedRow { label: string; value: string }
 
 /**

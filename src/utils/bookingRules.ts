@@ -4,7 +4,7 @@
  * The booking calendar (src/hooks/useMeetingBooking.ts) draws from it, and the
  * bookMeeting Cloud Function enforces it, so a request sent straight to the function
  * can never book something the page would not have offered. The functions build copies
- * this file to functions/src/booking.ts (functions/scripts/sync-booking-rules.mjs):
+ * this file to functions/src/booking.ts (functions/scripts/sync-shared.mjs):
  * edit it here. It must stay dependency-free.
  *
  * The model:

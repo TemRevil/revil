@@ -7,6 +7,7 @@ import {
     CURRENCIES, CURRENCY_SYMBOL, Currency, AccountType, ACCOUNT_TYPES,
     TreasuryAccount, TreasuryConfig, uid,
 } from '../../lib/treasury';
+import useTheme from '../../hooks/useTheme';
 
 interface Props {
     config: TreasuryConfig;
@@ -32,7 +33,7 @@ export const ACCOUNT_COLOR: Record<AccountType, string> = {
 };
 
 const MAccount = ({ config, account, nextOrder, onSave, onDelete, onClose }: Props) => {
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     const [name, setName] = useState(account?.name ?? '');
     const [type, setType] = useState<AccountType>(account?.type ?? 'bank');
     const [currency, setCurrency] = useState<Currency>(account?.currency ?? config.defaultCurrency);
@@ -42,14 +43,6 @@ const MAccount = ({ config, account, nextOrder, onSave, onDelete, onClose }: Pro
     const [countsTowardNetProfit, setCountsTowardNetProfit] = useState(!account?.excludeFromNetProfit);
 
     const isEdit = !!account;
-
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };

@@ -20,6 +20,8 @@ import MContributorView, { Contributor } from '../M-ContributorView';
 import Loader from '../reactbits/Loader';
 import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
 import FileImage from '../FileImage';
+import { bestDistance, SEARCH_MAX_DISTANCE } from '../../utils/fuzzy';
+import useTheme from '../../hooks/useTheme';
 
 interface RawFirestoreTag {
     Name?: string;
@@ -247,7 +249,7 @@ const DProjects = () => {
     const [projects, setProjects] = useState<ProjectData[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<ProjectFormData | null>(null);
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [activeMenu, setActiveMenu] = useState<string | number | null>(null);
     const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
@@ -288,28 +290,6 @@ const DProjects = () => {
     // Alert Toast State
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
 
-    // Levenshtein distance for fuzzy search
-    const getLevenshteinDistance = (a: string, b: string) => {
-        if (a.length === 0) return b.length;
-        if (b.length === 0) return a.length;
-        const matrix = [];
-        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-        for (let i = 1; i <= b.length; i++) {
-            for (let j = 1; j <= a.length; j++) {
-                if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                    matrix[i][j] = matrix[i - 1][j - 1];
-                } else {
-                    matrix[i][j] = Math.min(
-                        matrix[i - 1][j - 1] + 1,
-                        Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
-                    );
-                }
-            }
-        }
-        return matrix[b.length][a.length];
-    };
-
     const filteredProjects = useMemo(() => {
         const sorted = [...projects].sort((a, b) => {
             const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
@@ -325,36 +305,13 @@ const DProjects = () => {
         }
 
         const query = searchQuery.toLowerCase();
-        // ... (rest of search scoring logic)
-
         const scored = projects.map(project => {
-            let minDistance = Infinity;
-            // Check helper
-            const checkTerm = (term: string) => {
-                const lower = term.toLowerCase();
-                if (lower.includes(query)) return 0;
-                const words = lower.split(/[\s-_]+/);
-                let d = Infinity;
-                words.forEach(w => {
-                    d = Math.min(d, getLevenshteinDistance(query, w));
-                });
-                return d;
-            };
-
-            // Search in Name
-            minDistance = Math.min(minDistance, checkTerm(project.name));
-
-            // Search in Tags (assuming plain string array or object with name)
-            // project.tags is {name: string, ...}[] based on usage
-            project.tags.forEach(tag => {
-                minDistance = Math.min(minDistance, checkTerm(tag.name));
-            });
-
+            const minDistance = bestDistance(query, [project.name, ...project.tags.map(tag => tag.name)]);
             return { project, minDistance };
         });
 
         return scored
-            .filter(item => item.minDistance <= 2)
+            .filter(item => item.minDistance <= SEARCH_MAX_DISTANCE)
             .sort((a, b) => a.minDistance - b.minDistance)
             .map(item => item.project);
     }, [projects, searchQuery]);
@@ -364,17 +321,9 @@ const DProjects = () => {
     const isSmall = windowWidth < 640;
 
     useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
         const handleResize = () => setWindowWidth(window.innerWidth);
-
-        checkTheme();
         window.addEventListener('resize', handleResize);
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            observer.disconnect();
-        };
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
 
     const handleAddProject = () => {

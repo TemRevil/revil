@@ -1,4 +1,4 @@
-// GENERATED from src/utils/bookingRules.ts by scripts/sync-booking-rules.mjs - edit that file.
+// GENERATED from src/utils/bookingRules.ts by scripts/sync-shared.mjs - edit that file.
 
 /**
  * Public booking rules - the ONE definition of which days and times a visitor may book.
@@ -6,7 +6,7 @@
  * The booking calendar (src/hooks/useMeetingBooking.ts) draws from it, and the
  * bookMeeting Cloud Function enforces it, so a request sent straight to the function
  * can never book something the page would not have offered. The functions build copies
- * this file to functions/src/booking.ts (functions/scripts/sync-booking-rules.mjs):
+ * this file to functions/src/booking.ts (functions/scripts/sync-shared.mjs):
  * edit it here. It must stay dependency-free.
  *
  * The model:

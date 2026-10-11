@@ -229,7 +229,6 @@ class Collector {
     private seq = 0;
     private dirty = false;
     private sentFinal = false;
-    private inFlight: Promise<unknown> | null = null;
 
     private section = 'home';
     private scrollMax: Record<string, number> = {};
@@ -725,16 +724,10 @@ class Collector {
 
         // On the way out there is no time to await a token; use the warmed one.
         if (final || this.cachedToken) {
-            this.inFlight = send(this.cachedToken);
+            void send(this.cachedToken);
         } else {
-            this.inFlight = this.token().then(send);
+            void this.token().then(send);
         }
-    }
-
-    /** Test/diagnostic hook: force a flush and wait for it. */
-    async flushNow(): Promise<void> {
-        this.flush(false, true);
-        await this.inFlight;
     }
 }
 

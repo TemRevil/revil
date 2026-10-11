@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Folder, FileImage, ChevronRight, ChevronLeft, Search } from 'lucide-react';
 import { ref, listAll, getDownloadURL, getStorage } from 'firebase/storage';
 import app from '../../lib/firebase';
+import useTheme from '../../hooks/useTheme';
 // Local Storage handle (lazy Dashboard chunk) - keeps firebase/storage out of eager.
 const storage = getStorage(app);
 
@@ -37,17 +38,9 @@ const MFirebaseStorage = ({ isOpen, onClose, onSelect, fileTypes = ['svg', 'png'
     const [currentPath, setCurrentPath] = useState('');
     const [files, setFiles] = useState<FirebaseFile[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     const [selectedFile, setSelectedFile] = useState<FirebaseFile | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
 
     const fileTypesKey = fileTypes.join(',');
     const memoizedFileTypes = useMemo(() => fileTypes, [fileTypesKey]); // eslint-disable-line react-hooks/exhaustive-deps

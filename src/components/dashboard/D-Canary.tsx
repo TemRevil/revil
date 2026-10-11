@@ -20,6 +20,7 @@ import MReply from './M-Reply';
 import CustomTimePicker from '../CustomTimePicker';
 import Select from '../Select';
 import Loader from '../reactbits/Loader';
+import useTheme from '../../hooks/useTheme';
 
 type OptionsTab = 'hours' | 'categories' | 'book';
 const OPTIONS_TABS: { key: OptionsTab; label: string; icon: typeof Clock }[] = [
@@ -173,7 +174,7 @@ const DCanary = () => {
         setOptionsDir(idx(key) > idx(optionsTab) ? 1 : -1);
         setOptionsTab(key);
     };
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     const [viewDate, setViewDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [direction, setDirection] = useState(0);
@@ -281,14 +282,6 @@ const DCanary = () => {
         const handleResize = () => setWindowWidth(window.innerWidth);
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
-    useEffect(() => {
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
     }, []);
 
     // Track the host's timezone so reschedules reconstruct the correct UTC instant.

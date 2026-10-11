@@ -3,17 +3,14 @@ import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import admin from "firebase-admin";
 import { createHash } from "node:crypto";
-import nodemailer, { type Transporter } from "nodemailer";
+import type { Transporter } from "nodemailer";
 import { defineSecret } from "firebase-functions/params";
 
 admin.initializeApp();
 const db = admin.firestore();
 
 // ── Secrets (set via: firebase functions:secrets:set SMTP_USER etc.) ──
-const smtpUser = defineSecret("SMTP_USER");
-// Outbound email now routes through Resend (temrevil.com is a verified Resend domain
-// with aligned DKIM/SPF). The old Hostinger SMTP_PASS secret is no longer used.
-const resendKey = defineSecret("RESEND_API_KEY");
+// The email ones (SMTP_USER, RESEND_API_KEY) live in ./mail with the sender.
 
 // LLM provider key for the dashboard assistant ("Spark"). Held server-side so it
 // never ships in the public client bundle. Set with:
@@ -21,12 +18,13 @@ const resendKey = defineSecret("RESEND_API_KEY");
 const llmApiKey = defineSecret("LLM_API_KEY");
 
 // Public-facing inbox that booking notifications are also copied to.
-const HELLO_EMAIL = "hello@temrevil.com";
 
 // Remote MCP server (agentic portfolio access over OAuth) - defined in its own
 // module and re-exported so `firebase deploy --only functions:mcp` works.
 export { mcp } from "./mcp.js";
 import { meetingSyncUrl } from "./mcp.js";
+import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail.js";
+import { escapeHtml as escHtml } from "./html.js";
 import { clientIp } from "./geoip.js";
 import { bookingRefusal, isTaken, parseAvailability, utcOffsetHours, wallClock, DEFAULT_HOST_TZ } from "./booking.js";
 
@@ -74,16 +72,6 @@ interface GuestAckArgs {
  * Escape user-supplied strings before interpolating into email HTML.
  * Prevents an attacker from injecting <img onerror=...> via Name/Email/Message.
  */
-function escHtml(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  return String(v)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 /**
  * A contact-form attachment link is only trustworthy if it actually points at OUR
  * OWN bucket under `emails/`. The public form writes the `Files Attached` array
@@ -175,20 +163,6 @@ function getStoragePathFromUrl(url: string): string | null {
 }
 
 /** Helper: create a reusable SMTP transporter (Resend relay). */
-function createTransporter(): Transporter {
-  // Resend's SMTP relay: the username is literally "resend", the password is the API
-  // key. From addresses must be on a verified domain - we always send as HELLO_EMAIL.
-  return nodemailer.createTransport({
-    host: "smtp.resend.com",
-    port: 465,
-    secure: true,
-    auth: {
-      user: "resend",
-      pass: resendKey.value(),
-    },
-  });
-}
-
 // ── Branded Email Template ─────────────────────────────────────────
 function emailTemplate({ title, preheader, bodyHtml, footerNote }: EmailTemplateArgs): string {
   return `<!DOCTYPE html>

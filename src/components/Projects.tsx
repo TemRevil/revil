@@ -11,6 +11,7 @@ import { ProjectData as Project, TagData as Tag, ContributorData } from '../type
 import { getStackIcon, getTechColor, isVideoFile } from '../utils/projectUtils';
 import { useTailor } from '../lib/analytics/useTailor';
 import { slugOf } from '../utils/projectSlug';
+import { bestDistance, SEARCH_MAX_DISTANCE } from '../utils/fuzzy';
 
 interface RawContributorData {
     Name?: string;
@@ -487,27 +488,6 @@ const Projects = () => {
         [projectsData, selectedProjectId]
     );
 
-    const getLevenshteinDistance = (a: string, b: string) => {
-        if (a.length === 0) return b.length;
-        if (b.length === 0) return a.length;
-        const matrix = [];
-        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-        for (let i = 1; i <= b.length; i++) {
-            for (let j = 1; j <= a.length; j++) {
-                if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                    matrix[i][j] = matrix[i - 1][j - 1];
-                } else {
-                    matrix[i][j] = Math.min(
-                        matrix[i - 1][j - 1] + 1,
-                        Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
-                    );
-                }
-            }
-        }
-        return matrix[b.length][a.length];
-    };
-
     // A share link can ask for particular projects to lead the grid.
     const { Pinned } = useTailor();
 
@@ -543,32 +523,17 @@ const Projects = () => {
 
         const query = debouncedSearch.toLowerCase();
         const scored = results.map(project => {
-            let minDistance = Infinity;
-            const checkTerm = (term: string) => {
-                const lower = term.toLowerCase();
-                if (lower.includes(query)) return 0;
-                const words = lower.split(/[\s-_]+/);
-                let d = Infinity;
-                words.forEach(w => {
-                    d = Math.min(d, getLevenshteinDistance(query, w));
-                });
-                return d;
-            };
-            minDistance = Math.min(minDistance, checkTerm(project.title || ''));
-            (project.tags || []).forEach(tag => {
-                minDistance = Math.min(minDistance, checkTerm(typeof tag === 'string' ? tag : tag.name));
-            });
-            (project.stack || []).forEach(tech => {
-                minDistance = Math.min(minDistance, checkTerm(tech));
-            });
-            project.contributors.forEach(c => {
-                minDistance = Math.min(minDistance, checkTerm(c.name || ''));
-            });
+            const minDistance = bestDistance(query, [
+                project.title || '',
+                ...(project.tags || []).map(tag => typeof tag === 'string' ? tag : tag.name),
+                ...(project.stack || []),
+                ...project.contributors.map(c => c.name || ''),
+            ]);
             return { project, minDistance };
         });
 
         return scored
-            .filter(item => item.minDistance <= 2)
+            .filter(item => item.minDistance <= SEARCH_MAX_DISTANCE)
             .sort((a, b) => a.minDistance - b.minDistance)
             .map(item => item.project);
     }, [debouncedSearch, projectsData, selectedTags, Pinned]);

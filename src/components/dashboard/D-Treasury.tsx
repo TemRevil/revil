@@ -36,6 +36,7 @@ import Select from '../Select';
 import SaveBar from './SaveBar';
 import Alert, { AlertType } from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
+import useTheme from '../../hooks/useTheme';
 
 // Treasury is its own admin-only collection, sorted into one document per
 // concern: the projects I handle, spendings (expenses), and settings (currency
@@ -288,7 +289,7 @@ const TreasuryChart = ({ data, filter, setFilter, isDark, cur }: {
 
 const DTreasury = () => {
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-    const [isDark, setIsDark] = useState(false);
+    const isDark = useTheme();
     const [loading, setLoading] = useState(true);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
     const [data, setData] = useState<TreasuryData>({ config: { ...DEFAULT_CONFIG }, projects: [], expenses: [], income: [], accounts: [], receipts: [] });
@@ -323,12 +324,8 @@ const DTreasury = () => {
 
     useEffect(() => {
         const onResize = () => setWindowWidth(window.innerWidth);
-        const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
-        checkTheme();
         window.addEventListener('resize', onResize);
-        const obs = new MutationObserver(checkTheme);
-        obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => { window.removeEventListener('resize', onResize); obs.disconnect(); };
+        return () => window.removeEventListener('resize', onResize);
     }, []);
 
     useEffect(() => {

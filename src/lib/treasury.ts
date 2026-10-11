@@ -10,14 +10,17 @@
  * Handled" list is mirrored a sanitized subset of these projects.
  */
 
-export type Currency = 'USD' | 'EGP' | 'EUR';
-export const CURRENCIES: Currency[] = ['USD', 'EGP', 'EUR'];
+import {
+    type Currency, type Rates, type PaymentStatus,
+    DEFAULT_RATES, convert, formatMoney, projectReceived, excludedAccountIds,
+    hasInstallments, installmentMonthlyAmount, projectBalance, computeTotals,
+    projectPaymentStatus, ymd, accountBalance,
+} from './money';
+import { levenshtein } from '../utils/fuzzy';
 
-export const CURRENCY_SYMBOL: Record<Currency, string> = {
-    USD: '$',
-    EGP: 'E£',
-    EUR: '€',
-};
+// The money math lives in ./money (shared with the Cloud Functions); everything that
+// imported it from here keeps doing so.
+export * from './money';
 
 /**
  * Where a project stands. ONE field, no second opinion: an earlier model kept a
@@ -25,7 +28,6 @@ export const CURRENCY_SYMBOL: Record<Currency, string> = {
  * and everything that read it now asks isFinished()/isOngoing().
  */
 export type ProjectStatus = 'pending' | 'active' | 'paused' | 'live' | 'completed' | 'closed';
-export type PaymentStatus = 'unpaid' | 'partial' | 'paid';
 
 export interface ProjectStatusMeta {
     id: ProjectStatus;
@@ -174,12 +176,6 @@ export interface TreasuryIncome {
     createdAt: number;
 }
 
-// Exchange rates expressed as "units of this currency per 1 USD". Editable by
-// the admin (live FX would need a paid API; manual keeps the site free + offline).
-export type Rates = Record<Currency, number>;
-
-export const DEFAULT_RATES: Rates = { USD: 1, EGP: 48, EUR: 0.92 };
-
 export interface TreasuryConfig {
     defaultCurrency: Currency;    // used when a command omits a currency
     displayCurrency: Currency;    // currency the cards/totals are shown in
@@ -246,135 +242,12 @@ export function uid(prefix = 'p'): string {
     return `${prefix}_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
 }
 
-/** Convert an amount between currencies using units-per-USD rates. */
-export function convert(amount: number, from: Currency, to: Currency, rates: Rates): number {
-    if (!amount || from === to) return amount || 0;
-    const fromRate = rates[from] || DEFAULT_RATES[from];
-    const toRate = rates[to] || DEFAULT_RATES[to];
-    const usd = amount / fromRate;
-    return usd * toRate;
-}
-
-/** Pretty money in a given currency, no fractional noise for whole amounts. */
-export function formatMoney(amount: number, currency: Currency): string {
-    const rounded = Math.round((amount + Number.EPSILON) * 100) / 100;
-    const hasFraction = Math.abs(rounded % 1) > 0.001;
-    const num = new Intl.NumberFormat('en-US', {
-        minimumFractionDigits: hasFraction ? 2 : 0,
-        maximumFractionDigits: 2,
-    }).format(rounded);
-    return `${CURRENCY_SYMBOL[currency]}${num}`;
-}
-
-export interface TreasuryTotals {
-    earned: number;       // received (paid) money, in display currency
-    outstanding: number;  // contracted minus received, in display currency
-    contracted: number;   // total contracted price, in display currency
-    spent: number;        // total expenses, in display currency
-    net: number;          // earned - spent
-    currency: Currency;
-}
-
-/**
- * How much a project has received, in its own currency: its (legacy) manual
- * paidAmount PLUS the income logged against it. So earnings can be recorded
- * over time, not only when the project is created.
- *
- * For a MONTHLY retainer, "received" means the retainer that's been paid, so it
- * counts ONLY income flagged as the month's payment (monthlyPayment) — one-off
- * or goodwill income linked to the project is real money (it still shows in the
- * ledger and the global earned total) but is not part of the retainer tally.
- * One-off projects have no such flag, so every linked payment counts.
- */
-export function projectReceived(p: TreasuryProject, income: TreasuryIncome[], rates: Rates): number {
-    const linked = (income || []).filter(i =>
-        i.projectId === p.id && (!p.monthly || i.monthlyPayment)
-    );
-    const sum = linked.reduce((s, i) => s + convert(i.amount || 0, i.currency, p.priceCurrency, rates), 0);
-    return (p.paidAmount || 0) + sum;
-}
-
-/** Ids of accounts marked to be left out of Net profit and its trend series. */
-export function excludedAccountIds(accounts: TreasuryAccount[]): Set<string> {
-    return new Set((accounts || []).filter(a => a.excludeFromNetProfit).map(a => a.id));
-}
-
-export function computeTotals(data: TreasuryData): TreasuryTotals {
-    const { displayCurrency: cur, rates } = data.config;
-    const excluded = excludedAccountIds(data.accounts);
-    let earned = 0, outstanding = 0, contracted = 0, spent = 0;
-
-    for (const p of data.projects) {
-        // Monthly retainers have no fixed total - priceAmount is a per-month rate,
-        // so they don't contribute to contracted/outstanding.
-        if (p.monthly) continue;
-        // Owed = price + any installment surcharge (identical to price when there's no plan).
-        const price = convert(projectContractTotal(p), p.priceCurrency, cur, rates);
-        const received = convert(projectReceived(p, data.income, rates), p.priceCurrency, cur, rates);
-        contracted += price;
-        // A CLOSED project is one the client walked away from without paying, so
-        // its balance is not money still expected - counting it would quietly
-        // inflate the receivables figure with debt already written off. It stays
-        // in `contracted`, which records what was agreed, not what is coming.
-        if (p.status === 'closed') continue;
-        outstanding += Math.max(0, price - received);
-    }
-    // Earned = every payment actually received: legacy per-project paidAmount +
-    // all logged income (linked or standalone). No double counting - income is
-    // never folded into paidAmount. Income tied to an excluded account is left
-    // out (legacy paidAmount has no account, so it always counts).
-    for (const p of data.projects) earned += convert(p.monthly ? (p.paidAmount || 0) : Math.min(p.paidAmount || 0, p.priceAmount || p.paidAmount || 0), p.priceCurrency, cur, rates);
-    for (const i of (data.income || [])) { if (i.accountId && excluded.has(i.accountId)) continue; earned += convert(i.amount || 0, i.currency, cur, rates); }
-
-    // Client-paid expenses are recorded for reference only - they're not my money.
-    // Expenses paid from an excluded account are likewise left out of Net profit.
-    for (const e of data.expenses) {
-        if (e.clientPaid) continue;
-        if (e.accountId && excluded.has(e.accountId)) continue;
-        spent += convert(e.amount || 0, e.currency, cur, rates);
-    }
-    return { earned, outstanding, contracted, spent, net: earned - spent, currency: cur };
-}
-
 /* ── Installment plans ─────────────────────────────────────────────────────────
  * A plan splits the contracted price into `installmentMonths` equal payments, with an
  * optional surcharge charged as a % of the WHOLE price. Everything below degrades to
  * the old behaviour when the fields are absent (no percent => x1, no months => no plan),
  * so existing projects keep exactly the same numbers.
  */
-
-/** True when the project is billed as a fixed-total installment plan. */
-export function hasInstallments(p: Pick<TreasuryProject, 'monthly' | 'installmentMonths'>): boolean {
-    return !p.monthly && (p.installmentMonths || 0) > 1;
-}
-
-/** Contracted price plus the installment surcharge (% of the whole price). */
-export function installmentTotal(p: Pick<TreasuryProject, 'priceAmount' | 'installmentPercent'>): number {
-    return (p.priceAmount || 0) * (1 + (p.installmentPercent || 0) / 100);
-}
-
-/** What the client pays per month under the plan (0 when there's no plan). */
-export function installmentMonthlyAmount(
-    p: Pick<TreasuryProject, 'priceAmount' | 'installmentPercent' | 'installmentMonths' | 'monthly'>
-): number {
-    if (!hasInstallments(p)) return 0;
-    return installmentTotal(p) / (p.installmentMonths || 1);
-}
-
-/**
- * The full amount owed on a project: the contracted price plus any installment
- * surcharge. This - not raw priceAmount - is what a client actually owes, so balance,
- * payment status and the treasury totals are all measured against it.
- * Monthly retainers have no fixed total, so they keep using the per-month rate.
- */
-export function projectContractTotal(p: Pick<TreasuryProject, 'priceAmount' | 'installmentPercent' | 'installmentMonths' | 'monthly'>): number {
-    return hasInstallments(p) ? installmentTotal(p) : (p.priceAmount || 0);
-}
-
-/** Per-project remaining balance (total owed − received), in the project's own currency. */
-export function projectBalance(p: TreasuryProject, income: TreasuryIncome[], rates: Rates): number {
-    return Math.max(0, projectContractTotal(p) - projectReceived(p, income, rates));
-}
 
 /**
  * How many whole installments the money received so far covers - i.e. the "3" in
@@ -394,26 +267,13 @@ export function installmentsPaidCount(p: TreasuryProject, income: TreasuryIncome
 }
 
 /**
- * The individual income entries behind a project's received total, oldest first. Uses the
- * SAME filter as projectReceived (a retainer counts only flagged monthly payments), so a
- * listing of payments can never disagree with the Paid figure sitting next to it. The
- * legacy per-project paidAmount carries no date, so it deliberately has no entry here -
- * callers that need the complete total must still use projectReceived.
- */
-export function projectPayments(p: TreasuryProject, income: TreasuryIncome[]): TreasuryIncome[] {
-    return (income || [])
-        .filter(i => i.projectId === p.id && (!p.monthly || i.monthlyPayment))
-        .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.createdAt || 0) - (b.createdAt || 0));
-}
-
-/**
  * Clock time of a payment, e.g. "5:00 PM" - or '' when we don't honestly know it.
  * An income entry stores the DAY the money arrived plus `createdAt`, the moment the entry
  * was typed in. Those two only describe the same event when it was logged on the day it
  * arrived; a payment entered three days later would otherwise be stamped with the time of
  * the data entry. In that case we drop the time rather than print a fiction.
  */
-export function paymentTimeLabel(i: TreasuryIncome): string {
+export function paymentTimeLabel(i: Pick<TreasuryIncome, 'date' | 'createdAt'>): string {
     if (!i.date || !i.createdAt) return '';
     const at = new Date(i.createdAt);
     if (Number.isNaN(at.getTime())) return '';
@@ -436,15 +296,6 @@ export function derivePaymentStatus(p: Pick<TreasuryProject, 'priceAmount' | 'pa
     if (!p.priceAmount) return 'unpaid';
     if (p.paidAmount >= p.priceAmount) return 'paid';
     if (p.paidAmount > 0) return 'partial';
-    return 'unpaid';
-}
-
-/** Payment status using total received (paidAmount + linked income). */
-export function projectPaymentStatus(p: TreasuryProject, income: TreasuryIncome[], rates: Rates): PaymentStatus {
-    if (!p.priceAmount) return 'unpaid';
-    const received = projectReceived(p, income, rates);
-    if (received >= projectContractTotal(p)) return 'paid';
-    if (received > 0) return 'partial';
     return 'unpaid';
 }
 
@@ -492,25 +343,6 @@ export function expenseTemplates(expenses: TreasuryExpense[]): ExpenseTemplate[]
         }
     }
     return Array.from(byLabel.values()).sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed);
-}
-
-/** Levenshtein edit distance (insertions/deletions/substitutions). Two-row DP. */
-export function levenshtein(a: string, b: string): number {
-    if (a === b) return 0;
-    const m = a.length, n = b.length;
-    if (!m) return n;
-    if (!n) return m;
-    let prev = Array.from({ length: n + 1 }, (_, j) => j);
-    for (let i = 1; i <= m; i++) {
-        const curr = [i];
-        const ai = a.charCodeAt(i - 1);
-        for (let j = 1; j <= n; j++) {
-            const cost = ai === b.charCodeAt(j - 1) ? 0 : 1;
-            curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
-        }
-        prev = curr;
-    }
-    return prev[n];
 }
 
 /**
@@ -593,37 +425,6 @@ export function incomeProjectOptions(projects: TreasuryProject[], income: Treasu
 // Monthly retainer scheduling
 // ---------------------------------------------------------------------------
 
-const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-/**
- * Advance a 'YYYY-MM-DD' date by exactly one calendar month, clamping the day to
- * the target month's length so e.g. Jan 31 → Feb 28 (not an overflow into March).
- */
-export function addOneMonth(dateStr: string): string {
-    const d = new Date(`${dateStr}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return dateStr;
-    const day = d.getDate();
-    const lastDayOfNext = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
-    return ymd(new Date(d.getFullYear(), d.getMonth() + 1, Math.min(day, lastDayOfNext)));
-}
-
-/**
- * The date a monthly retainer's NEXT payment falls due, once the current one is
- * confirmed received. Anchors to the project's existing scheduled date if it has
- * one (so the billing day stays fixed regardless of whether the money arrived
- * early or late); otherwise seeds the first cycle from the project's start date,
- * falling back to the payment date. Always lands one calendar month after the
- * cycle just paid.
- */
-export function nextMonthlyPaymentDate(p: Pick<TreasuryProject, 'nextPaymentDate' | 'startDate'>, paymentDate: string): string {
-    const valid = (s?: string | null) => !!s && !Number.isNaN(new Date(`${s}T00:00:00`).getTime());
-    const anchor = valid(p.nextPaymentDate) ? p.nextPaymentDate!
-        : valid(p.startDate) ? p.startDate!
-        : valid(paymentDate) ? paymentDate
-        : ymd(new Date());
-    return addOneMonth(anchor);
-}
-
 /**
  * The next-due date to SHOW for a monthly retainer. Prefers the stored
  * nextPaymentDate, but if it's missing yet payments have been recorded, derives
@@ -649,18 +450,6 @@ export function projectNextPaymentDate(p: TreasuryProject, income: TreasuryIncom
 // ---------------------------------------------------------------------------
 // Accounts - where money actually lives
 // ---------------------------------------------------------------------------
-
-/**
- * Running balance of an account: its opening balance, plus every income logged
- * INTO it, minus every expense paid FROM it - each entry converted into the
- * account's own currency so mixed-currency activity still nets correctly.
- */
-export function accountBalance(acc: TreasuryAccount, income: TreasuryIncome[], expenses: TreasuryExpense[], rates: Rates): number {
-    let bal = acc.openingBalance || 0;
-    for (const i of income || []) if (i.accountId === acc.id) bal += convert(i.amount || 0, i.currency, acc.currency, rates);
-    for (const e of expenses || []) if (e.accountId === acc.id && !e.clientPaid) bal -= convert(e.amount || 0, e.currency, acc.currency, rates);
-    return bal;
-}
 
 /** How many income + expense entries touch this account. */
 export function accountActivityCount(accId: string, income: TreasuryIncome[], expenses: TreasuryExpense[]): number {
