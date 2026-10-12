@@ -8,7 +8,7 @@ export { SITE_URL };
  *
  * Every public page prints `baseGraph` (the Person and the WebSite) in its own JSON-LD,
  * so each page's graph is complete on its own; the nodes that describe the homepage
- * itself (the profile page, its FAQ, the skills and the project list) are in
+ * itself (the profile page, its FAQ and the project list) are in
  * `homeGraph` and printed on the homepage only. They used to sit in the root layout,
  * which printed them on every page: each project page then claimed to be the profile
  * page, and /book carried two FAQPage blocks.
@@ -117,14 +117,6 @@ export const homeGraph = [
         primaryImageOfPage: `${SITE_URL}${PORTRAIT}`,
     },
     {
-        '@type': 'ItemList',
-        '@id': `${SITE_URL}/#skills`,
-        name: 'Technical skills',
-        description: 'Core technologies Mohammed Ahmed works with',
-        itemListElement: ['React', 'Next.js', 'TypeScript', 'Firebase', 'Tailwind CSS', 'Framer Motion', 'Node.js', 'Electron']
-            .map((name, i) => ({ '@type': 'ListItem', position: i + 1, name })),
-    },
-    {
         '@type': 'FAQPage',
         '@id': `${SITE_URL}/#faq`,
         isPartOf: { '@id': `${SITE_URL}/#profile` },
@@ -133,39 +125,35 @@ export const homeGraph = [
         mainEntity: HOME_FAQ.map(({ q, a }) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
     },
     {
-        // The work, baked in at build time from the committed snapshot: the homepage
-        // loads projects from Firestore at runtime, which crawlers that don't run
-        // JavaScript never see.
+        // Google reads an ItemList as a carousel, which may only list page URLs (or
+        // whole Course/Recipe/... items), so the list is URLs and each project is its
+        // own node below.
         '@type': 'ItemList',
         '@id': `${SITE_URL}/#projects`,
         name: 'Portfolio projects',
-        description: 'Web apps, AI tools, desktop software and UI designs built by Mohammed Ahmed (Tem Revil).',
         numberOfItems: projectPages.length,
-        itemListOrder: 'https://schema.org/ItemListUnordered',
-        itemListElement: projectPages.map(({ project: p, name, slug }, i) => {
-            const url = `${SITE_URL}/projects/${slug}`;
-            const keywords = tagNames(p);
-            return {
-                '@type': 'ListItem',
-                position: i + 1,
-                url,
-                item: {
-                    '@type': 'CreativeWork',
-                    // The same node the project's own page describes in full.
-                    '@id': `${url}#project`,
-                    name,
-                    url,
-                    ...(p.Description ? { description: p.Description } : {}),
-                    ...(p['Live Link'] || p['Repository Link'] ? { sameAs: [p['Live Link'], p['Repository Link']].filter(Boolean) } : {}),
-                    ...(p['Repository Link'] ? { codeRepository: p['Repository Link'] } : {}),
-                    ...(p['Project Icon'] ? { image: p['Project Icon'] } : {}),
-                    ...(keywords.length ? { keywords: keywords.join(', ') } : {}),
-                    author: personRef,
-                    isPartOf: websiteRef,
-                },
-            };
-        }),
+        itemListElement: projectPages.map(({ slug }, i) => ({ '@type': 'ListItem', position: i + 1, url: `${SITE_URL}/projects/${slug}` })),
     },
+    // The work itself, baked in at build time from the committed snapshot: the homepage
+    // loads projects from Firestore at runtime, which crawlers that don't run JavaScript
+    // never see. The same nodes the project pages describe in full.
+    ...projectPages.map(({ project: p, name, slug }) => {
+        const url = `${SITE_URL}/projects/${slug}`;
+        const keywords = tagNames(p);
+        return {
+            '@type': 'CreativeWork',
+            '@id': `${url}#project`,
+            name,
+            url,
+            ...(p.Description ? { description: p.Description } : {}),
+            ...(p['Live Link'] || p['Repository Link'] ? { sameAs: [p['Live Link'], p['Repository Link']].filter(Boolean) } : {}),
+            ...(p['Repository Link'] ? { codeRepository: p['Repository Link'] } : {}),
+            ...(p['Project Icon'] ? { image: p['Project Icon'] } : {}),
+            ...(keywords.length ? { keywords: keywords.join(', ') } : {}),
+            author: personRef,
+            isPartOf: websiteRef,
+        };
+    }),
 ];
 
 /** A page's JSON-LD as a script body; `<` is escaped so text can't close the tag. */
