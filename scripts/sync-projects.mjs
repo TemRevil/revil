@@ -24,7 +24,8 @@
  * Refresh after editing projects in Canary:
  *   npm run sync:projects && git commit -am "chore: refresh projects snapshot"
  *
- * Auth: gcloud owner token, or a service-account token via $FIRESTORE_ACCESS_TOKEN.
+ * Auth: a gcloud token for temrevil@gmail.com (whatever account is active), or a
+ * service-account token via $FIRESTORE_ACCESS_TOKEN.
  */
 import { execSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -64,12 +65,14 @@ function getToken() {
     // It has to go through a shell: on Windows gcloud is a .cmd, and Node 20+ refuses to
     // execFile a .cmd/.bat without one (CVE-2024-27980 mitigation), so execFile can never
     // find it. execSync is the thing that actually works here.
+    // The owner's account is named, not gcloud's active one: this machine's active account
+    // is a work account with no access to temrevil1 (its token request hung for minutes).
     try {
-        return execSync('gcloud auth print-access-token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        return execSync('gcloud auth print-access-token temrevil@gmail.com', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 90_000 }).trim();
     } catch {
         throw new Error(
-            'Could not get a token from gcloud. Make sure the Google Cloud SDK is installed and ' +
-            'you are logged in as the temrevil1 owner (`gcloud auth login`), or set FIRESTORE_ACCESS_TOKEN.'
+            'Could not get a token from gcloud for temrevil@gmail.com. Make sure the Google Cloud SDK is ' +
+            'installed and that account is logged in (`gcloud auth login temrevil@gmail.com`), or set FIRESTORE_ACCESS_TOKEN.'
         );
     }
 }
