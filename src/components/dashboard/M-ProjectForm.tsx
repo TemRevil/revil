@@ -362,6 +362,19 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                                         />
                                     </div>
 
+                                    <div>
+                                        <label className="dashboard-label">Case Study</label>
+                                        <textarea
+                                            name="caseStudy"
+                                            value={formData.caseStudy || ''}
+                                            onChange={handleInputChange}
+                                            placeholder={'### The problem\nWhat it solves.\n\n### What I built\n- **A point.** Its detail.'}
+                                            className="dashboard-textarea"
+                                            rows={10}
+                                        />
+                                        <p className="text-xs text-gray-500 mt-2">Only on the project's own page, folded under &quot;The story behind it&quot;. ### starts a heading, - a bullet, **bold**, a blank line a new paragraph.</p>
+                                    </div>
+
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label className="dashboard-label">

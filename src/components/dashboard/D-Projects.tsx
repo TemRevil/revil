@@ -442,6 +442,7 @@ const DProjects = () => {
                     id: doc.id,
                     name: doc.id,
                     description: data.Description || '',
+                    caseStudy: data["Case Study"] || '',
                     liveLink: data["Live Link"] || '',
                     repoLink: data["Repository Link"] || '',
                     downloadLink: data["Download Link"] || '',
@@ -630,6 +631,7 @@ const DProjects = () => {
             // 6. Construct Document Data
             const projectDoc = {
                 "Description": data.description,
+                "Case Study": data.caseStudy || '',
                 "Live Link": data.liveLink,
                 "Download Link": data.downloadLink || '',
                 "Project Icon": iconUrl,

@@ -31,6 +31,8 @@ export interface ProjectData {
     name: string;
     description: string;
     fullDescription?: string;
+    /** The long write-up, shown only on the project's own page (Firestore "Case Study"). */
+    caseStudy?: string;
     images: string[];
     stack?: string[];
     tags: TagData[];

@@ -29,7 +29,7 @@ import admin from "firebase-admin";
 import { randomBytes, createHash } from "crypto";
 import { z } from "zod";
 import type { Response } from "express";
-import type { DocumentSnapshot } from "firebase-admin/firestore";
+import { FieldPath, type DocumentSnapshot } from "firebase-admin/firestore";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   buildReceiptHtml, receiptNumber, projectReceiptLine, receiptPaymentRows, LEGACY_PAYMENT_LABEL, type ReceiptLine,
@@ -1433,7 +1433,8 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       description: "Add a new portfolio project or update an existing one (matched by name). This is a partial update: only the fields you pass are written, and any field you omit is left exactly as it was - so editing one field never wipes the others.",
       inputSchema: {
         name: z.string().min(1).describe("Project name (also the document id)"),
-        description: z.string().optional(),
+        description: z.string().optional().describe("The short summary (1-2 sentences): cards, the project popup and search snippets"),
+        caseStudy: z.string().optional().describe("The long write-up shown only on the project's own page (/projects/<slug>), folded under 'The story behind it'. Plain text: '### Heading' lines, '- ' bullets, **bold**, blank lines between paragraphs"),
         liveLink: z.string().optional(),
         repoLink: z.string().optional(),
         downloadLink: z.string().optional(),
@@ -1444,13 +1445,13 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
     },
     async (a) => {
       // Build the write from ONLY the fields the caller actually passed. Firestore
-      // set(..., {merge:true}) merges at the key level, so any key we DON'T include
-      // is preserved untouched. Previously the four link/description keys were always
-      // written with a `?? ""` fallback, so a partial edit (e.g. just description)
-      // silently blanked Live/Repository/Download Link. Omitting absent fields - like
-      // tags/listing already did - makes every edit a true non-destructive merge.
+      // Fields we DON'T include are preserved untouched. Previously the four
+      // link/description keys were always written with a `?? ""` fallback, so a partial
+      // edit (e.g. just description) silently blanked Live/Repository/Download Link.
+      // Omitting absent fields makes every edit a true non-destructive merge.
       const doc: Record<string, unknown> = {};
       if (a.description !== undefined) doc.Description = a.description;
+      if (a.caseStudy !== undefined) doc["Case Study"] = a.caseStudy;
       if (a.liveLink !== undefined) doc["Live Link"] = a.liveLink;
       if (a.repoLink !== undefined) doc["Repository Link"] = a.repoLink;
       if (a.downloadLink !== undefined) doc["Download Link"] = a.downloadLink;
@@ -1462,10 +1463,13 @@ function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, s
       if (typeof a.listing === "number") doc.Listing = a.listing;
 
       if (!Object.keys(doc).length) {
-        return fail("Nothing to write - pass at least one field besides name (description, liveLink, repoLink, downloadLink, tags, or listing).");
+        return fail("Nothing to write - pass at least one field besides name (description, caseStudy, liveLink, repoLink, downloadLink, tags, or listing).");
       }
 
-      await db().doc(`Projects/${a.name}`).set(doc, { merge: true });
+      // mergeFields, not merge: merge deep-merges maps, so a shorter tag list kept the
+      // old list's extra numbered keys (5 tags written over 7 left 7, two of them stale).
+      // mergeFields replaces each written field whole and leaves the rest alone.
+      await db().doc(`Projects/${a.name}`).set(doc, { mergeFields: Object.keys(doc).map((k) => new FieldPath(k)) });
       return ok({ status: "saved", id: a.name, changed: Object.keys(doc) });
     });
 

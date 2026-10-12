@@ -17,6 +17,8 @@ export { cleanName, nameNote, slugOf };
 export type SnapshotProject = {
     id: string;
     Description?: string;
+    /** The long write-up, only on the project's own page (see app/projects/CaseStudy). */
+    'Case Study'?: string;
     Listing?: number;
     'Live Link'?: string;
     'Repository Link'?: string;

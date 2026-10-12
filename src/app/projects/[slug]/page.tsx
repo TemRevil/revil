@@ -5,6 +5,7 @@ import {
 } from '../../../utils/projectPages';
 import { baseGraph, jsonLd, personRef, websiteRef } from '../../../utils/siteProfile';
 import ProjectsBar from '../ProjectsBar';
+import CaseStudy from '../CaseStudy';
 import '../projects.css';
 
 // One static page per project, built from the snapshot. A slug the build doesn't
@@ -127,6 +128,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                             ))}
                         </div>
                     )}
+
+                    {project['Case Study'] && <CaseStudy text={project['Case Study']} />}
 
                     {people.length > 0 && (
                         <section className="pj-section" aria-labelledby="pj-people">

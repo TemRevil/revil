@@ -202,6 +202,52 @@
   font-weight: 700;
   color: var(--text-muted);
 }
+/* The case study: folded by default, one click opens it. Its text is in the HTML
+   either way, so crawlers read it without the click. */
+.pj-story summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 8px;
+}
+.pj-story summary::-webkit-details-marker { display: none; }
+.pj-story summary h2 { margin: 0; }
+.pj-story summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.3s ease;
+}
+.pj-story[open] summary::after { transform: translateY(2px) rotate(-135deg); }
+.pj-story summary:hover h2 { color: var(--text-primary); }
+.pj-story summary:focus-visible { outline: 2px solid var(--pj-blue); outline-offset: 4px; }
+.pj-story-body { max-width: 68ch; padding-top: 8px; }
+.pj-story-body h3 {
+  margin: 28px 0 8px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.pj-story-body p,
+.pj-story-body li {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.pj-story-body p { margin: 0 0 12px; }
+.pj-story-body ul { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 6px; list-style: disc; }
+.pj-story-body li::marker { color: var(--text-muted); }
+.pj-story-body strong { color: var(--text-primary); font-weight: 650; }
+@media (prefers-reduced-motion: reduce) {
+  .pj-story summary::after { transition: none; }
+}
+
 .pj-people { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .pj-people li { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
 .pj-people b { font-weight: 700; }
