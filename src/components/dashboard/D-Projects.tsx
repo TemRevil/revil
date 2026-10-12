@@ -10,6 +10,10 @@ import app, { db } from '../../lib/firebase';
 // getStorage here keeps firebase/storage out of the eager bundle while leaving
 // every existing `ref(storage, ...)` call site unchanged.
 const storage = getStorage(app);
+// Browsers keep project images for a week instead of fetching them on every visit
+// (Storage's default is no caching). A week, not a year: the icon is re-uploaded to
+// the same path, so a replaced file may keep its URL.
+const IMAGE_META = { cacheControl: 'public, max-age=604800' };
 import Alert from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import MProjectForm from './M-ProjectForm';
@@ -526,7 +530,7 @@ const DProjects = () => {
                             const blob = await response.blob();
                             const newRef = ref(storage, `src/projects-imgs/${projectName}/${item.name}`);
 
-                            await uploadBytes(newRef, blob);
+                            await uploadBytes(newRef, blob, IMAGE_META);
                             const newFileUrl = await getDownloadURL(newRef);
 
                             // Update iconUrl if this was the icon
@@ -549,7 +553,7 @@ const DProjects = () => {
             if (data.icon && typeof data.icon !== 'string') {
                 const iconFile = data.icon as File;
                 const iconRef = ref(storage, `src/projects-imgs/${projectName}/icon`);
-                await uploadBytes(iconRef, iconFile);
+                await uploadBytes(iconRef, iconFile, IMAGE_META);
                 iconUrl = await getDownloadURL(iconRef);
             }
 
@@ -579,7 +583,7 @@ const DProjects = () => {
                     }
                 } else if (file instanceof File) {
                     const imgRef = ref(storage, `src/projects-imgs/${projectName}/${file.name}`);
-                    await uploadBytes(imgRef, file);
+                    await uploadBytes(imgRef, file, IMAGE_META);
                     const url = await getDownloadURL(imgRef);
                     imageUrls.push(url);
                 }

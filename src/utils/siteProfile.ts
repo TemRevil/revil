@@ -40,7 +40,7 @@ export const SOCIAL_PROFILES = {
 };
 
 /** Names people search him by, besides "Mohammed Ahmed". */
-export const ALIASES = ['Tem Revil', 'Temrevil', 'Tem', 'Tim'];
+export const ALIASES = ['Tem Revil', 'Temrevil'];
 export const EMAIL = 'hello@temrevil.com';
 export const LOCATION = 'El Mansoura (El Mansourah), Dakahlia, Egypt';
 
