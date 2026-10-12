@@ -31,7 +31,7 @@ export const MAX_INTRO_LENGTH = 320;
 export const MAX_SLOGAN_LENGTH = 40;
 
 export const DEFAULT_BOOK_PAGE: BookPageConfig = {
-    slogan: 'AI Products Expert',
+    slogan: 'Frontend & AI Engineer',
     intro: "I'm **Mohammed Ahmed**. I build web apps with AI inside them, from the idea to launch. Let's talk about your project, a role, a collab or your podcast.",
     tags: ['Web apps', 'AI features', 'Motion UI', 'Firebase back ends', 'Desktop apps'],
 };

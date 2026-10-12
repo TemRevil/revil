@@ -1,5 +1,10 @@
 RewriteEngine On
 
+# One host: www.temrevil.com answered with the same pages, a duplicate copy of the
+# site for search engines. Send it to the apex with a permanent redirect.
+RewriteCond %{HTTP_HOST} ^www\.temrevil\.com$ [NC]
+RewriteRule ^ https://temrevil.com%{REQUEST_URI} [R=301,L]
+
 # Map extensionless routes to their exported `.html` file. The static export emits
 # pages as `mcp-login.html` (not `mcp-login/index.html`), but a bare `/mcp-login`
 # request gets a 301 to `/mcp-login/`, which the host then serves as a directory →
@@ -8,12 +13,14 @@ RewriteEngine On
 RewriteCond %{REQUEST_FILENAME}.html -f
 RewriteRule ^(.+?)/?$ $1.html [L]
 
-# Serve real files directly and fall back to the exported app shell.
+# Serve real files directly. Anything else is a share link (temrevil.com/<code>) or a
+# dead address: it gets share.html, the app shell marked noindex (scripts/share-shell.mjs),
+# so links still open while search engines stop seeing copies of the homepage.
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-RewriteRule ^ index.html [L]
+RewriteRule ^ share.html [L]
 
 # ── Security headers (delivered as real HTTP headers, not <meta>) ──
 # frame-ancestors / X-Frame-Options must be HTTP headers to take effect —

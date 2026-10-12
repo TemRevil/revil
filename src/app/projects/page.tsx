@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { SITE_URL, projectPages, projectPageUrl, tagNames, mediaOf, shortDescription } from '../../utils/projectPages';
+import { baseGraph, jsonLd, personRef, websiteRef, SHARE_CARD } from '../../utils/siteProfile';
 import ProjectsBar from './ProjectsBar';
 import './projects.css';
 
@@ -11,22 +12,21 @@ export const metadata: Metadata = {
     title,
     description,
     alternates: { canonical: '/projects' },
-    openGraph: { type: 'website', url: `${SITE_URL}/projects`, title, description, siteName: 'Tem Revil', locale: 'en_US', images: [{ url: '/icon-512.webp', width: 512, height: 512, alt: 'Tem Revil' }] },
-    twitter: { card: 'summary', title, description, images: ['/icon-512.webp'] },
+    openGraph: { type: 'website', url: `${SITE_URL}/projects`, title, description, siteName: 'Tem Revil', locale: 'en_US', images: [SHARE_CARD] },
+    twitter: { card: 'summary_large_image', title, description, images: [SHARE_CARD.url] },
 };
 
 export default function ProjectsIndex() {
-    const structuredData = {
-        '@context': 'https://schema.org',
-        '@graph': [
+    const graph = [
+        ...baseGraph,
             {
                 '@type': 'CollectionPage',
                 '@id': `${SITE_URL}/projects#webpage`,
                 url: `${SITE_URL}/projects`,
                 name: title,
                 description,
-                isPartOf: { '@id': `${SITE_URL}/#website` },
-                about: { '@id': `${SITE_URL}/#person` },
+                isPartOf: websiteRef,
+                about: personRef,
                 mainEntity: {
                     '@type': 'ItemList',
                     numberOfItems: projectPages.length,
@@ -40,12 +40,11 @@ export default function ProjectsIndex() {
                     { '@type': 'ListItem', position: 2, name: 'Projects', item: `${SITE_URL}/projects` },
                 ],
             },
-        ],
-    };
+    ];
 
     return (
         <div className="pj">
-            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, String.fromCharCode(92) + "u003c") }} />
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
                 <ProjectsBar current="list" />
                 <main>
@@ -57,7 +56,7 @@ export default function ProjectsIndex() {
                             return (
                                 <li key={p.slug}>
                                     <a className="pj-card" href={`/projects/${p.slug}`}>
-                                        <figure>{cover && <img src={cover} alt="" loading={i < 3 ? 'eager' : 'lazy'} decoding="async" />}</figure>
+                                        <figure>{cover && <img src={cover} alt={`${p.name} screenshot`} loading={i < 3 ? 'eager' : 'lazy'} decoding="async" />}</figure>
                                         <div>
                                             <h2>{p.name}</h2>
                                             {p.project.Description && <p>{shortDescription(p.project.Description, 120)}</p>}

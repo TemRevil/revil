@@ -1,6 +1,7 @@
 import { preload } from 'react-dom'
 import HomeApp from './HomeApp'
 import { projectPages } from '../utils/projectPages'
+import { baseGraph, homeGraph, jsonLd, HOME_FAQ, JOB_TITLE, SOCIAL_PROFILES } from '../utils/siteProfile'
 
 // A server component on purpose: the <noscript> copy below is built from the project
 // snapshot at build time, and nothing of it ships to the browser as JavaScript.
@@ -12,6 +13,7 @@ export default function Page() {
   preload('/book/tem-cutout.webp', { as: 'image', fetchPriority: 'high' })
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd([...baseGraph, ...homeGraph]) }} />
       {/* GEO fallback - the visible app is a client-rendered SPA (ssr:false), so AI
           crawlers that do NOT execute JavaScript (GPTBot, ClaudeBot, PerplexityBot,
           CCBot, etc.) only ever see this static HTML plus the JSON-LD in <head>.
@@ -31,7 +33,7 @@ export default function Page() {
           }}
         >
           <header>
-            <h1 style={{ marginBottom: '12px' }}>Tem Revil | Frontend &amp; AI Engineer</h1>
+            <h1 style={{ marginBottom: '12px' }}>Tem Revil | {JOB_TITLE}</h1>
             <p style={{ marginBottom: '10px' }}>
               Mohammed Ahmed, known publicly as <strong>Tem Revil</strong> (also Temrevil),
               is a frontend engineer and AI engineer based in El Mansoura (El Mansourah),
@@ -73,26 +75,13 @@ export default function Page() {
 
           <section>
             <h2>Frequently asked questions</h2>
-            <h3>Who is Tem Revil?</h3>
-            <p>
-              Tem Revil is the public brand of Mohammed Ahmed, a frontend and AI engineer
-              based in El Mansoura, Egypt.
-            </p>
-            <h3>What does he specialize in?</h3>
-            <p>
-              Frontend engineering with React, Next.js, and TypeScript; Firebase apps;
-              motion design with Framer Motion; Tailwind CSS; Electron; and AI integration.
-            </p>
-            <h3>Where is he based?</h3>
-            <p>
-              El Mansoura (El Mansourah), Dakahlia Governorate, Egypt; available for remote
-              work worldwide.
-            </p>
-            <h3>Is he available for hire?</h3>
-            <p>
-              Yes - freelance, remote, and full-time. Contact{' '}
-              <a href="mailto:hello@temrevil.com">hello@temrevil.com</a>.
-            </p>
+            {/* The same questions and answers as the FAQPage JSON-LD above. */}
+            {HOME_FAQ.map(({ q, a }) => (
+              <div key={q}>
+                <h3>{q}</h3>
+                <p>{a}</p>
+              </div>
+            ))}
           </section>
 
           <nav aria-label="Pages">
@@ -111,9 +100,9 @@ export default function Page() {
             <ul>
               <li>Website: <a href="https://temrevil.com">temrevil.com</a></li>
               <li>Email: <a href="mailto:hello@temrevil.com">hello@temrevil.com</a></li>
-              <li>GitHub: <a href="https://github.com/TemRevil">github.com/TemRevil</a></li>
-              <li>LinkedIn: <a href="https://linkedin.com/in/temrevil">linkedin.com/in/temrevil</a></li>
-              <li>Instagram: <a href="https://instagram.com/temrevil">instagram.com/temrevil</a></li>
+              <li>GitHub: <a href={SOCIAL_PROFILES.github}>github.com/TemRevil</a></li>
+              <li>LinkedIn: <a href={SOCIAL_PROFILES.linkedin}>linkedin.com/in/tem-revil</a></li>
+              <li>Instagram: <a href={SOCIAL_PROFILES.instagram}>instagram.com/temrevil</a></li>
             </ul>
           </footer>
         </article>

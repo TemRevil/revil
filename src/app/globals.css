@@ -2283,7 +2283,7 @@ main[data-switching] > [id^="section-"] {
     height: 50px;
   }
 
-  h1.text-5xl {
+  :is(h1, h2).text-5xl {
     font-size: 2.5rem;
   }
 }

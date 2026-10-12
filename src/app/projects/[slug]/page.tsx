@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import {
     SITE_URL, projectPages, projectPageUrl, tagNames, contributorsOf, mediaOf, shortDescription,
 } from '../../../utils/projectPages';
+import { baseGraph, jsonLd, personRef, websiteRef } from '../../../utils/siteProfile';
 import ProjectsBar from '../ProjectsBar';
 import '../projects.css';
 
@@ -49,10 +50,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     const others = projectPages.filter((p) => p.slug !== slug);
     const url = projectPageUrl(slug);
 
-    // Linked to the root Person and WebSite nodes (layout.tsx) by @id.
-    const structuredData = {
-        '@context': 'https://schema.org',
-        '@graph': [
+    // The Person and WebSite nodes (siteProfile) are printed with it, so the graph is whole.
+    const graph = [
+        ...baseGraph,
             {
                 '@type': 'CreativeWork',
                 '@id': `${url}#project`,
@@ -63,11 +63,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                 ...(tags.length ? { keywords: tags.join(', ') } : {}),
                 ...(repo ? { codeRepository: repo } : {}),
                 ...(live || repo ? { sameAs: [live, repo].filter(Boolean) } : {}),
-                author: { '@id': `${SITE_URL}/#person` },
+                author: personRef,
                 ...(people.length > 1 ? {
                     contributor: people.filter((p) => p.name !== 'Mohammed Ahmed').map((p) => ({ '@type': 'Person', name: p.name, jobTitle: p.role || undefined })),
                 } : {}),
-                isPartOf: { '@id': `${SITE_URL}/#website` },
+                isPartOf: websiteRef,
             },
             {
                 '@type': 'BreadcrumbList',
@@ -77,12 +77,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                     { '@type': 'ListItem', position: 3, name, item: url },
                 ],
             },
-        ],
-    };
+    ];
 
     return (
         <div className="pj">
-            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, String.fromCharCode(92) + "u003c") }} />
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
                 <ProjectsBar />
 
@@ -94,7 +93,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                     </ol>
 
                     <div className="pj-head">
-                        {project['Project Icon'] && <img className="pj-icon" src={project['Project Icon']} alt="" width={64} height={64} />}
+                        {project['Project Icon'] && <img className="pj-icon" src={project['Project Icon']} alt={`${name} logo`} width={64} height={64} />}
                         <div>
                             <h1>{name}</h1>
                             {note && <span className="pj-note">{note}</span>}

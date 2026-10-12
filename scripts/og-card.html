@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- The 1200x630 share card (public/og.png) for the homepage and /projects.
+     Rebuild it with `npm run og:card` after changing the name, title or photo. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: Inter; font-weight: 100 900; src: url(../public/fonts/inter-latin.woff2) format("woff2"); }
+  @font-face { font-family: "Archivo Black"; src: url(../public/fonts/archivo-black-latin.woff2) format("woff2"); }
+  @font-face { font-family: "Permanent Marker"; src: url(../public/fonts/permanent-marker-latin.woff2) format("woff2"); }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    position: relative;
+    background: #08090d;
+    color: #f5f7fb;
+    font-family: Inter, sans-serif;
+    background-image: radial-gradient(rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .glow { position: absolute; right: 60px; bottom: -220px; width: 640px; height: 640px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(51,149,255,.22), rgba(51,149,255,0) 62%); }
+  .portrait { position: absolute; right: 40px; bottom: 0; height: 600px; }
+  .copy { position: absolute; left: 72px; top: 92px; width: 640px; }
+  .this-is { font-family: "Permanent Marker", cursive; color: #3395ff; font-size: 38px; transform: rotate(-5deg); transform-origin: left center; margin-bottom: 6px; }
+  h1 { font-family: "Archivo Black", sans-serif; font-weight: 400; font-size: 132px; line-height: .86; letter-spacing: -.045em; text-transform: uppercase; }
+  .role { margin-top: 34px; font-size: 40px; font-weight: 600; letter-spacing: -.01em; }
+  .meta { margin-top: 12px; font-size: 26px; color: #9aa3b2; }
+  .url { position: absolute; left: 72px; bottom: 56px; font-size: 24px; font-weight: 600; color: #f5f7fb; display: flex; align-items: center; gap: 14px; }
+  .url::before { content: ""; width: 44px; height: 3px; background: #3395ff; border-radius: 2px; }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <img class="portrait" src="../public/book/tem-cutout.webp" alt="">
+  <div class="copy">
+    <div class="this-is">This is</div>
+    <h1>Tem<br>Revil</h1>
+    <div class="role">Frontend &amp; AI Engineer</div>
+    <div class="meta">Mohammed Ahmed, El Mansoura, Egypt</div>
+  </div>
+  <div class="url">temrevil.com</div>
+</body>
+</html>

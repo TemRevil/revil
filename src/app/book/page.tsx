@@ -37,6 +37,10 @@ export default function Page() {
             <a href="mailto:hello@temrevil.com">hello@temrevil.com</a> to set up a call, or see the
             portfolio at <a href="https://temrevil.com">temrevil.com</a>.
           </p>
+          <p>
+            What he has built: <a href="/projects">all projects</a>, from web apps and AI tools to
+            a desktop system and UI designs.
+          </p>
         </article>
       </noscript>
       <BookPage />

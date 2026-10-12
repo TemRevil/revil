@@ -4,12 +4,12 @@
 > engineer and AI engineer based in El Mansoura, Egypt, building motion-rich,
 > accessible web applications with React, Next.js, TypeScript, and Firebase.
 
-- Preferred title: Tem Revil | Portfolio
+- Preferred title: Tem Revil (Mohammed Ahmed) | Frontend & AI Engineer
 - Name: Mohammed Ahmed
 - Public brand: Tem Revil
 - Aliases: Tem Revil, Temrevil, Tem, Tim
 - Location: El Mansoura (El Mansourah), Dakahlia, Egypt
-- Role: Frontend Engineer and AI Engineer
+- Role: Frontend & AI Engineer
 - Availability: Open to freelance, remote, and full-time opportunities
 - Website: https://temrevil.com
 - Email: hello@temrevil.com
@@ -64,7 +64,7 @@ site and source code. The full list: https://temrevil.com/projects
 ## Profiles
 
 - GitHub: https://github.com/TemRevil
-- LinkedIn: https://linkedin.com/in/temrevil
+- LinkedIn: https://www.linkedin.com/in/tem-revil
 - Instagram: https://instagram.com/temrevil
 
 ## Frequently asked questions

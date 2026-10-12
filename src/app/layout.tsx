@@ -3,217 +3,10 @@ import Script from 'next/script'
 import './fonts.css'
 import './globals.css'
 import ClientProtection from './ClientProtection'
-import { projectPages, tagNames } from '../utils/projectPages'
+import { SITE_URL as siteUrl, SITE_NAME as siteName, SITE_TITLE as siteTitle, SITE_DESCRIPTION as siteDescription, SHARE_CARD } from '../utils/siteProfile'
 
-
-const siteUrl = 'https://temrevil.com'
-const siteName = 'Tem Revil'
-const siteTitle = 'Tem Revil | Portfolio'
-const siteDescription =
-  'Mohammed Ahmed (Tem Revil) is a frontend engineer and AI engineer based in El Mansoura, Egypt. He specializes in React, Next.js, TypeScript, and Firebase, building motion-rich, accessible web experiences with AI integration. Open to freelance, remote, and full-time opportunities.'
-
-const socialProfiles = [
-  'https://github.com/TemRevil',
-  'https://linkedin.com/in/temrevil',
-  'https://instagram.com/temrevil',
-]
-
-const projects = projectPages
-
-const structuredData = {
-  '@context': 'https://schema.org',
-  '@graph': [
-    {
-      '@type': 'Person',
-      '@id': `${siteUrl}/#person`,
-      name: 'Mohammed Ahmed',
-      alternateName: ['Tem Revil', 'Temrevil', 'Tem', 'Tim'],
-      description: siteDescription,
-      url: siteUrl,
-      image: `${siteUrl}/icon-512.webp`,
-      email: 'mailto:hello@temrevil.com',
-      jobTitle: 'Frontend Engineer & AI Engineer',
-      worksFor: {
-        '@type': 'Organization',
-        name: 'Freelance / Open to Opportunities',
-      },
-      homeLocation: {
-        '@type': 'Place',
-        name: 'El Mansoura, Dakahlia, Egypt',
-      },
-      address: {
-        '@type': 'PostalAddress',
-        addressLocality: 'El Mansoura',
-        addressRegion: 'Dakahlia',
-        addressCountry: 'EG',
-      },
-      nationality: {
-        '@type': 'Country',
-        name: 'Egypt',
-      },
-      sameAs: socialProfiles,
-      knowsAbout: [
-        'Frontend engineering',
-        'React',
-        'Next.js',
-        'TypeScript',
-        'Firebase',
-        'Tailwind CSS',
-        'Motion design for web interfaces',
-        'Framer Motion',
-        'Electron apps',
-        'AI product integration',
-        'Web accessibility',
-        'Responsive design',
-        'Progressive Web Apps',
-      ],
-      hasCredential: {
-        '@type': 'EducationalOccupationalCredential',
-        credentialCategory: 'portfolio',
-        url: siteUrl,
-      },
-      // Ties the person to the real project list below, so an engine answering
-      // "what has Tem Revil built?" has the work attached to the entity.
-      subjectOf: { '@id': `${siteUrl}/#projects` },
-      makesOffer: {
-        '@type': 'Offer',
-        itemOffered: {
-          '@type': 'Service',
-          name: 'Frontend Development & AI Integration',
-          description: 'Custom web applications built with React, Next.js, TypeScript, and Firebase. Specializing in motion-rich UI, AI-enhanced features, and performance optimization.',
-        },
-      },
-    },
-    {
-      '@type': 'WebSite',
-      '@id': `${siteUrl}/#website`,
-      url: siteUrl,
-      name: siteName,
-      alternateName: ['Tem Revil', 'Temrevil'],
-      description: siteDescription,
-      inLanguage: 'en',
-      creator: { '@id': `${siteUrl}/#person` },
-    },
-    {
-      '@type': 'ProfilePage',
-      '@id': `${siteUrl}/#profile`,
-      url: siteUrl,
-      name: siteTitle,
-      description: siteDescription,
-      dateModified: new Date().toISOString().split('T')[0],
-      isPartOf: { '@id': `${siteUrl}/#website` },
-      about: { '@id': `${siteUrl}/#person` },
-      primaryImageOfPage: `${siteUrl}/icon-512.webp`,
-    },
-    {
-      '@type': 'ItemList',
-      '@id': `${siteUrl}/#skills`,
-      name: 'Technical Skills',
-      description: 'Core technologies and tools used by Mohammed Ahmed',
-      itemListElement: [
-        { '@type': 'ListItem', position: 1, name: 'React' },
-        { '@type': 'ListItem', position: 2, name: 'Next.js' },
-        { '@type': 'ListItem', position: 3, name: 'TypeScript' },
-        { '@type': 'ListItem', position: 4, name: 'Firebase' },
-        { '@type': 'ListItem', position: 5, name: 'Tailwind CSS' },
-        { '@type': 'ListItem', position: 6, name: 'Framer Motion' },
-        { '@type': 'ListItem', position: 7, name: 'Node.js' },
-        { '@type': 'ListItem', position: 8, name: 'Electron' },
-      ],
-    },
-    {
-      // FAQ structured data - primarily for generative engines (ChatGPT, Claude,
-      // Perplexity, Gemini) which extract these Q&A pairs to answer "who is / what
-      // does / where / hire" queries about Tem Revil. Answers mirror the canonical
-      // facts in the Person node and llms.txt so the model gets a consistent story.
-      '@type': 'FAQPage',
-      '@id': `${siteUrl}/#faq`,
-      isPartOf: { '@id': `${siteUrl}/#website` },
-      about: { '@id': `${siteUrl}/#person` },
-      inLanguage: 'en',
-      dateModified: new Date().toISOString().split('T')[0],
-      mainEntity: [
-        {
-          '@type': 'Question',
-          name: 'Who is Tem Revil?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Tem Revil is the public brand of Mohammed Ahmed, a frontend engineer and AI engineer based in El Mansoura, Egypt. He builds motion-rich, accessible web applications with React, Next.js, TypeScript, and Firebase, and integrates AI into web products.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'What does Tem Revil specialize in?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'He specializes in frontend engineering with React, Next.js, and TypeScript, real-time and serverless apps with Firebase, motion design with Framer Motion, Tailwind CSS, cross-platform desktop apps with Electron, and integrating AI features into web experiences.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Where is Tem Revil based?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Tem Revil (Mohammed Ahmed) is based in El Mansoura (also spelled El Mansourah), Dakahlia Governorate, Egypt, and works with clients remotely worldwide.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Is Tem Revil available for hire?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Yes. Mohammed Ahmed is open to freelance, remote, and full-time opportunities for frontend development and AI integration projects. You can reach him at hello@temrevil.com.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'How can I contact Tem Revil?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'You can contact Mohammed Ahmed (Tem Revil) by email at hello@temrevil.com, or through the contact section on his portfolio at https://temrevil.com. He is also reachable on GitHub, LinkedIn, and Instagram as @temrevil.',
-          },
-        },
-      ],
-    },
-    {
-      // The actual portfolio work, baked in at BUILD time from the committed snapshot
-      // (refresh with `npm run sync:projects`). The app loads these from Firestore at
-      // RUNTIME, which AI crawlers never see because they don't execute JavaScript - so
-      // without this node the portfolio's real projects are invisible to every generative
-      // engine. App Check blocks anonymous Firestore reads, hence the committed snapshot
-      // rather than a fetch during the build.
-      '@type': 'ItemList',
-      '@id': `${siteUrl}/#projects`,
-      name: 'Portfolio Projects',
-      description: 'Web and UI projects designed and built by Mohammed Ahmed (Tem Revil).',
-      numberOfItems: projects.length,
-      itemListOrder: 'https://schema.org/ItemListUnordered',
-      itemListElement: projects.map(({ project: p, name, slug }, i) => {
-        const keywords = tagNames(p)
-        const url = `${siteUrl}/projects/${slug}`
-        return {
-          '@type': 'ListItem',
-          position: i + 1,
-          url,
-          item: {
-            '@type': 'CreativeWork',
-            // The same node the project's own page describes in full.
-            '@id': `${url}#project`,
-            name,
-            url,
-            ...(p.Description ? { description: p.Description } : {}),
-            ...(p['Live Link'] || p['Repository Link'] ? { sameAs: [p['Live Link'], p['Repository Link']].filter(Boolean) } : {}),
-            ...(p['Repository Link'] ? { codeRepository: p['Repository Link'] } : {}),
-            ...(p['Project Icon'] ? { image: p['Project Icon'] } : {}),
-            ...(keywords.length ? { keywords: keywords.join(', ') } : {}),
-            author: { '@id': `${siteUrl}/#person` },
-            isPartOf: { '@id': `${siteUrl}/#website` },
-          },
-        }
-      }),
-    },
-  ],
-}
+// The JSON-LD lives with each page (see src/utils/siteProfile.ts), not here: a layout
+// prints on every page, and the homepage's profile and FAQ nodes don't belong on /book.
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -291,20 +84,13 @@ export const metadata: Metadata = {
     description: siteDescription,
     siteName,
     locale: 'en_US',
-    images: [
-      {
-        url: '/icon-512.webp',
-        width: 512,
-        height: 512,
-        alt: 'Tem Revil brand icon',
-      },
-    ],
+    images: [SHARE_CARD],
   },
   twitter: {
     card: 'summary_large_image',
     title: siteTitle,
     description: siteDescription,
-    images: ['/icon-512.webp'],
+    images: [SHARE_CARD.url],
   },
   icons: {
     icon: [
@@ -322,7 +108,7 @@ export const metadata: Metadata = {
     'geo.position': '31.0409;31.3785',
     'ICBM': '31.0409, 31.3785',
     // GEO: Signals for AI content engines
-    'subject': 'Frontend Engineer & AI Engineer Portfolio',
+    'subject': 'Frontend & AI Engineer Portfolio',
     'topic': 'Web Development, React, Next.js, TypeScript, Firebase, AI Integration',
     'summary': 'Portfolio of Mohammed Ahmed (Tem Revil), a frontend and AI engineer from El Mansoura, Egypt, specializing in React, Next.js, and motion-rich web experiences.',
     // (Removed legacy meta tags no modern search engine honors:
@@ -381,10 +167,6 @@ export default function RootLayout({
         <link rel="preload" href="/fonts/archivo-black-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/permanent-marker-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-        />
       </head>
       <body>
         <ClientProtection />

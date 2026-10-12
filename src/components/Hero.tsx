@@ -242,7 +242,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     // the hero never waits for Firebase to show the name and title.
     const { account } = useSettings();
     const profileName = (account?.name || 'Tem Revil').trim();
-    const profileTitle = account?.title || 'a Front-End';
+    const profileTitle = account?.title || 'Frontend & AI Engineer';
     const [firstName, ...rest] = profileName.split(/\s+/);
     const nameLines = [firstName, rest.join(' ')].filter(Boolean).map(s => s.toUpperCase());
     const sloganLines = splitSlogan(profileTitle);

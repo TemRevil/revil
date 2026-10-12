@@ -148,7 +148,7 @@ const Stack = () => {
     const [stackItems, setStackItems] = useState<StackData[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string, url: string }[]>([
         { name: 'Github', url: 'https://github.com/TemRevil' },
-        { name: 'LinkedIn', url: 'https://linkedin.com/in/temrevil' },
+        { name: 'LinkedIn', url: 'https://www.linkedin.com/in/tem-revil' },
         { name: 'Instagram', url: 'https://instagram.com/temrevil' }
     ]);
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
@@ -292,13 +292,13 @@ const Stack = () => {
                     >
                         My Tech
                     </div>
-                    <h1
+                    <h2
                         ref={titleRef}
                         className="text-6xl md:text-8xl lg:text-9xl font-black transition-slow opacity-0 m-0 leading-none"
                         style={{ color: 'var(--text-primary)' }}
                     >
                         Stack
-                    </h1>
+                    </h2>
                 </div>
 
                 <div

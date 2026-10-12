@@ -100,13 +100,13 @@ const Developer = () => {
                     >
                         Open Source
                     </div>
-                    <h1
+                    <h2
                         ref={titleRef}
                         className="text-5xl md:text-7xl lg:text-8xl font-black text-primary opacity-0 font-inter"
                         style={{ margin: 0, letterSpacing: '-0.04em' }}
                     >
                         Developer
-                    </h1>
+                    </h2>
                     <p
                         ref={taglineRef}
                         className="opacity-0"

@@ -154,3 +154,17 @@ jobs:
             mv "$STAGE_DIR" "$CURRENT_DIR"
             rm -f "$INCOMING_ARCHIVE"
             REMOTE
+
+      # Tell Bing (and the other IndexNow engines: Yandex, Seznam, Naver) that the
+      # sitemap's pages changed, so they recrawl now instead of whenever. The key file
+      # is public/<key>.txt. A failed ping never fails the deploy.
+      - name: Ping IndexNow
+        continue-on-error: true
+        env:
+          INDEXNOW_KEY: 6de522071a7266eec311b13b026e49f1
+        run: |
+          urls=$(grep -o '<loc>[^<]*</loc>' deploy_bundle/sitemap.xml | sed -e 's#<loc>##' -e 's#</loc>##' | jq -R . | jq -sc .)
+          body=$(jq -nc --arg key "$INDEXNOW_KEY" --argjson urls "$urls" \
+            '{host: "temrevil.com", key: $key, keyLocation: ("https://temrevil.com/" + $key + ".txt"), urlList: $urls}')
+          curl -sS -o /dev/null -w "IndexNow: HTTP %{http_code}\n" -X POST https://api.indexnow.org/indexnow \
+            -H 'Content-Type: application/json; charset=utf-8' --data "$body"

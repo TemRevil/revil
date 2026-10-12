@@ -31,14 +31,14 @@ A frontend and AI engineer who builds motion-rich web apps and puts AI to work i
 
 ## Brand Commitments
 
-- Name: Mohammed Ahmed, known as Tem Revil. Title on the live site: "AI Products Expert".
+- Name: Mohammed Ahmed, known as Tem Revil. Title on the live site: "Frontend & AI Engineer" (owner chose it 2026-10-12 over "AI Products Expert").
 - Fonts in use: Archivo Black (name), Permanent Marker (handwriting, animated), Inter (body). Accent #3395ff.
 - For /book, the owner pinned a light, paint-and-collage look inspired by the FIFA 22 Mbappé cover: dry-brush strokes, stacked cropped name type, photo panels.
 
 ## Evidence on Hand
 
 - Hero photo (Firebase Storage, Settings/Hero.image.dark.png), dark studio background, not a cutout. A background-free photo is promised by the owner and not yet delivered.
-- Location El Mansoura, Egypt, UTC+03:00. Contact hello@temrevil.com; github.com/TemRevil, linkedin.com/in/temrevil, instagram.com/temrevil.
+- Location El Mansoura, Egypt, UTC+03:00. Contact hello@temrevil.com; github.com/TemRevil, linkedin.com/in/tem-revil, instagram.com/temrevil.
 - No testimonials, client logos or metrics exist for /book. Do not invent them.
 
 ## Product Principles

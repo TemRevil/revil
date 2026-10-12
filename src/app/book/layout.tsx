@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { preload } from 'react-dom'
+import { baseGraph, jsonLd } from '../../utils/siteProfile'
 
 const siteUrl = 'https://temrevil.com'
 const pageUrl = `${siteUrl}/book`
@@ -49,11 +50,10 @@ export const metadata: Metadata = {
 
 // The page body is client-only (ssr:false), so crawlers and AI agents that don't run
 // JavaScript learn what /book is and how to use it from this node and the <noscript>
-// copy in page.tsx. The Person, WebSite and FAQ nodes live in the root layout; these
-// link to them by @id.
-const structuredData = {
-  '@context': 'https://schema.org',
-  '@graph': [
+// copy in page.tsx. The Person and WebSite nodes come from siteProfile, so the page's
+// graph is whole; its own FAQ is the only FAQPage on the page.
+const graph = [
+    ...baseGraph,
     {
       '@type': ['WebPage', 'ContactPage'],
       '@id': `${pageUrl}#webpage`,
@@ -150,8 +150,7 @@ const structuredData = {
         },
       ],
     },
-  ],
-}
+]
 
 export default function BookLayout({ children }: { children: React.ReactNode }) {
   // The cutout is the page's largest paint, but the client-only page only asks for it once
@@ -161,7 +160,7 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        dangerouslySetInnerHTML={{ __html: jsonLd(graph) }}
       />
       {children}
     </>
