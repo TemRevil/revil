@@ -4,7 +4,7 @@
     "intro": "I'm **Mohammed Ahmed**. I build web apps with AI inside them, from the idea to launch. Let's talk about your project, a role, a collab or just casually.",
     "tags": [
       "Web Apps",
-      "AI Experities",
+      "AI Expertise",
       "Processing Units",
       "Tech Environment"
     ]
@@ -12,9 +12,9 @@
   "account": {
     "Email": "hello@temrevil.com",
     "Social Links": {
-      "LinkedIn": "https://www.linkedin.com/in/tem-revil",
       "Instagram": "https://instagram.com/temrevil",
-      "GitHub": "https://github.com/temrevil"
+      "GitHub": "https://github.com/temrevil",
+      "LinkedIn": "https://www.linkedin.com/in/tem-revil"
     }
   }
 }
