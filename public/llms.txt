@@ -50,16 +50,17 @@
 
 ## Projects
 
-Each project has its own page with the description, stack, screenshots, live
-site and source code. The full list: https://temrevil.com/projects
+Each project has its own page with the story behind it (the problem, what was
+built, the decisions), stack, screenshots, live site and source code. The full
+list: https://temrevil.com/projects
 
-- Kittle.: https://temrevil.com/projects/kittle
-- Gunter System: https://temrevil.com/projects/gunter-system
-- The-State: https://temrevil.com/projects/the-state
-- Arkham Studio: https://temrevil.com/projects/arkham-studio
-- Encryptor 2.0: https://temrevil.com/projects/encryptor-2-0
-- Vrose: https://temrevil.com/projects/vrose
-- Login-Design Vol.1: https://temrevil.com/projects/login-design-vol-1
+- Kittle. (https://temrevil.com/projects/kittle): Kittle. is a browser-based AI code assistant that reads a GitHub repository or local files and explains it back, with chat and auto-generated architecture diagrams, across Gemini, GPT-4o, Claude and DeepSeek.
+- Gunter System (https://temrevil.com/projects/gunter-system): Gunter was a Windows desktop management system for mechanical and spare-parts businesses: sales, payments, debts, customers and stock in Arabic and English, with thermal receipt printing.
+- The-State (https://temrevil.com/projects/the-state): The State CRM is a demo sales CRM with contacts, companies, a deals pipeline and activities, built with React, TypeScript and Firebase to run safely on the free tier. Sign in with demo / demo12345.
+- Arkham Studio (https://temrevil.com/projects/arkham-studio): Arkham is a gaming news website design, with a featured-games slider, game cards, a news section and a contact form, built in plain HTML, CSS and JavaScript.
+- Encryptor 2.0 (https://temrevil.com/projects/encryptor-2-0): Encryptor 2.0 is a password toolkit: a generator for passwords up to 1024 characters, a custom wordlist generator, and PassQuest, a game of 13 password rules. Built with Next.js, React 19 and TypeScript.
+- Vrose (https://temrevil.com/projects/vrose): Vrose is a landing and shop page design for a flower store, "Nature in Real", with a product range, a "Why Flowers?" story section and a responsive layout in HTML, CSS and JavaScript.
+- Login-Design Vol.1 (https://temrevil.com/projects/login-design-vol-1): Login-Design Vol.1 is a fully responsive login page design with Google and Facebook sign-in buttons, built in HTML and CSS.
 
 ## Profiles
 
