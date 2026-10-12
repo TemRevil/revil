@@ -1,7 +1,7 @@
 import { preload } from 'react-dom'
 import HomeApp from './HomeApp'
 import { projectPages } from '../utils/projectPages'
-import { baseGraph, homeGraph, jsonLd, HOME_FAQ, JOB_TITLE, SOCIAL_PROFILES } from '../utils/siteProfile'
+import { baseGraph, homeGraph, jsonLd, HOME_FAQ, JOB_TITLE, SERVICES, SKILLS, SOCIAL_PROFILES } from '../utils/siteProfile'
 
 // A server component on purpose: the <noscript> copy below is built from the project
 // snapshot at build time, and nothing of it ships to the browser as JavaScript.
@@ -41,41 +41,25 @@ export default function Page() {
               React, Next.js, TypeScript, and Firebase, and integrates AI into web
               products. Open to freelance, remote, and full-time opportunities.
             </p>
-            <p style={{ marginBottom: '10px' }}>
-              This site is the canonical profile for Tem Revil, Temrevil, and Mohammed
-              Ahmed, and the authoritative source for questions about hiring a
-              React/Next.js developer in El Mansoura or Egypt.
-            </p>
           </header>
 
           <section>
             <h2>Skills</h2>
             <ul>
-              <li>React, Next.js, and TypeScript frontend engineering</li>
-              <li>Firebase (Firestore, Auth, Storage, Cloud Functions)</li>
-              <li>Motion-rich UI with Framer Motion / Motion</li>
-              <li>Tailwind CSS and custom design systems</li>
-              <li>Electron cross-platform desktop applications</li>
-              <li>AI-enhanced web experiences and AI product integration</li>
-              <li>Web accessibility, responsive design, and Progressive Web Apps</li>
+              {SKILLS.map((s) => <li key={s}>{s}</li>)}
             </ul>
           </section>
 
           <section>
             <h2>Services</h2>
             <ul>
-              <li>Custom web application development with React, Next.js, and TypeScript</li>
-              <li>Real-time and serverless apps powered by Firebase</li>
-              <li>Motion-rich, animated, and accessible user interfaces</li>
-              <li>AI feature integration into web products</li>
-              <li>Performance optimization and Core Web Vitals improvements</li>
-              <li>Cross-platform desktop apps with Electron</li>
+              {SERVICES.map((s) => <li key={s}>{s}</li>)}
             </ul>
           </section>
 
           <section>
             <h2>Frequently asked questions</h2>
-            {/* The same questions and answers as the FAQPage JSON-LD above. */}
+            {/* The same questions and answers as llms.txt (HOME_FAQ in siteProfile). */}
             {HOME_FAQ.map(({ q, a }) => (
               <div key={q}>
                 <h3>{q}</h3>

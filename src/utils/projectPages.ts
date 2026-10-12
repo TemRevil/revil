@@ -49,11 +49,30 @@ export const mediaOf = (p: SnapshotProject) =>
         video: /\.(mp4|webm|mov)(\?|$)/i.test(decodeURIComponent(url.split('/o/')[1] || url)),
     }));
 
-/** A description cut to a search-result length on a word boundary. */
+/**
+ * A description cut to a search-result length so it still reads as a whole sentence:
+ * whole sentences first, then the last clause that isn't the middle of a list
+ * ("a, b and c" is never split), and a word cut with "…" only when neither fits.
+ */
 export const shortDescription = (text: string, max = 158) => {
     const flat = text.replace(/\s+/g, ' ').trim();
     if (flat.length <= max) return flat;
-    return `${flat.slice(0, flat.lastIndexOf(' ', max - 1) || max - 1).replace(/[,.;:]$/, '')}…`;
+    const min = Math.floor(max * 0.45);
+    let sentence = -1;
+    for (const m of flat.matchAll(/[.!?](?=\s+[A-Z])/g)) {
+        if (m.index >= max) break;
+        if (m.index + 1 >= min) sentence = m.index + 1;
+    }
+    if (sentence > 0) return flat.slice(0, sentence);
+    const head = flat.slice(0, max - 1);
+    for (const sep of [': ', '; ', ' - ', ', ']) {
+        for (let i = head.lastIndexOf(sep); i >= min; i = head.lastIndexOf(sep, i - 1)) {
+            // A comma only ends a clause before words like these; otherwise it's a list.
+            if (sep === ', ' && !/^(with|built|which|where|across|so|but|while)\b/i.test(flat.slice(i + 2))) continue;
+            return `${head.slice(0, i)}.`;
+        }
+    }
+    return `${head.slice(0, head.lastIndexOf(' ')).replace(/[,.;:]$/, '')}…`;
 };
 
 export interface ProjectPage {

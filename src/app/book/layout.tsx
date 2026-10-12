@@ -51,7 +51,8 @@ export const metadata: Metadata = {
 // The page body is client-only (ssr:false), so crawlers and AI agents that don't run
 // JavaScript learn what /book is and how to use it from this node and the <noscript>
 // copy in page.tsx. The Person and WebSite nodes come from siteProfile, so the page's
-// graph is whole; its own FAQ is the only FAQPage on the page.
+// graph is whole. No FAQPage: Google wants FAQ questions visible on the page and only
+// shows FAQ results for government and health sites; the noscript copy says it all.
 const graph = [
     ...baseGraph,
     {
@@ -108,46 +109,6 @@ const graph = [
       itemListElement: [
         { '@type': 'ListItem', position: 1, name: 'Tem Revil', item: siteUrl },
         { '@type': 'ListItem', position: 2, name: 'Book a call', item: pageUrl },
-      ],
-    },
-    {
-      '@type': 'FAQPage',
-      '@id': `${pageUrl}#faq`,
-      isPartOf: { '@id': `${pageUrl}#webpage` },
-      inLanguage: 'en',
-      mainEntity: [
-        {
-          '@type': 'Question',
-          name: 'How do I book a call with Tem Revil?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Open https://temrevil.com/book, pick an open date on the calendar, choose a time slot (shown in your own time zone), then enter your name, email and what the call is about and press Book. A calendar invite with the Google Meet link is emailed to you.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'How long is the call and what does it cost?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'The call is 60 minutes on Google Meet and it is free.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'What can the call be about?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'A project you want built, a role you want to offer, a collaboration or a podcast. Tem Revil (Mohammed Ahmed) works on React, Next.js, TypeScript and Firebase frontends and AI product integration.',
-          },
-        },
-        {
-          '@type': 'Question',
-          name: 'Which time zone are the slots in?',
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: 'Your own. The page detects your time zone and converts the open slots to it; you can change the time zone from the list above the slots.',
-          },
-        },
       ],
     },
 ]

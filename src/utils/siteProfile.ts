@@ -1,4 +1,6 @@
-import { SITE_URL, projectPages, tagNames } from './projectPages';
+import {
+    SITE_URL, projectPages, projectPageUrl, tagNames, contributorsOf, mediaOf, type ProjectPage,
+} from './projectPages';
 
 export { SITE_URL };
 
@@ -8,10 +10,14 @@ export { SITE_URL };
  *
  * Every public page prints `baseGraph` (the Person and the WebSite) in its own JSON-LD,
  * so each page's graph is complete on its own; the nodes that describe the homepage
- * itself (the profile page, its FAQ and the project list) are in
- * `homeGraph` and printed on the homepage only. They used to sit in the root layout,
- * which printed them on every page: each project page then claimed to be the profile
- * page, and /book carried two FAQPage blocks.
+ * itself (the profile page and the project list) are in `homeGraph` and printed on
+ * the homepage only. They used to sit in the root layout, which printed them on every
+ * page: each project page then claimed to be the profile page.
+ *
+ * No FAQPage: Google only shows FAQ results for government and health sites, and its
+ * rules want the questions visible on the page, which the client-rendered app doesn't
+ * do. The same answers stay in the homepage's <noscript> copy and in llms.txt, where
+ * crawlers that don't run JavaScript read them.
  */
 
 export const SITE_NAME = 'Tem Revil';
@@ -33,6 +39,11 @@ export const SOCIAL_PROFILES = {
     instagram: 'https://instagram.com/temrevil',
 };
 
+/** Names people search him by, besides "Mohammed Ahmed". */
+export const ALIASES = ['Tem Revil', 'Temrevil', 'Tem', 'Tim'];
+export const EMAIL = 'hello@temrevil.com';
+export const LOCATION = 'El Mansoura (El Mansourah), Dakahlia, Egypt';
+
 const PERSON_ID = `${SITE_URL}/#person`;
 const WEBSITE_ID = `${SITE_URL}/#website`;
 export const personRef = { '@id': PERSON_ID };
@@ -43,11 +54,11 @@ export const baseGraph = [
         '@type': 'Person',
         '@id': PERSON_ID,
         name: 'Mohammed Ahmed',
-        alternateName: ['Tem Revil', 'Temrevil', 'Tem', 'Tim'],
+        alternateName: ALIASES,
         description: PERSON_DESCRIPTION,
         url: SITE_URL,
         image: `${SITE_URL}${PORTRAIT}`,
-        email: 'mailto:hello@temrevil.com',
+        email: `mailto:${EMAIL}`,
         jobTitle: JOB_TITLE,
         homeLocation: { '@type': 'Place', name: 'El Mansoura, Dakahlia, Egypt' },
         address: { '@type': 'PostalAddress', addressLocality: 'El Mansoura', addressRegion: 'Dakahlia', addressCountry: 'EG' },
@@ -72,7 +83,7 @@ export const baseGraph = [
         '@id': WEBSITE_ID,
         url: SITE_URL,
         name: SITE_NAME,
-        alternateName: ['Tem Revil', 'Temrevil'],
+        alternateName: ['Temrevil', 'temrevil.com'],
         description: PERSON_DESCRIPTION,
         inLanguage: 'en',
         creator: personRef,
@@ -80,7 +91,26 @@ export const baseGraph = [
     },
 ];
 
-/** The FAQ the homepage shows and marks up; the two must say the same thing. */
+/** What he works with and what he offers, as the homepage's <noscript> copy and llms.txt list them. */
+export const SKILLS = [
+    'React, Next.js, and TypeScript frontend engineering',
+    'Firebase (Firestore, Auth, Storage, Cloud Functions)',
+    'Motion-rich UI with Framer Motion / Motion',
+    'Tailwind CSS and custom design systems',
+    'Electron cross-platform desktop applications',
+    'AI-enhanced web experiences and AI product integration',
+    'Web accessibility, responsive design, and Progressive Web Apps',
+];
+export const SERVICES = [
+    'Custom web application development with React, Next.js, and TypeScript',
+    'Real-time and serverless apps powered by Firebase',
+    'Motion-rich, animated, and accessible user interfaces',
+    'AI feature integration into web products',
+    'Performance optimization and Core Web Vitals improvements',
+    'Cross-platform desktop apps with Electron',
+];
+
+/** The questions the homepage's <noscript> copy and llms.txt answer. */
 export const HOME_FAQ: { q: string; a: string }[] = [
     {
         q: 'Who is Tem Revil?',
@@ -104,6 +134,40 @@ export const HOME_FAQ: { q: string; a: string }[] = [
     },
 ];
 
+/** Tags that are programming languages, for SoftwareSourceCode.programmingLanguage. */
+const LANGUAGES = ['HTML', 'CSS', 'JavaScript', 'TypeScript', 'Python', 'Dart', 'Kotlin', 'Swift', 'Go', 'Rust', 'PHP', 'Java', 'C#', 'C++', 'SQL'];
+
+/**
+ * One project as schema.org sees it, the same node on the homepage and on the
+ * project's own page. With a repository it is SoftwareSourceCode (codeRepository
+ * belongs to that type, not to CreativeWork). The live site and the repo are links on
+ * the page, not `sameAs`: they are the work's homes, not other descriptions of it.
+ */
+export const projectNode = ({ project: p, name, slug }: ProjectPage) => {
+    const url = projectPageUrl(slug);
+    const tags = tagNames(p);
+    const repo = p['Repository Link'];
+    const images = mediaOf(p).filter((m) => !m.video).map((m) => m.url);
+    const languages = LANGUAGES.filter((l) => tags.some((t) => t.toLowerCase() === l.toLowerCase()));
+    const others = contributorsOf(p).filter((c) => c.name !== 'Mohammed Ahmed');
+    return {
+        '@type': repo ? 'SoftwareSourceCode' : 'CreativeWork',
+        '@id': `${url}#project`,
+        url,
+        name,
+        ...(p.Description ? { description: p.Description } : {}),
+        ...(images.length ? { image: images } : p['Project Icon'] ? { image: p['Project Icon'] } : {}),
+        ...(tags.length ? { keywords: tags.join(', ') } : {}),
+        ...(repo ? { codeRepository: repo } : {}),
+        ...(repo && languages.length ? { programmingLanguage: languages } : {}),
+        inLanguage: 'en',
+        author: personRef,
+        ...(others.length ? { contributor: others.map((c) => ({ '@type': 'Person', name: c.name, ...(c.role ? { jobTitle: c.role } : {}) })) } : {}),
+        isPartOf: websiteRef,
+        mainEntityOfPage: { '@id': `${url}#webpage` },
+    };
+};
+
 export const homeGraph = [
     {
         '@type': 'ProfilePage',
@@ -115,14 +179,7 @@ export const homeGraph = [
         isPartOf: websiteRef,
         mainEntity: personRef,
         primaryImageOfPage: `${SITE_URL}${PORTRAIT}`,
-    },
-    {
-        '@type': 'FAQPage',
-        '@id': `${SITE_URL}/#faq`,
-        isPartOf: { '@id': `${SITE_URL}/#profile` },
-        about: personRef,
-        inLanguage: 'en',
-        mainEntity: HOME_FAQ.map(({ q, a }) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+        hasPart: { '@id': `${SITE_URL}/#projects` },
     },
     {
         // Google reads an ItemList as a carousel, which may only list page URLs (or
@@ -131,29 +188,14 @@ export const homeGraph = [
         '@type': 'ItemList',
         '@id': `${SITE_URL}/#projects`,
         name: 'Portfolio projects',
+        isPartOf: { '@id': `${SITE_URL}/#profile` },
         numberOfItems: projectPages.length,
         itemListElement: projectPages.map(({ slug }, i) => ({ '@type': 'ListItem', position: i + 1, url: `${SITE_URL}/projects/${slug}` })),
     },
     // The work itself, baked in at build time from the committed snapshot: the homepage
     // loads projects from Firestore at runtime, which crawlers that don't run JavaScript
-    // never see. The same nodes the project pages describe in full.
-    ...projectPages.map(({ project: p, name, slug }) => {
-        const url = `${SITE_URL}/projects/${slug}`;
-        const keywords = tagNames(p);
-        return {
-            '@type': 'CreativeWork',
-            '@id': `${url}#project`,
-            name,
-            url,
-            ...(p.Description ? { description: p.Description } : {}),
-            ...(p['Live Link'] || p['Repository Link'] ? { sameAs: [p['Live Link'], p['Repository Link']].filter(Boolean) } : {}),
-            ...(p['Repository Link'] ? { codeRepository: p['Repository Link'] } : {}),
-            ...(p['Project Icon'] ? { image: p['Project Icon'] } : {}),
-            ...(keywords.length ? { keywords: keywords.join(', ') } : {}),
-            author: personRef,
-            isPartOf: websiteRef,
-        };
-    }),
+    // never see. The very nodes the project pages print (projectNode).
+    ...projectPages.map(projectNode),
 ];
 
 /** A page's JSON-LD as a script body; `<` is escaped so text can't close the tag. */

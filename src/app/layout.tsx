@@ -6,7 +6,7 @@ import ClientProtection from './ClientProtection'
 import { SITE_URL as siteUrl, SITE_NAME as siteName, SITE_TITLE as siteTitle, SITE_DESCRIPTION as siteDescription, SHARE_CARD } from '../utils/siteProfile'
 
 // The JSON-LD lives with each page (see src/utils/siteProfile.ts), not here: a layout
-// prints on every page, and the homepage's profile and FAQ nodes don't belong on /book.
+// prints on every page, and the homepage's profile node doesn't belong on /book.
 
 export const viewport: Viewport = {
   width: 'device-width',

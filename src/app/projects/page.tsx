@@ -25,16 +25,20 @@ export default function ProjectsIndex() {
                 url: `${SITE_URL}/projects`,
                 name: title,
                 description,
+                inLanguage: 'en',
                 isPartOf: websiteRef,
                 about: personRef,
+                breadcrumb: { '@id': `${SITE_URL}/projects#breadcrumb` },
                 mainEntity: {
                     '@type': 'ItemList',
+                    '@id': `${SITE_URL}/projects#list`,
                     numberOfItems: projectPages.length,
                     itemListElement: projectPages.map((p, i) => ({ '@type': 'ListItem', position: i + 1, url: projectPageUrl(p.slug), name: p.name })),
                 },
             },
             {
                 '@type': 'BreadcrumbList',
+                '@id': `${SITE_URL}/projects#breadcrumb`,
                 itemListElement: [
                     { '@type': 'ListItem', position: 1, name: 'Tem Revil', item: SITE_URL },
                     { '@type': 'ListItem', position: 2, name: 'Projects', item: `${SITE_URL}/projects` },

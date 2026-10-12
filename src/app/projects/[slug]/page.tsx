@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import {
     SITE_URL, projectPages, projectPageUrl, tagNames, contributorsOf, mediaOf, shortDescription,
 } from '../../../utils/projectPages';
-import { baseGraph, jsonLd, personRef, websiteRef } from '../../../utils/siteProfile';
+import { baseGraph, jsonLd, personRef, projectNode, websiteRef } from '../../../utils/siteProfile';
 import ProjectsBar from '../ProjectsBar';
 import CaseStudy from '../CaseStudy';
 import '../projects.css';
@@ -51,33 +51,34 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     const others = projectPages.filter((p) => p.slug !== slug);
     const url = projectPageUrl(slug);
 
+    const cover = media.find((m) => !m.video)?.url;
+
     // The Person and WebSite nodes (siteProfile) are printed with it, so the graph is whole.
     const graph = [
         ...baseGraph,
-            {
-                '@type': 'CreativeWork',
-                '@id': `${url}#project`,
-                url,
-                name,
-                ...(project.Description ? { description: project.Description } : {}),
-                ...(media.length ? { image: media.filter((m) => !m.video).map((m) => m.url) } : {}),
-                ...(tags.length ? { keywords: tags.join(', ') } : {}),
-                ...(repo ? { codeRepository: repo } : {}),
-                ...(live || repo ? { sameAs: [live, repo].filter(Boolean) } : {}),
-                author: personRef,
-                ...(people.length > 1 ? {
-                    contributor: people.filter((p) => p.name !== 'Mohammed Ahmed').map((p) => ({ '@type': 'Person', name: p.name, jobTitle: p.role || undefined })),
-                } : {}),
-                isPartOf: websiteRef,
-            },
-            {
-                '@type': 'BreadcrumbList',
-                itemListElement: [
-                    { '@type': 'ListItem', position: 1, name: 'Tem Revil', item: SITE_URL },
-                    { '@type': 'ListItem', position: 2, name: 'Projects', item: `${SITE_URL}/projects` },
-                    { '@type': 'ListItem', position: 3, name, item: url },
-                ],
-            },
+        {
+            '@type': 'WebPage',
+            '@id': `${url}#webpage`,
+            url,
+            name: `${name} | Tem Revil`,
+            description: shortDescription(project.Description || `${name}, a project by Tem Revil (Mohammed Ahmed).`),
+            inLanguage: 'en',
+            isPartOf: websiteRef,
+            about: personRef,
+            ...(cover ? { primaryImageOfPage: cover } : {}),
+            breadcrumb: { '@id': `${url}#breadcrumb` },
+            mainEntity: { '@id': `${url}#project` },
+        },
+        projectNode(page),
+        {
+            '@type': 'BreadcrumbList',
+            '@id': `${url}#breadcrumb`,
+            itemListElement: [
+                { '@type': 'ListItem', position: 1, name: 'Tem Revil', item: SITE_URL },
+                { '@type': 'ListItem', position: 2, name: 'Projects', item: `${SITE_URL}/projects` },
+                { '@type': 'ListItem', position: 3, name, item: url },
+            ],
+        },
     ];
 
     return (
