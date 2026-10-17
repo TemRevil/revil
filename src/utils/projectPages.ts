@@ -86,7 +86,8 @@ export interface ProjectPage {
 export const projectPages: ProjectPage[] = (() => {
     const seen = new Map<string, number>();
     return [...(projectsSnapshot as unknown as SnapshotProject[])]
-        .sort((a, b) => (a.Listing ?? 999) - (b.Listing ?? 999))
+        // 0 is what Canary saves for a project never reordered: last, as the homepage grid has it.
+        .sort((a, b) => (a.Listing || 999) - (b.Listing || 999))
         .map((project) => {
             const base = slugOf(project.id);
             const n = (seen.get(base) || 0) + 1;
