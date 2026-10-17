@@ -41,7 +41,7 @@ export const useHostClock = (tz: string) => {
 /** Holds the brushes' boil while `on` (see holdBoil): for anything that animates over the hero. */
 export const useBoilHold = (on = true) => useEffect(() => (on ? holdBoil() : undefined), [on]);
 
-/** The brush filters. #bp-rag's turbulence is the one the boil re-seeds. */
+/** The brush filters. #bp-rag's turbulence is the one the boil re-seeds (startBoil adds a fixed-seed copy per boil frame). */
 export const PaintDefs = ({ boilRef }: { boilRef: RefObject<SVGFETurbulenceElement | null> }) => (
     <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
         <defs>
@@ -91,10 +91,10 @@ export function usePaint(rootRef: RefObject<HTMLElement | null>, ready: boolean,
     }, [rootRef]);
 
     useEffect(() => {
-        const turb = boilRef.current;
-        if (!turb || reducedMotion() || window.matchMedia(PHONE_QUERY).matches) return;
-        return startBoil(turb);
-    }, []);
+        const root = rootRef.current, turb = boilRef.current;
+        if (!root || !turb || reducedMotion() || window.matchMedia(PHONE_QUERY).matches) return;
+        return startBoil(root, turb);
+    }, [rootRef]);
 
     return { boilRef, painted };
 }

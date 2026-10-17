@@ -37,20 +37,47 @@ let gridStart = 0;
 /** Phones: fewer bristles per stroke (set per paint by paintBook). */
 let lite = false;
 
+/** This entrance's stroke reveals, so the boil knows when the last one has landed. */
+let reveals: Animation[] = [];
+
+/**
+ * Length of the polyline `d` draws, and the point at a distance along it: what a probe
+ * path's getTotalLength/getPointAtLength return, in the same 32-bit float steps Skia
+ * takes, without the probe. Each probe in the DOM forced a style and layout pass, about
+ * 45 of them in the task that starts the entrance.
+ */
+function polyline(pts: Pt[]) {
+    const f = Math.fround;
+    const P = pts.map(([x, y]) => [f(+x.toFixed(1)), f(+y.toFixed(1))]);
+    const segs: { a: number[]; b: number[]; d0: number; d1: number }[] = [];
+    let L = 0;
+    for (let i = 1; i < P.length; i++) {
+        const dx = f(P[i][0] - P[i - 1][0]), dy = f(P[i][1] - P[i - 1][1]);
+        const prev = L;
+        L = f(L + f(Math.sqrt(f(f(dx * dx) + f(dy * dy)))));
+        if (L > prev) segs.push({ a: P[i - 1], b: P[i], d0: prev, d1: L });
+    }
+    const at = (dist: number) => {
+        dist = Math.min(L, Math.max(0, f(dist)));
+        let lo = 0, hi = segs.length - 1;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (segs[mid].d1 < dist) lo = mid + 1; else hi = mid; }
+        const { a, b, d0, d1 } = segs[lo], t = f(f(dist - d0) / f(d1 - d0));
+        return { x: f(a[0] + f(f(b[0] - a[0]) * t)), y: f(a[1] + f(f(b[1] - a[1]) * t)) };
+    };
+    return { L, at };
+}
+
 function paint(svg: SVGElement, pts0: Pt[], width: number, color: string, delay: number, animate: boolean, dur?: number) {
     const d = 'M' + pts0.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
-    const probe = el('path', { d }) as SVGPathElement;
-    svg.appendChild(probe);
-    const L = probe.getTotalLength();
-    if (L < 4) { probe.remove(); return; }
+    const { L, at } = polyline(pts0);
+    if (L < 4) return;
     const n = Math.max(24, Math.floor(L / 6));
-    const pts: { x: number; y: number; nx: number; ny: number; t: number }[] = [];
+    const pts: { x: number; y: number; nx: number; ny: number; t: number; taper: number }[] = [];
     for (let i = 0; i <= n; i++) {
-        const t = i / n, p = probe.getPointAtLength(t * L), q = probe.getPointAtLength(Math.min(L, t * L + 1));
+        const t = i / n, p = at(t * L), q = at(Math.min(L, t * L + 1));
         const dx = q.x - p.x, dy = q.y - p.y, m = Math.hypot(dx, dy) || 1;
-        pts.push({ x: p.x, y: p.y, nx: -dy / m, ny: dx / m, t });
+        pts.push({ x: p.x, y: p.y, nx: -dy / m, ny: dx / m, t, taper: Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.03)), .45) });
     }
-    probe.remove();
     // The mask region must be huge: by default it is the element's own box plus 10%,
     // which clipped every stroke to a frame around the stage.
     const id = 'bpm' + (++uid);
@@ -65,8 +92,7 @@ function paint(svg: SVGElement, pts0: Pt[], width: number, color: string, delay:
         let s = '';
         for (const p of pts) {
             if (p.t < tStart || p.t > tEnd) continue;
-            const taper = Math.pow(Math.sin(Math.PI * Math.min(1, p.t * 1.03)), .45);
-            const o = off * (.35 + .65 * taper) + Math.sin(p.t * 34 + k) * wig;
+            const o = off * (.35 + .65 * p.taper) + Math.sin(p.t * 34 + k) * wig;
             s += (s ? 'L' : 'M') + (p.x + p.nx * o).toFixed(1) + ' ' + (p.y + p.ny * o).toFixed(1) + ' ';
         }
         if (!s) continue;
@@ -82,6 +108,7 @@ function paint(svg: SVGElement, pts0: Pt[], width: number, color: string, delay:
         mp.style.strokeDashoffset = String(L);
         const a = mp.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0 }], { duration: ms, delay: onGrid(delay), easing: stepped(ms), fill: 'forwards' });
         a.startTime = gridStart;
+        reveals.push(a);
     }
 }
 
@@ -271,15 +298,15 @@ function drawShirt(root: HTMLElement, t0: number, animate: boolean) {
     const fs = W * .125, text = 'Tem Revil', cx = W * .545, cy = H * .7;
     const g = el('g', { transform: `rotate(-7 ${cx} ${cy})`, filter: 'url(#bp-fabric)' });
     svg.appendChild(g);
-    const letters: SVGTextElement[] = [], widths: number[] = [];
-    for (const ch of text) {
+    const letters = [...text].map(ch => {
         const t = el('text', { 'font-size': fs, y: cy + fs * .35 }) as SVGTextElement;
         t.style.fontFamily = 'var(--font-permanent-marker), "Permanent Marker", cursive';
         t.textContent = ch === ' ' ? ' ' : ch;
         g.appendChild(t);
-        widths.push(ch === ' ' ? fs * .3 : t.getComputedTextLength());
-        letters.push(t);
-    }
+        return t;
+    });
+    // Measured once all are in: one layout pass, not one per letter.
+    const widths = letters.map((t, i) => text[i] === ' ' ? fs * .3 : t.getComputedTextLength());
     let x = cx - widths.reduce((a, b) => a + b, 0) / 2;
     letters.forEach((t, i) => {
         t.setAttribute('x', String(x));
@@ -322,6 +349,8 @@ function textIn(root: HTMLElement) {
  * animates back in.
  */
 export function paintBook(root: HTMLElement, animate: boolean, phone = false) {
+    uncache(root);
+    reveals = [];
     lite = phone;
     gridStart = Math.ceil(Number(document.timeline.currentTime) / FRAME) * FRAME;
     // One composition per page load: a redraw (a resize, or the name or availability text
@@ -332,36 +361,168 @@ export function paintBook(root: HTMLElement, animate: boolean, phone = false) {
     // Paint first: drawBg measures the text boxes, which the entrance offsets while it runs.
     drawBg(root, 900, animate, mood);
     drawShirt(root, drawStage(root, 1100, animate, mood) + 200, animate);
+    landed.set(root, Promise.all(reveals.map(a => a.finished)).then(() => true, () => false));
+    reveals = [];
+    boils.get(root)?.();
     if (animate) textIn(root);
     root.dataset.intro = 'done';
 }
 
+// ---------- boil ----------
+/** The three turbulence seeds the boil cycles through, one per 15fps frame. */
+const SEEDS = [4, 5, 6];
+/** Each root's latest paint: true once its last stroke has landed (false if a reveal was cancelled). */
+const landed = new WeakMap<HTMLElement, Promise<boolean>>();
+/** The running boil on each root, told when the root is painted again. */
+const boils = new WeakMap<HTMLElement, () => void>();
+/** Every running boil's sync, run when a hold starts or ends. */
+const syncs = new Set<() => void>();
 /** How many things are animating over the brushes right now (an open modal, the page curtain). */
 let holds = 0;
 /**
- * Freezes the boil until the returned release is called. Each boil step repaints the
- * brush layer's full-screen noise filter on the GPU, which takes the frames a modal or
- * the page curtain needs to open smoothly, and the brushes sit under glass or a curtain
- * meanwhile anyway.
+ * Freezes the boil until the returned release is called. Each boil step redraws the
+ * brushes under the pills' glass, which takes the frames a modal or the page curtain
+ * needs to open smoothly, and the brushes sit under glass or a curtain meanwhile anyway.
  */
 export function holdBoil() {
     holds++;
+    syncs.forEach(s => s());
     let held = true;
-    return () => { if (held) { held = false; holds--; } };
+    return () => { if (held) { held = false; holds--; syncs.forEach(s => s()); } };
+}
+
+/** The brush layers whose filters boil: the page strokes and the rings behind and in front of the photo. */
+const BOILED = '.paint-bg, .ring-back, .ring-front';
+/** Copy k of a brush layer shows on every third frame of the 15fps grid, starting at frame k. */
+const BLINK: Keyframe[] = [{ opacity: 1 }, { opacity: 1, offset: 1 / 3 }, { opacity: 0, offset: 1 / 3 }, { opacity: 0 }];
+
+/** Back to one live layer per brush svg, before a repaint or when the boil stops. */
+function uncache(root: HTMLElement) {
+    root.querySelectorAll('[data-boil-copy]').forEach(n => n.remove());
+    root.querySelectorAll<SVGSVGElement>('svg[data-boil]').forEach(s => {
+        s.getAnimations().forEach(a => a.cancel());
+        unsnap(s);
+        s.removeAttribute('data-boil');
+        s.querySelectorAll('[filter^="url(#bp-rag-"]').forEach(g => g.setAttribute('filter', 'url(#bp-rag)'));
+    });
 }
 
 /**
- * Old-animation boil: the brush edges re-roll 15 times a second. It steps on the same
- * 15fps grid of the page clock as the entrance strokes (see paint), so both repaint the
- * brushes on the same frames. Returns a stop function.
+ * A layer of its own is drawn at its box's position, and the photo's stage sits at a
+ * fraction of a pixel (centred with translateX(-50%)), so its copies would be resampled
+ * and come out soft. This moves the svg onto the device pixel grid and its drawing back
+ * by the same fraction, so every stroke lands on exactly the pixels it did before.
  */
-export function startBoil(turb: SVGElement) {
-    let raf = 0, last = -1;
+function snap(svg: SVGSVGElement) {
+    const d = svg.dataset, ox = Number(d.boilDx || 0), oy = Number(d.boilDy || 0);
+    const r = svg.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const left = (r.left - ox) * dpr, top = (r.top - oy) * dpr;
+    const dx = (Math.round(left) - left) / dpr, dy = (Math.round(top) - top) / dpr;
+    if (Math.abs(dx - ox) < 1e-3 && Math.abs(dy - oy) < 1e-3) return;
+    const vb = (d.boilVb ?? svg.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
+    if (vb.length !== 4 || !vb[2] || !vb[3]) return;
+    // User units per CSS pixel, as the default preserveAspectRatio (xMidYMid meet) scales them.
+    const k = 1 / Math.min(r.width / vb[2], r.height / vb[3]);
+    d.boilVb ??= svg.getAttribute('viewBox') || '';
+    d.boilDx = String(dx); d.boilDy = String(dy);
+    svg.setAttribute('viewBox', `${vb[0] + dx * k} ${vb[1] + dy * k} ${vb[2]} ${vb[3]}`);
+    svg.style.translate = `${dx}px ${dy}px`;
+}
+function unsnap(svg: SVGSVGElement) {
+    const d = svg.dataset;
+    if (d.boilVb === undefined) return;
+    svg.setAttribute('viewBox', d.boilVb);
+    svg.style.translate = '';
+    delete d.boilVb; delete d.boilDx; delete d.boilDy;
+}
+
+/**
+ * Old-animation boil: the brush edges re-roll 15 times a second, through three noise
+ * seeds. It steps on the same 15fps grid of the page clock as the entrance strokes (see
+ * paint), so both repaint the brushes on the same frames.
+ *
+ * While strokes are still landing, it re-seeds the filter (`turb`) each frame. Once the
+ * last one has landed nothing else changes, so each brush layer is drawn once per seed
+ * into three stacked copies, and the compositor shows one copy per frame: the same three
+ * images in the same order, without redrawing the noise filter 15 times a second. It
+ * stops while the hero is off screen or the tab is hidden, and freezes on a hold.
+ * Returns a stop function.
+ */
+export function startBoil(root: HTMLElement, turb: SVGFETurbulenceElement) {
+    const rag = turb.parentElement!;
+    const fixed = SEEDS.map(s => {
+        const f = rag.cloneNode(true) as Element;
+        f.id = `bp-rag-${s}`;
+        f.querySelector('feTurbulence')!.setAttribute('seed', String(s));
+        rag.after(f);
+        return f;
+    });
+    let raf = 0, last = -1, seen = true, live = true, layers: [Animation, number][] = [];
     const tick = (now: number) => {
         const f = Math.floor(now / FRAME);
-        if (f !== last && !holds) { last = f; turb.setAttribute('seed', String(4 + (f % 3))); }
+        if (f !== last) { last = f; turb.setAttribute('seed', String(SEEDS[f % 3])); }
         raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const sync = () => {
+        const run = live && !holds && seen && !document.hidden;
+        if (layers.length) {
+            if (raf) { cancelAnimationFrame(raf); raf = 0; }
+            for (const [a, k] of layers) {
+                if (!run) { if (a.playState === 'running') a.pause(); }
+                else if (a.playState !== 'running') a.startTime = k * FRAME; // back on the grid
+            }
+        } else if (run && !raf) raf = requestAnimationFrame(tick);
+        else if (!run && raf) { cancelAnimationFrame(raf); raf = 0; }
+    };
+    const cache = async () => {
+        const p = landed.get(root);
+        if (!p || !(await p) || !live || landed.get(root) !== p) return;
+        // Drawing the copies takes the GPU a few hundred ms in one go (spreading it out only
+        // made many smaller stalls), so it waits until the whole entrance has finished and
+        // the page is idle: then only the boil is moving, and it is stop-motion anyway.
+        await Promise.all(root.getAnimations({ subtree: true })
+            .filter(a => a.effect?.getComputedTiming().iterations !== Infinity)
+            .map(a => a.finished.catch(() => { })));
+        await new Promise<void>(r => requestIdleCallback(() => r(), { timeout: 1500 }));
+        if (!live || landed.get(root) !== p) return;
+        layers = [];
+        root.querySelectorAll<SVGSVGElement>(BOILED).forEach(svg => {
+            snap(svg);
+            const copies = [svg, svg.cloneNode(true) as SVGSVGElement, svg.cloneNode(true) as SVGSVGElement];
+            copies.forEach((c, k) => {
+                // The copies keep pointing at the original's stroke masks.
+                if (k) { c.querySelectorAll('mask').forEach(m => m.remove()); c.setAttribute('data-boil-copy', ''); }
+                c.setAttribute('data-boil', String(k));
+                c.querySelectorAll('[filter="url(#bp-rag)"]').forEach(g => g.setAttribute('filter', `url(#bp-rag-${SEEDS[k]})`));
+            });
+            svg.after(copies[1], copies[2]);
+            copies.forEach((c, k) => {
+                const a = c.animate(BLINK, { duration: 3 * FRAME, iterations: Infinity });
+                a.startTime = k * FRAME;
+                layers.push([a, k]);
+            });
+        });
+        sync();
+    };
+    const io = new IntersectionObserver(([e]) => { seen = e.isIntersecting; sync(); });
+    io.observe(root);
+    // A height change moves the stage without a repaint (usePaint redraws on width only).
+    const ro = new ResizeObserver(() => root.querySelectorAll<SVGSVGElement>('svg[data-boil]').forEach(snap));
+    ro.observe(root);
+    document.addEventListener('visibilitychange', sync);
+    syncs.add(sync);
+    boils.set(root, () => { layers = []; sync(); void cache(); });
+    sync();
+    void cache();
+    return () => {
+        live = false;
+        cancelAnimationFrame(raf);
+        io.disconnect();
+        ro.disconnect();
+        document.removeEventListener('visibilitychange', sync);
+        syncs.delete(sync);
+        boils.delete(root);
+        uncache(root);
+        fixed.forEach(f => f.remove());
+    };
 }
