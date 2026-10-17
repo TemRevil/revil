@@ -314,10 +314,28 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     // hasAutoOpenedCV in the parent) can't restart the timer.
     const onAnimationCompleteRef = useRef(onAnimationComplete);
     useEffect(() => { onAnimationCompleteRef.current = onAnimationComplete; }, [onAnimationComplete]);
+    // Settled once every part of the entrance has played (the slogan writes until ~4s) and
+    // the page is idle: what waits on it (Firebase, mounting the rest of the site) is a
+    // long task, and in the middle of the entrance it froze the slogan on a phone. 6s caps it.
     useEffect(() => {
-        if (!ready) return;
-        const id = window.setTimeout(() => { entranceDone(); onAnimationCompleteRef.current?.(); }, 2600);
-        return () => window.clearTimeout(id);
+        const root = rootRef.current;
+        if (!ready || !root) return;
+        let alive = true, idle = 0;
+        const settle = () => {
+            if (!alive) return;
+            alive = false;
+            entranceDone();
+            onAnimationCompleteRef.current?.();
+        };
+        const cap = window.setTimeout(settle, 6000);
+        // A frame after the paint, so its animations exist.
+        const raf = requestAnimationFrame(() => {
+            Promise.all(root.getAnimations({ subtree: true })
+                .filter(a => a.effect?.getComputedTiming().iterations !== Infinity)
+                .map(a => a.finished.catch(() => { })))
+                .then(() => { if (alive) idle = requestIdleCallback(settle, { timeout: 500 }); });
+        });
+        return () => { alive = false; window.clearTimeout(cap); cancelAnimationFrame(raf); cancelIdleCallback(idle); };
     }, [ready, entranceDone]);
     // A phone first renders the desktop layout, then remounts the hero in the phone one:
     // the unmounted hero lets go of its hold, or Firebase waited for the 10s cap there.

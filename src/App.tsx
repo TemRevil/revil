@@ -195,8 +195,16 @@ function App() {
   }, [mobileScroll]);
   // Safety net: once the hero has settled, everything is mounted regardless of scrolling.
   // Lazy-mounting exists to keep the FIRST render cheap, not to gate content forever - so
-  // a section can never end up permanently blank if a scroll event is missed.
-  const isMounted = (id: Section) => heroSettled || mountedSections.has(id);
+  // a section can never end up permanently blank if a scroll event is missed. One section
+  // per idle period: mounting them all in one render was a ~300ms long task on a phone.
+  useEffect(() => {
+    if (!heroSettled) return;
+    const id = MOBILE_STACK.find(s => !mountedSections.has(s));
+    if (!id) return;
+    const handle = window.requestIdleCallback(() => setMountedSections(prev => (prev.has(id) ? prev : new Set(prev).add(id))), { timeout: 1000 });
+    return () => window.cancelIdleCallback(handle);
+  }, [heroSettled, mountedSections]);
+  const isMounted = (id: Section) => mountedSections.has(id);
 
   // Leaving the touch layout (widening past the phone breakpoint) hands the reader back to the section switcher,
   // which only knows `currentSection` - and the phone page leaves that on whatever it
