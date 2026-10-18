@@ -7,6 +7,7 @@ import { ProjectData as FullProject } from '../types';
 import { useSocialTracker } from '../hooks/useSocialTracker';
 import { useBoilHold } from './book/paintKit';
 import { blurFade } from '../lib/modalMotion';
+import WarmHide from './WarmHide';
 
 interface CVProject {
     id: string;
@@ -23,10 +24,12 @@ interface MCVProps {
     isOpen: boolean;
     onClose: () => void;
     onProjectClick: (project: FullProject) => void;
+    /** Rendered hidden only to warm up the first real open: no reads, tracking or scroll lock. */
+    warm?: boolean;
 }
 
-const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
-    useBoilHold();
+const MCV = ({ onClose, onProjectClick, warm = false }: Omit<MCVProps, 'isOpen'>) => {
+    useBoilHold(!warm);
     const { trackClick } = useSocialTracker();
     const [projects, setProjects] = useState<CVProject[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
@@ -53,11 +56,12 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
     // Opening the CV is the strongest intent signal the site has; the visit
     // recorder wants it on the timeline.
     useEffect(() => {
-        window.dispatchEvent(new CustomEvent('revil:cv_open'));
-    }, []);
+        if (!warm) window.dispatchEvent(new CustomEvent('revil:cv_open'));
+    }, [warm]);
 
     // Fetch Contributors
     useEffect(() => {
+        if (warm) return;
         const unsubDoc = watchDoc(['Tags', 'Contributors'], (data) => {
             if (data) {
                 const loaded = Object.entries(data)
@@ -101,10 +105,11 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             unsubDoc();
             unsubCol();
         };
-    }, []);
+    }, [warm]);
 
     // Fetch Tech Stack
     useEffect(() => {
+        if (warm) return;
         const unsub = watchDoc(['Settings', 'Tech Stack'], (data) => {
             if (data) {
                 const items = Object.entries(data)
@@ -121,10 +126,11 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             }
         });
         return () => unsub();
-    }, []);
+    }, [warm]);
 
     // Fetch Projects from Firestore
     useEffect(() => {
+        if (warm) return;
         const unsub = watchCollection(['Projects'], (docs) => {
             const loaded = docs.map(doc => {
                 const data = doc;
@@ -192,10 +198,11 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             setProjects(loaded);
         });
         return () => unsub();
-    }, [availableContributors]); // Re-run when contributors are updated to ensure mapping is correct
+    }, [availableContributors, warm]); // Re-run when contributors are updated to ensure mapping is correct
 
     // Fetch Social Links from Firestore
     useEffect(() => {
+        if (warm) return;
         const unsub = watchDoc(['Settings', 'Account'], (data) => {
             if (data) {
                 if (data['Social Links']) {
@@ -215,10 +222,11 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             }
         });
         return () => unsub();
-    }, []);
+    }, [warm]);
 
     // Close on Escape
     useEffect(() => {
+        if (warm) return;
         const handleEscape = (e: KeyboardEvent) => {
             if (e.key === 'Escape') onClose();
         };
@@ -228,7 +236,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
             document.removeEventListener('keydown', handleEscape);
             document.body.style.overflow = 'unset';
         };
-    }, [onClose]);
+    }, [onClose, warm]);
 
     const getSocialIcon = (name: string) => {
         const lower = name.toLowerCase();
@@ -239,7 +247,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
     };
 
     return createPortal(
-        <>
+        <WarmHide warm={warm}>
             {/* Overlay */}
             <motion.div
                 initial={{ opacity: 0 }}
@@ -447,7 +455,7 @@ const MCV = ({ onClose, onProjectClick }: Omit<MCVProps, 'isOpen'>) => {
                     </div>
                 </motion.div>
             </div>
-        </>
+        </WarmHide>
         ,
         document.body
     );

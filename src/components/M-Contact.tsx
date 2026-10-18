@@ -16,16 +16,19 @@ import HintTooltip from './HintTooltip';
 import useTheme from '../hooks/useTheme';
 import { blurFade } from '../lib/modalMotion';
 import { useBoilHold } from './book/paintKit';
+import WarmHide from './WarmHide';
 
 interface MContactProps {
   isOpen: boolean;
   onClose: () => void;
   initialTab?: 'message' | 'meeting';
   hideTabs?: boolean;
+  /** Rendered hidden only to warm up the first real open: no reads, tracking or scroll lock. */
+  warm?: boolean;
 }
 
-const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MContactProps, 'isOpen'>) => {
-    useBoilHold();
+const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = false }: Omit<MContactProps, 'isOpen'>) => {
+    useBoilHold(!warm);
   const isDark = useTheme();
   const [formData, setFormData] = useState({
     name: '',
@@ -52,7 +55,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
     convertedSlots, daySlots,
     getMeetingsForDate, meetingTimeForVisitor, isDayBookable,
     handleMeetingSubmit, validateCustomTime, isCustomTimeUnavailable,
-  } = useMeetingBooking({ showAlert, enabled: activeTab === 'meeting' });
+  } = useMeetingBooking({ showAlert, enabled: !warm && activeTab === 'meeting', reads: !warm });
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   // True once a details column is scrolled - its header frosts (blurs) only then.
   const [agendaScrolled, setAgendaScrolled] = useState(false);
@@ -93,8 +96,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
 
   // How far into the contact funnel they got, whether or not they send anything.
   useEffect(() => {
+    if (warm) return;
     window.dispatchEvent(new CustomEvent('revil:contact_tab', { detail: { tab: activeTab } }));
-  }, [activeTab]);
+  }, [activeTab, warm]);
 
   // Switching tabs resets the frosted-header state (each panel starts scrolled to top).
   const [prevTab, setPrevTab] = useState(activeTab);
@@ -246,6 +250,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
   };
 
   useEffect(() => {
+    if (warm) return;
     const handleEscape = (e: KeyboardEvent) => {
       // The custom-time picker swallows Escape (capture + stopPropagation) while it's
       // open, so this only closes the whole modal when the picker isn't showing.
@@ -260,12 +265,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = 'unset';
     };
-  }, [onClose]);
+  }, [onClose, warm]);
 
 
 
   return createPortal(
-    <>
+    <WarmHide warm={warm}>
       {alert?.show && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
       {/* Overlay */}
       <motion.div
@@ -1044,7 +1049,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false }: Omit<MC
           )}
         </motion.div>
       </div>
-    </>,
+    </WarmHide>,
     document.body
   );
 };

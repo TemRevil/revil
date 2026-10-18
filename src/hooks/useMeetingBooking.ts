@@ -62,14 +62,15 @@ export const getDaysInMonth = (date: Date) => {
  * book through exactly the same rules.
  *
  * `enabled` gates the one-time move to the next open day (the modal only wants it
- * while its meeting tab is showing).
+ * while its meeting tab is showing). `reads: false` skips the Firestore reads, for the
+ * modal's hidden warm-up render.
  *
  * `via` says which of the two booked it. It is stored on the meeting (`Via`) so Canary
  * can show where a booking came from, and sent with the analytics event so Trails can.
  */
 export type BookingVia = 'book' | 'contact';
 
-export default function useMeetingBooking({ showAlert, enabled = true, via = 'contact' }: { showAlert: ShowAlert; enabled?: boolean; via?: BookingVia }) {
+export default function useMeetingBooking({ showAlert, enabled = true, reads = true, via = 'contact' }: { showAlert: ShowAlert; enabled?: boolean; reads?: boolean; via?: BookingVia }) {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
@@ -156,6 +157,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
 
   // Sync Host Availability & Timezone
   useEffect(() => {
+    if (!reads) return;
     const unsubscribeAvailability = watchDoc(['Settings', 'Availability'], (data) => {
       if (data) {
         if (typeof data['Current Time'] === 'string' && data['Current Time']) {
@@ -205,7 +207,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, via = 'co
       unsubscribeAvailability();
       unsubscribeMeetings();
     };
-  }, []);
+  }, [reads]);
 
   const formatDateDDMMYYYY = useCallback((date: Date) => {
     const day = date.getDate().toString().padStart(2, '0');

@@ -11,3 +11,26 @@ export function onIdle(cb: () => void, timeout = 1000): () => void {
     const handle = window.setTimeout(cb, 50);
     return () => window.clearTimeout(handle);
 }
+
+const ACTIVITY = ['scroll', 'wheel', 'pointerdown', 'touchstart', 'keydown'] as const;
+
+/**
+ * Like `onIdle`, but first waits until the reader has been still (no scroll, touch, click or
+ * key) for `stillMs`: for work that blocks the main thread in one piece, so it lands while
+ * they read rather than mid-scroll or under a tap.
+ */
+export function onQuiet(cb: () => void, stillMs = 1000): () => void {
+    let cancelIdle = () => { };
+    let timer = 0;
+    const arm = () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => { stop(); cancelIdle = onIdle(cb, 1000); }, stillMs);
+    };
+    const stop = () => {
+        window.clearTimeout(timer);
+        ACTIVITY.forEach(t => window.removeEventListener(t, arm, true));
+    };
+    ACTIVITY.forEach(t => window.addEventListener(t, arm, { capture: true, passive: true }));
+    arm();
+    return () => { stop(); cancelIdle(); };
+}

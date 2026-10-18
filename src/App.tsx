@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransiti
 import { AnimatePresence, motion } from 'motion/react';
 import Hero from './components/Hero';
 import { preloadable } from './lib/preloadable';
-import { onIdle } from './lib/idle';
+import { onIdle, onQuiet } from './lib/idle';
 import Navbar from './components/Navbar';
 import PageTransition from './components/PageTransition';
 import { ChevronRight } from 'lucide-react';
@@ -25,6 +25,7 @@ const Stack = lazy(() => import('./components/Stack'));
 const ProjectsHub = lazy(() => import('./components/ProjectsHub'));
 const MContact = preloadable(() => import('./components/M-Contact'));
 const MCV = preloadable(() => import('./components/M-CV'));
+const noop = () => { };
 const MProjectView = lazy(() => import('./components/M-ProjectView'));
 const MContributorView = lazy(() => import('./components/M-ContributorView'));
 const SecretPage = lazy(() => import('./components/SecretPage'));
@@ -314,6 +315,9 @@ function App() {
   // Derived loading state (avoid setting state synchronously inside effects)
   const appLoading = forceHideLoading ? false : !(isDataReady && isWindowReady);
 
+  // Modals still to draw once hidden, and the one being drawn (see below).
+  const [warmLeft, setWarmLeft] = useState<Array<'contact' | 'cv'>>([]);
+  const [warming, setWarming] = useState<'contact' | 'cv' | null>(null);
   // Warm the on-demand public chunks once the first paint is done, so the first
   // navigation/modal-open doesn't pay a network roundtrip behind a blank Suspense
   // fallback. Runs in idle time → keeps the eager bundle as small as today.
@@ -325,8 +329,7 @@ function App() {
       if (cancelled) return;
       import('./components/Stack');
       import('./components/ProjectsHub');
-      MContact.preload();
-      MCV.preload();
+      Promise.all([MContact.preload(), MCV.preload()]).then(() => { if (!cancelled) setWarmLeft(['contact', 'cv']); });
     };
     const hasRIC = typeof window.requestIdleCallback === 'function';
     const handle = hasRIC ? window.requestIdleCallback(warm) : window.setTimeout(warm, 2000);
@@ -336,6 +339,26 @@ function App() {
     };
   }, [appLoading, heroSettled]);
 
+  // Then each modal is drawn once, hidden and with its effects off (`warm`), and dropped:
+  // the first real open finds the browser's layout, text and code caches hot, as a second
+  // open does (on a phone slowed 4x, ~0.7s cold against ~0.2s). Each costs ~0.3s of main thread
+  // in one piece there, so one at a time, only once the reader has been still a moment, kept
+  // two frames so its layout has run, and never one the reader has already opened.
+  const openedModals = useRef({ contact: false, cv: false });
+  useEffect(() => { if (isContactModalOpen) openedModals.current.contact = true; }, [isContactModalOpen]);
+  useEffect(() => { if (isCVModalOpen) openedModals.current.cv = true; }, [isCVModalOpen]);
+  useEffect(() => {
+    if (warming) {
+      let raf = requestAnimationFrame(() => { raf = requestAnimationFrame(() => setWarming(null)); });
+      return () => cancelAnimationFrame(raf);
+    }
+    if (!warmLeft.length) return;
+    return onQuiet(() => {
+      const [next, ...rest] = warmLeft;
+      setWarmLeft(rest);
+      if (!openedModals.current[next]) startTransition(() => setWarming(next));
+    });
+  }, [warming, warmLeft]);
 
 
   const handleHeroAnimationComplete = useCallback(() => {
@@ -805,6 +828,7 @@ function App() {
                 <MContact onClose={closeContactModal} />
               )}
             </AnimatePresence>
+            {warming === 'contact' && !isContactModalOpen && <MContact warm onClose={noop} />}
           </Suspense>
         </ErrorBoundary>
         <ErrorBoundary fallback={modalErrorFallback}>
@@ -814,6 +838,7 @@ function App() {
                 <MCV onClose={closeCVModal} onProjectClick={handleProjectClick} />
               )}
             </AnimatePresence>
+            {warming === 'cv' && !isCVModalOpen && <MCV warm onClose={noop} onProjectClick={noop} />}
           </Suspense>
         </ErrorBoundary>
 
