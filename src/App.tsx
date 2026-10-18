@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransition } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import Hero from './components/Hero';
+import { preloadable } from './lib/preloadable';
 import Navbar from './components/Navbar';
 import PageTransition from './components/PageTransition';
 import { ChevronRight } from 'lucide-react';
@@ -21,8 +22,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 // react-easy-crop + anime.js - none of which belong in the first-paint bundle.
 const Stack = lazy(() => import('./components/Stack'));
 const ProjectsHub = lazy(() => import('./components/ProjectsHub'));
-const MContact = lazy(() => import('./components/M-Contact'));
-const MCV = lazy(() => import('./components/M-CV'));
+const MContact = preloadable(() => import('./components/M-Contact'));
+const MCV = preloadable(() => import('./components/M-CV'));
 const MProjectView = lazy(() => import('./components/M-ProjectView'));
 const MContributorView = lazy(() => import('./components/M-ContributorView'));
 const SecretPage = lazy(() => import('./components/SecretPage'));
@@ -324,8 +325,8 @@ function App() {
       if (cancelled) return;
       import('./components/Stack');
       import('./components/ProjectsHub');
-      import('./components/M-Contact');
-      import('./components/M-CV');
+      MContact.preload();
+      MCV.preload();
     };
     const hasRIC = typeof window.requestIdleCallback === 'function';
     const handle = hasRIC ? window.requestIdleCallback(warm) : window.setTimeout(warm, 2000);
@@ -411,10 +412,9 @@ function App() {
     setIsTransitioning(false);
   }, []);
 
-  // Modals open in a transition: the first time one renders, its lazy chunk suspends for a
-  // moment, and outside a transition React then holds the reveal back ~300ms (its fallback
-  // throttle), so the first open felt dead for a third of a second.
-  const openContactModal = useCallback(() => startTransition(() => setIsContactModalOpen(true)), []);
+  // A modal opened before its chunk is warm suspends, and outside a transition React holds
+  // the reveal back ~300ms (its fallback throttle); a warm one opens at normal priority.
+  const openContactModal = useCallback(() => MContact.open(() => setIsContactModalOpen(true)), []);
   const closeContactModal = useCallback(() => {
     setIsContactModalOpen(false);
     // Drop the deep-link hash on close so refreshing doesn't reopen it and the URL stays
@@ -435,7 +435,7 @@ function App() {
     return () => window.removeEventListener('hashchange', openIfBookingHash);
   }, [openContactModal]);
 
-  const openCVModal = useCallback(() => startTransition(() => setIsCVModalOpen(true)), []);
+  const openCVModal = useCallback(() => MCV.open(() => setIsCVModalOpen(true)), []);
   const closeCVModal = useCallback(() => setIsCVModalOpen(false), []);
 
   const handleProjectClick = useCallback((project: Project) => startTransition(() => {

@@ -103,20 +103,40 @@ const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
 
 // shimmer-fast keyframes are now in globals.css
 
+// A skeleton's shimmer only moves while it is on screen. The cards' images load lazily, so
+// dozens of skeletons below the fold (and on the hidden slides) animated for nothing, and
+// every frame they cost was a frame a slow phone could not spend opening a modal.
+const shimmerWatch = new Map<Element, (on: boolean) => void>();
+let shimmerIO: IntersectionObserver | null = null;
+const watchShimmer = (el: Element, set: (on: boolean) => void) => {
+    shimmerIO ??= new IntersectionObserver(entries => entries.forEach(e => shimmerWatch.get(e.target)?.(e.isIntersecting)));
+    shimmerWatch.set(el, set);
+    shimmerIO.observe(el);
+    return () => { shimmerWatch.delete(el); shimmerIO?.unobserve(el); };
+};
+
 const CardImage = ({ src, alt }: { src: string; alt: string }) => {
     const [isImageLoaded, setIsImageLoaded] = useState(false);
+    // The skeleton box, not the light: the light starts outside the box's clip.
+    const skeletonRef = useRef<HTMLDivElement>(null);
+    const [shimmerOn, setShimmerOn] = useState(false);
+    useEffect(() => {
+        const el = skeletonRef.current;
+        return el && !isImageLoaded ? watchShimmer(el, setShimmerOn) : undefined;
+    }, [isImageLoaded]);
     return (
         <>
             {/* shimmer-fast keyframes are in globals.css */}
             {/* Skeleton Loader Container */}
             <div 
+                ref={skeletonRef}
                 className={`absolute inset-0 z-10 bg-white/5 overflow-hidden transition-opacity duration-1000 ease-out ${isImageLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
             >
                 {/* Moving Light effect - only rendered when loading to stop the animation when complete */}
                 {!isImageLoaded && (
                     <div 
                         className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                        style={{ animation: 'shimmer-fast 1.2s infinite ease-in-out' }}
+                        style={{ animation: 'shimmer-fast 1.2s infinite ease-in-out', animationPlayState: shimmerOn ? 'running' : 'paused' }}
                     />
                 )}
             </div>
