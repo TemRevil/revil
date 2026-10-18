@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransiti
 import { AnimatePresence, motion } from 'motion/react';
 import Hero from './components/Hero';
 import { preloadable } from './lib/preloadable';
+import { onIdle } from './lib/idle';
 import Navbar from './components/Navbar';
 import PageTransition from './components/PageTransition';
 import { ChevronRight } from 'lucide-react';
@@ -202,8 +203,7 @@ function App() {
     if (!heroSettled) return;
     const id = MOBILE_STACK.find(s => !mountedSections.has(s));
     if (!id) return;
-    const handle = window.requestIdleCallback(() => setMountedSections(prev => (prev.has(id) ? prev : new Set(prev).add(id))), { timeout: 1000 });
-    return () => window.cancelIdleCallback(handle);
+    return onIdle(() => setMountedSections(prev => (prev.has(id) ? prev : new Set(prev).add(id))), 1000);
   }, [heroSettled, mountedSections]);
   const isMounted = (id: Section) => mountedSections.has(id);
 

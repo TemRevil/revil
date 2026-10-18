@@ -8,6 +8,8 @@
  * bristles). Filters referenced here (#bp-rag, #bp-fabric, #bp-soft) are in PaintDefs.
  */
 
+import { onIdle } from '../../lib/idle';
+
 const NS = 'http://www.w3.org/2000/svg';
 const FPS = 15;
 export const FRAME = 1000 / FPS;
@@ -483,7 +485,7 @@ export function startBoil(root: HTMLElement, turb: SVGFETurbulenceElement) {
         await Promise.all(root.getAnimations({ subtree: true })
             .filter(a => a.effect?.getComputedTiming().iterations !== Infinity)
             .map(a => a.finished.catch(() => { })));
-        await new Promise<void>(r => requestIdleCallback(() => r(), { timeout: 1500 }));
+        await new Promise<void>(r => onIdle(r, 1500));
         if (!live || landed.get(root) !== p) return;
         layers = [];
         root.querySelectorAll<SVGSVGElement>(BOILED).forEach(svg => {

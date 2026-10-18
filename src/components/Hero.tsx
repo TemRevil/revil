@@ -6,6 +6,7 @@ import { availabilityStatus, rememberHostStatus, seedHostStatus, type HostStatus
 import { useSettings } from '../contexts/SettingsContext';
 import useTheme from '../hooks/useTheme';
 import { Chars, PaintDefs, splitSlogan, useHostClock, usePaint } from './book/paintKit';
+import { onIdle } from '../lib/idle';
 import './book/book.css';
 
 interface HeroProject {
@@ -320,7 +321,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     useEffect(() => {
         const root = rootRef.current;
         if (!ready || !root) return;
-        let alive = true, idle = 0;
+        let alive = true, cancelIdle = () => { };
         const settle = () => {
             if (!alive) return;
             alive = false;
@@ -333,9 +334,9 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
             Promise.all(root.getAnimations({ subtree: true })
                 .filter(a => a.effect?.getComputedTiming().iterations !== Infinity)
                 .map(a => a.finished.catch(() => { })))
-                .then(() => { if (alive) idle = requestIdleCallback(settle, { timeout: 500 }); });
+                .then(() => { if (alive) cancelIdle = onIdle(settle, 500); });
         });
-        return () => { alive = false; window.clearTimeout(cap); cancelAnimationFrame(raf); cancelIdleCallback(idle); };
+        return () => { alive = false; window.clearTimeout(cap); cancelAnimationFrame(raf); cancelIdle(); };
     }, [ready, entranceDone]);
     // A phone first renders the desktop layout, then remounts the hero in the phone one:
     // the unmounted hero lets go of its hold, or Firebase waited for the 10s cap there.
