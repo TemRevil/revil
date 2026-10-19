@@ -8,7 +8,8 @@ import { sanitizeSvg } from '../lib/sanitize';
 import MProjectView from './M-ProjectView';
 import MContributorView, { Contributor } from './M-ContributorView';
 import { ProjectData as Project, TagData as Tag, ContributorData } from '../types';
-import { getStackIcon, getTechColor, isVideoFile } from '../utils/projectUtils';
+import { getStackIcon, getTechColor, isVideoFile, stillFrame } from '../utils/projectUtils';
+import { isLite } from '../lib/device';
 import { useTailor } from '../lib/analytics/useTailor';
 import { slugOf } from '../utils/projectSlug';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../utils/fuzzy';
@@ -54,10 +55,13 @@ interface FirestoreProject {
 
 const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
+    // A lite page (lib/device.ts) shows the first frame and never plays or seeks: that
+    // fetched megabytes of video a phone, with no hover, never showed.
+    const lite = isLite();
 
     useEffect(() => {
         const video = videoRef.current;
-        if (!video) return;
+        if (!video || lite) return;
 
         if (isActive) {
             // Jump to random time when becoming active to show "random frames"
@@ -68,12 +72,12 @@ const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
         } else {
             video.pause();
         }
-    }, [isActive]);
+    }, [isActive, lite]);
 
     // YouTube-style "pick a random starting point" 
     useEffect(() => {
         const video = videoRef.current;
-        if (!video) return;
+        if (!video || lite) return;
 
         const setRandomTime = () => {
             if (video.duration) {
@@ -87,12 +91,13 @@ const CardVideo = ({ src, isActive }: { src: string; isActive: boolean }) => {
             video.addEventListener('loadedmetadata', setRandomTime);
             return () => video.removeEventListener('loadedmetadata', setRandomTime);
         }
-    }, []);
+    }, [lite]);
 
     return (
         <video
             ref={videoRef}
-            src={src}
+            src={lite ? stillFrame(src) : src}
+            preload={lite ? 'metadata' : undefined}
             muted
             loop
             playsInline

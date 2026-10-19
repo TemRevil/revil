@@ -3,6 +3,7 @@ import Script from 'next/script'
 import './fonts.css'
 import './globals.css'
 import ClientProtection from './ClientProtection'
+import { LITE_SCRIPT } from '../lib/device'
 import { SITE_URL as siteUrl, SITE_NAME as siteName, SITE_TITLE as siteTitle, SITE_DESCRIPTION as siteDescription, SHARE_CARD } from '../utils/siteProfile'
 
 // The JSON-LD lives with each page (see src/utils/siteProfile.ts), not here: a layout
@@ -144,6 +145,9 @@ export default function RootLayout({
         <Script id="theme-init" strategy="beforeInteractive">
           {"(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;if(d){c.add('dark');}else{c.remove('dark');}}catch(e){}})();"}
         </Script>
+        {/* Phones run lite (see lib/device.ts): marked before the first paint, so the CSS
+            drops the costly effects without waiting for React. */}
+        <Script id="lite-init" strategy="beforeInteractive">{LITE_SCRIPT}</Script>
         {/* Canonical-domain redirect: forward GitHub Pages (temrevil.github.io/revil)
             visitors to temrevil.com. Path after /revil (e.g. a link code) and query/hash
             are kept. No-op on temrevil.com itself (hostname check fails). */}

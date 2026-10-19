@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
 import { watchDoc } from '../lib/liveDoc';
 import { sanitizeSvg } from '../lib/sanitize';
-import { isVideoFile, getStackIcon, getTechColor } from '../utils/projectUtils';
+import { isVideoFile, getStackIcon, getTechColor, stillFrame } from '../utils/projectUtils';
+import { isLite } from '../lib/device';
 import { ProjectData as Project, ContributorData as Contributor, TagData as TagItem } from '../types';
 import useTheme from '../hooks/useTheme';
 import { useBoilHold } from './book/paintKit';
@@ -33,7 +34,10 @@ const GlassPanel = ({ children, style, className = "", isDark }: React.PropsWith
 const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: string, isActive: boolean, isMobile: boolean, style?: React.CSSProperties }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const [playing, setPlaying] = useState(true);
+    // A lite page (lib/device.ts) shows the first frame until the play button is tapped,
+    // rather than streaming a muted preview loop on a phone's data.
+    const lite = isLite();
+    const [playing, setPlaying] = useState(!lite);
     const [muted, setMuted] = useState(true);
     const [progress, setProgress] = useState(0);
     const [userInteracted, setUserInteracted] = useState(false);
@@ -60,14 +64,14 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
         const handlePlay = async () => {
             try {
                 if (isActive) {
-                    if (video.paused) await video.play();
+                    if (video.paused && !lite) await video.play();
                     if (isCancelled) video.pause();
                 } else {
                     video.pause();
                     video.currentTime = 0;
                     setUserInteracted(false);
                     setMuted(true);
-                    setPlaying(true);
+                    setPlaying(!lite);
                 }
             } catch {
                 // Ignore AbortError
@@ -79,7 +83,7 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
         return () => {
             isCancelled = true;
         };
-    }, [isActive]);
+    }, [isActive, lite]);
 
     const togglePlay = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -203,11 +207,12 @@ const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: strin
         <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, ...style }}>
             <video
                 ref={videoRef}
-                src={src}
+                src={lite ? stillFrame(src) : src}
+                preload={lite ? 'metadata' : undefined}
                 loop={userInteracted} // Only full loop if user interacts
                 muted={muted}
                 playsInline
-                autoPlay // Try to autoplay muted preview loop
+                autoPlay={!lite} // Try to autoplay muted preview loop
                 onTimeUpdate={handleTimeUpdate}
                 onClick={togglePlay}
                 style={{

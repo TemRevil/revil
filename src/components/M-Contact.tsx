@@ -15,6 +15,8 @@ import CustomTimePicker from './CustomTimePicker';
 import HintTooltip from './HintTooltip';
 import useTheme from '../hooks/useTheme';
 import { blurFade } from '../lib/modalMotion';
+import { PHONE_QUERY } from '../lib/device';
+import useMediaQuery from '../hooks/useMediaQuery';
 import { useBoilHold } from './book/paintKit';
 import WarmHide from './WarmHide';
 
@@ -56,7 +58,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
     getMeetingsForDate, meetingTimeForVisitor, isDayBookable,
     handleMeetingSubmit, validateCustomTime, isCustomTimeUnavailable,
   } = useMeetingBooking({ showAlert, enabled: !warm && activeTab === 'meeting', reads: !warm });
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const isMobile = useMediaQuery(PHONE_QUERY);
   // True once a details column is scrolled - its header frosts (blurs) only then.
   const [agendaScrolled, setAgendaScrolled] = useState(false);
   const [messageScrolled, setMessageScrolled] = useState(false);
@@ -79,12 +81,6 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
       });
     }
   }, [isFutureMonth, showAlert]);
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   // New day: the details column starts back at the top (adjusted during render, React's
   // documented pattern, so the frosted header never paints for a frame on the new day).

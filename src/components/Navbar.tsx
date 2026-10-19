@@ -1,6 +1,8 @@
 import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText, Zap, Rocket } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { PHONE_QUERY } from '../lib/device';
+import useMediaQuery from '../hooks/useMediaQuery';
 
 type NavigateSection = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
@@ -120,7 +122,7 @@ const Tooltip = ({ text, icon, show, isDark }: TooltipProps) => {
 };
 
 const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false, onOpenCV }: NavbarProps) => {
-    const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+    const isMobile = useMediaQuery(PHONE_QUERY);
 
     // Initialize theme
     const [isDark, setIsDark] = useState(() => {
@@ -160,12 +162,6 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
             document.documentElement.classList.remove('dark');
         }
     }, [isDark]);
-
-    useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth < 768);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
 
     // Suppress tooltips when sub-nav is hovered (custom event from ProjectsHub)
     useEffect(() => {

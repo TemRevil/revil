@@ -18,6 +18,9 @@
   --pill-bg: rgba(0,0,0,.4); --pill-border: rgba(255,255,255,.08); --pill-shadow: 0 8px 32px rgba(0,0,0,.2);
   --paint-ink: #fff; --wall-dot: rgba(255,255,255,.03);
 }
+/* Lite (phones, see globals.css): no blur behind the glass, so its tint thickens. */
+html[data-lite] .bp { --glass-bg-deep: rgba(255,255,255,.94); --pill-bg: rgba(255,255,255,.8); }
+html[data-lite].dark .bp { --glass-bg-deep: rgba(14,14,16,.9); --pill-bg: rgba(0,0,0,.66); }
 .bp *, .bp *::before, .bp *::after { box-sizing: border-box; }
 .bp ::selection { background: var(--accent); color: #fff; }
 .bp :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }

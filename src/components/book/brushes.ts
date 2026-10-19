@@ -8,6 +8,7 @@
  * bristles). Filters referenced here (#bp-rag, #bp-fabric, #bp-soft) are in PaintDefs.
  */
 
+import { isLite } from '../../lib/device';
 import { onIdle } from '../../lib/idle';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -87,7 +88,9 @@ function paint(svg: SVGElement, pts0: Pt[], width: number, color: string, delay:
     const mp = el('path', { d, fill: 'none', stroke: '#fff', 'stroke-width': width * 1.9, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }) as SVGPathElement;
     mask.appendChild(mp);
     svg.appendChild(mask);
-    const g = el('g', { mask: `url(#${id})`, filter: 'url(#bp-rag)' });
+    // Lite pages (lib/device.ts) keep the bristles but not the rough edge: the noise filter
+    // re-ran over every stroke on each 15fps step of the entrance.
+    const g = el('g', isLite() ? { mask: `url(#${id})` } : { mask: `url(#${id})`, filter: 'url(#bp-rag)' });
     const K = lite ? Math.max(5, Math.round(width / 6)) : Math.max(8, Math.round(width / 3));
     for (let k = 0; k < K; k++) {
         const off = (k / (K - 1) - .5) * width + R(-1.5, 1.5), tEnd = R(.62, 1), tStart = R(0, .06), wig = R(.4, 1.6);
@@ -323,24 +326,27 @@ function drawShirt(root: HTMLElement, t0: number, animate: boolean) {
     });
 }
 
+/** Lite pages bring the text in without the blur, which re-rasters every letter on each frame. */
+const unblur = (frames: Keyframe[]) => (isLite() ? frames.map(f => { const c = { ...f }; delete c.filter; return c; }) : frames);
+
 /** Handwritten labels and the stacked name, character by character (spans rendered by React). */
 function textIn(root: HTMLElement) {
     const ease = 'cubic-bezier(.25,1,.5,1)';
     root.querySelectorAll<HTMLElement>('[data-write]').forEach((n, j) => {
         n.querySelectorAll<HTMLElement>('.ch').forEach((s, i) => s.animate(
-            [{ opacity: 0, transform: 'translateY(6px) scale(.9)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+            unblur([{ opacity: 0, transform: 'translateY(6px) scale(.9)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }]),
             { duration: 320, delay: (j ? 1900 : 0) + i * 80, easing: 'ease-out', fill: 'backwards' }));
     });
     root.querySelectorAll<HTMLElement>('.name-char').forEach((c, i) => c.animate(
-        [{ opacity: 0, transform: 'translateY(20px)', filter: 'blur(12px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+        unblur([{ opacity: 0, transform: 'translateY(20px)', filter: 'blur(12px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }]),
         { duration: 700, delay: 300 + i * 60, easing: ease, fill: 'backwards' }));
     // The photo comes in with the name, not after it: it is the page's largest paint.
     root.querySelector<HTMLElement>('.stage img')?.animate(
-        [{ opacity: 0, transform: 'scale(.97)', filter: 'blur(16px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+        unblur([{ opacity: 0, transform: 'scale(.97)', filter: 'blur(16px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }]),
         { duration: 1200, delay: 300, easing: ease, fill: 'backwards' });
     // The side column and the pills: a soft fade out of blur, one after another.
     [...root.querySelectorAll<HTMLElement>('.side > *'), ...root.querySelectorAll<HTMLElement>('.pills > *')].forEach((n, i) => n.animate(
-        [{ opacity: 0, transform: 'translateY(14px)', filter: 'blur(10px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+        unblur([{ opacity: 0, transform: 'translateY(14px)', filter: 'blur(10px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }]),
         { duration: 800, delay: 450 + i * 110, easing: ease, fill: 'backwards' }));
 }
 

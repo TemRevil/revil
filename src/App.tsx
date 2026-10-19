@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import Hero from './components/Hero';
 import { preloadable } from './lib/preloadable';
 import { onIdle, onQuiet } from './lib/idle';
+import { isLite, TOUCH_QUERY } from './lib/device';
+import useMediaQuery from './hooks/useMediaQuery';
 import Navbar from './components/Navbar';
 import PageTransition from './components/PageTransition';
 import { ChevronRight } from 'lucide-react';
@@ -149,18 +151,9 @@ function App() {
   // swipe only rubber-banded and the page looked like all there was. A mouse or trackpad
   // keeps the section switcher. `mobileActiveSection` tracks which one is in view so the
   // navbar highlight follows the scroll (a scroll-spy sets it below).
-  const [scrollLayout, setScrollLayout] = useState(false);
+  const scrollLayout = useMediaQuery(TOUCH_QUERY);
   const [mobileActiveSection, setMobileActiveSection] = useState<Section>('home');
   const mobileScrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    // any-pointer, not pointer: an iPad with a trackpad attached still has a touch screen.
-    const mq = window.matchMedia('(max-width: 767px), (any-pointer: coarse)');
-    const update = () => setScrollLayout(mq.matches);
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
   // True when we should show the single-scroll page instead of the switcher.
   const mobileScroll = scrollLayout && PUBLIC_SCROLL_SECTIONS.includes(currentSection);
 
@@ -353,7 +346,7 @@ function App() {
       if (cancelled) return;
       import('./components/Stack');
       import('./components/ProjectsHub');
-      Promise.all([MContact.preload(), MCV.preload()]).then(() => { if (!cancelled) setWarmLeft(['contact', 'cv']); });
+      Promise.all([MContact.preload(), MCV.preload()]).then(() => { if (!cancelled && !isLite()) setWarmLeft(['contact', 'cv']); });
     };
     const hasRIC = typeof window.requestIdleCallback === 'function';
     const handle = hasRIC ? window.requestIdleCallback(warm) : window.setTimeout(warm, 2000);
@@ -367,7 +360,8 @@ function App() {
   // the first real open finds the browser's layout, text and code caches hot, as a second
   // open does (on a phone slowed 4x, ~0.7s cold against ~0.2s). Each costs ~0.3s of main thread
   // in one piece there, so one at a time, only once the reader has been still a moment, kept
-  // two frames so its layout has run, and never one the reader has already opened.
+  // two frames so its layout has run, and never one the reader has already opened. Not on a
+  // lite page (lib/device.ts): there the hidden draw cost a phone more than it saved.
   const openedModals = useRef({ contact: false, cv: false });
   useEffect(() => { if (isContactModalOpen) openedModals.current.contact = true; }, [isContactModalOpen]);
   useEffect(() => { if (isCVModalOpen) openedModals.current.cv = true; }, [isCVModalOpen]);

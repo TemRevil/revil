@@ -417,6 +417,19 @@ main[data-switching] > [id^="section-"] {
   }
 }
 
+/* Lite (phones: <html data-lite> is set in <head>, see lib/device.ts): glass is a plain
+   tint with no live blur behind it. Re-blurring the page under every panel, pill and bar
+   was the steadiest drawing cost on a phone. Modal panels go solid, since any see-through
+   let the hero ghost behind their text; the hero's own pill tints thicken in book.css. */
+html[data-lite] *,
+html[data-lite] *::before,
+html[data-lite] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+html[data-lite] { --glass-bg-deep: rgb(255, 255, 255); }
+html[data-lite].dark { --glass-bg-deep: rgb(14, 14, 16); }
+
 /* ========================================
    4. LAYOUT & UTILITIES
    ======================================== */

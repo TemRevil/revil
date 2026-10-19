@@ -5,10 +5,10 @@
  */
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { utcOffsetHours } from '../../utils/availability';
+import { PHONE_QUERY } from '../../lib/device';
 import { holdBoil, paintBook, startBoil } from './brushes';
 
-/** Phones paint once with the lighter set and skip the 15fps boil. */
-const PHONE_QUERY = '(max-width: 767px)';
+// Phones (PHONE_QUERY) paint once with the lighter set and skip the 15fps boil.
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Break a handwritten line at the space nearest its middle, so two short lines stack. */

@@ -4,6 +4,9 @@ export const isVideoFile = (url: string) => {
     return url.split('?')[0].toLowerCase().match(/\.(mp4|webm|ogg|mov)$/) || url.includes('/videos/');
 };
 
+/** A video's URL that loads to its first frame and stops there (Safari paints nothing for a paused video without it). */
+export const stillFrame = (url: string) => `${url.split('#')[0]}#t=0.1`;
+
 export const getStackIcon = (name: string) => {
     const lowerName = name.toLowerCase();
     if (lowerName.includes('firebase')) return firebaseIcon;
