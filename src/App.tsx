@@ -93,6 +93,30 @@ const PUBLIC_SCROLL_SECTIONS: Section[] = ['home', 'stack', 'projects', 'view_li
 // moving between them doesn't tear the hero down and build it again.
 const viewKey = (s: Section): Section => (s === 'view_link' ? 'home' : s);
 const sameView = (a: Section, b: Section): boolean => viewKey(a) === viewKey(b);
+
+// How the desktop switcher slides a section in and out: direction ±1 is down/up, ±2 sideways
+// (the secret page). Fixes #4: prevents unintended yellow page UI rotation on transitions.
+const SECTION_VARIANTS = {
+  enter: (direction: number) => {
+    if (Math.abs(direction) === 2) {
+      return { x: direction === 2 ? '100%' : '-100%', y: 0, opacity: 1, scale: 1 };
+    }
+    return { y: direction > 0 ? '100vh' : '-100vh', x: 0, opacity: 1, scale: 0.95 };
+  },
+  center: { x: 0, y: 0, opacity: 1, scale: 1 },
+  exit: (direction: number) => {
+    if (Math.abs(direction) === 2) {
+      return { x: direction === 2 ? '-100%' : '100%', y: 0, opacity: 1, scale: 1 };
+    }
+    return { y: direction < 0 ? '100vh' : '-100vh', x: 0, opacity: 1, scale: 0.95 };
+  },
+};
+const SECTION_TRANSITION = {
+  x: { type: 'spring', stiffness: 300, damping: 30 },
+  y: { type: 'spring', stiffness: 300, damping: 30 },
+  opacity: { duration: 0.2 },
+  scale: { duration: 0.3 },
+} as const;
 // The three that actually stack in the scroll page, in order.
 const MOBILE_STACK: Exclude<Section, 'secret' | 'dashboard' | 'view_link'>[] = ['home', 'stack', 'projects'];
 
@@ -474,10 +498,21 @@ function App() {
   // The hero's entrance waits for the page curtain as it waits for the loader: painting it
   // under the curtain's blur spent the frames the curtain needed, and hid half the entrance.
   const heroReady = !appLoading && !isTransitioning;
+  // Desktop: the hero is built once and kept while another section is on screen, parked
+  // where the switcher slid it. Building it again on every return replayed the whole brush
+  // entrance and rebuilt the boil: ~0.3s frozen, then 1-2s at 10-20fps.
+  const heroShown = viewKey(currentSection) === 'home';
+  const [heroAtLoad] = useState(heroShown);
+  const [heroBuilt, setHeroBuilt] = useState(heroShown);
+  const [heroWasShown, setHeroWasShown] = useState(heroShown);
+  const [heroAway, setHeroAway] = useState(() => SECTION_VARIANTS.exit(1));
+  if (heroShown !== heroWasShown) {
+    setHeroWasShown(heroShown);
+    if (heroShown) setHeroBuilt(true);
+    else setHeroAway(SECTION_VARIANTS.exit(direction));
+  }
   const renderSection = () => {
     switch (currentSection) {
-      case 'home':
-        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} onOpenContact={openContactModal} />;
       case 'stack':
         return <Suspense fallback={null}><Stack /></Suspense>;
       case 'projects':
@@ -486,10 +521,8 @@ function App() {
         return <Suspense fallback={null}><SecretPage onNavigate={navigateTo} /></Suspense>;
       case 'dashboard':
         return <Suspense fallback={null}><Dashboard onNavigate={navigateTo} /></Suspense>;
-      case 'view_link':
-        return <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} onOpenContact={openContactModal} />;
       default:
-        return <Hero onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} />;
+        return null; // the hero views: kept outside the switcher (above)
     }
   };
 
@@ -674,23 +707,6 @@ function App() {
     return () => mainContainer.removeEventListener('touchmove', preventPullToRefresh);
   }, [currentSection, isContactModalOpen]);
 
-  // Fixes #4: Prevent unintended yellow page UI rotation on transitions
-  const variants = {
-    enter: (direction: number) => {
-      if (Math.abs(direction) === 2) {
-        return { x: direction === 2 ? '100%' : '-100%', y: 0, opacity: 1, scale: 1 };
-      }
-      return { y: direction > 0 ? '100vh' : '-100vh', x: 0, opacity: 1, scale: 0.95 };
-    },
-    center: { x: 0, y: 0, opacity: 1, scale: 1 },
-    exit: (direction: number) => {
-      if (Math.abs(direction) === 2) {
-        return { x: direction === 2 ? '-100%' : '100%', y: 0, opacity: 1, scale: 1 };
-      }
-      return { y: direction < 0 ? '100vh' : '-100vh', x: 0, opacity: 1, scale: 0.95 };
-    }
-  };
-
   return (
     <SettingsProvider>
     <main
@@ -744,21 +760,33 @@ function App() {
           </ErrorBoundary>
         </div>
       ) : (
-      <AnimatePresence initial={false} custom={direction} mode="popLayout">
+      <>
+      {heroBuilt && (
+        // The hero, slid in and out by hand with the switcher's motion, never torn down.
         <motion.div
+          id={`section-${heroShown ? currentSection : 'home'}`}
+          initial={heroAtLoad ? false : SECTION_VARIANTS.enter(direction)}
+          animate={heroShown ? SECTION_VARIANTS.center : heroAway}
+          transition={SECTION_TRANSITION}
+          aria-hidden={!heroShown || undefined}
+          inert={!heroShown}
+          className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar isolate"
+        >
+          <ErrorBoundary fallback={sectionErrorFallback}>
+            <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} onOpenContact={openContactModal} />
+          </ErrorBoundary>
+        </motion.div>
+      )}
+      <AnimatePresence initial={false} custom={direction} mode="popLayout">
+        {!heroShown && <motion.div
           key={viewKey(currentSection)}
           id={`section-${currentSection}`}
           custom={direction}
-          variants={variants}
+          variants={SECTION_VARIANTS}
           initial="enter"
           animate="center"
           exit="exit"
-          transition={{
-            x: { type: "spring", stiffness: 300, damping: 30 },
-            y: { type: "spring", stiffness: 300, damping: 30 },
-            opacity: { duration: 0.2 },
-            scale: { duration: 0.3 }
-          }}
+          transition={SECTION_TRANSITION}
           // No explicit z-index: the page content must sit BELOW the chrome
           // (navbar z-50, secret button z-40, PageTransition curtain z-50) and
           // below the body-portaled tooltips (z-60) + modals (z-1400+).
@@ -770,8 +798,9 @@ function App() {
           <ErrorBoundary fallback={sectionErrorFallback}>
             {renderSection()}
           </ErrorBoundary>
-        </motion.div>
+        </motion.div>}
       </AnimatePresence>
+      </>
       )}
       {currentSection !== 'secret' && (
         <button
