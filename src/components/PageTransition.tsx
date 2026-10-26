@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import anime from 'animejs';
 import { useBoilHold } from './book/paintKit';
+import { whenFramesFlow } from '../lib/idle';
 
 interface PageTransitionProps {
     isTransitioning: boolean;
@@ -11,6 +11,21 @@ interface PageTransitionProps {
     direction?: number;
 }
 
+const EASE_OUT = 'cubic-bezier(.25, 1, .5, 1)';
+const EASE_IN = 'cubic-bezier(.5, 0, .75, 0)';
+/** The curtain's grow and shrink. */
+const SWEEP = 150;
+/** Each letter's stroke, the gap between letters, and the fill that follows. */
+const WRITE = 100, STAGGER = 30, FILL = 60;
+/** How long the written name stays before the curtain lifts. */
+const HOLD = 150;
+
+/**
+ * The page switch, in order: the curtain covers the page, the new section is put in place
+ * under it, the name is written once frames are flowing again, and the curtain lifts after
+ * the last letter. Each step waits for the one before it: the switch itself is a long task,
+ * and the letters timed alongside it were drawn (or skipped) while no frame was shown.
+ */
 const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplete, nextSectionName = '', direction = 0 }: PageTransitionProps) => {
     useBoilHold(isTransitioning);
     const curtainRef = useRef<HTMLDivElement>(null);
@@ -32,139 +47,99 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Using natural SVG kerning with Caveat font
+    // Read from refs, so a parent re-render mid-switch can't restart the sequence.
+    const covered = useRef(onCurtainCovered);
+    const completed = useRef(onTransitionComplete);
+    const size = useRef(fontSize);
+    const dir = useRef(currentDirection);
+    useEffect(() => {
+        covered.current = onCurtainCovered;
+        completed.current = onTransitionComplete;
+        size.current = fontSize;
+        dir.current = currentDirection;
+    });
 
     useEffect(() => {
-        if (isTransitioning && curtainRef.current) {
-            const selectedDir = currentDirection;
-
-            curtainRef.current.style.display = 'block';
-
-            // Reset styles
-            curtainRef.current.style.height = '100%';
-            curtainRef.current.style.width = '100%';
-            curtainRef.current.style.top = '0';
-            curtainRef.current.style.left = '0';
-            curtainRef.current.style.bottom = 'auto';
-            curtainRef.current.style.right = 'auto';
-
-            if (selectedDir === 'right') {
-                // Horizontal: Start from right (covering moves Left)
-                curtainRef.current.style.width = '0%';
-                curtainRef.current.style.left = 'auto';
-                curtainRef.current.style.right = '0';
-            } else if (selectedDir === 'left') {
-                // Horizontal: Start from left (covering moves Right)
-                curtainRef.current.style.width = '0%';
-                curtainRef.current.style.left = '0';
-                curtainRef.current.style.right = 'auto';
+        const curtain = curtainRef.current;
+        if (!isTransitioning || !curtain) return;
+        const d = dir.current;
+        const horizontal = d === 'right' || d === 'left';
+        const prop = horizontal ? 'width' : 'height';
+        const s = curtain.style;
+        const anchor = (start: boolean) => {
+            // Grows from the side it enters by, and shrinks toward the far side.
+            if (horizontal) {
+                const fromRight = (d === 'right') === start;
+                s.left = fromRight ? 'auto' : '0';
+                s.right = fromRight ? '0' : 'auto';
             } else {
-                // Vertical
-                curtainRef.current.style.height = '0%';
-                curtainRef.current.style.top = selectedDir === 'top' ? '0' : 'auto';
-                curtainRef.current.style.bottom = selectedDir === 'bottom' ? '0' : 'auto';
+                const fromTop = (d === 'top') === start;
+                s.top = fromTop ? '0' : 'auto';
+                s.bottom = fromTop ? 'auto' : '0';
             }
+        };
+        s.top = s.left = '0';
+        s.bottom = s.right = 'auto';
+        s.width = s.height = '100%';
+        anchor(true);
+        s[prop] = '0%';
+        s.display = 'block';
 
-            const animationProps = (selectedDir === 'right' || selectedDir === 'left')
-                ? { width: ['0%', '100%'] }
-                : { height: ['0%', '100%'] };
+        const letters = [...(svgRef.current?.querySelectorAll<SVGTSpanElement>('.letter-path') ?? [])];
+        const anims: Animation[] = [];
+        let live = true, stopWaiting = () => { };
+        const run = (el: Element, frames: Keyframe[], o: KeyframeAnimationOptions) => {
+            const a = el.animate(frames, o);
+            anims.push(a);
+            return a.finished;
+        };
 
-            // Entry: Grow
-            anime({
-                targets: curtainRef.current,
-                ...animationProps,
-                duration: 150,
-                easing: 'easeOutQuart',
-                complete: () => {
-                    // Handwriting animation
-                    if (svgRef.current) {
-                        const letters = svgRef.current.querySelectorAll('.letter-path');
+        const write = () => {
+            const L = size.current * 3;
+            return Promise.all(letters.map((t, i) => {
+                const ts = t.style;
+                ts.strokeDasharray = `${L}`;
+                ts.visibility = 'visible';
+                // The stroke draws, then the fill comes in under it and the stroke fades back.
+                const delay = i * STAGGER;
+                return Promise.all([
+                    run(t, [{ strokeDashoffset: L }, { strokeDashoffset: 0 }], { duration: WRITE, delay, easing: 'cubic-bezier(.5, 1, .89, 1)', fill: 'both' }),
+                    run(t, [{ fillOpacity: 0, strokeOpacity: 1 }, { fillOpacity: 1, strokeOpacity: .3 }], { duration: FILL, delay: delay + WRITE, easing: 'cubic-bezier(.5, 1, .89, 1)', fill: 'both' }),
+                ]);
+            }));
+        };
 
-                        letters.forEach((letter, index) => {
-                            const textEl = letter as SVGTextElement;
-                            const estimatedLength = fontSize * 3;
+        const finish = () => {
+            s.display = 'none';
+            s.width = s.height = '100%';
+            letters.forEach(t => { t.style.visibility = 'hidden'; });
+            anims.forEach(a => a.cancel());
+            anims.length = 0;
+            completed.current();
+        };
 
-                            anime({
-                                targets: textEl,
-                                strokeDashoffset: [estimatedLength, 0],
-                                duration: 100,
-                                delay: index * 30,
-                                easing: 'easeOutQuad',
-                                begin: () => {
-                                    textEl.style.visibility = 'visible';
-                                    textEl.style.strokeDasharray = `${estimatedLength}`;
-                                    textEl.style.strokeDashoffset = `${estimatedLength}`;
-                                },
-                                complete: () => {
-                                    anime({
-                                        targets: textEl,
-                                        fill: [{ value: 'transparent' }, { value: 'var(--text-primary)' }],
-                                        duration: 60,
-                                        easing: 'easeOutQuad',
-                                        complete: () => {
-                                            textEl.style.fill = 'var(--text-primary)';
-                                            textEl.style.stroke = 'var(--text-primary)';
-                                            textEl.style.strokeOpacity = '0.3';
-                                        }
-                                    });
-                                }
-                            });
-                        });
-                    }
+        void run(curtain, [{ [prop]: '0%' }, { [prop]: '100%' }], { duration: SWEEP, easing: EASE_OUT, fill: 'forwards' })
+            .then(() => {
+                if (!live) return;
+                covered.current();
+                return new Promise<void>(r => { stopWaiting = whenFramesFlow(r); });
+            })
+            .then(() => live ? write() : undefined)
+            .then(() => live ? new Promise(r => setTimeout(r, HOLD)) : undefined)
+            .then(() => {
+                if (!live) return;
+                anchor(false);
+                return run(curtain, [{ [prop]: '100%' }, { [prop]: '0%' }], { duration: SWEEP, easing: EASE_IN, fill: 'forwards' });
+            })
+            .then(() => { if (live) finish(); })
+            .catch(() => { /* cancelled on unmount */ });
 
-                    onCurtainCovered();
-
-                    setTimeout(() => {
-                        // Exit phase
-                        if (curtainRef.current) {
-                            if (selectedDir === 'right') {
-                                // Exit: Anchor Left, Shrink Width
-                                curtainRef.current.style.left = '0';
-                                curtainRef.current.style.right = 'auto';
-                            } else if (selectedDir === 'left') {
-                                // Exit: Anchor Right, Shrink Width (Reveals from Left)
-                                curtainRef.current.style.left = 'auto';
-                                curtainRef.current.style.right = '0';
-                            } else {
-                                // Vertical
-                                // Top Entry -> Exit Anchor Bottom (Wipe Down)
-                                // Bottom Entry -> Exit Anchor Top (Wipe Up)
-                                curtainRef.current.style.top = selectedDir === 'top' ? 'auto' : '0';
-                                curtainRef.current.style.bottom = selectedDir === 'top' ? '0' : 'auto';
-                            }
-                        }
-
-                        const exitProps = (selectedDir === 'right' || selectedDir === 'left')
-                            ? { width: ['100%', '0%'] }
-                            : { height: ['100%', '0%'] };
-
-                        anime({
-                            targets: curtainRef.current,
-                            ...exitProps,
-                            duration: 150,
-                            easing: 'easeInQuart',
-                            complete: () => {
-                                if (curtainRef.current) {
-                                    curtainRef.current.style.display = 'none';
-                                    curtainRef.current.style.height = '100%';
-                                }
-
-                                if (svgRef.current) {
-                                    const letters = svgRef.current.querySelectorAll('.letter-path');
-                                    letters.forEach((letter) => {
-                                        const textEl = letter as SVGTextElement;
-                                        textEl.style.visibility = 'hidden';
-                                        textEl.style.fill = 'transparent';
-                                    });
-                                }
-                                onTransitionComplete();
-                            }
-                        });
-                    }, 400);
-                }
-            });
-        }
-    }, [isTransitioning, onCurtainCovered, onTransitionComplete, displayName, fontSize, currentDirection]);
+        return () => {
+            live = false;
+            stopWaiting();
+            anims.forEach(a => a.cancel());
+        };
+    }, [isTransitioning]);
 
     if (typeof document === 'undefined') return null;
 
@@ -194,7 +169,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
                         strokeWidth="1.2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        style={{ paintOrder: 'stroke fill', fill: 'transparent', stroke: 'var(--text-primary)', strokeOpacity: 1 }}
+                        style={{ paintOrder: 'stroke fill', fill: 'var(--text-primary)', fillOpacity: 0, stroke: 'var(--text-primary)', strokeOpacity: 1 }}
                     >
                         {displayName.split('').map((char: string, index: number) => {
                             if (char === ' ') return <tspan key={index}> </tspan>;

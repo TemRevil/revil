@@ -30,11 +30,8 @@ const el = (tag: string, attrs: Record<string, string | number>) => {
     for (const k in attrs) e.setAttribute(k, String(attrs[k]));
     return e;
 };
-const stepped = (ms: number) => `steps(${Math.max(2, Math.round(ms / FRAME))}, end)`;
-/** Snaps a time to the 15fps grid, so every stroke steps on the same frames: the brushes repaint 15 times a second, not on every frame of the entrance. */
+/** Snaps a time to whole 15fps frames, so every stroke steps on the same frames (see drive). */
 const onGrid = (ms: number) => Math.max(1, Math.round(ms / FRAME)) * FRAME;
-/** The entrance's start, on that grid of the page clock (set per paint by paintBook). */
-let gridStart = 0;
 
 // ---------- dry brush ----------
 /** Phones: fewer bristles per stroke (set per paint by paintBook). */
@@ -111,8 +108,8 @@ function paint(svg: SVGElement, pts0: Pt[], width: number, color: string, delay:
         const ms = onGrid(dur || (500 + L * .45));
         mp.style.strokeDasharray = String(L);
         mp.style.strokeDashoffset = String(L);
-        const a = mp.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0 }], { duration: ms, delay: onGrid(delay), easing: stepped(ms), fill: 'forwards' });
-        a.startTime = gridStart;
+        const a = mp.animate([{ strokeDashoffset: L }, { strokeDashoffset: 0 }], { duration: ms, delay: onGrid(delay), fill: 'forwards' });
+        a.pause();
         reveals.push(a);
     }
 }
@@ -357,10 +354,10 @@ function textIn(root: HTMLElement) {
  * animates back in.
  */
 export function paintBook(root: HTMLElement, animate: boolean, phone = false) {
+    drives.get(root)?.();
     uncache(root);
     reveals = [];
     lite = phone;
-    gridStart = Math.ceil(Number(document.timeline.currentTime) / FRAME) * FRAME;
     // One composition per page load: a redraw (a resize, or the name or availability text
     // arriving after the entrance) replays the same random rolls, so the strokes are only
     // re-fitted to the new layout, never swapped for new ones.
@@ -370,10 +367,40 @@ export function paintBook(root: HTMLElement, animate: boolean, phone = false) {
     drawBg(root, 900, animate, mood);
     drawShirt(root, drawStage(root, 1100, animate, mood) + 200, animate);
     landed.set(root, Promise.all(reveals.map(a => a.finished)).then(() => true, () => false));
+    if (reveals.length) drives.set(root, drive(reveals));
     reveals = [];
     boils.get(root)?.();
     if (animate) textIn(root);
     root.dataset.intro = 'done';
+}
+
+/** Each root's running entrance (see drive): stopped by a repaint. */
+const drives = new WeakMap<HTMLElement, () => void>();
+
+/**
+ * Plays an entrance's stroke reveals in 15fps steps, taken on the frames the page actually
+ * draws. The page clock runs on while a frame is held up (the first draw of the brushes
+ * keeps the GPU busy for up to a second, more on a phone), so reveals timed by it landed
+ * whole, or jumped to the end. Here a drawn frame advances one step per 15fps frame of the
+ * clock since the last (the boil re-rolls on the same frames), but never more than two: a
+ * stall pauses the entrance, and a slow device skips at most every other drawing instead
+ * of dragging the entrance out. Returns a stop that cancels what is left.
+ */
+function drive(list: Animation[]) {
+    const end = Math.max(...list.map(a => Number(a.effect?.getComputedTiming().endTime) || 0));
+    let step = 0, last = -1, raf = 0;
+    const tick = (now: number) => {
+        const f = Math.floor(now / FRAME);
+        if (f !== last) {
+            if (last >= 0) step += Math.min(f - last, 2);
+            last = f;
+            if (step * FRAME >= end) { raf = 0; list.forEach(a => a.finish()); return; }
+            list.forEach(a => { a.currentTime = step * FRAME; });
+        }
+        raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { if (raf) { cancelAnimationFrame(raf); raf = 0; list.forEach(a => a.cancel()); } };
 }
 
 // ---------- boil ----------
@@ -447,7 +474,7 @@ function unsnap(svg: SVGSVGElement) {
 /**
  * Old-animation boil: the brush edges re-roll 15 times a second, through three noise
  * seeds. It steps on the same 15fps grid of the page clock as the entrance strokes (see
- * paint), so both repaint the brushes on the same frames.
+ * drive), so both repaint the brushes on the same frames.
  *
  * While strokes are still landing, it re-seeds the filter (`turb`) each frame. Once the
  * last one has landed nothing else changes, so each brush layer is drawn once per seed

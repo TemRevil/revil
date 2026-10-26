@@ -467,6 +467,8 @@ function App() {
     return document.getElementById(`section-${sectionName}`) as HTMLDivElement | null;
   };
 
+  /** Where the running page switch goes, set once its curtain covers the page. */
+  const pendingSection = useRef<Section | null>(null);
   const navigateTo = useCallback((section: Section) => {
     if (section !== currentSection && !isTransitioning) {
       // The recorder switches 'view_link' -> 'home' once the server resolves the share
@@ -498,8 +500,7 @@ function App() {
 
       setDirection(dir);
       setNextSection(section);
-      setCurrentSection(section);
-
+      pendingSection.current = section;
       setIsTransitioning(true);
     }
   }, [currentSection, isTransitioning]);
@@ -516,7 +517,13 @@ function App() {
     }
   }, [scrollLayout, navigateTo]);
 
-  const handleCurtainCovered = useCallback(() => { }, []);
+  // The section changes once the curtain covers the page: building it is a long task, and
+  // started with the curtain it froze the curtain's sweep and the name it writes.
+  const handleCurtainCovered = useCallback(() => {
+    const section = pendingSection.current;
+    pendingSection.current = null;
+    if (section) setCurrentSection(section);
+  }, []);
 
   const handleTransitionComplete = useCallback(() => {
     setIsTransitioning(false);

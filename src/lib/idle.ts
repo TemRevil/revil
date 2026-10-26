@@ -34,3 +34,24 @@ export function onQuiet(cb: () => void, stillMs = 1000): () => void {
     arm();
     return () => { stop(); cancelIdle(); };
 }
+
+/**
+ * Calls `cb` once frames are being drawn steadily again (two gaps in a row under `gap` ms),
+ * at the latest after `cap` ms, and returns a cancel function: for an animation that
+ * should start after a long task or a heavy first draw rather than during it, where the
+ * frames it was timed for would never be shown.
+ */
+export function whenFramesFlow(cb: () => void, cap = 800, gap = 70): () => void {
+    let raf = 0, prev = 0, calm = 0;
+    const stop = () => { cancelAnimationFrame(raf); window.clearTimeout(timer); };
+    const done = () => { stop(); cb(); };
+    const tick = (t: number) => {
+        calm = prev && t - prev < gap ? calm + 1 : 0;
+        prev = t;
+        if (calm >= 2) done();
+        else raf = requestAnimationFrame(tick);
+    };
+    const timer = window.setTimeout(done, cap);
+    raf = requestAnimationFrame(tick);
+    return stop;
+}
