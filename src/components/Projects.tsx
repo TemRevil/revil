@@ -28,6 +28,12 @@ interface RawTagData {
     Icon?: string;
 }
 
+/** Whether a project carries every one of these tags, in its stack or its own tags. */
+const hasTags = (project: { stack?: string[]; tags?: Tag[] }, tags: string[]) => {
+    const own = [...(project.stack || []), ...(project.tags || []).map(t => t.name)].map(s => s.toLowerCase());
+    return tags.every(tag => own.includes(tag.toLowerCase()));
+};
+
 interface ProjectContributorData {
     "Contributor Name"?: string;
     "Role at Project"?: string;
@@ -160,8 +166,8 @@ const CardImage = ({ src, alt }: { src: string; alt: string }) => {
     );
 };
 
-const ProjectCard = ({ project, index, onClick, active }: { project: Project; index: number; onClick: () => void; active: boolean }) => {
-    const cardRef = useRef<HTMLDivElement>(null);
+/** `ref`: AnimatePresence's popLayout holds a leaving card in place by it while the grid closes up. */
+const ProjectCard = ({ project, index, onClick, active, ref }: { project: Project; index: number; onClick: () => void; active: boolean; ref?: React.Ref<HTMLDivElement> }) => {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [isHovered, setIsHovered] = useState(false);
     const [showContributors, setShowContributors] = useState(false);
@@ -186,33 +192,26 @@ const ProjectCard = ({ project, index, onClick, active }: { project: Project; in
         return () => clearInterval(interval);
     }, [active]);
 
-    // Entrance animation, each time the section is shown
-    useEffect(() => {
-        if (!active) return;
-        anime({
-            targets: cardRef.current,
-            opacity: [0, 1],
-            translateY: [50, 0],
-            duration: 500,
-            delay: index * 50,
-            easing: 'easeOutQuad'
-        });
-    }, [active, index]);
-
     return (
         <motion.div
+            ref={ref}
+            layout="position"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => {
                 setIsHovered(false);
                 setCurrentImageIndex(0);
             }}
             onClick={onClick}
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: isHovered ? -8 : 0 }}
+            // Comes into focus as it appears (on load or when a tag lets it back in) and
+            // blurs away when a tag filters it out; the rest of the grid glides into place.
+            initial={{ opacity: 0, y: 30, filter: 'blur(12px)' }}
+            animate={{ opacity: 1, y: isHovered ? -8 : 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, scale: 0.96, filter: 'blur(12px)', transition: { duration: 0.4, ease: [0.5, 0, 0.75, 0] } }}
             transition={{
-                opacity: { duration: 0.3, delay: index * 0.03 },
+                opacity: { duration: 0.6, delay: index * 0.04, ease: [0.25, 1, 0.5, 1] },
+                filter: { duration: 0.6, delay: index * 0.04, ease: [0.25, 1, 0.5, 1] },
                 y: { duration: 0.2 },
-                layout: { duration: 0.4, type: "tween", ease: "easeOut" }
+                layout: { duration: 0.5, type: "tween", ease: [0.25, 1, 0.5, 1] }
             }}
             className={`
                 group flex flex-col h-full glass-panel cursor-pointer overflow-hidden
@@ -506,13 +505,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
     const filteredProjects = useMemo(() => {
         let results = projectsData;
         if (selectedTags.length > 0) {
-            results = results.filter(project => {
-                const projectTags = [
-                    ...(project.stack || []).map(s => s.toLowerCase()),
-                    ...(project.tags || []).map(t => t.name.toLowerCase())
-                ];
-                return selectedTags.every(tag => projectTags.includes(tag.toLowerCase()));
-            });
+            results = results.filter(project => hasTags(project, selectedTags));
         }
         if (debouncedSearch.length < 2) {
             // Pinned first, in the order they were pinned; everything else keeps the
@@ -549,6 +542,13 @@ const Projects = ({ active = true }: { active?: boolean }) => {
             .sort((a, b) => a.minDistance - b.minDistance)
             .map(item => item.project);
     }, [debouncedSearch, projectsData, selectedTags, Pinned]);
+
+    // A tag that would leave the grid empty can't be picked: no project carries it
+    // together with the tags already chosen.
+    const deadTags = useMemo(() => new Set(projectsData.length === 0 ? [] : availableTags
+        .filter(tag => !selectedTags.includes(tag.name)
+            && !projectsData.some(p => hasTags(p, [...selectedTags, tag.name])))
+        .map(tag => tag.name)), [availableTags, projectsData, selectedTags]);
 
     const toggleTag = (tagName: string) => {
         setSelectedTags(prev =>
@@ -650,16 +650,20 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                     <div className="flex flex-wrap gap-2 items-center">
                         {availableTags.map(tag => {
                             const isActive = selectedTags.includes(tag.name);
+                            const isDead = deadTags.has(tag.name);
                             const isUrl = tag.iconSvg && (tag.iconSvg.startsWith('http') || tag.iconSvg.includes('/o/'));
 
                             return (
                                 <button
                                     key={tag.id}
                                     onClick={() => toggleTag(tag.name)}
+                                    disabled={isDead}
+                                    title={isDead ? 'No project has this with the tags picked' : undefined}
                                     className={`
-                                        flex items-center gap-2 rounded-xl border font-bold cursor-pointer transition-all duration-300
+                                        flex items-center gap-2 rounded-xl border font-bold transition-all duration-300
                                         backdrop-blur-xl shadow-sm whitespace-nowrap
                                         ${windowWidth < 460 ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'}
+                                        ${isDead ? 'cursor-not-allowed opacity-30' : 'cursor-pointer'}
                                         ${isActive
                                             ? 'border-accent bg-[rgba(59,130,246,0.12)] text-accent scale-105 z-10 shadow-[0_8px_16px_-4px_rgba(59,130,246,0.25)]'
                                             : 'border-[var(--section-border)] bg-[var(--card-bg)] text-sec'}
@@ -697,19 +701,21 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                 </div>
 
                 {/* Projects Grid */}
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
-                    {filteredProjects.map((project, index) => (
-                        <ProjectCard
-                            key={project.id}
-                            project={project}
-                            index={index}
-                            active={active}
-                            onClick={() => {
-                                window.dispatchEvent(new CustomEvent('revil:project_open', { detail: { id: project.id } }));
-                                setSelectedProjectId(project.id);
-                            }}
-                        />
-                    ))}
+                <div className="relative grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
+                    <AnimatePresence mode="popLayout">
+                        {filteredProjects.map((project, index) => (
+                            <ProjectCard
+                                key={project.id}
+                                project={project}
+                                index={index}
+                                active={active}
+                                onClick={() => {
+                                    window.dispatchEvent(new CustomEvent('revil:project_open', { detail: { id: project.id } }));
+                                    setSelectedProjectId(project.id);
+                                }}
+                            />
+                        ))}
+                    </AnimatePresence>
                 </div>
 
                 {/* Modals */}

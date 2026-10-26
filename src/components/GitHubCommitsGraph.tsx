@@ -101,7 +101,6 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
     const [isLoading, setIsLoading] = useState(initial === null);
     // Nothing to show: the read failed.
     const [failed, setFailed] = useState(false);
-    const [hasAppeared, setHasAppeared] = useState(false);
     const [hoveredDay, setHoveredDay] = useState<ContributionDay | null>(null);
     const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
     const containerRef = useRef<HTMLDivElement>(null);
@@ -140,14 +139,6 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [username]);
 
-    // ── Cascade animation on load & year change ──
-    useEffect(() => {
-        if (!isLoading && yearlyData[currentYear]?.length > 0) {
-            const t = setTimeout(() => setHasAppeared(true), 60);
-            return () => clearTimeout(t);
-        }
-    }, [isLoading, currentYear, yearlyData]);
-
     // ── Measure container width ──
     useEffect(() => {
         const el = graphRef.current;
@@ -170,7 +161,6 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
         if (now - lastNavTime.current < 600) return; // cooldown
         lastNavTime.current = now;
         setHoveredDay(null);
-        setHasAppeared(false);
 
         setSlideDir(dir);
         setCurrentYear(prev => {
@@ -434,35 +424,15 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
                                 weeks.map((week, wi) => (
                                     <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
                                         {week.map((day, di) => {
-                                            const isEmpty = day.count < 0;
-                                            const isHovered = hoveredDay?.date === day.date && !isEmpty;
+                                            // Pop-in, today's glow and the hover grow are CSS
+                                            // (.commits-cell): a JS animation per cell, one per day of
+                                            // the year, held the page for over a second on opening.
+                                            if (day.count < 0) return <div key={di} style={{ width: CELL, height: CELL }} />;
                                             const isToday = day.date === todayStr;
-                                            
-                                            const staggerDelay = (wi * 0.006) + (di * 0.012);
-                                            
                                             return (
-                                                <motion.div
+                                                <div
                                                     key={di}
-                                                    initial={{ opacity: 0, scale: 0 }}
-                                                    animate={hasAppeared ? { 
-                                                        opacity: isEmpty ? 0 : 1, 
-                                                        scale: isEmpty ? 0 : 1,
-                                                        ...(isToday ? {
-                                                            boxShadow: [
-                                                                '0 0 5px var(--accent)',
-                                                                '0 0 15px var(--accent)',
-                                                                '0 0 5px var(--accent)'
-                                                            ]
-                                                        } : {})
-                                                    } : {}}
-                                                    transition={isToday ? {
-                                                        boxShadow: {
-                                                            repeat: Infinity,
-                                                            duration: 2,
-                                                            ease: "easeInOut"
-                                                        },
-                                                        default: { duration: 0.3, delay: staggerDelay, ease: [0.34, 1.56, 0.64, 1] }
-                                                    } : { duration: 0.3, delay: staggerDelay, ease: [0.34, 1.56, 0.64, 1] }}
+                                                    className={isToday ? 'commits-cell commits-cell-today' : 'commits-cell'}
                                                     // handleCellHover reads containerRef only when the
                                                     // mouse actually enters a cell - an event handler,
                                                     // never during render.
@@ -470,18 +440,11 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
                                                     onMouseEnter={(e) => handleCellHover(day, e)}
                                                     onMouseLeave={handleCellLeave}
                                                     style={{
-                                                        width: CELL, height: CELL, borderRadius: 3,
-                                                        background: isEmpty ? 'transparent' : (isToday ? 'var(--accent)' : `var(--commits-l${day.level})`),
-                                                        cursor: isEmpty ? 'default' : 'pointer',
-                                                        transition: 'transform 0.18s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.18s ease, border 0.2s ease',
-                                                        transform: isHovered ? 'scale(1.3)' : 'scale(1)',
-                                                        boxShadow: isHovered && day.level > 0 
-                                                            ? `0 0 8px var(--commits-l${day.level})` 
-                                                            : 'none',
-                                                        border: isToday ? '2px solid white' : 'none',
-                                                        zIndex: (isHovered || isToday) ? 10 : 1, 
-                                                        position: 'relative',
-                                                    }}
+                                                        width: CELL, height: CELL,
+                                                        background: isToday ? 'var(--accent)' : `var(--commits-l${day.level})`,
+                                                        '--glow': day.level > 0 ? `var(--commits-l${day.level})` : 'transparent',
+                                                        '--delay': `${wi * 6 + di * 12}ms`,
+                                                    } as React.CSSProperties}
                                                 />
                                             );
                                         })}

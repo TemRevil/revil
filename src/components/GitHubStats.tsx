@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
 import { Star, GitFork, Package, Users } from 'lucide-react';
 import { cachedJson, fetchJson, GITHUB_URLS } from '../lib/githubData';
 
@@ -24,17 +23,14 @@ const StatCard = ({
     delay: number;
     isLoading: boolean;
 }) => (
-    <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay, ease: [0.16, 1, 0.3, 1] }}
+    <div
         className="github-stat-card"
         style={{
             position: 'relative',
             padding: '14px 16px',
             borderRadius: 14,
             overflow: 'hidden',
-            transition: 'border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease',
+            animationDelay: `${delay}s`,
         }}
     >
         <div
@@ -94,7 +90,7 @@ const StatCard = ({
         >
             {label}
         </div>
-    </motion.div>
+    </div>
 );
 
 type Repo = { stargazers_count: number; forks_count: number; fork: boolean };
