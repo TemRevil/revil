@@ -17,8 +17,6 @@ import { ProjectData as Project, ContributorData as Contributor } from './types'
 import { SettingsProvider } from './contexts/SettingsContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import { prefetchPublicData } from './lib/liveDoc';
-import { cachedDoc } from './lib/dataCache';
-import { prefetchGithub } from './lib/githubData';
 
 // Code-split everything that isn't part of the first paint (home = Hero + Navbar).
 // Each chunk loads on demand: section views load on navigation (hidden behind the
@@ -146,6 +144,7 @@ function KeptView({ id, shown, direction, instant, children }: {
   children: ReactNode;
 }) {
   const controls = useAnimationControls();
+  const box = useRef<HTMLDivElement>(null);
   const [parked, setParked] = useState(!shown);
   if (shown && parked) setParked(false);
   const first = useRef(true);
@@ -160,13 +159,20 @@ function KeptView({ id, shown, direction, instant, children }: {
     }
     if (isFirst) return;
     let live = true;
-    void controls.start(SECTION_VARIANTS.exit(direction)).then(() => { if (live) setParked(true); });
+    // Parked back at the top, as a rebuilt section was: the wheel/swipe paging reads the
+    // scroll position, and a section left at its bottom would page straight past.
+    void controls.start(SECTION_VARIANTS.exit(direction)).then(() => {
+      if (!live) return;
+      setParked(true);
+      if (box.current) box.current.scrollTop = 0;
+    });
     return () => { live = false; };
     // direction is read as it stands when `shown` changes, like the switcher's custom prop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
   return (
     <motion.div
+      ref={box}
       id={id}
       initial={shown ? (instant ? false : SECTION_VARIANTS.enter(direction)) : SECTION_VARIANTS.exit(1)}
       animate={controls}
@@ -407,7 +413,6 @@ function App() {
       if (cancelled) return;
       // Every section and modal then opens on this visit's copy, not just the cached one.
       prefetchPublicData();
-      prefetchGithub(((cachedDoc(['Settings', 'Developer'])?.featuredRepos ?? []) as string[]).filter(Boolean));
       import('./components/Stack');
       import('./components/ProjectsHub');
       Promise.all([MContact.preload(), MCV.preload()]).then(() => { if (!cancelled && !isLite()) setWarmLeft(['contact', 'cv']); });

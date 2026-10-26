@@ -1,7 +1,7 @@
 // The Developer tab's GitHub numbers, always this visit's: nothing is kept on the device, so
 // a number is never older than the page. Each URL is read once per visit (however many
-// readers ask), early, so the tab opens on numbers already read. The public GitHub API
-// allows 60 requests an hour per visitor.
+// readers ask), and ProjectsHub asks as soon as its section is reached, so the tab opens
+// on numbers already read. The public GitHub API allows 60 requests an hour per visitor.
 
 export const GITHUB_USERNAME = 'TemRevil';
 

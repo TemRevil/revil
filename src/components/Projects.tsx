@@ -177,13 +177,14 @@ const ProjectCard = ({ project, index, onClick, active }: { project: Project; in
         return () => clearInterval(interval);
     }, [isHovered, project.images.length]);
 
-    // Cycle between Stack and Contributors
+    // Cycle between Stack and Contributors, only while the section is shown
     useEffect(() => {
+        if (!active) return;
         const interval = setInterval(() => {
             setShowContributors(prev => !prev);
         }, 3000);
         return () => clearInterval(interval);
-    }, []);
+    }, [active]);
 
     // Entrance animation, each time the section is shown
     useEffect(() => {

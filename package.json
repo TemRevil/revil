@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "postbuild": "node scripts/share-shell.mjs",
+    "postbuild": "node scripts/public-data.mjs && node scripts/share-shell.mjs",
     "start": "next start",
     "lint": "eslint .",
     "sync:data": "node scripts/sync-data.mjs",

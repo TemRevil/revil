@@ -846,7 +846,15 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
                         transition: 'background-color 0.25s ease, border-color 0.25s ease',
                         zIndex: 5,
                       }}>
-                        <h3 style={{ fontSize: 'clamp(1.1rem, 0.9rem + 0.7vw, 1.3rem)', fontWeight: 700, margin: 0 }}>Send a Message</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {/* The navbar's mail icon docks here on this tab too, or the navbar shows an empty button. */}
+                          {!isMobile && (
+                            <DockIcon id="contact-icon" fly={dock && !warm}>
+                              <Mail size={20} className="text-primary" aria-hidden="true" />
+                            </DockIcon>
+                          )}
+                          <h3 style={{ fontSize: 'clamp(1.1rem, 0.9rem + 0.7vw, 1.3rem)', fontWeight: 700, margin: 0 }}>Send a Message</h3>
+                        </div>
                         {!isMobile && (
                           <button
                             type="button"

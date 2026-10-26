@@ -1,7 +1,7 @@
 /**
  * Snapshot the public site's Firestore content (every path in src/data/publicPaths.json)
  * into src/data/public.snapshot.json. The build bakes it into the homepage and /book
- * (<script id="public-data">, see app/PublicData.tsx), where lib/dataCache hands it to a
+ * (<script id="public-data">, baked in by scripts/public-data.mjs), where lib/dataCache hands it to a
  * first-time visitor's sections at once; Firestore's live copy replaces it a moment later.
  * The project pages (/projects and /projects/<slug>) and the homepage's <noscript> copy are
  * built from it too, so crawlers that don't run JavaScript see the real work.
@@ -14,7 +14,7 @@
  * without its token is refused even though the rules allow public reads. An OAuth token
  * (a service account's, or the owner's) is not subject to App Check.
  *
- * Auth: $FIRESTORE_ACCESS_TOKEN, else a gcloud token for temrevil@gmail.com.
+ * Auth: $FIRESTORE_ACCESS_TOKEN, else a token for gcloud's active account.
  *
  * With $COMPARE_WITH set to a page URL (CI's daily run), it also writes `changed=true|false`
  * to $GITHUB_OUTPUT: whether the snapshot differs from the one that page carries.
@@ -55,13 +55,12 @@ function getToken() {
     // A fixed command with nothing interpolated into it, so there's no injection surface.
     // It has to go through a shell: on Windows gcloud is a .cmd, and Node 20+ refuses to
     // execFile a .cmd/.bat without one (CVE-2024-27980 mitigation).
-    // The owner's account is named, not gcloud's active one, which may have no access.
     try {
-        return execSync('gcloud auth print-access-token temrevil@gmail.com', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 90_000 }).trim();
+        return execSync('gcloud auth print-access-token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 90_000 }).trim();
     } catch {
         throw new Error(
-            'Could not get a token from gcloud for temrevil@gmail.com. Make sure the Google Cloud SDK is ' +
-            'installed and that account is logged in (`gcloud auth login temrevil@gmail.com`), or set FIRESTORE_ACCESS_TOKEN.'
+            'Could not get a token from gcloud. Make sure the Google Cloud SDK is installed and an account ' +
+            'that can read the project Firestore is active (`gcloud auth login`), or set FIRESTORE_ACCESS_TOKEN.'
         );
     }
 }

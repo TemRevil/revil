@@ -3,7 +3,7 @@ import type React from 'react';
 // Firebase is reached only through lib/liveDoc: the listeners attach once it has loaded
 // off the first paint, and the submit handler imports Functions on demand, so
 // /book draws without waiting for the SDK (or App Check's reCAPTCHA).
-import { loadFirebase, watchDoc } from '../lib/liveDoc';
+import { docRead, loadFirebase, watchDoc } from '../lib/liveDoc';
 import type { AlertType } from '../components/Alert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../utils/availability';
 import { cachedDoc } from '../lib/dataCache';
@@ -155,11 +155,14 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   // hours instead of the owner's real ones - and since the move latches (runs once), it
   // never self-corrects when the real config arrives a moment later.
   const [availLoaded, setAvailLoaded] = useState(false);
+  // The cached hours draw the calendar at once, but the move is decided on this visit's read.
+  const [availRead, setAvailRead] = useState(false);
   const [slotsLoaded, setSlotsLoaded] = useState(false);
 
   // Sync Host Availability & Timezone
   useEffect(() => {
     if (!reads) return;
+    let alive = true;
     const unsubscribeAvailability = watchDoc(['Settings', 'Availability'], (data) => {
       if (data) {
         if (typeof data['Current Time'] === 'string' && data['Current Time']) {
@@ -204,7 +207,11 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
       setSlotsLoaded(true);
     });
 
+    // After the watch above, so its fresh hours are set before the move is allowed.
+    void docRead(['Settings', 'Availability']).then(() => { if (alive) setAvailRead(true); });
+
     return () => {
+      alive = false;
       unsubscribeAvailability();
       unsubscribeMeetings();
     };
@@ -254,7 +261,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   useEffect(() => {
     // Wait for the real availability + booked slots before choosing the next open day,
     // otherwise it moves off the stale 9-17 default and latches on the wrong day.
-    if (!selectedDate || !enabled || hasAutoMoved.current || !availLoaded || !slotsLoaded) return;
+    if (!selectedDate || !enabled || hasAutoMoved.current || !availLoaded || !availRead || !slotsLoaded) return;
 
     const checkAvailable = isDayBookable;
 
@@ -280,7 +287,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
       }
     }
     hasAutoMoved.current = true;
-  }, [selectedDate, isDayBookable, today, enabled, availLoaded, slotsLoaded]);
+  }, [selectedDate, isDayBookable, today, enabled, availLoaded, availRead, slotsLoaded]);
 
   useEffect(() => {
     return () => { hasAutoMoved.current = false; };

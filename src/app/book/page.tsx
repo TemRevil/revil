@@ -1,8 +1,7 @@
 import BookApp from './BookApp'
-import PublicData from '../PublicData'
 
-// A server component, so the page can carry the build's copy of what /book shows
-// (PublicData); the page itself is client-only (BookApp).
+// A server component for the static fallback below; the page itself is client-only
+// (BookApp). The build's copy of what it shows is baked in by scripts/public-data.mjs.
 
 export default function Page() {
   return (
@@ -42,7 +41,6 @@ export default function Page() {
           </p>
         </article>
       </noscript>
-      <PublicData docs={['Settings/BookPage', 'Settings/Account', 'Settings/Availability']} />
       <BookApp />
     </>
   )

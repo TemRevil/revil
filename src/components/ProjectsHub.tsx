@@ -1,8 +1,10 @@
-import { useState, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
+import { useState, useCallback, useEffect, useImperativeHandle, useRef, forwardRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FolderKanban, GitBranch } from 'lucide-react';
 import Projects from './Projects';
 import Developer from './Developer';
+import { cachedDoc } from '../lib/dataCache';
+import { prefetchGithub } from '../lib/githubData';
 
 type SubTab = 'projects' | 'developer';
 
@@ -86,6 +88,22 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
         };
     }, [settled]);
 
+    // The Developer tab's GitHub numbers are read once this section is reached, so the tab
+    // opens on them, without every visit to the site spending GitHub's 60 reads an hour
+    // per visitor. On the phone's scroll page that is when it nears the screen.
+    const contentRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!active) return;
+        const read = () => prefetchGithub(((cachedDoc(['Settings', 'Developer'])?.featuredRepos ?? []) as string[]).filter(Boolean));
+        const el = contentRef.current;
+        if (!embedded || !el || typeof IntersectionObserver === 'undefined') { read(); return; }
+        const io = new IntersectionObserver((entries) => {
+            if (entries.some(e => e.isIntersecting)) { io.disconnect(); read(); }
+        }, { rootMargin: '50% 0px' });
+        io.observe(el);
+        return () => io.disconnect();
+    }, [active, embedded]);
+
     // Dispatch custom event when hovering sub-nav so Navbar can suppress tooltips
     const handleSubnavEnter = useCallback(() => {
         window.dispatchEvent(new CustomEvent('revil:subnav_hover', { detail: true }));
@@ -103,7 +121,7 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
     return (
         <>
             {/* Content area - overflow-x hidden kills horizontal scrollbar during slide transitions */}
-            <div style={{ overflowX: 'hidden', minHeight: '100vh' }}>
+            <div ref={contentRef} style={{ overflowX: 'hidden', minHeight: '100vh' }}>
                 <AnimatePresence
                     mode="wait"
                     custom={direction}

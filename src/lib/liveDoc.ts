@@ -157,6 +157,15 @@ function watch<T extends Data | null | Row[]>(
     };
 }
 
+/**
+ * Settles once this visit has read `path` from Firestore (or did so under STALE_MS ago),
+ * whatever the answer; never rejects. For a decision that must not rest on a cached copy.
+ */
+export function docRead(path: string[]): Promise<void> {
+    if (Date.now() - readAt(path) < STALE_MS) return Promise.resolve();
+    return fetchOnce(path, () => readDoc(path)).then(() => { }, () => { });
+}
+
 /** One document (null when missing): the cached copy at once, then Firestore's. Returns the stop function. */
 export function watchDoc(path: string[], onData: (data: Data | null) => void, onError?: (error: unknown) => void): () => void {
     return watch(path, () => cachedDoc(path), () => readDoc(path), onData, onError);

@@ -209,9 +209,9 @@ jobs:
 
       # Tell Bing (and the other IndexNow engines: Yandex, Seznam, Naver) that the
       # sitemap's pages changed, so they recrawl now instead of whenever. The key file
-      # is public/<key>.txt. A failed ping never fails the deploy.
+      # is public/<key>.txt. A failed ping never fails the deploy. A daily run only gets
+      # here when the content changed, so it pings too.
       - name: Ping IndexNow
-        if: github.event_name != 'schedule'
         continue-on-error: true
         env:
           INDEXNOW_KEY: 6de522071a7266eec311b13b026e49f1
