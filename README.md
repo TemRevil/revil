@@ -35,13 +35,13 @@ A private, real-time command center built for elite project management:
 ##  Experience it Locally
 
 ### Prerequisites
-- Node.js (v20+)
+- Node.js (v22+)
 - Firebase CLI (`npm install -g firebase-tools`)
 
 ### Installation
 ```bash
 # Clone the repository
-git clone https://github.com/temrevil/red.git
+git clone https://github.com/TemRevil/revil.git
 
 # Install dependencies
 npm install
@@ -58,16 +58,6 @@ npm run dev
 > printed in the browser console, and add it under
 > **Firebase Console → App Check → Apps → Manage debug tokens**.
 > See [`.env.example`](.env.example) for every variable and what it does.
-
-###  Run with Docker
-You can directly run the application inside an isolated Docker container without needing Node installed locally:
-```bash
-# Build the Docker image
-docker build -t revil-portfolio .
-
-# Run the container on port 3000
-docker run -p 3000:3000 revil-portfolio
-```
 
 ##  Continuous Integration & Security
 
@@ -166,6 +156,31 @@ secret rather than hardcoded.
 
 ---
 
+## Deploy
+
+The site is a static export (`npm run build` writes `dist/`). Every push to `main`
+runs **Release to Hostinger** (`.github/workflows/deploy-hostinger.yml`): it lints,
+type-checks and builds, uploads `dist` over SSH, and swaps it into
+`domains/temrevil.com/public_html`, keeping the previous release as a timestamped
+backup. `.github/workflows/ci.yml` runs the same checks on pull requests.
+
+**Data snapshot.** Before each build, `npm run sync:data` reads the public
+Firestore content (the paths in `src/data/publicPaths.json`) into
+`src/data/public.snapshot.json`, which the homepage and `/book` embed so they open
+on data already there. CI signs in to Google Cloud with Workload Identity
+Federation (no stored key) as a read-only service account. A daily run (03:17 UTC)
+redeploys only when that content changed. Without the variables below, CI builds
+from the committed snapshot.
+
+Repository **secrets**: `HOSTINGER_SSH_HOST`, `HOSTINGER_SSH_PORT`,
+`HOSTINGER_SSH_USERNAME`, `HOSTINGER_SSH_PASSWORD`, and the `NEXT_PUBLIC_FIREBASE_*`
+values from [`.env.example`](.env.example).
+
+Repository **variables**: `GCP_WORKLOAD_IDENTITY_PROVIDER` and
+`GCP_SNAPSHOT_SERVICE_ACCOUNT` (the snapshot reader).
+
+---
+
 ## ️ Tech Stack
 
 | Domain | Technology |
@@ -186,6 +201,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 
-Built with precision for the next generation of web presence.
+Built by Tem Revil, with Claude as coding assistant.
 **[Visit Website](https://temrevil.com)** • **Main Portfolio of Mohammed Ahmed**
 
