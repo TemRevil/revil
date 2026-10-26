@@ -4,7 +4,9 @@
 // page and the admin dashboard load it (lib/firebase). App Check itself (reCAPTCHA) still
 // loads, since visit tracking needs its token too, but only once the page has drawn.
 // The trade: a public page reads each document when it opens, and again when the tab is
-// shown after a while, instead of listening live.
+// shown after a while, instead of listening live. Until a read answers, readers get the
+// copy lib/dataCache keeps (this page, this device, or the build's snapshot).
+import { cachedCollection, cachedDoc, isPublic, PUBLIC_PATHS, readAt, remember, type Data, type Row } from './dataCache';
 
 type FirebaseApp = typeof import('./firebaseApp');
 
@@ -44,10 +46,6 @@ export async function appCheckToken(): Promise<string> {
     return (await getToken(appCheck, false)).token;
 }
 
-/** A document's fields, typed as loosely as the SDK's DocumentData, so callers read them the same way. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type DocumentData = { [field: string]: any };
-type Data = DocumentData;
 type RestValue = Record<string, unknown>;
 
 /** Firestore REST tags every value with its type; unwrap to what the SDK's data() returns (timestamps as ISO strings). */
@@ -86,8 +84,8 @@ async function readDoc(path: string[]): Promise<Data | null> {
 }
 
 /** Every document in a collection, as { id, ...data }. */
-async function readCollection(path: string[]): Promise<Array<Data & { id: string }>> {
-    const docs: Array<Data & { id: string }> = [];
+async function readCollection(path: string[]): Promise<Row[]> {
+    const docs: Row[] = [];
     let page = '';
     do {
         const res = await get(path, `?pageSize=300${page ? `&pageToken=${encodeURIComponent(page)}` : ''}`);
@@ -99,18 +97,58 @@ async function readCollection(path: string[]): Promise<Array<Data & { id: string
     return docs;
 }
 
-// A tab shown again after this long reads again, so a page left open catches up.
+// A read this recent is reused instead of asked again, and a tab shown again after this
+// long reads again, so a page left open catches up.
 const STALE_MS = 60_000;
 
-/** Reads once, then again whenever the tab comes back after STALE_MS. Returns the stop function. */
-function watch<T>(read: () => Promise<T>, onData: (data: T) => void, onError?: (error: unknown) => void): () => void {
+const inFlight = new Map<string, Promise<unknown>>();
+
+/** One read of `path` at a time, however many readers ask; the answer goes to the cache. */
+function fetchOnce<T extends Data | null | Row[]>(path: string[], read: () => Promise<T>): Promise<T> {
+    const k = path.join('/');
+    let pending = inFlight.get(k) as Promise<T> | undefined;
+    if (!pending) {
+        pending = read()
+            .then((data) => { remember(path, data); return data; })
+            .finally(() => inFlight.delete(k));
+        inFlight.set(k, pending);
+    }
+    return pending;
+}
+
+/**
+ * Hands the reader the cached copy at once (lib/dataCache), then reads Firestore unless
+ * this page read it under STALE_MS ago (the owner's content only: the booked slots and a
+ * project's view counts are read on every open), and again whenever the tab comes back
+ * after STALE_MS. A reader is only called when what it would get differs from what it has, and
+ * an error only reaches a reader that has nothing to show. Returns the stop function.
+ */
+function watch<T extends Data | null | Row[]>(
+    path: string[],
+    peek: () => T | undefined,
+    read: () => Promise<T>,
+    onData: (data: T) => void,
+    onError?: (error: unknown) => void,
+): () => void {
     let stopped = false;
-    let last = 0;
-    const run = () => {
-        last = Date.now();
-        read().then((data) => { if (!stopped) onData(data); }, (error) => { if (!stopped) onError?.(error); });
+    let handed: string | null = null;
+    const hand = (data: T) => {
+        const json = JSON.stringify(data);
+        if (stopped || json === handed) return;
+        handed = json;
+        onData(data);
     };
-    const onShow = () => { if (document.visibilityState === 'visible' && Date.now() - last > STALE_MS) run(); };
+    const run = () => {
+        if (isPublic(path) && Date.now() - readAt(path) < STALE_MS) {
+            const known = peek();
+            if (known !== undefined) hand(known);
+            return;
+        }
+        fetchOnce(path, read).then(hand, (error) => { if (!stopped && handed === null) onError?.(error); });
+    };
+    const onShow = () => { if (document.visibilityState === 'visible' && Date.now() - readAt(path) > STALE_MS) run(); };
+    const cached = peek();
+    if (cached !== undefined) hand(cached);
     run();
     document.addEventListener('visibilitychange', onShow);
     return () => {
@@ -119,12 +157,21 @@ function watch<T>(read: () => Promise<T>, onData: (data: T) => void, onError?: (
     };
 }
 
-/** One document (null when missing), read when the page opens. Returns the stop function. */
+/** One document (null when missing): the cached copy at once, then Firestore's. Returns the stop function. */
 export function watchDoc(path: string[], onData: (data: Data | null) => void, onError?: (error: unknown) => void): () => void {
-    return watch(() => readDoc(path), onData, onError);
+    return watch(path, () => cachedDoc(path), () => readDoc(path), onData, onError);
 }
 
-/** A collection's documents as { id, ...data }, read when the page opens. Returns the stop function. */
-export function watchCollection(path: string[], onData: (docs: Array<Data & { id: string }>) => void, onError?: (error: unknown) => void): () => void {
-    return watch(() => readCollection(path), onData, onError);
+/** A collection's documents as { id, ...data }: the cached copy at once, then Firestore's. Returns the stop function. */
+export function watchCollection(path: string[], onData: (docs: Row[]) => void, onError?: (error: unknown) => void): () => void {
+    return watch(path, () => cachedCollection(path), () => readCollection(path), onData, onError);
+}
+
+/**
+ * Reads every public path into the cache (lib/dataCache) in the background, so a section
+ * or modal opened later finds this visit's copy. Firebase still waits for its holds.
+ */
+export function prefetchPublicData(): void {
+    for (const path of PUBLIC_PATHS.docs) if (!readAt(path)) void fetchOnce(path, () => readDoc(path)).catch(() => { });
+    for (const path of PUBLIC_PATHS.collections) if (!readAt(path)) void fetchOnce(path, () => readCollection(path)).catch(() => { });
 }

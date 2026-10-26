@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { X, Mail, Phone, MapPin, Globe, Github, Linkedin, Instagram, ExternalLink, FileText } from 'lucide-react';
 import { watchCollection, watchDoc } from '../lib/liveDoc';
+import { cachedCollection, cachedDoc } from '../lib/dataCache';
 import { ProjectData as FullProject } from '../types';
 import { useSocialTracker } from '../hooks/useSocialTracker';
 import { useBoilHold } from './book/paintKit';
@@ -30,201 +31,160 @@ interface MCVProps {
     warm?: boolean;
 }
 
+/** The owner's location, with the old spellings of Mansoura folded into one. */
+const normalizeLocation = (location?: string) => {
+    if (!location) return undefined;
+    const trimmed = location.trim();
+    const normalized = trimmed.toLowerCase();
+
+    if (['egypt, ma', 'ma, egypt', 'mansoura, egypt', 'el mansourah, egypt'].includes(normalized)) {
+        return 'El Mansoura, Egypt';
+    }
+
+    return trimmed;
+};
+
 const MCV = ({ onClose, onProjectClick, warm = false }: Omit<MCVProps, 'isOpen'>) => {
     useBoilHold(!warm);
     const dock = useDockOpen();
     const { trackClick } = useSocialTracker();
-    const [projects, setProjects] = useState<CVProject[]>([]);
-    const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
-    const [contactInfo, setContactInfo] = useState({
-        email: 'hello@temrevil.com',
-        phone: '+20 100 130 8280',
-        location: 'El Mansoura, Egypt'
-    });
-    const [availableStack, setAvailableStack] = useState<StackItem[]>([]);
-    const [availableContributors, setAvailableContributors] = useState<Contributor[]>([]);
+    // What the CV shows starts from the cached copy (lib/dataCache), so even the warm-up
+    // draw lays out the real content; the reads start on a real open.
+    const [contributorsDoc, setContributorsDoc] = useState(() => cachedDoc(['Tags', 'Contributors']));
+    const [profileDocs, setProfileDocs] = useState(() => cachedCollection(['Tags', 'Contributors', 'Profiles']));
+    const [stackDoc, setStackDoc] = useState(() => cachedDoc(['Settings', 'Tech Stack']));
+    const [projectDocs, setProjectDocs] = useState(() => cachedCollection(['Projects']));
+    const [accountDoc, setAccountDoc] = useState(() => cachedDoc(['Settings', 'Account']));
 
-    const normalizeLocation = (location?: string) => {
-        if (!location) return undefined;
-        const trimmed = location.trim();
-        const normalized = trimmed.toLowerCase();
+    useEffect(() => {
+        if (warm) return;
+        const stops = [
+            watchDoc(['Tags', 'Contributors'], setContributorsDoc),
+            watchCollection(['Tags', 'Contributors', 'Profiles'], setProfileDocs),
+            watchDoc(['Settings', 'Tech Stack'], setStackDoc),
+            watchCollection(['Projects'], setProjectDocs),
+            watchDoc(['Settings', 'Account'], setAccountDoc),
+        ];
+        return () => stops.forEach(stop => stop());
+    }, [warm]);
 
-        if (['egypt, ma', 'ma, egypt', 'mansoura, egypt', 'el mansourah, egypt'].includes(normalized)) {
-            return 'El Mansoura, Egypt';
-        }
+    // A profile overrides the Tags/Contributors entry with its id.
+    const availableContributors = useMemo<Contributor[]>(() => {
+        const fromDoc = Object.entries(contributorsDoc || {})
+            .filter(([, val]) => val && typeof val === 'object' && ((val as Record<string, unknown>).Name || (val as Record<string, unknown>).name))
+            .map(([id, val]: [string, unknown]) => {
+                const v = val as Record<string, unknown>;
+                const links = v["Social Accounts"] && typeof v["Social Accounts"] === 'object' ? v["Social Accounts"] as Record<string, string> : {};
+                return {
+                    id,
+                    name: typeof v.Name === 'string' ? v.Name : typeof v.name === 'string' ? v.name : undefined,
+                    role: typeof v.Role === 'string' ? v.Role : typeof v.role === 'string' ? v.role : undefined,
+                    image: typeof v.Image === 'string' ? v.Image : typeof v.image === 'string' ? v.image : undefined,
+                    links
+                };
+            });
+        const profiles = (profileDocs || []).map(val => ({
+            id: val.id,
+            name: val.Name || val.name,
+            role: val.Role || val.role,
+            image: val.Image || val.image,
+            links: val["Social Accounts"] || val.links || val.socials || {}
+        }));
+        return [...fromDoc.filter(c => !profiles.some(p => p.id === c.id)), ...profiles];
+    }, [contributorsDoc, profileDocs]);
 
-        return trimmed;
+    const availableStack = useMemo<StackItem[]>(() =>
+        Object.entries(stackDoc || {})
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([id, val]: [string, unknown]) => {
+                const v = val as Record<string, unknown>;
+                return {
+                    id,
+                    name: typeof v.Name === 'string' ? v.Name : typeof v.name === 'string' ? v.name : '',
+                    icon: typeof v.Icon === 'string' ? v.Icon : typeof v.icon === 'string' ? v.icon : undefined
+                };
+            }), [stackDoc]);
+
+    const projects = useMemo<CVProject[]>(() =>
+        (projectDocs || []).map(doc => {
+            const data = doc;
+            const rawStack = data.Stack || [];
+            const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack))
+                .map((t: unknown) => {
+                    if (typeof t === 'string') return t;
+                    const u = t as Record<string, unknown>;
+                    return typeof u.name === 'string' ? u.name : typeof u.Name === 'string' ? u.Name : '';
+                })
+                .filter(t => t !== '' && t !== 'Unix');
+
+            // Map exactly like Projects.tsx expects
+            const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: unknown) => {
+                const v = c as Record<string, unknown>;
+                const name = typeof v["Contributor Name"] === 'string' ? v["Contributor Name"] : '';
+                const projectRole = typeof v["Role at Project"] === 'string' ? v["Role at Project"] : undefined;
+
+                const fullContrib = availableContributors.find(cont => {
+                    const cName = (cont.name || '').trim().toLowerCase();
+                    const pName = name.trim().toLowerCase();
+                    return cName === pName && cName !== '';
+                });
+
+                return {
+                    name,
+                    role: projectRole || (fullContrib ? (fullContrib.role || (((fullContrib as unknown) as Record<string, unknown>).jobTitle as string) || 'Contributor') : 'Contributor'),
+                    jobTitle: fullContrib ? (fullContrib.role || (((fullContrib as unknown) as Record<string, unknown>).jobTitle as string) || 'Contributor') : 'Contributor',
+                    image: fullContrib?.image || '',
+                    links: fullContrib?.links || {}
+                };
+            }) : [];
+
+            const mappedProject = {
+                id: doc.id,
+                title: data.Title || doc.id,
+                name: doc.id,
+                description: data.Description || '',
+                fullDescription: data.Description || '',
+                images: data["Project Images"] || (data.Images ? Object.values(data.Images) : []),
+                stack: normalizedStack,
+                contributors: projectContributors,
+                repoLink: data["Repository Link"],
+                liveLink: data["Live Link"],
+                downloadLink: data["Download Link"] || '',
+                views: Number(data.Views?.Project || 0),
+                githubViews: Number(data.Views?.Github || 0),
+                liveViews: Number(data.Views?.Live || 0),
+                downloadViews: Number(data.Views?.Download || 0)
+            };
+
+            return {
+                id: doc.id,
+                title: mappedProject.title,
+                stack: normalizedStack,
+                fullData: mappedProject,
+                listing: data.Listing ?? data.listing ?? 0
+            };
+        }).sort((a, b) => {
+            const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
+            const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
+            if (aVal !== bVal) return aVal - bVal;
+            return (a.title || '').localeCompare(b.title || '');
+        }), [projectDocs, availableContributors]);
+
+    const socialLinks = useMemo(() =>
+        Object.entries((accountDoc?.['Social Links'] || {}) as Record<string, string>)
+            .filter(([name]) => !name.toLowerCase().includes('instagram'))
+            .map(([name, url]) => ({ name, url })), [accountDoc]);
+
+    const contactInfo = {
+        email: accountDoc?.Email || 'hello@temrevil.com',
+        phone: accountDoc?.Phone || '+20 100 130 8280',
+        location: normalizeLocation(accountDoc?.Location) || 'El Mansoura, Egypt'
     };
 
     // Opening the CV is the strongest intent signal the site has; the visit
     // recorder wants it on the timeline.
     useEffect(() => {
         if (!warm) window.dispatchEvent(new CustomEvent('revil:cv_open'));
-    }, [warm]);
-
-    // Fetch Contributors
-    useEffect(() => {
-        if (warm) return;
-        const unsubDoc = watchDoc(['Tags', 'Contributors'], (data) => {
-            if (data) {
-                const loaded = Object.entries(data)
-                    .filter(([, val]) => val && typeof val === 'object' && ((val as Record<string, unknown>).Name || (val as Record<string, unknown>).name))
-                    .map(([id, val]: [string, unknown]) => {
-                        const v = val as Record<string, unknown>;
-                        const links = v["Social Accounts"] && typeof v["Social Accounts"] === 'object' ? v["Social Accounts"] as Record<string, string> : {};
-                        return {
-                            id,
-                            name: typeof v.Name === 'string' ? v.Name : typeof v.name === 'string' ? v.name : undefined,
-                            role: typeof v.Role === 'string' ? v.Role : typeof v.role === 'string' ? v.role : undefined,
-                            image: typeof v.Image === 'string' ? v.Image : typeof v.image === 'string' ? v.image : undefined,
-                            links
-                        };
-                    });
-                setAvailableContributors(prev => {
-                    const filtered = prev.filter(p => !loaded.some(l => l.id === p.id));
-                    return [...filtered, ...loaded];
-                });
-            }
-        });
-
-        const unsubCol = watchCollection(['Tags', 'Contributors', 'Profiles'], (docs) => {
-            const loaded = docs.map(d => {
-                const val = d;
-                return {
-                    id: d.id,
-                    name: val.Name || val.name,
-                    role: val.Role || val.role,
-                    image: val.Image || val.image,
-                    links: val["Social Accounts"] || val.links || val.socials || {}
-                };
-            });
-            setAvailableContributors(prev => {
-                const filtered = prev.filter(p => !loaded.some(l => l.id === p.id));
-                return [...filtered, ...loaded];
-            });
-        });
-
-        return () => {
-            unsubDoc();
-            unsubCol();
-        };
-    }, [warm]);
-
-    // Fetch Tech Stack
-    useEffect(() => {
-        if (warm) return;
-        const unsub = watchDoc(['Settings', 'Tech Stack'], (data) => {
-            if (data) {
-                const items = Object.entries(data)
-                    .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([id, val]: [string, unknown]) => {
-                        const v = val as Record<string, unknown>;
-                        return {
-                            id,
-                            name: typeof v.Name === 'string' ? v.Name : typeof v.name === 'string' ? v.name : '',
-                            icon: typeof v.Icon === 'string' ? v.Icon : typeof v.icon === 'string' ? v.icon : undefined
-                        };
-                    });
-                setAvailableStack(items);
-            }
-        });
-        return () => unsub();
-    }, [warm]);
-
-    // Fetch Projects from Firestore
-    useEffect(() => {
-        if (warm) return;
-        const unsub = watchCollection(['Projects'], (docs) => {
-            const loaded = docs.map(doc => {
-                const data = doc;
-                const rawStack = data.Stack || [];
-                const normalizedStack = (Array.isArray(rawStack) ? rawStack : Object.values(rawStack))
-                    .map((t: unknown) => {
-                        if (typeof t === 'string') return t;
-                        const u = t as Record<string, unknown>;
-                        return typeof u.name === 'string' ? u.name : typeof u.Name === 'string' ? u.Name : '';
-                    })
-                    .filter(t => t !== '' && t !== 'Unix');
-
-                // Map exactly like Projects.tsx expects
-                const projectContributors = data.Contributors ? Object.values(data.Contributors).map((c: unknown) => {
-                    const v = c as Record<string, unknown>;
-                    const name = typeof v["Contributor Name"] === 'string' ? v["Contributor Name"] : '';
-                    const projectRole = typeof v["Role at Project"] === 'string' ? v["Role at Project"] : undefined;
-
-                    const fullContrib = availableContributors.find(cont => {
-                        const cName = (cont.name || '').trim().toLowerCase();
-                        const pName = name.trim().toLowerCase();
-                        return cName === pName && cName !== '';
-                    });
-
-                    return {
-                        name,
-                        role: projectRole || (fullContrib ? (fullContrib.role || (((fullContrib as unknown) as Record<string, unknown>).jobTitle as string) || 'Contributor') : 'Contributor'),
-                        jobTitle: fullContrib ? (fullContrib.role || (((fullContrib as unknown) as Record<string, unknown>).jobTitle as string) || 'Contributor') : 'Contributor',
-                        image: fullContrib?.image || '',
-                        links: fullContrib?.links || {}
-                    };
-                }) : [];
-
-                const mappedProject = {
-                    id: doc.id,
-                    title: data.Title || doc.id,
-                    name: doc.id,
-                    description: data.Description || '',
-                    fullDescription: data.Description || '',
-                    images: data["Project Images"] || (data.Images ? Object.values(data.Images) : []),
-                    stack: normalizedStack,
-                    contributors: projectContributors,
-                    repoLink: data["Repository Link"],
-                    liveLink: data["Live Link"],
-                    downloadLink: data["Download Link"] || '',
-                    views: Number(data.Views?.Project || 0),
-                    githubViews: Number(data.Views?.Github || 0),
-                    liveViews: Number(data.Views?.Live || 0),
-                    downloadViews: Number(data.Views?.Download || 0)
-                };
-
-                return {
-                    id: doc.id,
-                    title: mappedProject.title,
-                    stack: normalizedStack,
-                    fullData: mappedProject,
-                    listing: data.Listing ?? data.listing ?? 0
-                };
-            }).sort((a, b) => {
-                const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
-                const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
-                if (aVal !== bVal) return aVal - bVal;
-                return (a.title || '').localeCompare(b.title || '');
-            });
-            setProjects(loaded);
-        });
-        return () => unsub();
-    }, [availableContributors, warm]); // Re-run when contributors are updated to ensure mapping is correct
-
-    // Fetch Social Links from Firestore
-    useEffect(() => {
-        if (warm) return;
-        const unsub = watchDoc(['Settings', 'Account'], (data) => {
-            if (data) {
-                if (data['Social Links']) {
-                    const links = Object.entries(data['Social Links'])
-                        .filter(([name]) => !name.toLowerCase().includes('instagram'))
-                        .map(([name, url]) => ({
-                            name,
-                            url: url as string
-                        }));
-                    setSocialLinks(links);
-                }
-                setContactInfo(prev => ({
-                    email: data.Email || prev.email,
-                    phone: data.Phone || prev.phone,
-                    location: normalizeLocation(data.Location) || prev.location
-                }));
-            }
-        });
-        return () => unsub();
     }, [warm]);
 
     // Close on Escape

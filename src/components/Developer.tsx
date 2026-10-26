@@ -53,7 +53,8 @@ const SectionLabel = ({ icon, label, hint, centered = false }: SectionLabelProps
     </div>
 );
 
-const Developer = () => {
+/** `active`: as on Projects, the entrance plays each time the section is shown. */
+const Developer = ({ active = true }: { active?: boolean }) => {
     const handwritingRef = useRef<HTMLDivElement>(null);
     const titleRef = useRef<HTMLHeadingElement>(null);
     const taglineRef = useRef<HTMLParagraphElement>(null);
@@ -71,6 +72,7 @@ const Developer = () => {
 
     // Staggered entrance: instances captured + paused on unmount (no detached-DOM churn)
     useEffect(() => {
+        if (!active) return;
         const base = { easing: 'easeOutExpo' as const };
         const instances = [
             anime({ targets: handwritingRef.current, opacity: [0, 1], translateX: [-20, 0], duration: 600, ...base }),
@@ -81,7 +83,7 @@ const Developer = () => {
             anime({ targets: bottomRef.current, opacity: [0, 1], translateY: [24, 0], duration: 750, delay: 680, ...base }),
         ];
         return () => instances.forEach(inst => inst?.pause());
-    }, []);
+    }, [active]);
 
     return (
         <div className="min-h-screen bg-primary transition-colors duration-300 pt-32 pb-48">

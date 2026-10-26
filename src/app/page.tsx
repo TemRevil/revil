@@ -1,5 +1,6 @@
 import { preload } from 'react-dom'
 import HomeApp from './HomeApp'
+import PublicData from './PublicData'
 import { projectPages } from '../utils/projectPages'
 import { baseGraph, homeGraph, jsonLd, HOME_FAQ, JOB_TITLE, SERVICES, SKILLS, SOCIAL_PROFILES } from '../utils/siteProfile'
 
@@ -91,6 +92,7 @@ export default function Page() {
           </footer>
         </article>
       </noscript>
+      <PublicData />
       <HomeApp />
     </>
   )

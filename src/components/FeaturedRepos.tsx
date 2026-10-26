@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Star, GitFork, ArrowUpRight, GitBranch } from 'lucide-react';
 import { watchDoc } from '../lib/liveDoc';
-
-const GITHUB_USERNAME = 'TemRevil';
+import { cachedDoc, type Data } from '../lib/dataCache';
+import { cachedJson, fetchJson, GITHUB_URLS, GITHUB_USERNAME } from '../lib/githubData';
 
 // Rank watermark numbers only - kept monochrome (no gold/silver/bronze) so the
 // section stays neutral.
@@ -200,136 +200,52 @@ const SkeletonCard = ({ delay }: { delay: number }) => (
     />
 );
 
+/** The three most-starred repos, leaving out the profile repo, forks and archived ones (as GitHubStats does). */
+const topThree = (repos: RepoData[]) => repos
+    .filter(r => r.name !== GITHUB_USERNAME && !r.fork && !r.archived)
+    .sort((a, b) => b.stargazers_count - a.stargazers_count)
+    .slice(0, 3);
+
+/** The owner's picks (Settings/Developer), in their order. */
+const featuredNames = (doc: Data | null | undefined) => ((doc?.featuredRepos ?? []) as string[]).filter(Boolean);
+
+/** Keeps the repos that answered as the name asked for; a missing or renamed one drops out. */
+const inOrder = (names: string[], found: Array<RepoData | null | undefined>) =>
+    found.filter((r, i): r is RepoData => !!r && r.name === names[i]);
+
+/** The picks (or the top three when there are none) as this device last saw them. */
+const cachedRepos = (names: string[]): RepoData[] => names.length > 0
+    ? inOrder(names, names.map(n => cachedJson<RepoData>(GITHUB_URLS.repo(n))))
+    : topThree(cachedJson<RepoData[]>(GITHUB_URLS.repos) ?? []);
+
+const readRepos = async (names: string[]): Promise<RepoData[]> => names.length > 0
+    ? inOrder(names, await Promise.all(names.map(n => fetchJson<RepoData>(GITHUB_URLS.repo(n)).catch(() => null))))
+    : topThree(await fetchJson<RepoData[]>(GITHUB_URLS.repos));
+
 /* ── main component ── */
 const FeaturedRepos = () => {
-    const [repos, setRepos] = useState<RepoData[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    // This device's last copy at once (lib/githubData); a new one replaces it when it lands.
+    const [repos, setRepos] = useState<RepoData[]>(() => cachedRepos(featuredNames(cachedDoc(['Settings', 'Developer']))));
+    const [isLoading, setIsLoading] = useState(() => repos.length === 0);
 
     useEffect(() => {
-        const CACHE_KEY = 'gh_featured_repos';
-        const CACHE_TTL = 30 * 60 * 1000;
-        let isMounted = true;
-        // Track latest fetch generation so stale Firestore updates don't clobber fresh data
-        let fetchGen = 0;
-        // Top-level abort controller - fires on unmount to cancel all in-flight requests
-        const masterController = new AbortController();
-
-        // Per-request fetch with isolated 10s timeout (single slow repo won't kill siblings)
-        const fetchOne = async (url: string): Promise<RepoData | null> => {
-            const controller = new AbortController();
-            const tid = setTimeout(() => controller.abort(), 10_000);
-            // Also bail if the master (unmount) signal fires
-            const onMasterAbort = () => controller.abort();
-            masterController.signal.addEventListener('abort', onMasterAbort);
-            try {
-                const res = await fetch(url, { signal: controller.signal });
-                if (res.ok) return (await res.json()) as RepoData;
-            } catch { /* per-request fail */ }
-            finally {
-                clearTimeout(tid);
-                masterController.signal.removeEventListener('abort', onMasterAbort);
-            }
-            return null;
+        let alive = true;
+        // A newer list of picks supersedes a read still on its way for the old one.
+        let latest = 0;
+        const show = (names: string[]) => {
+            const mine = ++latest;
+            const known = cachedRepos(names);
+            if (known.length > 0) setRepos(known);
+            readRepos(names)
+                .then((data) => { if (alive && mine === latest && data.length > 0) setRepos(data); })
+                .catch(() => { /* offline / rate-limited: keep what is shown */ })
+                .finally(() => { if (alive && mine === latest) setIsLoading(false); });
         };
-
-        const fetchReposByNames = async (names: string[]) => {
-            const results = await Promise.all(
-                names.map(name => fetchOne(`https://api.github.com/repos/${GITHUB_USERNAME}/${name}`)),
-            );
-            return results;
-        };
-
-        const fetchTop3 = async (): Promise<RepoData[]> => {
-            const controller = new AbortController();
-            const tid = setTimeout(() => controller.abort(), 10_000);
-            const onMasterAbort = () => controller.abort();
-            masterController.signal.addEventListener('abort', onMasterAbort);
-            try {
-                const res = await fetch(
-                    `https://api.github.com/users/${GITHUB_USERNAME}/repos?per_page=100`,
-                    { signal: controller.signal },
-                );
-                if (res.ok) {
-                    const data: RepoData[] = await res.json();
-                    return data
-                        // Exclude the profile repo, forks, and archived repos so the
-                        // featured set matches GitHubStats (which also excludes forks).
-                        .filter(r => r.name !== GITHUB_USERNAME && !r.fork && !r.archived)
-                        .sort((a, b) => b.stargazers_count - a.stargazers_count)
-                        .slice(0, 3);
-                }
-            } catch { /* timeout / network */ }
-            finally {
-                clearTimeout(tid);
-                masterController.signal.removeEventListener('abort', onMasterAbort);
-            }
-            return [];
-        };
-
-        const apply = (data: RepoData[]) => {
-            if (!isMounted) return;
-            setRepos(data);
-            setIsLoading(false);
-            try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch { /* quota */ }
-        };
-
-        const load = async (names: string[]) => {
-            try {
-                const raw = localStorage.getItem(CACHE_KEY);
-                if (raw) {
-                    const { data, ts } = JSON.parse(raw);
-                    if (Date.now() - ts < CACHE_TTL && Array.isArray(data) && data.length > 0) {
-                        if (!isMounted) return;
-                        setRepos(data); setIsLoading(false);
-                        refresh(names, false); return;
-                    }
-                }
-            } catch { /* bad cache */ }
-            await refresh(names, true);
-        };
-
-        const refresh = async (names: string[], showLoading: boolean) => {
-            const myGen = ++fetchGen;
-            if (showLoading && isMounted) setIsLoading(true);
-
-            const fetched = names.length > 0
-                ? await fetchReposByNames(names)
-                : (await fetchTop3()).map(r => r);
-
-            // Drop result if a newer fetch superseded this one (Firestore updated mid-fetch)
-            if (myGen !== fetchGen || !isMounted) return;
-
-            let data: RepoData[];
-            if (names.length > 0) {
-                // Preserve Firestore order; nulls (failed/missing repos) keep their slot intentionally dropped
-                data = names
-                    .map((n, i) => {
-                        const r = fetched[i];
-                        return r && r.name === n ? r : null;
-                    })
-                    .filter((r): r is RepoData => r !== null);
-            } else {
-                data = fetched.filter((r): r is RepoData => r !== null);
-            }
-
-            if (data.length > 0) apply(data);
-            else if (showLoading && isMounted) setIsLoading(false);
-        };
-
-        const unsubFirestore = watchDoc(
-            ['Settings', 'Developer'],
-            (data) => {
-                const names = (data?.featuredRepos ?? []) as string[];
-                load(names);
-            },
-            (err) => { console.warn('[FeaturedRepos] Firestore read error:', err); },
-        );
-
-        return () => {
-            isMounted = false;
-            masterController.abort();
-            unsubFirestore();
-        };
+        const stop = watchDoc(['Settings', 'Developer'], (doc) => show(featuredNames(doc)), (err) => {
+            console.warn('[FeaturedRepos] Firestore read error:', err);
+            show([]);
+        });
+        return () => { alive = false; stop(); };
     }, []);
 
     // Empty/error state: not loading and nothing came back (rate-limited / offline / no repos)

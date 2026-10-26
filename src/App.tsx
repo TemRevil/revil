@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransition } from 'react';
-import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransition, type ReactNode } from 'react';
+import { AnimatePresence, LayoutGroup, motion, useAnimationControls } from 'motion/react';
 import Hero from './components/Hero';
 import { preloadable } from './lib/preloadable';
 import { onIdle, onQuiet } from './lib/idle';
@@ -16,6 +16,9 @@ import type { Contributor as ContributorViewData } from './components/M-Contribu
 import { ProjectData as Project, ContributorData as Contributor } from './types';
 import { SettingsProvider } from './contexts/SettingsContext';
 import ErrorBoundary from './components/ErrorBoundary';
+import { prefetchPublicData } from './lib/liveDoc';
+import { cachedDoc } from './lib/dataCache';
+import { prefetchGithub } from './lib/githubData';
 
 // Code-split everything that isn't part of the first paint (home = Hero + Navbar).
 // Each chunk loads on demand: section views load on navigation (hidden behind the
@@ -121,6 +124,64 @@ const SECTION_TRANSITION = {
 } as const;
 // The three that actually stack in the scroll page, in order.
 const MOBILE_STACK: Exclude<Section, 'secret' | 'dashboard' | 'view_link'>[] = ['home', 'stack', 'projects'];
+
+// Desktop keeps these three built once they have been (the hero, Stack and Projects), and
+// builds Stack and Projects ahead of time, so moving between them never waits on a build,
+// a Firestore read or an image. Secret and Dashboard come and go with the switcher.
+type KeptSection = (typeof MOBILE_STACK)[number];
+const isKept = (s: Section): s is KeptSection => (MOBILE_STACK as Section[]).includes(s);
+
+/**
+ * A section slid in and out by hand with the switcher's motion, never torn down: building
+ * the hero again replayed the whole brush entrance and rebuilt the boil (~0.3s frozen,
+ * then 1-2s at 10-20fps), and building Stack or Projects again read Firestore and loaded
+ * every image again. Away, it is parked off screen, inert, and not painted.
+ */
+function KeptView({ id, shown, direction, instant, children }: {
+  id: string;
+  shown: boolean;
+  direction: number;
+  /** Shown at the page's first draw: no slide in. */
+  instant: boolean;
+  children: ReactNode;
+}) {
+  const controls = useAnimationControls();
+  const [parked, setParked] = useState(!shown);
+  if (shown && parked) setParked(false);
+  const first = useRef(true);
+  useEffect(() => {
+    const isFirst = first.current;
+    first.current = false;
+    if (shown) {
+      if (isFirst && instant) return;
+      if (!isFirst) controls.set(SECTION_VARIANTS.enter(direction));
+      void controls.start(SECTION_VARIANTS.center);
+      return;
+    }
+    if (isFirst) return;
+    let live = true;
+    void controls.start(SECTION_VARIANTS.exit(direction)).then(() => { if (live) setParked(true); });
+    return () => { live = false; };
+    // direction is read as it stands when `shown` changes, like the switcher's custom prop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
+  return (
+    <motion.div
+      id={id}
+      initial={shown ? (instant ? false : SECTION_VARIANTS.enter(direction)) : SECTION_VARIANTS.exit(1)}
+      animate={controls}
+      transition={SECTION_TRANSITION}
+      aria-hidden={!shown || undefined}
+      inert={!shown}
+      style={parked ? { visibility: 'hidden' } : undefined}
+      className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar isolate"
+    >
+      <ErrorBoundary fallback={sectionErrorFallback}>
+        {children}
+      </ErrorBoundary>
+    </motion.div>
+  );
+}
 
 function App() {
   const [currentSection, setCurrentSection] = useState<Section>(() => {
@@ -344,6 +405,9 @@ function App() {
     let cancelled = false;
     const warm = () => {
       if (cancelled) return;
+      // Every section and modal then opens on this visit's copy, not just the cached one.
+      prefetchPublicData();
+      prefetchGithub(((cachedDoc(['Settings', 'Developer'])?.featuredRepos ?? []) as string[]).filter(Boolean));
       import('./components/Stack');
       import('./components/ProjectsHub');
       Promise.all([MContact.preload(), MCV.preload()]).then(() => { if (!cancelled && !isLite()) setWarmLeft(['contact', 'cv']); });
@@ -492,31 +556,38 @@ function App() {
   // The hero's entrance waits for the page curtain as it waits for the loader: painting it
   // under the curtain's blur spent the frames the curtain needed, and hid half the entrance.
   const heroReady = !appLoading && !isTransitioning;
-  // Desktop: the hero is built once and kept while another section is on screen, parked
-  // where the switcher slid it. Building it again on every return replayed the whole brush
-  // entrance and rebuilt the boil: ~0.3s frozen, then 1-2s at 10-20fps.
-  const heroShown = viewKey(currentSection) === 'home';
-  const [heroAtLoad] = useState(heroShown);
-  const [heroBuilt, setHeroBuilt] = useState(heroShown);
-  const [heroWasShown, setHeroWasShown] = useState(heroShown);
-  const [heroAway, setHeroAway] = useState(() => SECTION_VARIANTS.exit(1));
-  if (heroShown !== heroWasShown) {
-    setHeroWasShown(heroShown);
-    if (heroShown) setHeroBuilt(true);
-    else setHeroAway(SECTION_VARIANTS.exit(direction));
-  }
+  // Desktop: the kept sections (see KeptView). One is built when first shown, and once the
+  // hero has settled Stack and Projects are built off screen, one per idle period. (Not the
+  // hero: built off screen, its entrance would play where nobody sees it.)
+  const shownView = viewKey(currentSection);
+  const [viewAtLoad] = useState(shownView);
+  const [built, setBuilt] = useState<Set<KeptSection>>(() => new Set(isKept(shownView) ? [shownView] : []));
+  if (isKept(shownView) && !built.has(shownView)) setBuilt(new Set(built).add(shownView));
+  useEffect(() => {
+    if (!heroSettled || mobileScroll) return;
+    const id = (['stack', 'projects'] as const).find(s => !built.has(s));
+    if (!id) return;
+    return onIdle(() => setBuilt(prev => (prev.has(id) ? prev : new Set(prev).add(id))), 1000);
+  }, [heroSettled, mobileScroll, built]);
+  const keptView = (id: KeptSection, children: ReactNode) => built.has(id) && (
+    <KeptView
+      key={id}
+      id={`section-${shownView === id ? currentSection : id}`}
+      shown={shownView === id}
+      direction={direction}
+      instant={viewAtLoad === id}
+    >
+      {children}
+    </KeptView>
+  );
   const renderSection = () => {
     switch (currentSection) {
-      case 'stack':
-        return <Suspense fallback={null}><Stack /></Suspense>;
-      case 'projects':
-        return <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={isTransitioning} /></Suspense>;
       case 'secret':
         return <Suspense fallback={null}><SecretPage onNavigate={navigateTo} /></Suspense>;
       case 'dashboard':
         return <Suspense fallback={null}><Dashboard onNavigate={navigateTo} /></Suspense>;
       default:
-        return null; // the hero views: kept outside the switcher (above)
+        return null; // the kept views (see KeptView)
     }
   };
 
@@ -755,24 +826,15 @@ function App() {
         </div>
       ) : (
       <>
-      {heroBuilt && (
-        // The hero, slid in and out by hand with the switcher's motion, never torn down.
-        <motion.div
-          id={`section-${heroShown ? currentSection : 'home'}`}
-          initial={heroAtLoad ? false : SECTION_VARIANTS.enter(direction)}
-          animate={heroShown ? SECTION_VARIANTS.center : heroAway}
-          transition={SECTION_TRANSITION}
-          aria-hidden={!heroShown || undefined}
-          inert={!heroShown}
-          className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar isolate"
-        >
-          <ErrorBoundary fallback={sectionErrorFallback}>
-            <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} onOpenContact={openContactModal} />
-          </ErrorBoundary>
-        </motion.div>
-      )}
+      {keptView('home', (
+        <Hero onLoaded={() => setIsDataReady(true)} onAnimationComplete={handleHeroAnimationComplete} isReady={heroReady} onOpenContact={openContactModal} />
+      ))}
+      {keptView('stack', <Suspense fallback={null}><Stack active={shownView === 'stack'} /></Suspense>)}
+      {keptView('projects', (
+        <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={isTransitioning} active={shownView === 'projects'} /></Suspense>
+      ))}
       <AnimatePresence initial={false} custom={direction} mode="popLayout">
-        {!heroShown && <motion.div
+        {!isKept(shownView) && <motion.div
           key={viewKey(currentSection)}
           id={`section-${currentSection}`}
           custom={direction}

@@ -1,19 +1,19 @@
-import projectsSnapshot from '../data/projects.snapshot.json';
+import publicSnapshot from '../data/public.snapshot.json';
 import { cleanName, nameNote, slugOf } from './projectSlug';
 
 export { cleanName, nameNote, slugOf };
 
 /**
  * The public project pages (/projects and /projects/<slug>) are built from the
- * committed Firestore snapshot at BUILD time, so every project has real HTML at its
- * own address for search engines to list. Refresh the snapshot after editing
- * projects in the dashboard (`npm run sync:projects`), then push to rebuild.
+ * Firestore snapshot at BUILD time (scripts/sync-data.mjs, which CI runs before every
+ * build and once a day), so every project has real HTML at its own address for search
+ * engines to list.
  *
  * Server-only on purpose: importing this from a client component would ship the
  * whole snapshot to every visitor.
  */
 
-/** A row of src/data/projects.snapshot.json (mirrors the Firestore doc). */
+/** A row of the snapshot's Projects collection (mirrors the Firestore doc). */
 export type SnapshotProject = {
     id: string;
     Description?: string;
@@ -85,7 +85,7 @@ export interface ProjectPage {
 /** Every project with its page address, in the portfolio's own order. Slugs are unique. */
 export const projectPages: ProjectPage[] = (() => {
     const seen = new Map<string, number>();
-    return [...(projectsSnapshot as unknown as SnapshotProject[])]
+    return [...(publicSnapshot.collections.Projects as unknown as SnapshotProject[])]
         // 0 is what Canary saves for a project never reordered: last, as the homepage grid has it.
         .sort((a, b) => (a.Listing || 999) - (b.Listing || 999))
         .map((project) => {

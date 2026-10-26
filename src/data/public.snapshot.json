@@ -1,0 +1,573 @@
+{
+  "at": 1793021513399,
+  "docs": {
+    "Settings/Account": {
+      "heroImageUrlDark": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FHero.image.dark.png?alt=media&token=e56b58ea-ef36-4bcc-8839-7e6fdc2e1765",
+      "title": "Frontend & AI Engineer",
+      "Social Links": {
+        "GitHub": "https://github.com/temrevil",
+        "LinkedIn": "https://www.linkedin.com/in/tem-revil",
+        "Instagram": "https://instagram.com/temrevil"
+      },
+      "Email": "hello@temrevil.com",
+      "name": "Tem Revil",
+      "imageUrl": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FProfile_1779132275996_cropped.jpg?alt=media&token=94e02516-5d0e-461e-9b71-741c6803dc44",
+      "heroImageUrl": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FHero.image.png?alt=media&token=cf1b3201-9c1d-4f4b-94db-81ecf2faa000"
+    },
+    "Settings/Availability": {
+      "hours": [
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ],
+      "timezoneOffset": 3,
+      "currentAvailability": "90%",
+      "currentAvailabilityText": "90%",
+      "workingDays": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "Current Availability": "76%",
+      "Current Time": "UTC+03:00 (Cairo)",
+      "availabilityPercent": 76
+    },
+    "Settings/HandledProjects": {
+      "projects": {
+        "proj_JxdiUu_r": {
+          "order": 1,
+          "status": "active",
+          "name": "Wassil"
+        },
+        "'obd-agency'": {
+          "order": 0,
+          "status": "active",
+          "name": "O.B.D Agency"
+        }
+      },
+      "lastWrite": "2026-10-17T12:27:05.547Z"
+    },
+    "Settings/Tech Stack": {
+      "3": {
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Fjavascript.svg?alt=media&token=d5e422a6-9cfe-4c31-8e76-355d9c248a79",
+        "Name": "JavaScript"
+      },
+      "4": {
+        "Name": "Node.Js",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Fnodejs.svg?alt=media&token=7897d51e-7ff5-4177-9709-9712e438ed04"
+      },
+      "5": {
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Freact.svg?alt=media&token=1eee538d-c970-4cb8-b0db-1b2861bc9fe9",
+        "Name": "React"
+      },
+      "6": {
+        "Name": "Firebase",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Ffirebase.svg?alt=media&token=6aa504b2-3c2b-4587-8f0e-3aeffa49c4f5"
+      },
+      "7": {
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Ftypescript.svg?alt=media&token=2f5a819f-fb8e-4ade-b8ce-0cd7901a1a57",
+        "Name": "TypeScript"
+      },
+      "8": {
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2F11_Nextjs.svg?alt=media&token=af37bda8-33ae-460c-944c-0c8d2f8eb36e",
+        "Name": "Next.Js"
+      },
+      "9": {
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Felectron.svg?alt=media&token=a65cd879-b2ed-497b-ba1e-232e3b1db709",
+        "Name": "Electron Package"
+      },
+      "10": {
+        "Name": "Google AI Space \"AI Generally\"",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2FGoogle%20Ai%20Studio.svg?alt=media&token=a5b376b9-a6ec-4bb5-be1b-c1cde0f46392"
+      },
+      "11": {
+        "Name": "Google Cloud",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2FGoogle%20Cloud.svg?alt=media&token=c78e1081-9a60-46ec-b538-68fd7cc9aa72"
+      }
+    },
+    "Settings/BookPage": {
+      "status": "Available now",
+      "tags": [
+        "Web Apps",
+        "AI Expertise",
+        "Processing Units",
+        "Tech Environment"
+      ],
+      "links": [
+        {
+          "id": "email",
+          "kind": "email",
+          "label": "hello@temrevil.com",
+          "url": "mailto:hello@temrevil.com",
+          "show": true
+        },
+        {
+          "id": "github",
+          "kind": "github",
+          "label": "GitHub",
+          "url": "https://github.com/TemRevil",
+          "show": true
+        },
+        {
+          "id": "linkedin",
+          "kind": "linkedin",
+          "label": "LinkedIn",
+          "url": "https://linkedin.com/in/temrevil",
+          "show": true
+        },
+        {
+          "id": "instagram",
+          "kind": "instagram",
+          "label": "Instagram",
+          "url": "https://instagram.com/temrevil",
+          "show": true
+        },
+        {
+          "id": "portfolio",
+          "kind": "portfolio",
+          "label": "Full portfolio",
+          "url": "/",
+          "show": true
+        }
+      ],
+      "intro": "I'm **Mohammed Ahmed**. I build web apps with AI inside them, from the idea to launch. Let's talk about your project, a role, a collab or just casually.",
+      "slogan": "Frontend & AI Engineer"
+    },
+    "Settings/Developer": {
+      "featuredRepos": [
+        "Kittle",
+        "revil",
+        "aws-lambda-dotnet"
+      ]
+    },
+    "Tags/Tags": {
+      "1": {
+        "Name": "Next.JS",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2F11_Nextjs.svg?alt=media&token=af37bda8-33ae-460c-944c-0c8d2f8eb36e",
+        "Color": "#000000"
+      },
+      "2": {
+        "Name": "CSS",
+        "Color": "#1572b6",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Fcss.svg?alt=media&token=319fc279-6af4-4123-bf5a-90e9ea88fee2"
+      },
+      "3": {
+        "Color": "#ff9100",
+        "Name": "Firebase",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Ffirebase.svg?alt=media&token=6aa504b2-3c2b-4587-8f0e-3aeffa49c4f5"
+      },
+      "4": {
+        "Name": "React",
+        "Color": "#61dafb",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Freact.svg?alt=media&token=1eee538d-c970-4cb8-b0db-1b2861bc9fe9"
+      },
+      "6": {
+        "Name": "Tailwind ",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2F12_Tailwind.svg?alt=media&token=39b69341-48c5-410a-b43e-516c2e75b020",
+        "Color": "#38bdf8"
+      },
+      "7": {
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2FGoogle%20Cloud.svg?alt=media&token=c78e1081-9a60-46ec-b538-68fd7cc9aa72",
+        "Color": "#ea4335",
+        "Name": "Google Cloud"
+      },
+      "8": {
+        "Name": "Electron Package",
+        "Color": "#2b2e3a",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Felectron.svg?alt=media&token=a65cd879-b2ed-497b-ba1e-232e3b1db709"
+      },
+      "9": {
+        "Name": "JavaScript",
+        "Color": "#f0db4f",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Fjavascript.svg?alt=media&token=d5e422a6-9cfe-4c31-8e76-355d9c248a79"
+      },
+      "10": {
+        "Color": "#ffffff",
+        "Name": "Multiple Languages",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Fm-language.svg?alt=media&token=516ac91c-563d-488a-96a0-7a58abc169e5"
+      },
+      "11": {
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Fnodejs.svg?alt=media&token=7897d51e-7ff5-4177-9709-9712e438ed04",
+        "Name": "NodeJS",
+        "Color": "#83cd29"
+      },
+      "12": {
+        "Name": "TypeScript",
+        "Color": "#007acc",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Ftypescript.svg?alt=media&token=2f5a819f-fb8e-4ade-b8ce-0cd7901a1a57"
+      },
+      "13": {
+        "Color": "#e44d26",
+        "Name": "HTML",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2Fhtml.svg?alt=media&token=c6541866-bae6-49f5-a53f-3291602b79ef"
+      },
+      "14": {
+        "Name": "C#",
+        "Color": "#68217A",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2F14_csharp-original.svg?alt=media&token=f0c158f2-c61d-4edb-bc68-c15e14b3c76b"
+      },
+      "15": {
+        "Color": "#512BD4",
+        "Name": ".NET",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2F15_dotnetcore-original.svg?alt=media&token=9fada594-1c29-4998-8225-84a9a85a99f3"
+      },
+      "16": {
+        "Name": "SQLite",
+        "Color": "#0F80CC",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2F16_sqlite-original.svg?alt=media&token=8703012b-b261-4a15-bd2f-f98d8c741b44"
+      },
+      "17": {
+        "Name": "Windows",
+        "Color": "#0078D4",
+        "Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fsvgs%2F17_windows11-original.svg?alt=media&token=1a319f00-1d40-4c26-a012-2db771c886e9"
+      }
+    },
+    "Tags/Contributors": {
+      "1": {
+        "Image": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FContributors%2FEslam-Fathy-2025-12-17T18-34-23-930Z.webp?alt=media&token=2dbf2591-13cb-438c-84e9-94a039e43748",
+        "Name": "Eslam Fathy",
+        "Social Accounts": {
+          "Github": "https://github.com/Efat7y",
+          "Facebook": "https://www.facebook.com/profile.php?id=100008514101553",
+          "Instagram": "",
+          "Portfolio": "",
+          "Linkedin": ""
+        },
+        "Role": "Frontend Developer - VueJs"
+      },
+      "2": {
+        "Name": "Mohammed Ahmed",
+        "Image": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FSettings%2FProfile_1779132275996_cropped.jpg?alt=media&token=94e02516-5d0e-461e-9b71-741c6803dc44",
+        "Social Accounts": {
+          "Facebook": "",
+          "Linkedin": "https://www.linkedin.com/in/tem-revil",
+          "Instagram": "https://instagram.com/temrevil",
+          "Github": "https://github.com/temrevil",
+          "Portfolio": "https://temrevil.com"
+        },
+        "Role": "Frontend & AI Engineer"
+      },
+      "3": {
+        "Name": "Claude",
+        "Social Accounts": {
+          "Linkedin": "",
+          "Portfolio": "https://claude.com/claude-code",
+          "Instagram": "",
+          "Github": "",
+          "Facebook": ""
+        },
+        "Image": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fimgs%2FContributors%2FClaude-2026-10-17-13-59-53.webp?alt=media&token=2e29b657-ddab-47c4-9441-3fd48ae214e8",
+        "Role": "AI Coding Assistant by Anthropic"
+      }
+    }
+  },
+  "collections": {
+    "Projects": [
+      {
+        "id": "Arkham Studio",
+        "Case Study": "### The problem\nGaming news sites live on big artwork and fast browsing, and many of them bury both under ads and clutter. Arkham was my design for a clean gaming news front page where the games come first.\n\n### What I built\nA one-page site in three parts. The header is a slider of featured games (Spider-Man, Call of Duty: Modern Warfare III and Cold War, Fortnite, The Batman, Stray) where choosing a card swaps the large artwork and its title and text. Below it, game cards for titles like Grand Theft Auto V, Forza Horizon and Halo link out to their store pages. Then come a news section, a contact form, and a footer with company links and social media.\n\n### Decisions\n- **No framework.** Plain HTML, CSS and JavaScript, so every effect is hand-written and the page loads with nothing to install.\n- **Content as data.** The game entries live in a separate data file, so adding a game means adding an entry, not editing the layout.\n- **A navigation bar that reacts.** The top bar is transparent over the artwork and turns into a blurred glass bar once you scroll, so it stays readable without covering the hero.\n- **Type with attitude.** Six self-hosted typefaces, each with a role: Bebas Neue and Oswald for loud headlines, Caveat, Permanent Marker and Shadows Into Light for hand-drawn accents, and Cairo for body text. Gaming culture is loud, and the type says so.\n- **Artwork stays readable.** Large game art is dimmed with a brightness filter behind text, so titles stay legible on any image, and a strip of studio logos scrolls on a slow 30-second loop, keeping the page alive without pulling focus.\n\n### Where it stands\nDesigned and built in June 2024 as part of my early front-end work. Live at arkham.temrevil.com, source on GitHub.",
+        "Project Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2Ficon?alt=media&token=fa0190a7-4d73-4067-8ab3-d8ddb6fc6cc1",
+        "Download Link": "",
+        "Views": {
+          "Project": 145,
+          "Download": "0",
+          "Github": 5,
+          "Live": 27
+        },
+        "Project Images": [
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2F1.webp?alt=media&token=d4300c08-7d90-4ea6-bd0d-fc88573873cc",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2F2.webp?alt=media&token=e2d62173-0446-499f-a2b8-3cda06ce8fe1",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2F3.webp?alt=media&token=83752fac-b5a7-48e3-80fc-29ef6d4dcd7e",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2F4.webp?alt=media&token=94786c16-ba91-436f-b5c8-d155a1d501c1",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2F5.webp?alt=media&token=a71e8ace-de7b-4771-a095-7e7d378b6173",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2F6.webp?alt=media&token=5911acc8-6146-46d2-9f1f-81db6a1ffebf",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2F7.webp?alt=media&token=1f1375df-4012-4a1e-b59b-ae29b8946b94",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FArkham%20Studio%2F8.webp?alt=media&token=4f8a2554-b304-4c21-8707-9e9ac645e646"
+        ],
+        "Live Link": "https://arkham.temrevil.com/",
+        "Contributors": {
+          "1": {
+            "Role at Project": "Frontend Developer",
+            "Contributor Name": "Mohammed Ahmed"
+          }
+        },
+        "Tags": {
+          "1": "HTML",
+          "2": "CSS",
+          "3": "JavaScript"
+        },
+        "Listing": 5,
+        "Description": "Arkham is a gaming news website design, with a featured-games slider, game cards, a news section and a contact form, built in plain HTML, CSS and JavaScript.",
+        "Repository Link": "https://github.com/TemRevil/Arkham"
+      },
+      {
+        "id": "Encryptor 2.0",
+        "Views": {
+          "Project": 49,
+          "Live": 4,
+          "Github": "1",
+          "Download": "0"
+        },
+        "Case Study": "### The problem\nMost people know a strong password needs length and variety, but few enjoy making one. Encryptor started as a small password tool in 2024 (its earlier version was called Encryptor 4.67.3 Dev Edition). Version 2.0 rebuilds it as three tools in one place, one of them a game.\n\n### What I built\n- **Generator:** creates passwords up to 1024 characters long.\n- **Wordlist:** builds custom wordlists, useful for security testing of your own systems.\n- **PassQuest:** a game where your password must satisfy 13 rules that unlock one after another. It starts simple (at least 4 characters, a number, an uppercase letter, a symbol), then asks for a month, a country, digits that add up to 25, a sponsor name, a chemical element symbol, a city, a color, a fruit and a day of the week.\n\n### Decisions\n- **Static and fast.** Next.js App Router with static export, deployed to GitHub Pages: no server, nothing to keep running.\n- **Rules as code.** PassQuest's rules live in one TypeScript module, each with its text and a validation function, ported exactly from the original game so the behaviour did not change in the rewrite.\n- **Theme system.** Light and dark themes run on CSS variables under a data-theme attribute; fonts are self-hosted through next/font.\n\nBuilt with Next.js, React 19 and TypeScript, with my mentor Eslam Fathy.\n\n### Where it stands\nLive at encryptor.temrevil.com; source on GitHub.",
+        "Project Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2Ficon?alt=media&token=b575579c-bc08-4203-b9dc-ccb69a03daed",
+        "Tags": {
+          "1": "TypeScript",
+          "2": "Next.js",
+          "3": "React"
+        },
+        "Repository Link": "https://github.com/TemRevil/Encryptor-2.0",
+        "Listing": 6,
+        "Contributors": {
+          "1": {
+            "Role at Project": "Frontend Developer",
+            "Contributor Name": "Mohammed Ahmed"
+          },
+          "2": {
+            "Contributor Name": "Eslam Fathy",
+            "Role at Project": "Mentor"
+          }
+        },
+        "Project Images": [
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2F1.webp?alt=media&token=c52efb61-4315-4456-a9f6-f1091f534e3a",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2F2.webp?alt=media&token=85ce14f0-e399-4499-9267-009d60b1d3c0",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2F3.webp?alt=media&token=641fd969-0d9d-4715-8c2c-073bb6b7c315",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2F4.webp?alt=media&token=ac8b2126-5c07-4206-899e-f8cdfcc564bb",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2F5.webp?alt=media&token=39beec6e-4beb-410a-9eb1-1c1c9663cf7b",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2F6.webp?alt=media&token=7db93554-fbd1-4a6b-bcc7-3fdea19d0579",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2F7.webp?alt=media&token=efd74974-b0f3-422a-9074-d52aff3a17f0",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FEncryptor%202.0%2F8.webp?alt=media&token=8b6f9e48-8c15-4a1b-9b0a-b1c80192392b"
+        ],
+        "Description": "Encryptor 2.0 is a password toolkit: a generator for passwords up to 1024 characters, a custom wordlist generator, and PassQuest, a game of 13 password rules. Built with Next.js, React 19 and TypeScript.",
+        "Download Link": "",
+        "Live Link": "https://encryptor.temrevil.com/"
+      },
+      {
+        "id": "Glass-Rea",
+        "Listing": 1,
+        "Contributors": {
+          "1": {
+            "Role at Project": "Software Developer",
+            "Contributor Name": "Mohammed Ahmed"
+          },
+          "2": {
+            "Contributor Name": "Claude",
+            "Role at Project": "AI Pair Programmer"
+          }
+        },
+        "Repository Link": "https://github.com/TemRevil/Glass-Rea",
+        "Live Link": "",
+        "Download Link": "https://github.com/TemRevil/Glass-Rea/releases/latest/download/Glass-Rea.Setup.exe",
+        "Tags": {
+          "1": "C#",
+          "2": ".NET",
+          "3": "Windows",
+          "4": "SQLite"
+        },
+        "Project Images": [
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGlass-Rea%2F1-hd.webp?alt=media&token=35257226-a29e-4694-962a-660da9d4fd90",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGlass-Rea%2F2-hd.webp?alt=media&token=38eea511-d55c-4cc0-ba6d-798814255c31",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGlass-Rea%2F3-hd.webp?alt=media&token=3a745213-a9a7-4178-bd56-d51e526e7f9d",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGlass-Rea%2F4-hd.webp?alt=media&token=b924a716-26f1-4a73-9e0d-02827fdfa31e",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGlass-Rea%2F5-hd.webp?alt=media&token=bff89307-6e88-4ba7-91d0-bb3533bb4bf3",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGlass-Rea%2F6-hd.webp?alt=media&token=af456ec8-63f9-4cbf-8ab3-7a130a5a2138"
+        ],
+        "Project Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGlass-Rea%2Ficon?alt=media&token=2bb7bcc6-362c-429f-b87e-7653514c07e2",
+        "Case Study": "### The problem\nI wanted to see what was using the internet on my own PC: which app, how much, and who it talked to. With Cloudflare WARP on, most monitors count the same traffic twice, once under the app that sent it and again under the VPN that carried it. So I built my own to replace GlassWire, one that counts a VPN once and stays quiet unless something is worth knowing.\n\n### What I built\n- **Overview:** the day, week or month at a glance, with the top apps, what's moving right now, this month's total and the latest alerts.\n- **Apps and Connections:** every app that used the internet, with downloaded and uploaded totals, and for each one the hosts it talked to by name.\n- **Firewall:** block or allow any app in one click, through Windows Firewall rules, so a block holds even when the app is closed.\n- **Devices:** the devices on your Wi-Fi, recognised from what they announce about themselves (their name, maker, kind and system). You can rename them and get told when one leaves or comes back.\n- **Alerts:** an app going online for the first time, a new device joining, and a daily or monthly data limit at 80% and 100%, each as a plain Windows notification.\n- **Updates:** Settings > About finds a newer release on GitHub and installs it.\n\n### Decisions\n- **A service and an app.** A Windows service reads the kernel's network, process and DNS events and keeps hourly totals in SQLite. The WinUI 3 window only asks it for data over a local pipe, so recording never stops when the window is closed.\n- **History from the first day.** On install it imports the 30 to 60 days of usage Windows already keeps, so the charts start full instead of empty.\n- **A VPN counted once.** Traffic that went through a VPN's adapter or its local proxy is marked, so app totals count it once, while data limits count what crossed the connection, as your provider does.\n- **No third-party native code.** Smart App Control refuses unsigned native libraries, so the tray icon, SQLite (Windows' own copy) and the installer's folder picker call Windows directly.\n- **Updates that check themselves.** The updater installs a new version only if the file matches the checksum GitHub recorded and is signed with my certificate.\n- **Calm by design.** Fluent glass with adjustable blur, light and dark themes, plain wording, and 147 automated tests.\n\n### Where it stands\nBuilt in October 2026 and open source on GitHub. Version 1.1.0 ships as a single installer on GitHub Releases. The installer is signed with my own certificate rather than a commercial one, so Windows warns before running it, and Smart App Control blocks it on PCs where it is turned on.",
+        "Views": {
+          "Github": 0,
+          "Download": 1,
+          "Live": 0,
+          "Project": 7
+        },
+        "Description": "Glass-Rea is a personal network monitor for Windows: how much each app used the internet by day, week or month, who it talked to, one-click blocking, the devices on your Wi-Fi, and alerts. Built in C# and .NET 10 with WinUI 3."
+      },
+      {
+        "id": "Gunter System (currently deactivated)",
+        "Contributors": {
+          "1": {
+            "Role at Project": "Software Developer",
+            "Contributor Name": "Mohammed Ahmed"
+          }
+        },
+        "Live Link": "https://gunter.temrevil.com/",
+        "Views": {
+          "Github": "3",
+          "Live": 7,
+          "Download": 4,
+          "Project": 96
+        },
+        "Download Link": "https://github.com/TemRevil/gunter/releases/download/v1.11.1/Gunter-Management-System-Setup-1.11.1.exe",
+        "Case Study": "### The problem\nSmall workshops and spare-parts stores often run on paper notebooks and memory: who owes what, which parts are running low, what was sold today. Generic accounting software is too heavy for them, and most of it does not handle Arabic properly.\n\n### What I built\nGunter is a desktop application for Windows that covered the daily work of a parts business. It tracked operations (sales, payments and debts) with a full history, kept a customer list with running balances, watched stock and warned when an item dropped below its threshold, and printed branded receipts on thermal printers. The whole interface switched between Arabic and English with right-to-left layout and localized calendars.\n\n### Decisions\n- **Desktop first.** Built with React and Vite inside Electron and shipped as a Windows installer, because a shop counter runs a Windows PC and cannot depend on a browser tab staying open.\n- **Fast at the counter.** Daily work ran from data kept on the machine, so the app stayed fast and kept working when the connection dropped, with Firebase behind it for licensing.\n- **Arabic that actually matches.** Customer search normalizes Arabic letter variations, so the same name typed two ways still found the same person.\n- **Access levels.** Users and admins saw different things; settings and deletions needed the admin password. Activation keys were tied to the machine to stop copying.\n- **Updates from settings.** New versions were installed from inside the app.\n\n### Where it stands\nBuilt from December 2025 to March 2026. The last release, version 1.11.1, is still on GitHub as a Windows installer, but the system is deactivated and no longer offered.",
+        "Tags": {
+          "1": "JavaScript",
+          "2": "React",
+          "3": "Firebase",
+          "4": "Electron Package",
+          "5": "Multiple Languages"
+        },
+        "Project Images": [
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F1.webp?alt=media&token=bd535854-0cd4-4798-9900-63b900ada44b",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F2.webp?alt=media&token=936a8017-8054-4445-90ff-8d027ac0a699",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F3.webp?alt=media&token=c78a5a06-aef7-46dd-a1a3-d24e00fbd697",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F4.webp?alt=media&token=cc77b144-f257-4df5-a4aa-165c09cdd7cc",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F5.webp?alt=media&token=6420372f-654c-4a77-bb7a-bb2c8dbe6704",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F6.webp?alt=media&token=09f67861-ad51-4f54-b1dc-bf55c3a72dd7",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F7.webp?alt=media&token=f1827d7d-12b6-4b58-b401-34b48f120b48",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F8.webp?alt=media&token=ed90b9e3-a203-4f80-8727-780f8f888596",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F9.webp?alt=media&token=bfc4dfa0-db37-4572-9b05-d8faf6541f80",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F10.webp?alt=media&token=38781005-46ed-4e1f-8267-3eade47b2339",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F11.webp?alt=media&token=758bce39-296c-43dd-a3a2-c8a82f614339",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F12.webp?alt=media&token=7f5e6e0a-5bcd-4944-81d4-fdf4a5842ad0",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2F13.webp?alt=media&token=be5cbb1f-e344-4c73-899a-a8b88acda523"
+        ],
+        "Project Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FGunter%20System%20(currently%20deactivated)%2Ficon?alt=media&token=67811b0c-8415-4c1f-9a71-e43e64be5b21",
+        "Listing": 3,
+        "Repository Link": "https://github.com/TemRevil/gunter",
+        "Description": "Gunter was a Windows desktop management system for mechanical and spare-parts businesses: sales, payments, debts, customers and stock in Arabic and English, with thermal receipt printing."
+      },
+      {
+        "id": "Kittle. (with the dot)",
+        "Case Study": "### The problem\nOpening an unfamiliar codebase usually means hours of reading files in the wrong order before the shape of the project becomes clear. I wanted a tool that lets you ask the codebase questions and see its structure as a diagram, instead of reading it from the first file.\n\n### What I built\nKittle. is a chat interface that takes a GitHub repository or files from your machine as context and answers questions about them. It connects to several AI providers: Google Gemini 2.0 (including the Thinking model), OpenAI GPT-4o, Anthropic Claude 3.5 and DeepSeek R1, so you can pick the model per task. Its Design Mode turns a conversation into Mermaid.js architecture diagrams, so the structure of a project is something you can look at, not only read about.\n\n### Decisions\n- **No server.** Kittle. is a static Next.js app. Every AI call goes straight from the browser to the provider, and your API keys stay in your browser's local storage. Nothing passes through a backend I run, which keeps keys private and hosting free.\n- **Bring your own model.** Supporting four providers behind one interface means the tool keeps working when one model is better, cheaper or unavailable.\n- **Motion with purpose.** The interface uses Framer Motion and a glass style so long answers and diagrams appear in a clear order rather than all at once.\n\nBuilt with Next.js 16, React 19, TypeScript, Tailwind CSS 4, Mermaid.js and Framer Motion, and deployed automatically with GitHub Actions.\n\n### Where it stands\nStarted in January 2026 and live at kittle.temrevil.com. Today Kittle. works as a chat assistant over your code; the next step is making it agentic, so it can act on a repository, not only describe it. The source is public on GitHub.",
+        "Listing": 2,
+        "Contributors": {
+          "1": {
+            "Role at Project": "Frontend & AI Engineer",
+            "Contributor Name": "Mohammed Ahmed"
+          }
+        },
+        "Project Images": [
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FKittle.%20(with%20the%20dot)%2F1.webp?alt=media&token=a9791e76-b9b4-491f-a661-b591866aeb31",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FKittle.%20(with%20the%20dot)%2FKittle.mp4?alt=media&token=4ff93ea4-4978-4207-9a11-3731d5618929"
+        ],
+        "Live Link": "https://kittle.temrevil.com/",
+        "Download Link": "",
+        "Repository Link": "https://github.com/TemRevil/Kittle",
+        "Views": {
+          "Project": 156,
+          "Github": 5,
+          "Download": "0",
+          "Live": 14
+        },
+        "Project Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FKittle.%20(with%20the%20dot)%2Ficon?alt=media&token=8d7523ff-3734-4dc7-a1a4-efdc131ff632",
+        "Tags": {
+          "1": "React",
+          "2": "Next.JS",
+          "3": "TypeScript",
+          "4": "NodeJS",
+          "5": "Tailwind "
+        },
+        "Description": "Kittle. is a browser-based AI code assistant that reads a GitHub repository or local files and explains it back, with chat and auto-generated architecture diagrams, across Gemini, GPT-4o, Claude and DeepSeek."
+      },
+      {
+        "id": "Login-Design Vol.1",
+        "Repository Link": "https://github.com/TemRevil/LoginDesign",
+        "Download Link": "",
+        "Contributors": {
+          "1": {
+            "Contributor Name": "Mohammed Ahmed",
+            "Role at Project": "Frontend Developer"
+          }
+        },
+        "Project Images": [
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FLogin-Design%20Vol.1%2F1.webp?alt=media&token=79e65766-6045-4097-879d-102a5abb59c3",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FLogin-Design%20Vol.1%2F2.webp?alt=media&token=67b44a89-9fed-4d50-bdd0-bf5b51783977"
+        ],
+        "Tags": {
+          "1": "HTML",
+          "2": "CSS"
+        },
+        "Listing": 8,
+        "Live Link": "https://logindesign.temrevil.com/",
+        "Views": {
+          "Live": 12,
+          "Download": "0",
+          "Project": 86,
+          "Github": 3
+        },
+        "Project Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FLogin-Design%20Vol.1%2Ficon?alt=media&token=dfa48e63-e274-4e44-9a75-3ffe2daf006b",
+        "Case Study": "### The problem\nThe login screen is the first thing many users see, and it is usually the plainest page in a product. This was my first design study: making a login page feel welcoming without making it harder to use.\n\n### What I built\nA single, fully responsive login page: a sign-in panel with a short welcome, a \"Login Now\" action, and \"Login with Google\" and \"Login with Facebook\" buttons, over a colourful background with custom fonts.\n\n### Decisions\n- **HTML and CSS only.** No JavaScript, so the page is light and the layout carries the whole design.\n- **A frosted panel.** The sign-in card sits on a 10-pixel background blur, so it stays readable over a colourful background without a heavy solid box.\n- **One color story.** Buttons and highlights share a violet gradient (from #9181F4 to #5038ED), which ties the main action and the social sign-in options together.\n- **Three screen sizes, planned.** Separate layouts for large laptops (up to 1366 pixels), tablets (up to 960) and phones (up to 500), so the panel stays readable and the buttons stay easy to tap everywhere.\n- **System fonts.** The text uses the device's own interface font, which loads instantly and feels native on every platform.\n\nThe buttons are design only; the page does not sign anyone in. Its job was to teach me layout, spacing and responsive planning, which every project after it builds on.\n\n### Where it stands\nBuilt in March 2024, my first published design (\"Login Design, Vol. 1\"). Live at logindesign.temrevil.com, source on GitHub.",
+        "Description": "Login-Design Vol.1 is a fully responsive login page design with Google and Facebook sign-in buttons, built in HTML and CSS."
+      },
+      {
+        "id": "The-State",
+        "Case Study": "### The problem\nThe-State started in November 2025 as a platform for university students: lecture PDFs with timed quizzes and screenshot protection. That version depended on paid Cloud Functions. In June 2026 I rebuilt it on the same Firebase project as a sales CRM that anyone can try, and that must never run up a bill.\n\n### What I built\nA complete demo CRM: a dashboard with key figures and charts, a deals pipeline as a kanban board, contact and company tables with editing, and an activity list for tasks. A demo account opens it instantly (username demo, password demo12345), and a seed script fills it with realistic sample companies, contacts, deals and activities.\n\n### Decisions\n- **Free tier by design.** It uses only Firebase Auth and Firestore. The security rules validate every field and size, and every change must also update a per-user usage record that enforces a short cooldown, so a bug or a bored visitor cannot burn through the free quota. A daily write budget is shown in the app.\n- **Load once, update instantly.** Data is read once per session and edits appear immediately while they save in the background.\n- **Custom controls.** Every native select, date input and checkbox was replaced with accessible, keyboard-friendly controls built on Apple's Human Interface Guidelines, with light and dark themes and reduced-motion support.\n\nBuilt with React 18, TypeScript, Vite, Firebase and Recharts.\n\n### Where it stands\nLive at the-state.temrevil.com as a public demo; source on GitHub.",
+        "Contributors": {
+          "1": {
+            "Role at Project": "Software Developer",
+            "Contributor Name": "Mohammed Ahmed"
+          }
+        },
+        "Description": "The State CRM is a demo sales CRM with contacts, companies, a deals pipeline and activities, built with React, TypeScript and Firebase to run safely on the free tier. Sign in with demo / demo12345.",
+        "Repository Link": "https://github.com/TemRevil/The-State",
+        "Download Link": "",
+        "Listing": 4,
+        "Project Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FThe-State%2Ficon?alt=media&token=26f354a9-2341-4a07-b94f-612e355d4bae",
+        "Project Images": [
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FThe-State%2F1.webp?alt=media&token=02940fa3-7a2d-4be0-82c6-cbe60c69ed66",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FThe-State%2F2.webp?alt=media&token=2b665a38-33fd-475d-a6b3-a234282e8880",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FThe-State%2F3.webp?alt=media&token=1563c410-9ca1-48e1-97f3-bc8432565af6",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FThe-State%2F4.webp?alt=media&token=1491d251-512a-40b3-86a0-5c2a5965fe39",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FThe-State%2F5.webp?alt=media&token=c32a8dc4-faef-45ea-920d-292e3d9b4b84",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FThe-State%2F6.webp?alt=media&token=24a81c8a-cadd-45c8-963d-fd3afb4d156d"
+        ],
+        "Tags": {
+          "1": "TypeScript",
+          "2": "React",
+          "3": "Firebase",
+          "4": "CSS"
+        },
+        "Views": {
+          "Project": 76,
+          "Live": 10,
+          "Download": "0",
+          "Github": 3
+        },
+        "Live Link": "https://the-state.temrevil.com/"
+      },
+      {
+        "id": "Vrose",
+        "Live Link": "https://vrose.temrevil.com/",
+        "Contributors": {
+          "1": {
+            "Contributor Name": "Mohammed Ahmed",
+            "Role at Project": "Frontend Developer"
+          }
+        },
+        "Download Link": "",
+        "Listing": 7,
+        "Views": {
+          "Download": "0",
+          "Project": 77,
+          "Live": 15,
+          "Github": 3
+        },
+        "Project Icon": "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FVrose%2Ficon?alt=media&token=c7c1eb1f-637a-429b-8a65-63e09ffdc7f2",
+        "Case Study": "### The problem\nA flower shop sells a feeling as much as a product, so its page has to look as fresh as the flowers. Vrose was my second shopping landing design, made to practise presenting products with mood and space.\n\n### What I built\nA single landing page for a fictional florist called Vrose, \"Nature in Real\". It opens with a large hero, then a product range (The Elite, Lilac, Orchid, Azalea and Flat Wide), then a \"Why Flowers?\" section about why flowers matter in daily life, and a footer.\n\n### Decisions\n- **A soft, warm palette.** The accents run on a pink gradient (from #ff5c8a to #ff99ac) that echoes petals rather than a typical shop's red sale banners.\n- **Slow motion in the header.** The hero background drifts on a 15-second loop, slow enough to feel like a breeze instead of an animation competing with the products.\n- **Three typefaces, three jobs.** Rubik, Exo and Cairo are self-hosted with the page, so the look does not depend on an outside font service, and Cairo leaves room for Arabic text later.\n- **Plain HTML, CSS and JavaScript**, keeping the page light and every effect hand-written.\n- **One clear breakpoint.** Below 768 pixels the layout restacks into a single column, so the products stay large and easy to tap on a phone.\n\nThe hero copy is still placeholder text: this is a design study of layout, color and pacing, not a live store, and it says so honestly.\n\n### Where it stands\nBuilt in May 2024 as \"Shopping Landing Design, Vol. 2\". Live at vrose.temrevil.com, source on GitHub.",
+        "Repository Link": "https://github.com/TemRevil/Vrose",
+        "Tags": {
+          "1": "HTML",
+          "2": "CSS",
+          "3": "JavaScript"
+        },
+        "Description": "Vrose is a landing and shop page design for a flower store, \"Nature in Real\", with a product range, a \"Why Flowers?\" story section and a responsive layout in HTML, CSS and JavaScript.",
+        "Project Images": [
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FVrose%2F1.webp?alt=media&token=26f6af08-72b3-4586-a7ed-31ccc0fdeb44",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FVrose%2F2.webp?alt=media&token=f9173350-4b8d-47ba-a504-4053852b1f12",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FVrose%2F3.webp?alt=media&token=58682e1d-04ad-4857-84f1-c66ff0068f3f",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FVrose%2F4.webp?alt=media&token=c9b69402-36a1-4fb7-adf7-7e5945aaef45",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FVrose%2F5.webp?alt=media&token=05554b7d-9220-4555-8c84-05a14ead3c42",
+          "https://firebasestorage.googleapis.com/v0/b/temrevil1.firebasestorage.app/o/src%2Fprojects-imgs%2FVrose%2F6.webp?alt=media&token=9ffce24b-a61e-4f72-9215-8c5cf049b5f9"
+        ]
+      }
+    ],
+    "Tags/Contributors/Profiles": []
+  }
+}

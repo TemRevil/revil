@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
 import { watchDoc } from '../lib/liveDoc';
+import { cachedDoc, type Data } from '../lib/dataCache';
 import { sanitizeSvg } from '../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor, stillFrame } from '../utils/projectUtils';
 import { isLite } from '../lib/device';
@@ -461,6 +462,15 @@ const ProjectMediaImage = ({ src }: { src: string }) => {
     );
 };
 
+/** Tags/Tags' entries, for the icons and colours of a project's tags. */
+const tagsOf = (doc: Data | null | undefined): TagItem[] =>
+    Object.entries((doc || {}) as Record<string, { Name?: string; Color?: string; Icon?: string }>).map(([id, val]): TagItem => ({
+        id,
+        name: val.Name || 'Untitled',
+        color: val.Color || '#60a5fa',
+        iconSvg: val.Icon || ''
+    }));
+
 const MProjectView = ({ project: initialProject, onClose, onContributorClick }: MProjectViewProps) => {
     useBoilHold();
     const [project, setProject] = useState<Project>(initialProject);
@@ -477,7 +487,8 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     const [isHovered, setIsHovered] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-    const [availableTags, setAvailableTags] = useState<TagItem[]>([]);
+    // The cached copy (lib/dataCache) first, so the tags draw with their icons at once.
+    const [availableTags, setAvailableTags] = useState<TagItem[]>(() => tagsOf(cachedDoc(['Tags', 'Tags'])));
 
     const sortedMedia = React.useMemo(() => {
         return [...(project.images || [])].sort((a, b) => {
@@ -569,21 +580,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         ];
 
     // Fetch Global Tags for Icons/Colors
-    useEffect(() => {
-        const unsub = watchDoc(['Tags', 'Tags'], (doc) => {
-            if (doc) {
-                const data = doc as Record<string, { Name?: string; Color?: string; Icon?: string }>;
-                const loaded = Object.entries(data).map(([id, val]): TagItem => ({
-                    id,
-                    name: val.Name || 'Untitled',
-                    color: val.Color || '#60a5fa',
-                    iconSvg: val.Icon || ''
-                }));
-                setAvailableTags(loaded);
-            }
-        });
-        return () => unsub();
-    }, []);
+    useEffect(() => watchDoc(['Tags', 'Tags'], (doc) => { if (doc) setAvailableTags(tagsOf(doc)); }), []);
 
     // Ref to track latest availableTags without causing effect re-runs
     const availableTagsRef = useRef<TagItem[]>(availableTags);

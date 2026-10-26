@@ -1,0 +1,16 @@
+{
+  "docs": [
+    "Settings/Account",
+    "Settings/Availability",
+    "Settings/HandledProjects",
+    "Settings/Tech Stack",
+    "Settings/BookPage",
+    "Settings/Developer",
+    "Tags/Tags",
+    "Tags/Contributors"
+  ],
+  "collections": [
+    "Projects",
+    "Tags/Contributors/Profiles"
+  ]
+}

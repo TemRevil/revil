@@ -24,6 +24,8 @@ interface ProjectsHubProps {
     /** Rendered inside the mobile single-scroll page: the sub-nav sticks within this
      *  section instead of floating over the whole viewport. */
     embedded?: boolean;
+    /** False while built off screen (see Stack): the sub-nav stays away and the entrances wait. */
+    active?: boolean;
 }
 
 // The phone page and the desktop switcher are different trees, so crossing the
@@ -32,7 +34,7 @@ interface ProjectsHubProps {
 // so a fresh load still opens on Projects.
 let lastTab: SubTab = 'projects';
 
-const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransitioning = false, embedded = false }, ref) => {
+const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransitioning = false, embedded = false, active = true }, ref) => {
     const [activeTab, setActiveTab] = useState<SubTab>(() => lastTab);
     const [direction, setDirection] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
@@ -72,13 +74,17 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
         },
     }), [activeIndex, switchTo]);
 
-    // Show sub-nav only after the page transition finishes
+    // Show sub-nav only after the page transition finishes, and take it away when the
+    // section leaves (it stays mounted off screen on desktop).
+    const settled = active && !isTransitioning;
     useEffect(() => {
-        if (!isTransitioning) {
-            const timer = setTimeout(() => setShowSubnav(true), 120);
-            return () => clearTimeout(timer);
-        }
-    }, [isTransitioning]);
+        if (!settled) return;
+        const timer = setTimeout(() => setShowSubnav(true), 120);
+        return () => {
+            clearTimeout(timer);
+            setShowSubnav(false);
+        };
+    }, [settled]);
 
     // Dispatch custom event when hovering sub-nav so Navbar can suppress tooltips
     const handleSubnavEnter = useCallback(() => {
@@ -114,7 +120,7 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
                         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
                         className="min-h-screen"
                     >
-                        {activeTab === 'projects' ? <Projects /> : <Developer />}
+                        {activeTab === 'projects' ? <Projects active={active} /> : <Developer active={active} />}
                     </motion.div>
                 </AnimatePresence>
             </div>

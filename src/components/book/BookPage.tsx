@@ -9,7 +9,7 @@ import { availabilityStatus } from '../../utils/availability';
 import { Chars, PaintDefs, splitSlogan, useHostClock, usePaint } from './paintKit';
 import useBookTrail from './useBookTrail';
 import { analytics } from '../../lib/analytics/collector';
-import bookSnapshot from '../../data/book.snapshot.json';
+import { cachedDoc } from '../../lib/dataCache';
 import './book.css';
 
 // The alert and the day's form (the time zone list, the custom time picker, the hints) are
@@ -32,20 +32,6 @@ let photoShowing: () => void = () => { };
 holdFirebase(new Promise<void>((resolve) => { photoShowing = resolve; }));
 
 const NAME_LINES = ['TEM', 'REVIL'];
-
-// The page draws before Firebase has loaded, with what it said last time in this browser,
-// else the build's snapshot (scripts/sync-projects.mjs). The live documents replace it as
-// soon as they arrive.
-const PAGE_KEY = 'revil_book_page';
-const LINKS_KEY = 'revil_book_links';
-function seed(key: string, fallback: Record<string, unknown>): Record<string, unknown> {
-    try {
-        const cached = JSON.parse(localStorage.getItem(key) || 'null');
-        if (cached && typeof cached === 'object') return cached;
-    } catch { /* ignore */ }
-    return fallback;
-}
-const remember = (key: string, value: unknown) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ } };
 
 /** The day's panel while the owner's hours (or the form's chunk) are on their way. */
 const DayLoading = () => (
@@ -76,17 +62,13 @@ export default function BookPage() {
     const status = availabilityStatus(b.hostAvailability);
 
     // What the page says about the owner, edited from the dashboard (Canary → Options).
-    // Seeded (see seed()), so the first paint never waits for Firestore.
-    const [content, setContent] = useState(() => parseBookPage(seed(PAGE_KEY, bookSnapshot.page)));
-    useEffect(() => watchDoc(['Settings', 'BookPage'],
-        (data) => { setContent(parseBookPage(data)); remember(PAGE_KEY, data ?? {}); },
-        () => { /* offline / blocked: keep the seeded copy */ }), []);
+    // Starts from the cached copy (lib/dataCache), so the first paint never waits for Firestore.
+    const [content, setContent] = useState(() => parseBookPage(cachedDoc(['Settings', 'BookPage'])));
+    useEffect(() => watchDoc(['Settings', 'BookPage'], (data) => setContent(parseBookPage(data))), []);
 
     // Links are the site's own (dashboard Settings → Social Links + contact email).
-    const [links, setLinks] = useState<BookLink[]>(() => linksFromAccount(seed(LINKS_KEY, bookSnapshot.account)));
-    useEffect(() => watchDoc(['Settings', 'Account'],
-        (data) => { setLinks(linksFromAccount(data)); remember(LINKS_KEY, { Email: data?.Email, 'Social Links': data?.['Social Links'] }); },
-        () => { /* offline / blocked: keep the seeded links */ }), []);
+    const [links, setLinks] = useState<BookLink[]>(() => linksFromAccount(cachedDoc(['Settings', 'Account'])));
+    useEffect(() => watchDoc(['Settings', 'Account'], (data) => setLinks(linksFromAccount(data))), []);
 
     // ---- paint: first draw animates once the photo and fonts are in; later draws
     // (resize, a live content edit that moves the text) land without animation.

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { cachedJson, fetchJson, GITHUB_URLS, GITHUB_USERNAME } from '../lib/githubData';
 
 interface ContributionDay {
     date: string;
@@ -41,50 +42,54 @@ function calculateStreak(yearlyData: Record<number, ContributionDay[]>): number 
     return streak;
 }
 
-const GITHUB_USERNAME = 'TemRevil';
+interface Parsed {
+    byYear: Record<number, ContributionDay[]>;
+    totals: Record<number, number>;
+    years: number[];
+}
 
-// Mock data fallback for multiple years
-const generateMockData = (): { yearly: Record<number, ContributionDay[]>; totals: Record<number, number> } => {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const yearly: Record<number, ContributionDay[]> = {};
+/** The contributions API's answer, by year; null when it has no days. */
+function parseContributions(data: { contributions?: unknown[]; total?: Record<string, unknown> } | undefined): Parsed | null {
+    if (!data?.contributions || !Array.isArray(data.contributions)) return null;
+
+    const byYear: Record<number, ContributionDay[]> = {};
+    data.contributions.forEach((day: unknown) => {
+        if (!day || typeof day !== 'object') return;
+        const d = day as { date?: unknown; count?: unknown; level?: unknown };
+        if (typeof d.date !== 'string') return;
+        const count = typeof d.count === 'number' ? d.count : 0;
+        const level = typeof d.level === 'number' ? d.level : 0;
+        const y = parseInt(d.date.split('-')[0], 10);
+        if (isNaN(y)) return;
+        if (!byYear[y]) byYear[y] = [];
+        byYear[y].push({ date: d.date, count, level });
+    });
+
     const totals: Record<number, number> = {};
-
-    for (let y = currentYear - 3; y <= currentYear; y++) {
-        const days: ContributionDay[] = [];
-        const start = new Date(y, 0, 1);
-        const end = y === currentYear ? now : new Date(y, 11, 31);
-        let total = 0;
-
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            const dow = d.getDay();
-            let prob = dow === 0 || dow === 6 ? 0.25 : 0.55;
-            if (Math.random() > 0.7) prob += 0.2;
-            let count = 0;
-            if (Math.random() < prob) {
-                const r = Math.random();
-                if (r < 0.4) count = Math.floor(Math.random() * 3) + 1;
-                else if (r < 0.7) count = Math.floor(Math.random() * 5) + 3;
-                else if (r < 0.9) count = Math.floor(Math.random() * 8) + 5;
-                else count = Math.floor(Math.random() * 15) + 8;
-            }
-            const level = count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : count <= 10 ? 3 : 4;
-            days.push({ date: new Date(d).toISOString().split('T')[0], count, level });
-            total += count;
-        }
-        yearly[y] = days;
-        totals[y] = total;
+    if (data.total) {
+        Object.entries(data.total).forEach(([k, v]) => {
+            const y = parseInt(k, 10);
+            if (!isNaN(y) && typeof v === 'number') totals[y] = v;
+        });
     }
-    return { yearly, totals };
-};
+    Object.entries(byYear).forEach(([ys, days]) => {
+        const y = parseInt(ys, 10);
+        if (!(y in totals)) totals[y] = days.reduce((s, d) => s + d.count, 0);
+    });
+
+    const years = Object.keys(byYear).map(Number).sort((a, b) => a - b);
+    return years.length > 0 ? { byYear, totals, years } : null;
+}
 
 const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: GitHubCommitsGraphProps) => {
     const thisYear = new Date().getFullYear();
 
-    const [yearlyData, setYearlyData] = useState<Record<number, ContributionDay[]>>({});
-    const [yearlyTotals, setYearlyTotals] = useState<Record<number, number>>({});
-    const [availableYears, setAvailableYears] = useState<number[]>([thisYear]);
-    const [currentYear, setCurrentYear] = useState<number>(thisYear);
+    // This device's last copy at once (lib/githubData); a new one replaces it when it lands.
+    const [initial] = useState(() => parseContributions(cachedJson(GITHUB_URLS.contributions(username))));
+    const [yearlyData, setYearlyData] = useState<Record<number, ContributionDay[]>>(initial?.byYear ?? {});
+    const [yearlyTotals, setYearlyTotals] = useState<Record<number, number>>(initial?.totals ?? {});
+    const [availableYears, setAvailableYears] = useState<number[]>(initial?.years ?? [thisYear]);
+    const [currentYear, setCurrentYear] = useState<number>(initial ? initial.years[initial.years.length - 1] : thisYear);
 
     // Computed once per render - used inside the cell map below
     // UTC to match the API's date format (avoids off-by-one near midnight in non-UTC zones)
@@ -93,7 +98,9 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
         return `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
     }, []);
     const [slideDir, setSlideDir] = useState<number>(0); // -1 = left (older), 1 = right (newer)
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(initial === null);
+    // Nothing to show: no copy on this device and the read failed.
+    const [failed, setFailed] = useState(false);
     const [hasAppeared, setHasAppeared] = useState(false);
     const [hoveredDay, setHoveredDay] = useState<ContributionDay | null>(null);
     const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -105,103 +112,31 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
     const lastNavTime = useRef(0);
     const touchStartX = useRef(0);
 
-    // ── Fetch all years at once (with timeout + localStorage cache + unmount guard) ──
+    // ── A new read of every year, over the cached copy ──
     useEffect(() => {
-        const CACHE_KEY = `gh_contrib_${username}`;
         let ignore = false;
-        const controller = new AbortController();
-
-        /** Shared logic: turn raw API JSON into component state. */
-        const applyData = (data: { contributions?: unknown[]; total?: Record<string, unknown> }) => {
-            if (ignore) return false;
-            if (!data.contributions || !Array.isArray(data.contributions)) return false;
-
-            const byYear: Record<number, ContributionDay[]> = {};
-            data.contributions.forEach((day: unknown) => {
-                if (!day || typeof day !== 'object') return;
-                const d = day as { date?: unknown; count?: unknown; level?: unknown };
-                if (typeof d.date !== 'string') return;
-                const count = typeof d.count === 'number' ? d.count : 0;
-                const level = typeof d.level === 'number' ? d.level : 0;
-                const y = parseInt(d.date.split('-')[0], 10);
-                if (isNaN(y)) return;
-                if (!byYear[y]) byYear[y] = [];
-                byYear[y].push({ date: d.date, count, level });
+        const url = GITHUB_URLS.contributions(username);
+        const before = JSON.stringify(cachedJson(url) ?? null);
+        if (initial) onStreakCalculated?.(calculateStreak(initial.byYear));
+        fetchJson<{ contributions?: unknown[]; total?: Record<string, unknown> }>(url)
+            .then((json) => {
+                if (ignore || (initial && JSON.stringify(json) === before)) return;
+                const parsed = parseContributions(json);
+                if (!parsed) throw new Error('no contribution days');
+                setYearlyData(parsed.byYear);
+                setYearlyTotals(parsed.totals);
+                setAvailableYears(parsed.years);
+                // A reader who moved to another year stays on it.
+                setCurrentYear(prev => (parsed.years.includes(prev) ? prev : parsed.years[parsed.years.length - 1]));
+                setIsLoading(false);
+                onStreakCalculated?.(calculateStreak(parsed.byYear));
+            })
+            .catch(() => {
+                if (ignore || initial) return;
+                setIsLoading(false);
+                setFailed(true);
             });
-
-            const tots: Record<number, number> = {};
-            if (data.total) {
-                Object.entries(data.total).forEach(([k, v]) => {
-                    const y = parseInt(k, 10);
-                    if (!isNaN(y) && typeof v === 'number') tots[y] = v;
-                });
-            }
-            Object.entries(byYear).forEach(([ys, days]) => {
-                const y = parseInt(ys, 10);
-                if (!(y in tots)) tots[y] = (days as ContributionDay[]).reduce((s, d) => s + d.count, 0);
-            });
-
-            const years = Object.keys(byYear).map(Number).sort((a, b) => a - b);
-            if (ignore || years.length === 0) return false;
-            setYearlyData(byYear);
-            setYearlyTotals(tots);
-            setAvailableYears(years);
-            setCurrentYear(years[years.length - 1]);
-            setIsLoading(false);
-
-            // Report streak (guarded - parent may have unmounted)
-            if (!ignore) onStreakCalculated?.(calculateStreak(byYear));
-            return true;
-        };
-
-        const fetchAll = async () => {
-            // 1) Try the API with a 10-second timeout (uses master controller - aborts on unmount)
-            const tid = setTimeout(() => controller.abort(), 10_000);
-            try {
-                const res = await fetch(
-                    `https://github-contributions-api.jogruber.de/v4/${username}`,
-                    { signal: controller.signal },
-                );
-                clearTimeout(tid);
-                if (ignore) return;
-
-                if (res.ok) {
-                    const json = await res.json();
-                    if (ignore) return;
-                    if (applyData(json)) {
-                        try { localStorage.setItem(CACHE_KEY, JSON.stringify(json)); } catch { /* quota */ }
-                        return;
-                    }
-                }
-            } catch { clearTimeout(tid); /* timeout or network error - fall through */ }
-
-            if (ignore) return;
-
-            // 2) Try localStorage cache
-            try {
-                const cached = localStorage.getItem(CACHE_KEY);
-                if (cached && applyData(JSON.parse(cached))) return;
-            } catch { /* corrupt cache */ }
-
-            if (ignore) return;
-
-            // 3) Final fallback: deterministic mock data
-            const mock = generateMockData();
-            const years = Object.keys(mock.yearly).map(Number).sort((a, b) => a - b);
-            setYearlyData(mock.yearly);
-            setYearlyTotals(mock.totals);
-            setAvailableYears(years);
-            setCurrentYear(years[years.length - 1]);
-            setIsLoading(false);
-            onStreakCalculated?.(0);
-        };
-
-        fetchAll();
-
-        return () => {
-            ignore = true;
-            controller.abort();
-        };
+        return () => { ignore = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [username]);
 
@@ -412,7 +347,7 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
                     </div>
                     <div>
                         <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                            {isLoading ? '-' : totalContributions.toLocaleString()}
+                            {isLoading || failed ? '-' : totalContributions.toLocaleString()}
                         </span>
                         <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-muted)', marginLeft: 5 }}>
                             contributions

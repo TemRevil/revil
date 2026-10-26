@@ -1,9 +1,8 @@
-'use client'
-import dynamic from 'next/dynamic'
+import BookApp from './BookApp'
+import PublicData from '../PublicData'
 
-// Client-only like the main app: the calendar, the time zones and the paint all depend
-// on the visitor's clock and the DOM, so a build-time render would only mismatch.
-const BookPage = dynamic(() => import('../../components/book/BookPage'), { ssr: false })
+// A server component, so the page can carry the build's copy of what /book shows
+// (PublicData); the page itself is client-only (BookApp).
 
 export default function Page() {
   return (
@@ -43,7 +42,8 @@ export default function Page() {
           </p>
         </article>
       </noscript>
-      <BookPage />
+      <PublicData docs={['Settings/BookPage', 'Settings/Account', 'Settings/Availability']} />
+      <BookApp />
     </>
   )
 }

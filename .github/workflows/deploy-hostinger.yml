@@ -4,6 +4,10 @@ on:
   push:
     branches: ["main"]
   workflow_dispatch:
+  # Once a day the site's Firestore snapshot is read again (see "Refresh the data snapshot"),
+  # and the site is rebuilt only when the content changed since the last deploy.
+  schedule:
+    - cron: "17 3 * * *"
 
 permissions:
   contents: read
@@ -11,7 +15,8 @@ permissions:
 
 concurrency:
   group: production
-  cancel-in-progress: true
+  # A push cancels the release it replaces; the daily run never cancels a release in flight.
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -28,6 +33,11 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation: GitHub's OIDC token buys a short-lived Google one
+    outputs:
+      ship: ${{ steps.ship.outputs.ship }}
 
     steps:
       - name: Checkout
@@ -42,16 +52,58 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The build bakes in a snapshot of the public Firestore content (scripts/sync-data.mjs).
+      # A read-only service account, reached through Workload Identity Federation (no key
+      # stored here), reads it fresh. Without that set up, or if the read fails, the build
+      # uses the committed src/data/public.snapshot.json.
+      - name: Authenticate to Google Cloud
+        id: gcp
+        if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+        continue-on-error: true
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SNAPSHOT_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Refresh the data snapshot
+        id: sync
+        if: steps.gcp.outputs.access_token != ''
+        continue-on-error: true
+        env:
+          FIRESTORE_ACCESS_TOKEN: ${{ steps.gcp.outputs.access_token }}
+          COMPARE_WITH: ${{ github.event_name == 'schedule' && 'https://temrevil.com/' || '' }}
+        run: npm run sync:data
+
+      # A push or a manual run always ships; the daily run only when the snapshot changed.
+      - name: Decide whether to ship
+        id: ship
+        env:
+          EVENT: ${{ github.event_name }}
+          SYNCED: ${{ steps.sync.outcome }}
+          CHANGED: ${{ steps.sync.outputs.changed }}
+        run: |
+          if [ "$EVENT" != "schedule" ] || { [ "$SYNCED" = "success" ] && [ "$CHANGED" = "true" ]; }; then
+            echo "ship=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ship=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing new to ship."
+          fi
+
       - name: Lint
+        if: steps.ship.outputs.ship == 'true'
         run: npm run lint
 
       - name: Type-check
+        if: steps.ship.outputs.ship == 'true'
         run: npx tsc --noEmit
 
       - name: Build
+        if: steps.ship.outputs.ship == 'true'
         run: npm run build
 
       - name: Upload static build artifact
+        if: steps.ship.outputs.ship == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: site-dist
@@ -59,6 +111,7 @@ jobs:
 
   deploy:
     needs: validate
+    if: needs.validate.outputs.ship == 'true'
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -159,6 +212,7 @@ jobs:
       # sitemap's pages changed, so they recrawl now instead of whenever. The key file
       # is public/<key>.txt. A failed ping never fails the deploy.
       - name: Ping IndexNow
+        if: github.event_name != 'schedule'
         continue-on-error: true
         env:
           INDEXNOW_KEY: 6de522071a7266eec311b13b026e49f1

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Briefcase, Calendar } from 'lucide-react';
 import { holdFirebase, watchDoc } from '../lib/liveDoc';
-import { availabilityStatus, rememberHostStatus, seedHostStatus, type HostStatus } from '../utils/availability';
+import { availabilityStatus, type HostStatus } from '../utils/availability';
+import { cachedDoc } from '../lib/dataCache';
 import { useSettings } from '../contexts/SettingsContext';
 import useTheme from '../hooks/useTheme';
 import { Chars, PaintDefs, splitSlogan, useHostClock, usePaint } from './book/paintKit';
@@ -239,8 +240,8 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     const isDark = useTheme();
     const hasNotifiedLoaded = useRef(false);
 
-    // Shared Settings/Account listener. Seeded from the last copy / the build snapshot, so
-    // the hero never waits for Firebase to show the name and title.
+    // Shared Settings/Account listener. Starts from the cached copy (lib/dataCache), so the
+    // hero never waits for Firebase to show the name and title.
     const { account } = useSettings();
     const profileName = (account?.name || 'Tem Revil').trim();
     const profileTitle = account?.title || 'Frontend & AI Engineer';
@@ -249,15 +250,12 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     const sloganLines = splitSlogan(profileTitle);
 
     // Availability % + time zone live in Settings/Availability; the handled-projects list
-    // comes from the public, sanitized Settings/HandledProjects mirror.
-    const [availData, setAvailData] = useState<HostStatus>(seedHostStatus);
-    const [handledData, setHandledData] = useState<HandledData | null>(null);
+    // comes from the public, sanitized Settings/HandledProjects mirror. Both start from the
+    // cached copy, so the pills never show a stand-in first.
+    const [availData, setAvailData] = useState<HostStatus>(() => (cachedDoc(['Settings', 'Availability']) ?? {}) as HostStatus);
+    const [handledData, setHandledData] = useState<HandledData | null>(() => (cachedDoc(['Settings', 'HandledProjects']) ?? null) as HandledData | null);
     useEffect(() => {
-        const unsubAvail = watchDoc(['Settings', 'Availability'], (data) => {
-            if (!data) return;
-            setAvailData(data as HostStatus);
-            rememberHostStatus(data);
-        });
+        const unsubAvail = watchDoc(['Settings', 'Availability'], (data) => { if (data) setAvailData(data as HostStatus); });
         const unsubHandled = watchDoc(['Settings', 'HandledProjects'], (data) => { if (data) setHandledData(data as HandledData); });
         return () => { unsubAvail(); unsubHandled(); };
     }, []);

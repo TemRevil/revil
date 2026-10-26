@@ -5,7 +5,8 @@ import type React from 'react';
 // /book draws without waiting for the SDK (or App Check's reCAPTCHA).
 import { loadFirebase, watchDoc } from '../lib/liveDoc';
 import type { AlertType } from '../components/Alert';
-import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig, rememberHostStatus, seedHostStatus } from '../utils/availability';
+import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../utils/availability';
+import { cachedDoc } from '../lib/dataCache';
 import {
   BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type PresetSlot,
   bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, isDayOpen, meetingInstant,
@@ -85,7 +86,8 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   const [bookingSuccess, setBookingSuccess] = useState<{ date: string, time: string, link: string } | null>(null);
 
   // Timezone States
-  const [hostSeed] = useState(seedHostStatus);
+  // The cached copy (lib/dataCache) until Firestore answers.
+  const [hostSeed] = useState(() => cachedDoc(['Settings', 'Availability']) ?? {});
   const [hostTimezoneString, setHostTimezoneString] = useState(hostSeed['Current Time'] || DEFAULT_HOST_TZ);
   // The owner's "Current Availability" percent, for pages that show the status pill.
   const [hostAvailability, setHostAvailability] = useState<unknown>(hostSeed['Current Availability']);
@@ -146,7 +148,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   // Host working days + hours (edited from the dashboard → Canary → Hours). The slot
   // list is derived from it, so the times are no longer hardcoded. Defaults preserve
   // the historic 09:00–17:00 schedule until the owner configures their own.
-  const [availConfig, setAvailConfig] = useState<AvailabilityConfig>(DEFAULT_AVAILABILITY);
+  const [availConfig, setAvailConfig] = useState<AvailabilityConfig>(() => parseAvailabilityConfig(cachedDoc(['Settings', 'Availability'])));
   // Whether the public availability + booked-slots snapshots have fired at least once.
   // The auto-move-to-the-next-open-day MUST wait for these: until they load, availConfig
   // is still the hardcoded 9-17 default, so moving early picks the next day off stale
@@ -164,7 +166,6 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
           setHostTimezoneString(data['Current Time']);
         }
         setHostAvailability(data['Current Availability']);
-        rememberHostStatus(data);
         setAvailConfig(parseAvailabilityConfig(data));
       } else {
         setAvailConfig(DEFAULT_AVAILABILITY);

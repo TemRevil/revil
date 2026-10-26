@@ -1,6 +1,7 @@
 import { createElement, useEffect, useRef, useState, useMemo } from 'react';
 import anime from 'animejs';
 import { watchDoc } from '../lib/liveDoc';
+import { cachedDoc, type Data } from '../lib/dataCache';
 import { Github, Instagram, Linkedin, Twitter, Facebook, Mail, Link as LinkIcon, Twitch, Youtube, Code } from 'lucide-react';
 import { useSocialTracker } from '../hooks/useSocialTracker';
 import { useSettings } from '../contexts/SettingsContext';
@@ -10,14 +11,16 @@ interface StackItemProps {
     name: string;
     delay: number;
     iconSize: number;
+    active: boolean;
 }
 
-const StackItem = ({ icon, name, iconSize, delay }: StackItemProps) => {
+const StackItem = ({ icon, name, iconSize, delay, active }: StackItemProps) => {
     const itemRef = useRef<HTMLDivElement>(null);
     const [isHovered, setIsHovered] = useState(false);
     const [imgError, setImgError] = useState(false);
 
     useEffect(() => {
+        if (!active) return;
         anime({
             targets: itemRef.current,
             opacity: [0, 1],
@@ -26,7 +29,7 @@ const StackItem = ({ icon, name, iconSize, delay }: StackItemProps) => {
             delay: delay,
             easing: 'easeOutExpo'
         });
-    }, [delay]);
+    }, [active, delay]);
 
     const showFallback = !icon || imgError;
 
@@ -82,12 +85,13 @@ const getIcon = (name: string) => {
     return LinkIcon;
 };
 
-const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: number }) => {
+const SocialIcon = ({ name, url, delay, active }: { name: string; url: string; delay: number; active: boolean }) => {
     const iconRef = useRef<HTMLAnchorElement>(null);
     const { trackClick } = useSocialTracker();
     const [isHovered, setIsHovered] = useState(false);
 
     useEffect(() => {
+        if (!active) return;
         anime({
             targets: iconRef.current,
             opacity: [0, 1],
@@ -96,7 +100,7 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
             delay: delay,
             easing: 'easeOutQuad'
         });
-    }, [delay]);
+    }, [active, delay]);
 
     const iconElement = createElement(getIcon(name), {
         size: 32,
@@ -139,29 +143,44 @@ const SocialIcon = ({ name, url, delay }: { name: string; url: string; delay: nu
 
 };
 
-const Stack = () => {
+type StackData = { icon?: string; name?: string };
+
+/** Settings/Tech Stack's numbered entries, in order. */
+const stackOf = (data: Data | null | undefined): StackData[] =>
+    Object.entries(data || {})
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([, item]: [string, unknown]) => {
+            const it = item as Record<string, unknown>;
+            return {
+                icon: (it.Icon ?? it.icon) as string | undefined,
+                name: (it.Name ?? it.name) as string | undefined
+            };
+        });
+
+const DEFAULT_SOCIAL_LINKS = [
+    { name: 'Github', url: 'https://github.com/TemRevil' },
+    { name: 'LinkedIn', url: 'https://www.linkedin.com/in/tem-revil' },
+    { name: 'Instagram', url: 'https://instagram.com/temrevil' }
+];
+
+/**
+ * `active` is false while the section is built but off screen (App keeps it mounted on
+ * desktop so its data and images are ready); the entrance plays each time it turns true.
+ */
+const Stack = ({ active = true }: { active?: boolean }) => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const handwritingRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    type StackData = { icon?: string; name?: string };
-    const [stackItems, setStackItems] = useState<StackData[]>([]);
-    const [socialLinks, setSocialLinks] = useState<{ name: string, url: string }[]>([
-        { name: 'Github', url: 'https://github.com/TemRevil' },
-        { name: 'LinkedIn', url: 'https://www.linkedin.com/in/tem-revil' },
-        { name: 'Instagram', url: 'https://instagram.com/temrevil' }
-    ]);
+    // The cached copy (lib/dataCache) first, so the grid never waits for Firestore.
+    const [stackItems, setStackItems] = useState<StackData[]>(() => stackOf(cachedDoc(['Settings', 'Tech Stack'])));
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
 
     // Shared Settings/Account listener (single Firestore connection for all components)
     const { account } = useSettings();
-    useEffect(() => {
-        if (account && account['Social Links']) {
-            const raw = account['Social Links'] as Record<string, string>;
-            const links = Object.entries(raw).map(([name, url]) => ({ name, url }));
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing derived list from the shared Firestore (Settings/Account) context
-            setSocialLinks(links);
-        }
+    const socialLinks = useMemo(() => {
+        const raw = account?.['Social Links'] as Record<string, string> | undefined;
+        return raw ? Object.entries(raw).map(([name, url]) => ({ name, url })) : DEFAULT_SOCIAL_LINKS;
     }, [account]);
 
     // Track window width for responsive behavior
@@ -219,31 +238,14 @@ const Stack = () => {
     }, [windowWidth]);
 
     // Fetch Stack Items
-    useEffect(() => {
-        const unsubStack = watchDoc(['Settings', 'Tech Stack'], (data) => {
-            if (data) {
-
-                const items = Object.entries(data)
-                    .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([, item]: [string, unknown]) => {
-                        const it = item as Record<string, unknown>;
-                        return {
-                            icon: (it.Icon ?? it.icon) as string | undefined,
-                            name: (it.Name ?? it.name) as string | undefined
-                        };
-                    });
-                setStackItems(items);
-            }
-        }, (error) => {
-            console.error('[Stack] Firestore error:', error);
-        });
-
-        return () => {
-            unsubStack();
-        };
-    }, []);
+    useEffect(() => watchDoc(['Settings', 'Tech Stack'], (data) => {
+        if (data) setStackItems(stackOf(data));
+    }, (error) => {
+        console.error('[Stack] Firestore error:', error);
+    }), []);
 
     useEffect(() => {
+        if (!active) return;
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
@@ -260,9 +262,7 @@ const Stack = () => {
             delay: 100,
             easing: 'easeOutExpo'
         });
-
-
-    }, []);
+    }, [active]);
 
     // Calculate which items are in the last row for border styling
     const getItemClasses = (index: number) => {
@@ -388,6 +388,7 @@ const Stack = () => {
                                             name={item.name || ''}
                                             delay={500 + (index * 50)}
                                             iconSize={gridConfig.iconSize}
+                                            active={active}
                                         />
                                     </div>
                                 );
@@ -406,6 +407,7 @@ const Stack = () => {
                                     name={link.name}
                                     url={link.url}
                                     delay={800 + (index * 100)}
+                                    active={active}
                                 />
                             ))}
 

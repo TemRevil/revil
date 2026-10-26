@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import anime from 'animejs';
 import { X, Search } from 'lucide-react';
 import { watchCollection, watchDoc } from '../lib/liveDoc';
+import { cachedCollection, cachedDoc, type Data, type Row } from '../lib/dataCache';
 import { sanitizeSvg } from '../lib/sanitize';
 
 import MProjectView from './M-ProjectView';
@@ -148,7 +149,6 @@ const CardImage = ({ src, alt }: { src: string; alt: string }) => {
             <img
                 src={src}
                 alt={alt}
-                loading="lazy"
                 onLoad={() => setIsImageLoaded(true)}
                 className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-[1500ms] ease-out ${!isImageLoaded ? 'scale-105' : ''}`}
                 style={{
@@ -160,7 +160,7 @@ const CardImage = ({ src, alt }: { src: string; alt: string }) => {
     );
 };
 
-const ProjectCard = ({ project, index, onClick }: { project: Project; index: number; onClick: () => void }) => {
+const ProjectCard = ({ project, index, onClick, active }: { project: Project; index: number; onClick: () => void; active: boolean }) => {
     const cardRef = useRef<HTMLDivElement>(null);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [isHovered, setIsHovered] = useState(false);
@@ -185,8 +185,9 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
         return () => clearInterval(interval);
     }, []);
 
-    // Entrance animation
+    // Entrance animation, each time the section is shown
     useEffect(() => {
+        if (!active) return;
         anime({
             targets: cardRef.current,
             opacity: [0, 1],
@@ -195,7 +196,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
             delay: index * 50,
             easing: 'easeOutQuad'
         });
-    }, [index]);
+    }, [active, index]);
 
     return (
         <motion.div
@@ -292,7 +293,7 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
                                             title={c.name}
                                         >
                                             {c.image && typeof c.image === 'string' ? (
-                                                <img src={c.image} alt={c.name} loading="lazy" className="w-full h-full object-cover" />
+                                                <img src={c.image} alt={c.name} className="w-full h-full object-cover" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-500 text-[10px] font-bold">
                                                     {c.name ? c.name.charAt(0) : '?'}
@@ -345,11 +346,55 @@ const ProjectCard = ({ project, index, onClick }: { project: Project; index: num
     );
 };
 
-const Projects = () => {
+/** Tags/Contributors' named entries. */
+const contributorsOf = (doc: Data | null | undefined): Contributor[] =>
+    Object.entries((doc || {}) as Record<string, RawContributorData>)
+        .filter(([, val]) => val && typeof val === 'object' && val.Name)
+        .map(([id, val]): Contributor => ({
+            id,
+            name: val.Name || '',
+            role: val.Role || '',
+            jobTitle: val.Role || '',
+            image: val.Image || '',
+            links: val["Social Accounts"] || {}
+        }));
+
+/** Tags/Contributors/Profiles' documents. */
+const profilesOf = (docs: Row[] | undefined): Contributor[] =>
+    (docs || []).map(val => ({
+        id: val.id,
+        name: val.Name || val.name || '',
+        role: val.Role || val.role || '',
+        jobTitle: val.Role || val.role || '',
+        image: val.Image || val.image || '',
+        links: val["Social Accounts"] || val.links || val.socials || {}
+    } as Contributor));
+
+/** Tags/Tags' entries. */
+const tagsOf = (doc: Data | null | undefined): Tag[] =>
+    Object.entries((doc || {}) as Record<string, RawTagData>).map(([id, val]): Tag => ({
+        id,
+        name: val.Name || 'Untitled',
+        color: val.Color || '#60a5fa',
+        iconSvg: val.Icon || ''
+    }));
+
+/**
+ * `active` is false while the section is built but off screen (App keeps it mounted on
+ * desktop so its data and images are ready); the entrance plays each time it turns true.
+ */
+const Projects = ({ active = true }: { active?: boolean }) => {
     const titleRef = useRef<HTMLHeadingElement>(null);
     const handwritingRef = useRef<HTMLDivElement>(null);
-    const [availableContributors, setAvailableContributors] = useState<Contributor[]>([]);
-    const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+    // Everything starts from the cached copy (lib/dataCache), so the grid never waits for Firestore.
+    const [docContributors, setDocContributors] = useState(() => contributorsOf(cachedDoc(['Tags', 'Contributors'])));
+    const [profiles, setProfiles] = useState(() => profilesOf(cachedCollection(['Tags', 'Contributors', 'Profiles'])));
+    // A profile overrides the Tags/Contributors entry with its id.
+    const availableContributors = useMemo(
+        () => [...docContributors.filter(c => !profiles.some(p => p.id === c.id)), ...profiles],
+        [docContributors, profiles]
+    );
+    const [availableTags, setAvailableTags] = useState(() => tagsOf(cachedDoc(['Tags', 'Tags'])));
     const [selectedContributor, setSelectedContributor] = useState<Contributor | null>(null);
     const [showContributorModal, setShowContributorModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -370,75 +415,16 @@ const Projects = () => {
     }, []);
     // windowWidth is still used by filter tags responsive layout below
 
-    // Fetch Data
-    useEffect(() => {
-        // Contributors
-        const unsubDoc = watchDoc(['Tags', 'Contributors'], (doc) => {
-            if (doc) {
-                const data = doc as Record<string, RawContributorData>;
-                const loaded = Object.entries(data)
-                    .filter(([, val]) => val && typeof val === 'object' && (val as RawContributorData).Name)
-                    .map(([id, val]: [string, RawContributorData]): Contributor => ({
-                        id,
-                        name: val.Name || '',
-                        role: val.Role || '',
-                        jobTitle: val.Role || '',
-                        image: val.Image || '',
-                        links: val["Social Accounts"] || {}
-                    }));
-                setAvailableContributors(prev => {
-                    const filtered = prev.filter(p => !loaded.some(l => l.id === p.id));
-                    return [...filtered, ...loaded];
-                });
-            }
-        });
-
-        const unsubCol = watchCollection(['Tags', 'Contributors', 'Profiles'], (docs) => {
-            const loaded = docs.map(d => {
-                const val = d;
-                return {
-                    id: d.id,
-                    name: val.Name || val.name || '',
-                    role: val.Role || val.role || '',
-                    jobTitle: val.Role || val.role || '',
-                    image: val.Image || val.image || '',
-                    links: val["Social Accounts"] || val.links || val.socials || {}
-                } as Contributor;
-            });
-            setAvailableContributors(prev => {
-                const filtered = prev.filter(p => !loaded.some(l => l.id === p.id));
-                return [...filtered, ...loaded];
-            });
-        });
-
-        // Tags
-        const unsubTags = watchDoc(['Tags', 'Tags'], (doc) => {
-            if (doc) {
-                const data = doc as Record<string, RawTagData>;
-                const loaded = Object.entries(data).map(([id, val]: [string, RawTagData]): Tag => ({
-                    id,
-                    name: val.Name || 'Untitled',
-                    color: val.Color || '#60a5fa',
-                    iconSvg: val.Icon || ''
-                }));
-                setAvailableTags(loaded);
-            }
-        });
-
-        return () => {
-            unsubDoc();
-            unsubCol();
-            unsubTags();
-        };
-    }, []);
-
-    const [rawProjects, setRawProjects] = useState<FirestoreProject[]>([]);
+    const [rawProjects, setRawProjects] = useState<FirestoreProject[]>(() => (cachedCollection(['Projects']) ?? []) as FirestoreProject[]);
 
     useEffect(() => {
-        const unsub = watchCollection(['Projects'], (docs) => {
-            setRawProjects(docs as FirestoreProject[]);
-        });
-        return () => unsub();
+        const stops = [
+            watchDoc(['Tags', 'Contributors'], (doc) => { if (doc) setDocContributors(contributorsOf(doc)); }),
+            watchCollection(['Tags', 'Contributors', 'Profiles'], (docs) => setProfiles(profilesOf(docs))),
+            watchDoc(['Tags', 'Tags'], (doc) => { if (doc) setAvailableTags(tagsOf(doc)); }),
+            watchCollection(['Projects'], (docs) => setRawProjects(docs as FirestoreProject[])),
+        ];
+        return () => stops.forEach(stop => stop());
     }, []);
 
     // Memoize projects data to avoid infinite loops and unnecessary re-calculations
@@ -572,6 +558,7 @@ const Projects = () => {
     };
 
     useEffect(() => {
+        if (!active) return;
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
@@ -587,7 +574,7 @@ const Projects = () => {
             delay: 150,
             easing: 'easeOutExpo'
         });
-    }, []);
+    }, [active]);
 
     useEffect(() => {
         if (selectedProjectId || showContributorModal) {
@@ -715,6 +702,7 @@ const Projects = () => {
                             key={project.id}
                             project={project}
                             index={index}
+                            active={active}
                             onClick={() => {
                                 window.dispatchEvent(new CustomEvent('revil:project_open', { detail: { id: project.id } }));
                                 setSelectedProjectId(project.id);

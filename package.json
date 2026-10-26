@@ -9,7 +9,7 @@
     "postbuild": "node scripts/share-shell.mjs",
     "start": "next start",
     "lint": "eslint .",
-    "sync:projects": "node scripts/sync-projects.mjs",
+    "sync:data": "node scripts/sync-data.mjs",
     "og:card": "node scripts/og-card.mjs"
   },
   "_overrides_note": "Targeted security pins. Only keep an entry while its KEY version still appears in the tree - once the dependency naturally resolves higher, a stale pin makes `npm ci` fail (lock resolves X, override demands Y). Removed as obsolete: ajv@6.12.6, brace-expansion@2.0.2, minimatch@3.1.2, minimatch@9.0.5, picomatch@4.0.3 - all now resolve at or above their patched targets on their own.",
