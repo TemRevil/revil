@@ -11,6 +11,7 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianG
 import { doc, onSnapshot, updateDoc, collection, getDocs, setDoc, deleteDoc, query, orderBy, limit as fsLimit, where, increment } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import FileImage from '../FileImage';
+import Reflow from '../Reflow';
 import Loader from '../reactbits/Loader';
 import Alert from '../Alert';
 import Toggle from '../Toggle';
@@ -1523,15 +1524,15 @@ const DTrails = () => {
                                             </div>
                                         </div>
 
-                                        <div className="grid gap-4" style={{
+                                        {links.length === 0 ? (
+                                            <div className="glass-surface rounded-3xl border-dashed p-12 text-center text-sec">
+                                                No links yet.
+                                            </div>
+                                        ) : (
+                                        <Reflow className="grid gap-4" style={{
                                             gridTemplateColumns: windowWidth >= 720 ? 'repeat(auto-fit, minmax(320px, 1fr))' : 'minmax(0, 1fr)',
-                                        }}>
-                                            {links.length === 0 ? (
-                                                <div className="glass-surface rounded-3xl border-dashed p-12 text-center text-sec">
-                                                    No links yet.
-                                                </div>
-                                            ) : links.map(link => (
-                                                <motion.div key={link.id} layout className="glass-panel p-5 sm:p-6 flex flex-col gap-4">
+                                        }} items={links} keyOf={link => link.id} render={link => (
+                                                <div className="glass-panel p-5 sm:p-6 flex flex-col gap-4">
                                                     <div className="flex justify-between items-start gap-3">
                                                         <div className="flex flex-col min-w-0">
                                                             <h3 className="font-bold text-lg leading-tight truncate">{link.Name}</h3>
@@ -1593,9 +1594,9 @@ const DTrails = () => {
                                                             See visits <ArrowRight size={12} />
                                                         </button>
                                                     </div>
-                                                </motion.div>
-                                            ))}
-                                        </div>
+                                                </div>
+                                            )} />
+                                        )}
                                     </div>
                                 </div>
                             </div>

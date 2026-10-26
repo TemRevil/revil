@@ -7,6 +7,7 @@ import { cachedCollection, cachedDoc, type Data, type Row } from '../lib/dataCac
 import { sanitizeSvg } from '../lib/sanitize';
 
 import MProjectView from './M-ProjectView';
+import Reflow from './Reflow';
 import MContributorView, { Contributor } from './M-ContributorView';
 import { ProjectData as Project, TagData as Tag, ContributorData } from '../types';
 import { getStackIcon, getTechColor, isVideoFile, stillFrame } from '../utils/projectUtils';
@@ -166,8 +167,7 @@ const CardImage = ({ src, alt }: { src: string; alt: string }) => {
     );
 };
 
-/** `ref`: AnimatePresence's popLayout holds a leaving card in place by it while the grid closes up. */
-const ProjectCard = ({ project, index, onClick, active, ref }: { project: Project; index: number; onClick: () => void; active: boolean; ref?: React.Ref<HTMLDivElement> }) => {
+const ProjectCard = ({ project, onClick, active }: { project: Project; onClick: () => void; active: boolean }) => {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [isHovered, setIsHovered] = useState(false);
     const [showContributors, setShowContributors] = useState(false);
@@ -194,25 +194,16 @@ const ProjectCard = ({ project, index, onClick, active, ref }: { project: Projec
 
     return (
         <motion.div
-            ref={ref}
-            layout="position"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => {
                 setIsHovered(false);
                 setCurrentImageIndex(0);
             }}
             onClick={onClick}
-            // Comes into focus as it appears (on load or when a tag lets it back in) and
-            // blurs away when a tag filters it out; the rest of the grid glides into place.
-            initial={{ opacity: 0, y: 30, filter: 'blur(12px)' }}
-            animate={{ opacity: 1, y: isHovered ? -8 : 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, scale: 0.96, filter: 'blur(12px)', transition: { duration: 0.4, ease: [0.5, 0, 0.75, 0] } }}
-            transition={{
-                opacity: { duration: 0.6, delay: index * 0.04, ease: [0.25, 1, 0.5, 1] },
-                filter: { duration: 0.6, delay: index * 0.04, ease: [0.25, 1, 0.5, 1] },
-                y: { duration: 0.2 },
-                layout: { duration: 0.5, type: "tween", ease: [0.25, 1, 0.5, 1] }
-            }}
+            // Coming and going is the grid's (Reflow); the card only lifts on hover.
+            initial={false}
+            animate={{ y: isHovered ? -8 : 0 }}
+            transition={{ duration: 0.2 }}
             className={`
                 group flex flex-col h-full glass-panel cursor-pointer overflow-hidden
                 border border-[var(--section-border)] transition-shadow duration-300
@@ -701,22 +692,21 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                 </div>
 
                 {/* Projects Grid */}
-                <div className="relative grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
-                    <AnimatePresence mode="popLayout">
-                        {filteredProjects.map((project, index) => (
-                            <ProjectCard
-                                key={project.id}
-                                project={project}
-                                index={index}
-                                active={active}
-                                onClick={() => {
-                                    window.dispatchEvent(new CustomEvent('revil:project_open', { detail: { id: project.id } }));
-                                    setSelectedProjectId(project.id);
-                                }}
-                            />
-                        ))}
-                    </AnimatePresence>
-                </div>
+                <Reflow
+                    className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6"
+                    items={filteredProjects}
+                    keyOf={project => String(project.id)}
+                    render={project => (
+                        <ProjectCard
+                            project={project}
+                            active={active}
+                            onClick={() => {
+                                window.dispatchEvent(new CustomEvent('revil:project_open', { detail: { id: project.id } }));
+                                setSelectedProjectId(project.id);
+                            }}
+                        />
+                    )}
+                />
 
                 {/* Modals */}
                 <AnimatePresence>
