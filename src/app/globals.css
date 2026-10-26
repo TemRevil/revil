@@ -419,8 +419,11 @@ main[data-switching] > [id^="section-"] {
 
 /* Lite (phones: <html data-lite> is set in <head>, see lib/device.ts): glass is a plain
    tint with no live blur behind it. Re-blurring the page under every panel, pill and bar
-   was the steadiest drawing cost on a phone. Modal panels go solid, since any see-through
-   let the hero ghost behind their text; the hero's own pill tints thicken in book.css. */
+   was the steadiest drawing cost on a phone. Modal panels and the floating bars
+   (.glass-bar: the navbar and the projects sub-nav) go solid, since any see-through let the
+   page behind ghost through their content; the hero's own pill tints thicken in book.css.
+   The background blobs are off: on the one-page scroll they cover only the first screen
+   and showed a hard edge below the hero. */
 html[data-lite] *,
 html[data-lite] *::before,
 html[data-lite] *::after {
@@ -429,6 +432,10 @@ html[data-lite] *::after {
 }
 html[data-lite] { --glass-bg-deep: rgb(255, 255, 255); }
 html[data-lite].dark { --glass-bg-deep: rgb(14, 14, 16); }
+/* !important: both bars set their tint inline. */
+html[data-lite] .glass-bar { background-color: rgb(255, 255, 255) !important; }
+html[data-lite].dark .glass-bar { background-color: rgb(14, 14, 16) !important; }
+html[data-lite] .blob-container { display: none; }
 
 /* ========================================
    4. LAYOUT & UTILITIES

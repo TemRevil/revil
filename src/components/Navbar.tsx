@@ -248,7 +248,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[95%]">
             <div
                 className={`
-                    flex items-center 
+                    glass-bar flex items-center 
                     ${isMobile ? 'gap-1.5 p-2.5 px-4 rounded-2xl' : 'gap-3 p-3 px-6 rounded-3xl'} 
                     backdrop-blur-xl transition-all duration-300
                     shadow-[0_8px_32px_rgba(0,0,0,0.1)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)]
