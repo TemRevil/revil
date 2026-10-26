@@ -234,7 +234,7 @@ export const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).p
  * Advance a 'YYYY-MM-DD' date by one calendar month, clamping the day to the end of
  * the target month's length so e.g. Jan 31 → Feb 28 (not an overflow into March).
  */
-export function addOneMonth(dateStr: string): string {
+function addOneMonth(dateStr: string): string {
     const d = new Date(`${dateStr}T00:00:00`);
     if (Number.isNaN(d.getTime())) return dateStr;
     const day = d.getDate();

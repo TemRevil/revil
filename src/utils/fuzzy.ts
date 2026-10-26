@@ -29,7 +29,7 @@ export const SEARCH_MAX_DISTANCE = 2;
  * How well `term` matches a lower-cased `query`: 0 when it contains the query outright,
  * otherwise the smallest edit distance between the query and any one of its words.
  */
-export function termDistance(query: string, term: string): number {
+function termDistance(query: string, term: string): number {
     const lower = term.toLowerCase();
     if (lower.includes(query)) return 0;
     let d = Infinity;

@@ -47,9 +47,9 @@ export const DEFAULT_HOST_TZ = 'UTC+02:00 (EET)';
 /** How many days ahead of the visitor's today the calendar offers. */
 export const BOOKING_WINDOW_DAYS = 45;
 /** No booking may start sooner than this. */
-export const BOOKING_BUFFER_MS = 30 * 60000;
+const BOOKING_BUFFER_MS = 30 * 60000;
 /** The custom-time picker's minute grid. */
-export const CUSTOM_GRID_MINUTES = 15;
+const CUSTOM_GRID_MINUTES = 15;
 
 export const DAY_MS = 86400000;
 const HOUR_MS = 3600000;
@@ -102,12 +102,12 @@ export function utcOffsetHours(tz: unknown): number {
 const pad2 = (n: number) => n.toString().padStart(2, '0');
 
 /** "hh:mm AM/PM" - the label every slot and stored meeting Time uses. */
-export function timeLabel(h24: number, min: number): string {
+function timeLabel(h24: number, min: number): string {
     return `${pad2(h24 % 12 || 12)}:${pad2(min)} ${h24 >= 12 ? 'PM' : 'AM'}`;
 }
 
 /** "hh:mm AM/PM" -> minutes after midnight, or null. */
-export function parseTimeLabel(label: string): number | null {
+function parseTimeLabel(label: string): number | null {
     const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(String(label || '').trim());
     if (!m) return null;
     let h = parseInt(m[1], 10);
@@ -200,7 +200,7 @@ export function presetSlotsForDay(visitorDay: number, { nowMs, userTimezone, hos
 }
 
 /** Whether the visitor day is inside the booking window (their today … +45 days). */
-export function isInWindow(visitorDay: number, nowMs: number, userTimezone: number): boolean {
+function isInWindow(visitorDay: number, nowMs: number, userTimezone: number): boolean {
     const today = dayIndexAt(nowMs, userTimezone);
     return visitorDay >= today && visitorDay <= today + BOOKING_WINDOW_DAYS;
 }

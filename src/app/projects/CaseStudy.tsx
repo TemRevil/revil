@@ -16,7 +16,7 @@ const inline = (text: string): ReactNode[] =>
 
 type Block = { kind: 'h'; text: string } | { kind: 'p'; text: string } | { kind: 'ul'; items: string[] };
 
-export const parseCaseStudy = (source: string): Block[] => {
+const parseCaseStudy = (source: string): Block[] => {
     const blocks: Block[] = [];
     for (const chunk of source.replace(/\r\n?/g, '\n').split(/\n\s*\n/)) {
         let para: string[] = [];

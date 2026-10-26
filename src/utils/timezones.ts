@@ -27,7 +27,7 @@ const OFFSETS: Array<{ value: number; hint?: string }> = [
 ];
 
 /** The offset half of a label: 3 -> "UTC+03:00", -5.5 -> "UTC-05:30". */
-export function offsetLabel(value: number): string {
+function offsetLabel(value: number): string {
     const abs = Math.abs(value);
     const h = Math.floor(abs);
     const m = Math.round((abs - h) * 60);
@@ -44,7 +44,7 @@ export function localOffset(): number {
  * Null when there is nothing worth showing: no browser (the export's build-time
  * render), a bare "UTC", or an alias carrying no city.
  */
-export function localCity(): string | null {
+function localCity(): string | null {
     if (typeof window === 'undefined') return null;
     try {
         const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;

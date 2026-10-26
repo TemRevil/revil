@@ -18,7 +18,7 @@ import { BOOK_SECTION, EVENT_LABEL, formatMs, sawBookPage, sentLabel, type Sessi
  */
 
 /** "EG" -> the flag. A datum about the visitor, not an icon standing in for one. */
-export const flagOf = (code?: string): string => {
+const flagOf = (code?: string): string => {
     if (!code || code.length !== 2) return '';
     try {
         return String.fromCodePoint(...[...code.toUpperCase()].map(c => 127397 + c.charCodeAt(0)));

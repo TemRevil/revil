@@ -37,7 +37,7 @@ export const DEFAULT_BOOK_PAGE: BookPageConfig = {
 };
 
 /** Only links a visitor can safely follow: mailto, http(s), or a same-site path. */
-export const isSafeLinkUrl = (url: string) => /^(mailto:[^\s]+|https?:\/\/[^\s]+|\/[^\s]*)$/i.test(url.trim());
+const isSafeLinkUrl = (url: string) => /^(mailto:[^\s]+|https?:\/\/[^\s]+|\/[^\s]*)$/i.test(url.trim());
 
 const str = (v: unknown, max: number, fallback: string) =>
     typeof v === 'string' ? v.slice(0, max) : fallback;

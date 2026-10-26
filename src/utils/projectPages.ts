@@ -1,8 +1,6 @@
 import publicSnapshot from '../data/public.snapshot.json';
 import { cleanName, nameNote, slugOf } from './projectSlug';
 
-export { cleanName, nameNote, slugOf };
-
 /**
  * The public project pages (/projects and /projects/<slug>) are built from the
  * Firestore snapshot at BUILD time (scripts/sync-data.mjs, which CI runs before every

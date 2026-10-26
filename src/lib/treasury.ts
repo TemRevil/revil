@@ -319,7 +319,7 @@ export interface ExpenseTemplate {
  * template carries the MOST RECENT amount/currency/category/recurring plus a usage
  * count. Sorted by frequency, then recency.
  */
-export function expenseTemplates(expenses: TreasuryExpense[]): ExpenseTemplate[] {
+function expenseTemplates(expenses: TreasuryExpense[]): ExpenseTemplate[] {
     const byLabel = new Map<string, ExpenseTemplate>();
     for (const e of expenses || []) {
         const label = (e.label || '').trim();

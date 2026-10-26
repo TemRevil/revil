@@ -13,7 +13,7 @@ import { onIdle } from '../../lib/idle';
 
 const NS = 'http://www.w3.org/2000/svg';
 const FPS = 15;
-export const FRAME = 1000 / FPS;
+const FRAME = 1000 / FPS;
 
 type Pt = [number, number];
 type Face = { cx: number; cy: number; rx: number; ry: number };

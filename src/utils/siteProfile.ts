@@ -29,7 +29,7 @@ export const SITE_DESCRIPTION =
 const PERSON_DESCRIPTION =
     'Mohammed Ahmed (Tem Revil) is a frontend and AI engineer based in El Mansoura, Egypt. He builds motion-rich, accessible web applications with React, Next.js, TypeScript and Firebase, and integrates AI into web products. Open to freelance, remote and full-time work.';
 export const JOB_TITLE = 'Frontend & AI Engineer';
-export const PORTRAIT = '/book/tem-cutout.webp';
+const PORTRAIT = '/book/tem-cutout.webp';
 /** The share card, drawn by scripts/og-card.mjs (`npm run og:card`). */
 export const SHARE_CARD = { url: '/og.png', width: 1200, height: 630, alt: 'Tem Revil (Mohammed Ahmed), Frontend & AI Engineer' };
 

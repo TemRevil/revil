@@ -5,9 +5,7 @@ import {
 } from 'firebase/firestore';
 // The app and App Check live in ./firebaseApp (the public pages load only that);
 // importing it first keeps App Check registered before the first Firestore read.
-import app, { appCheck } from './firebaseApp';
-
-export { appCheck };
+import app from './firebaseApp';
 
 // Initialize Firestore with on-disk persistence, ONE TAB AT A TIME. Only the sign-in
 // page and the admin dashboard load it; the public pages read over REST (lib/liveDoc).

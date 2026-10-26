@@ -53,7 +53,7 @@ export function setModel(m: string) {
     if (typeof window !== 'undefined') localStorage.setItem(MODEL_KEY, m);
 }
 
-export function detectProvider(key: string): Provider | null {
+function detectProvider(key: string): Provider | null {
     if (!key) return null;
     if (key.startsWith('sk-ant')) return 'anthropic';
     // Google Gemini keys: classic AI Studio keys start "AIza"; the newer format
@@ -74,8 +74,8 @@ const ANTHROPIC_HEADERS = (key: string) => ({
     'content-type': 'application/json',
 });
 
-export const MODELS_TIMEOUT_MS = 20_000;
-export const CHAT_TIMEOUT_MS = 60_000;
+const MODELS_TIMEOUT_MS = 20_000;
+const CHAT_TIMEOUT_MS = 60_000;
 
 /** fetch() with a hard timeout so a slow/hung provider can't block forever. */
 async function fetchWithTimeout(url: string, opts: RequestInit, ms: number): Promise<Response> {
@@ -188,7 +188,7 @@ export async function listModels(): Promise<string[]> {
 }
 
 // ── Tools the assistant can call ────────────────────────────────────────────
-export const TOOLS: ToolDef[] = [
+const TOOLS: ToolDef[] = [
     {
         name: 'navigate',
         description: 'Switch the dashboard to a page. Valid pages: projects, tags, trails, developer, treasury, settings, canary.',
@@ -251,7 +251,7 @@ export const TOOLS: ToolDef[] = [
     },
 ];
 
-export const SYSTEM_PROMPT = `You are Spark, the admin co-pilot inside Tem Revil's portfolio dashboard.
+const SYSTEM_PROMPT = `You are Spark, the admin co-pilot inside Tem Revil's portfolio dashboard.
 Style: SHORT, a little funny, straight to the point. Minimal words, no fluff, no preamble - you're saving tokens. One or two snappy sentences max unless data is requested.
 You can: navigate dashboard pages, click on-screen buttons (a cursor moves for the user to see), and read/write/delete Firestore. Writes pop a confirm for the user (auto mode can skip it); a DELETE always asks, every time. Just call them.
 You can READ everything, but you may only WRITE to: Projects/*, Tags/*, Settings/Account, Settings/Availability, Settings/Developer, Settings/"Tech Stack", Treasury/*, Analytics/Links/Items/*, Spark/Memory. Deleting is narrower still: only Projects/*, Tags/* and Analytics/Links/Items/*. Anything else is refused by the app, not by you - if a task needs one, say so plainly instead of retrying.
@@ -301,7 +301,7 @@ function liveContext(): string {
 - Resolve every relative/partial date against THIS moment and output YYYY-MM-DD. A date with no year (e.g. "14th of April") means the CURRENT year ${now.getFullYear()} unless the user clearly means otherwise - never assume a past year.`;
 }
 
-export function buildSystem(context?: string): string {
+function buildSystem(context?: string): string {
     return SYSTEM_PROMPT + liveContext() + (context ? `\n\n${context}` : '');
 }
 

@@ -37,7 +37,7 @@ export interface ItemizedLine {
  * present so the printed "3 x $50.00" can never disagree with the printed total (or with
  * a stale `amount` passed by a caller); falls back to `amount` otherwise.
  */
-export function lineTotal(l: Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>): number {
+function lineTotal(l: Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>): number {
     return l.qty != null && l.unitPrice != null
         ? Math.round((l.qty * l.unitPrice + Number.EPSILON) * 100) / 100
         : (l.amount || 0);

@@ -40,7 +40,7 @@ export function loadFirebase(): Promise<FirebaseApp> {
 }
 
 /** The App Check token for a request's X-Firebase-AppCheck header ('' when there is none). */
-export async function appCheckToken(): Promise<string> {
+async function appCheckToken(): Promise<string> {
     const [{ appCheck }, { getToken }] = await Promise.all([loadFirebase(), import('firebase/app-check')]);
     if (!appCheck) return '';
     return (await getToken(appCheck, false)).token;
