@@ -1,7 +1,7 @@
-// The Developer tab's GitHub numbers, read through one cache the way lib/dataCache does it
-// for Firestore: a reader is handed this device's last copy at once, and a copy older than
-// FRESH_MS is asked for again (once, however many readers ask). The public GitHub API
-// allows 60 requests an hour per visitor, so a fresh copy is never asked for twice.
+// The Developer tab's GitHub numbers, always this visit's: nothing is kept on the device, so
+// a number is never older than the page. Each URL is read once per visit (however many
+// readers ask), early, so the tab opens on numbers already read. The public GitHub API
+// allows 60 requests an hour per visitor.
 
 export const GITHUB_USERNAME = 'TemRevil';
 
@@ -12,33 +12,19 @@ export const GITHUB_URLS = {
     contributions: (username: string) => `https://github-contributions-api.jogruber.de/v4/${username}`,
 };
 
-const PREFIX = 'revil:gh:';
-const FRESH_MS = 30 * 60 * 1000;
 const TIMEOUT_MS = 10_000;
 
-interface Stored { data: unknown; at: number }
-
-function stored(url: string): Stored | undefined {
-    try {
-        const raw = localStorage.getItem(PREFIX + url);
-        return raw ? (JSON.parse(raw) as Stored) : undefined;
-    } catch { return undefined; }
-}
-
-/** This device's last copy of `url`, however old, or undefined. */
-export function cachedJson<T>(url: string): T | undefined {
-    return stored(url)?.data as T | undefined;
-}
-
+const read = new Map<string, unknown>();
 const inFlight = new Map<string, Promise<unknown>>();
 
-/**
- * `url`'s JSON: this device's copy when it is under FRESH_MS old, else a new read (stored
- * on the device). Rejects when the read fails; the caller keeps what it already shows.
- */
+/** `url`'s JSON as read on this visit, or undefined before it lands. */
+export function cachedJson<T>(url: string): T | undefined {
+    return read.get(url) as T | undefined;
+}
+
+/** `url`'s JSON, read once per visit. Rejects when the read fails; the caller keeps what it shows. */
 export function fetchJson<T>(url: string): Promise<T> {
-    const copy = stored(url);
-    if (copy && Date.now() - copy.at < FRESH_MS) return Promise.resolve(copy.data as T);
+    if (read.has(url)) return Promise.resolve(read.get(url) as T);
     let pending = inFlight.get(url);
     if (!pending) {
         pending = fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) })
@@ -46,17 +32,14 @@ export function fetchJson<T>(url: string): Promise<T> {
                 if (!res.ok) throw new Error(`GitHub ${res.status} on ${url}`);
                 return res.json();
             })
-            .then((data) => {
-                try { localStorage.setItem(PREFIX + url, JSON.stringify({ data, at: Date.now() })); } catch { /* storage full or blocked */ }
-                return data;
-            })
+            .then((data) => { read.set(url, data); return data; })
             .finally(() => inFlight.delete(url));
         inFlight.set(url, pending);
     }
     return pending as Promise<T>;
 }
 
-/** Reads what the Developer tab shows into the cache, so the tab opens on this visit's copy. */
+/** Reads what the Developer tab shows, so the tab opens on numbers already read. */
 export function prefetchGithub(featured: string[]): void {
     const urls = [GITHUB_URLS.user, GITHUB_URLS.repos, GITHUB_URLS.contributions(GITHUB_USERNAME), ...featured.map(GITHUB_URLS.repo)];
     for (const url of urls) void fetchJson(url).catch(() => { });

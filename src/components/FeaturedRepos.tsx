@@ -213,7 +213,7 @@ const featuredNames = (doc: Data | null | undefined) => ((doc?.featuredRepos ?? 
 const inOrder = (names: string[], found: Array<RepoData | null | undefined>) =>
     found.filter((r, i): r is RepoData => !!r && r.name === names[i]);
 
-/** The picks (or the top three when there are none) as this device last saw them. */
+/** The picks (or the top three when there are none) as already read on this visit. */
 const cachedRepos = (names: string[]): RepoData[] => names.length > 0
     ? inOrder(names, names.map(n => cachedJson<RepoData>(GITHUB_URLS.repo(n))))
     : topThree(cachedJson<RepoData[]>(GITHUB_URLS.repos) ?? []);
@@ -224,7 +224,7 @@ const readRepos = async (names: string[]): Promise<RepoData[]> => names.length >
 
 /* ── main component ── */
 const FeaturedRepos = () => {
-    // This device's last copy at once (lib/githubData); a new one replaces it when it lands.
+    // This visit's read when it already landed (lib/githubData prefetches it), else read now.
     const [repos, setRepos] = useState<RepoData[]>(() => cachedRepos(featuredNames(cachedDoc(['Settings', 'Developer']))));
     const [isLoading, setIsLoading] = useState(() => repos.length === 0);
 

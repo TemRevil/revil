@@ -84,7 +84,7 @@ function parseContributions(data: { contributions?: unknown[]; total?: Record<st
 const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: GitHubCommitsGraphProps) => {
     const thisYear = new Date().getFullYear();
 
-    // This device's last copy at once (lib/githubData); a new one replaces it when it lands.
+    // This visit's read when it already landed (lib/githubData prefetches it), else read now.
     const [initial] = useState(() => parseContributions(cachedJson(GITHUB_URLS.contributions(username))));
     const [yearlyData, setYearlyData] = useState<Record<number, ContributionDay[]>>(initial?.byYear ?? {});
     const [yearlyTotals, setYearlyTotals] = useState<Record<number, number>>(initial?.totals ?? {});
@@ -99,7 +99,7 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
     }, []);
     const [slideDir, setSlideDir] = useState<number>(0); // -1 = left (older), 1 = right (newer)
     const [isLoading, setIsLoading] = useState(initial === null);
-    // Nothing to show: no copy on this device and the read failed.
+    // Nothing to show: the read failed.
     const [failed, setFailed] = useState(false);
     const [hasAppeared, setHasAppeared] = useState(false);
     const [hoveredDay, setHoveredDay] = useState<ContributionDay | null>(null);
@@ -112,7 +112,7 @@ const GitHubCommitsGraph = ({ username = GITHUB_USERNAME, onStreakCalculated }: 
     const lastNavTime = useRef(0);
     const touchStartX = useRef(0);
 
-    // ── A new read of every year, over the cached copy ──
+    // ── Every year, as read on this visit ──
     useEffect(() => {
         let ignore = false;
         const url = GITHUB_URLS.contributions(username);

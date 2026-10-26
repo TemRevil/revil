@@ -117,7 +117,7 @@ const cachedStats = (): Stats | null => {
 };
 
 const GitHubStats = () => {
-    // This device's last copy at once (lib/githubData); a new one replaces it when it lands.
+    // This visit's read when it already landed (lib/githubData prefetches it), else read now.
     const [stats, setStats] = useState<Stats | null>(cachedStats);
     const [isLoading, setIsLoading] = useState(() => stats === null);
 
