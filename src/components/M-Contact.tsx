@@ -14,9 +14,11 @@ import Select from './Select';
 import CustomTimePicker from './CustomTimePicker';
 import HintTooltip from './HintTooltip';
 import useTheme from '../hooks/useTheme';
-import { blurFade } from '../lib/modalMotion';
+import { blurFade, dockRise } from '../lib/modalMotion';
+import useDockOpen from '../hooks/useDockOpen';
 import { PHONE_QUERY } from '../lib/device';
 import useMediaQuery from '../hooks/useMediaQuery';
+import DockIcon from './DockIcon';
 import { useBoilHold } from './book/paintKit';
 import WarmHide from './WarmHide';
 
@@ -31,6 +33,7 @@ interface MContactProps {
 
 const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = false }: Omit<MContactProps, 'isOpen'>) => {
     useBoilHold(!warm);
+  const dock = useDockOpen();
   const isDark = useTheme();
   const [formData, setFormData] = useState({
     name: '',
@@ -292,9 +295,12 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
           aria-modal="true"
           aria-labelledby="contact-modal-title"
           layout
-          {...blurFade}
+          {...(dock ? dockRise : blurFade)}
           className={isMobile ? "glass-panel-deep" : ""}
           style={{
+            // originY, not transformOrigin: `layout` hands the box to Motion's projection, which
+            // keeps its own origin and ignores a CSS transform-origin.
+            originY: dock ? 1 : undefined,
             // Responsive but bounded: scales with the viewport, never below a usable
             // floor or past a comfortable ceiling - both columns inherit this fixed height.
             // min() (not clamp with a px floor) so the modal NEVER exceeds the
@@ -327,7 +333,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
               <div className="p-6 pb-0 flex flex-col gap-4">
                 <div className="flex-row-between mb-4">
                   <div className="flex items-center gap-3">
-                    <Mail size={24} strokeWidth={2} aria-hidden="true" />
+                    <DockIcon id="contact-icon" fly={dock && !warm}>
+                      <Mail size={24} strokeWidth={2} aria-hidden="true" />
+                    </DockIcon>
                     <h2 id="contact-modal-title" className="heading-md m-0 font-bold" style={{ fontSize: '1.5rem' }}>
                       Contact Me
                     </h2>
@@ -386,7 +394,9 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
                       {!isMobile && (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', width: '100%' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <Mail size={22} className="text-primary" aria-hidden="true" />
+                            <DockIcon id="contact-icon" fly={dock && !warm}>
+                              <Mail size={22} className="text-primary" aria-hidden="true" />
+                            </DockIcon>
                             <h2 style={{ fontSize: 'clamp(1.15rem, 0.85rem + 1.1vw, 1.45rem)', fontWeight: 700, margin: 0 }}>Contact Me</h2>
                           </div>
                           {!selectedDate && (

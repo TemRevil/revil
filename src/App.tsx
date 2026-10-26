@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransition } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import Hero from './components/Hero';
 import { preloadable } from './lib/preloadable';
 import { onIdle, onQuiet } from './lib/idle';
@@ -834,7 +834,9 @@ function App() {
           <ChevronRight size={20} />
         </button>
       )}
-      <>
+      {/* One layout group, so a modal's header icon and its navbar button's icon are one shared
+          element: on desktop the icon flies from the navbar into the modal (DockIcon). */}
+      <LayoutGroup>
         {(currentSection !== 'dashboard') && (
           <Navbar
             onNavigate={handleNavbarNav}
@@ -842,6 +844,7 @@ function App() {
             onOpenContact={openContactModal}
             isContactOpen={isContactModalOpen}
             onOpenCV={openCVModal}
+            isCVOpen={isCVModalOpen}
           />
         )}
         <ErrorBoundary fallback={modalErrorFallback}>
@@ -891,7 +894,7 @@ function App() {
             </AnimatePresence>
           </Suspense>
         </ErrorBoundary>
-      </>
+      </LayoutGroup>
       <PageTransition
         isTransitioning={isTransitioning}
         onCurtainCovered={handleCurtainCovered}

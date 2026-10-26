@@ -7,8 +7,8 @@
  *   LITE_SCRIPT in <head>, so the CSS can drop effects before the first paint and nothing
  *   switches look halfway through a visit.
  * - Touch: phones and every touch screen, tablets included. They get the one-page scroll
- *   layout. any-pointer, not pointer: an iPad with a trackpad attached still has a touch
- *   screen.
+ *   layout and the blur-fade modal open. any-pointer, not pointer: an iPad with a trackpad
+ *   attached still has a touch screen.
  *
  * Components follow a query with hooks/useMediaQuery.ts.
  */

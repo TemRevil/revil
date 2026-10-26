@@ -1,6 +1,8 @@
 import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText, Zap, Rocket } from 'lucide-react';
 import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import DockIcon from './DockIcon';
+import useDockOpen from '../hooks/useDockOpen';
 import { PHONE_QUERY } from '../lib/device';
 import useMediaQuery from '../hooks/useMediaQuery';
 
@@ -14,6 +16,7 @@ interface NavbarProps {
     onOpenContact?: () => void;
     isContactOpen?: boolean;
     onOpenCV?: () => void;
+    isCVOpen?: boolean;
 }
 
 interface TooltipProps {
@@ -121,7 +124,9 @@ const Tooltip = ({ text, icon, show, isDark }: TooltipProps) => {
     );
 };
 
-const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false, onOpenCV }: NavbarProps) => {
+const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactOpen = false, onOpenCV, isCVOpen = false }: NavbarProps) => {
+    // Desktop: while a modal is open its icon lives in the modal's header (it flew there).
+    const dock = useDockOpen();
     const isMobile = useMediaQuery(PHONE_QUERY);
 
     // Initialize theme
@@ -248,7 +253,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[95%]">
             <div
                 className={`
-                    glass-bar flex items-center 
+                    glass-bar flex items-center
                     ${isMobile ? 'gap-1.5 p-2.5 px-4 rounded-2xl' : 'gap-3 p-3 px-6 rounded-3xl'} 
                     backdrop-blur-xl transition-all duration-300
                     shadow-[0_8px_32px_rgba(0,0,0,0.1)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)]
@@ -319,7 +324,9 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             onMouseEnter={() => setHoveredTab('cv')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <FileText size={iconSize} strokeWidth={2} />
+                            {!(dock && isCVOpen) && (
+                                <DockIcon id="cv-icon" fly={dock}><FileText size={iconSize} strokeWidth={2} /></DockIcon>
+                            )}
                         </button>
                         <Tooltip text="Digital CV" icon={<FileText size={14} strokeWidth={2} />} show={tip(hoveredTab === 'cv' && !isSubnavHovered)} isDark={isDark} />
                     </div>
@@ -353,7 +360,9 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             onMouseEnter={() => setHoveredTab('mail')}
                             onMouseLeave={() => setHoveredTab(null)}
                         >
-                            <Mail size={iconSize} strokeWidth={2} />
+                            {!(dock && isContactOpen) && (
+                                <DockIcon id="contact-icon" fly={dock}><Mail size={iconSize} strokeWidth={2} /></DockIcon>
+                            )}
                         </button>
                         <Tooltip text="Contact" icon={<Mail size={14} strokeWidth={2} />} show={tip((hoveredTab === 'mail' || (autoTooltip === 'mail' && !isContactOpen)) && !isSubnavHovered)} isDark={isDark} />
                     </div>

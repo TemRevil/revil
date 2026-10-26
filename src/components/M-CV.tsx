@@ -6,7 +6,9 @@ import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { ProjectData as FullProject } from '../types';
 import { useSocialTracker } from '../hooks/useSocialTracker';
 import { useBoilHold } from './book/paintKit';
-import { blurFade } from '../lib/modalMotion';
+import { blurFade, dockRise } from '../lib/modalMotion';
+import useDockOpen from '../hooks/useDockOpen';
+import DockIcon from './DockIcon';
 import WarmHide from './WarmHide';
 
 interface CVProject {
@@ -30,6 +32,7 @@ interface MCVProps {
 
 const MCV = ({ onClose, onProjectClick, warm = false }: Omit<MCVProps, 'isOpen'>) => {
     useBoilHold(!warm);
+    const dock = useDockOpen();
     const { trackClick } = useSocialTracker();
     const [projects, setProjects] = useState<CVProject[]>([]);
     const [socialLinks, setSocialLinks] = useState<{ name: string; url: string }[]>([]);
@@ -260,7 +263,8 @@ const MCV = ({ onClose, onProjectClick, warm = false }: Omit<MCVProps, 'isOpen'>
             {/* Modal Container */}
             <div className="fixed inset-0 z-[1501] flex items-center justify-center p-4 md:p-12 pointer-events-none">
                 <motion.div
-                    {...blurFade}
+                    {...(dock ? dockRise : blurFade)}
+                    style={dock ? { transformOrigin: 'bottom center' } : undefined}
                     onClick={(e) => e.stopPropagation()}
                     className="glass-panel-deep relative w-full max-w-5xl h-full max-h-[85vh] overflow-hidden pointer-events-auto flex flex-col border border-black/5 dark:border-white/10 shadow-[0_30px_60px_rgba(0,0,0,0.1)] dark:shadow-[0_30px_60px_rgba(0,0,0,0.5)]"
                 >
@@ -268,7 +272,9 @@ const MCV = ({ onClose, onProjectClick, warm = false }: Omit<MCVProps, 'isOpen'>
                     <div className="p-6 pb-0 flex flex-col gap-4 relative z-10 shrink-0 font-sans">
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
-                                <FileText size={26} strokeWidth={2} className="text-blue-500" aria-hidden="true" />
+                                <DockIcon id="cv-icon" fly={dock && !warm}>
+                                    <FileText size={26} strokeWidth={2} className="text-blue-500" aria-hidden="true" />
+                                </DockIcon>
                                 <h2 className="text-2xl font-bold text-primary m-0 tracking-tight" style={{ fontSize: '1.5rem' }}>
                                     Fast Report
                                 </h2>
