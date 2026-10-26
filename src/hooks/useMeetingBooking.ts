@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import type React from 'react';
 // Firebase is reached only through lib/liveDoc: the listeners attach once it has loaded
 // off the first paint, and the submit handler imports Functions on demand, so
 // /book draws without waiting for the SDK (or App Check's reCAPTCHA).
-import { docRead, loadFirebase, watchDoc } from '../lib/liveDoc';
+import { loadFirebase, watchDoc } from '../lib/liveDoc';
 import type { AlertType } from '../components/Alert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../utils/availability';
-import { cachedDoc } from '../lib/dataCache';
+import { cachedDoc, type Data } from '../lib/dataCache';
 import {
   BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type PresetSlot,
   bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, isDayOpen, meetingInstant,
@@ -33,6 +33,12 @@ export interface Meeting {
   UserTimezone?: number;
   timestamp?: number;
 }
+
+/** Settings/BookedSlots' taken {Date, Time} pairs, as meetings the booking rules read. */
+const meetingsOf = (data: Data | null | undefined): Meeting[] =>
+  ((data?.Slots || []) as Array<{ Date?: string; Time?: string }>)
+    .filter((s) => s && s.Date && s.Time)
+    .map((s): Meeting => ({ Date: s.Date || '', Time: s.Time || '', Name: '', Email: '', dateObj: new Date(s.Date || Date.now()) }));
 
 interface BookMeetingResponse {
   link?: string;
@@ -82,7 +88,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   const [isCustomTime, setIsCustomTime] = useState(false);
   const [meetingData, setMeetingData] = useState({ name: '', email: '', reason: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [existingMeetings, setExistingMeetings] = useState<Meeting[]>([]);
+  const [existingMeetings, setExistingMeetings] = useState<Meeting[]>(() => meetingsOf(cachedDoc(['Settings', 'BookedSlots'])));
   const [bookingSuccess, setBookingSuccess] = useState<{ date: string, time: string, link: string } | null>(null);
 
   // Timezone States
@@ -149,20 +155,15 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   // list is derived from it, so the times are no longer hardcoded. Defaults preserve
   // the historic 09:00–17:00 schedule until the owner configures their own.
   const [availConfig, setAvailConfig] = useState<AvailabilityConfig>(() => parseAvailabilityConfig(cachedDoc(['Settings', 'Availability'])));
-  // Whether the public availability + booked-slots snapshots have fired at least once.
-  // The auto-move-to-the-next-open-day MUST wait for these: until they load, availConfig
-  // is still the hardcoded 9-17 default, so moving early picks the next day off stale
-  // hours instead of the owner's real ones - and since the move latches (runs once), it
-  // never self-corrects when the real config arrives a moment later.
-  const [availLoaded, setAvailLoaded] = useState(false);
-  // The cached hours draw the calendar at once, but the move is decided on this visit's read.
-  const [availRead, setAvailRead] = useState(false);
-  const [slotsLoaded, setSlotsLoaded] = useState(false);
+  // Whether the availability and the booked slots have arrived at all (the cached copies
+  // count, so a page with them draws its open days at once): until then availConfig is the
+  // hardcoded 9-17 default, which no day is picked by.
+  const [availLoaded, setAvailLoaded] = useState(() => cachedDoc(['Settings', 'Availability']) !== undefined);
+  const [slotsLoaded, setSlotsLoaded] = useState(() => cachedDoc(['Settings', 'BookedSlots']) !== undefined);
 
   // Sync Host Availability & Timezone
   useEffect(() => {
     if (!reads) return;
-    let alive = true;
     const unsubscribeAvailability = watchDoc(['Settings', 'Availability'], (data) => {
       if (data) {
         if (typeof data['Current Time'] === 'string' && data['Current Time']) {
@@ -186,32 +187,14 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
     // BookedSlots carries only { Date, Time } per booking, which is all the public
     // calendar needs to grey out taken slots. A Cloud Function keeps it in sync.
     const unsubscribeMeetings = watchDoc(['Settings', 'BookedSlots'], (data) => {
-      if (data) {
-        const slots = (data.Slots || []) as Array<{ Date?: string; Time?: string }>;
-        const meetingsList = slots
-          .filter((s) => s && s.Date && s.Time)
-          .map((s): Meeting => ({
-            Date: s.Date || '',
-            Time: s.Time || '',
-            Name: '',
-            Email: '',
-            dateObj: new Date(s.Date || Date.now()),
-          }));
-        setExistingMeetings(meetingsList);
-      } else {
-        setExistingMeetings([]);
-      }
+      setExistingMeetings(meetingsOf(data));
       setSlotsLoaded(true);
     }, () => {
       setExistingMeetings([]);
       setSlotsLoaded(true);
     });
 
-    // After the watch above, so its fresh hours are set before the move is allowed.
-    void docRead(['Settings', 'Availability']).then(() => { if (alive) setAvailRead(true); });
-
     return () => {
-      alive = false;
       unsubscribeAvailability();
       unsubscribeMeetings();
     };
@@ -256,42 +239,25 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   /** A day the visitor can pick: inside the booking window, with a preset slot still free. */
   const isDayBookable = useCallback((date: Date) => isDayOpen(dayOf(date), dayContext()), [dayContext]);
 
-  // Automatically find the next available day ONCE, when the booking view first shows
-  const hasAutoMoved = useRef(false);
-  useEffect(() => {
-    // Wait for the real availability + booked slots before choosing the next open day,
-    // otherwise it moves off the stale 9-17 default and latches on the wrong day.
-    if (!selectedDate || !enabled || hasAutoMoved.current || !availLoaded || !availRead || !slotsLoaded) return;
-
-    const checkAvailable = isDayBookable;
-
-    if (selectedDate < today || !checkAvailable(selectedDate)) {
-      let searchDate = new Date(selectedDate);
-      if (searchDate < today) searchDate = new Date(today);
-
-      let found = false;
-      for (let i = 0; i < 30; i++) {
-        if (checkAvailable(searchDate)) {
-          found = true;
-          break;
-        }
-        searchDate.setDate(searchDate.getDate() + 1);
-      }
-
-      if (found && searchDate.toDateString() !== selectedDate.toDateString()) {
-        // Must stay in an effect: it reacts to availability + booked slots arriving from
-        // Firestore, and runs once (hasAutoMoved). It cannot be derived during render.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setSelectedDate(searchDate);
-        setCalendarDate(searchDate);
-      }
-    }
-    hasAutoMoved.current = true;
-  }, [selectedDate, isDayBookable, today, enabled, availLoaded, availRead, slotsLoaded]);
-
-  useEffect(() => {
-    return () => { hasAutoMoved.current = false; };
+  // Until the visitor picks a day, the selected day is the first open one from today, kept
+  // up as the data arrives: the cached copy draws the calendar at once, and the fresh read
+  // a moment later may open or close a day. The visitor's own pick is left alone.
+  const picked = useRef(false);
+  const pickDate = useCallback((date: Date | null) => {
+    picked.current = true;
+    setSelectedDate(date);
   }, []);
+  // Before paint, so the first frame already shows that day.
+  useLayoutEffect(() => {
+    if (!enabled || picked.current || !availLoaded || !slotsLoaded) return;
+    const day = new Date(today);
+    for (let i = 0; i < 30 && !isDayBookable(day); i++) day.setDate(day.getDate() + 1);
+    if (!isDayBookable(day) || selectedDate?.toDateString() === day.toDateString()) return;
+    // Must stay in an effect: it follows the availability and booked slots as they arrive.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedDate(day);
+    setCalendarDate(day);
+  }, [selectedDate, isDayBookable, today, enabled, availLoaded, slotsLoaded]);
 
   const handleMeetingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -375,7 +341,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   return {
     today, limitDate,
     calendarDate, setCalendarDate, isPrevMonthDisabled, isNextMonthDisabled, isFutureMonth,
-    selectedDate, setSelectedDate, selectedTime, setSelectedTime, isCustomTime, setIsCustomTime,
+    selectedDate, setSelectedDate: pickDate, selectedTime, setSelectedTime, isCustomTime, setIsCustomTime,
     meetingData, setMeetingData, isSubmitting, bookingSuccess, setBookingSuccess,
     userTimezone, setUserTimezone, tzOptions, hostTimezoneString, hostAvailability,
     availConfig, convertedSlots, daySlots,

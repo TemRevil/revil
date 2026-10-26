@@ -60,9 +60,11 @@ function decode(v: RestValue): unknown {
     return null;
 }
 
+// Fields in name order: REST answers a map in a different order each time, and the same
+// content must compare equal to the cached copy (see watch).
 function decodeFields(fields: Record<string, RestValue> = {}): Data {
     const out: Data = {};
-    for (const k in fields) out[k] = decode(fields[k]);
+    for (const k of Object.keys(fields).sort()) out[k] = decode(fields[k]);
     return out;
 }
 
@@ -118,8 +120,8 @@ function fetchOnce<T extends Data | null | Row[]>(path: string[], read: () => Pr
 
 /**
  * Hands the reader the cached copy at once (lib/dataCache), then reads Firestore unless
- * this page read it under STALE_MS ago (the owner's content only: the booked slots and a
- * project's view counts are read on every open), and again whenever the tab comes back
+ * this page read it under STALE_MS ago (public paths only: a project's view counts are
+ * read on every open), and again whenever the tab comes back
  * after STALE_MS. A reader is only called when what it would get differs from what it has, and
  * an error only reaches a reader that has nothing to show. Returns the stop function.
  */
@@ -155,15 +157,6 @@ function watch<T extends Data | null | Row[]>(
         stopped = true;
         document.removeEventListener('visibilitychange', onShow);
     };
-}
-
-/**
- * Settles once this visit has read `path` from Firestore (or did so under STALE_MS ago),
- * whatever the answer; never rejects. For a decision that must not rest on a cached copy.
- */
-export function docRead(path: string[]): Promise<void> {
-    if (Date.now() - readAt(path) < STALE_MS) return Promise.resolve();
-    return fetchOnce(path, () => readDoc(path)).then(() => { }, () => { });
 }
 
 /** One document (null when missing): the cached copy at once, then Firestore's. Returns the stop function. */

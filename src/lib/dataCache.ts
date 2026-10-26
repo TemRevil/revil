@@ -7,7 +7,8 @@
 // A reader is handed the newest of these at once (the device's copy and the build's are
 // dated, so a newer build beats an old visit), and liveDoc replaces it when Firestore
 // answers. Only the paths in data/publicPaths.json are kept on the device or baked in: the
-// owner's own content. Anything else (the booked slots) lives in this page's memory only.
+// owner's content and the taken booking times. Anything else (a project's view counts)
+// lives in this page's memory only.
 import publicPaths from '../data/publicPaths.json';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

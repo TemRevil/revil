@@ -19,7 +19,7 @@ const snapshot = JSON.parse(readFileSync(resolve(root, 'src/data/public.snapshot
 // Each page and what it reads: the homepage everything, /book its own few documents.
 const PAGES = {
   'index.html': null,
-  'book.html': ['Settings/BookPage', 'Settings/Account', 'Settings/Availability'],
+  'book.html': ['Settings/BookPage', 'Settings/Account', 'Settings/Availability', 'Settings/BookedSlots'],
 };
 
 for (const [file, docs] of Object.entries(PAGES)) {

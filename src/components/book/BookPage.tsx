@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, Clock, Video, Check, ChevronLeft, ChevronRight, Globe, Loader2 } from 'lucide-react';
+import { AlertCircle, Calendar, Clock, Video, Check, ChevronDown, ChevronLeft, ChevronRight, Globe, Loader2, Plus } from 'lucide-react';
 import { holdFirebase, watchDoc } from '../../lib/liveDoc';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import useTheme from '../../hooks/useTheme';
@@ -10,12 +10,13 @@ import { Chars, PaintDefs, splitSlogan, useHostClock, usePaint } from './paintKi
 import useBookTrail from './useBookTrail';
 import { analytics } from '../../lib/analytics/collector';
 import { cachedDoc } from '../../lib/dataCache';
+import { selectTriggerClass } from '../selectTrigger';
 import './book.css';
 
-// The alert and the day's form (the time zone list, the custom time picker, the hints) are
-// the only parts that need motion / anime.js, and none of them is on the first screen: the
-// alert follows an action, the form waits for the owner's hours. They load as their own
-// chunks once the page has painted.
+// The alert and three pieces of the day's form (the time zone list, the custom time picker,
+// the hints) are the only parts that need motion / anime.js. They load as their own chunks
+// once the page has painted, and each form piece is drawn as it looks closed until then
+// (the stand-ins below), so the day's times and fields never wait on them.
 const loadAlert = () => import('../Alert');
 const loadSelect = () => import('../Select');
 const loadTimePicker = () => import('../CustomTimePicker');
@@ -33,9 +34,27 @@ holdFirebase(new Promise<void>((resolve) => { photoShowing = resolve; }));
 
 const NAME_LINES = ['TEM', 'REVIL'];
 
-/** The day's panel while the owner's hours (or the form's chunk) are on their way. */
+/** The day's panel while the owner's hours are on their way (a visit with no copy of them). */
 const DayLoading = () => (
     <p className="empty loading" role="status"><Loader2 size={16} className="spin" aria-hidden="true" />Loading open times...</p>
+);
+
+// The closed look of the lazy form pieces, in their place until their code arrives.
+const Hint = ({ text, isDark }: { text: string; isDark: boolean }) => (
+    <Suspense fallback={<span role="img" aria-label={text} style={{ display: 'inline-flex', alignItems: 'center' }}><AlertCircle size={14} className="opacity-60" /></span>}>
+        <HintTooltip text={text} isDark={isDark} />
+    </Suspense>
+);
+const TimeZoneStandIn = ({ label, isDark }: { label: string; isDark: boolean }) => (
+    <button type="button" aria-label="Your time zone" className={selectTriggerClass(isDark)} title={label}>
+        <span className="truncate">{label}</span>
+        <ChevronDown size={16} className="text-sec flex-shrink-0" />
+    </button>
+);
+const CustomStandIn = () => (
+    <button type="button" aria-label="Pick a custom time">
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}><Plus size={13} aria-hidden="true" />Custom</span>
+    </button>
 );
 
 /** "01:00 PM" -> "1:00 PM" for display; the stored value keeps the hook's format. */
@@ -222,12 +241,14 @@ export default function BookPage() {
                                 ) : !dayOpen ? (
                                     <p className="empty">Nothing open on this day. Pick a date that isn&apos;t greyed out.</p>
                                 ) : (
-                                    <Suspense fallback={<DayLoading />}>
+                                    <>
                                         <div>
                                             <div className="label-help muted"><Globe size={14} aria-hidden="true" />Your time zone
-                                                <HintTooltip text="Detected automatically. Change it and the times below follow." isDark={isDark} />
+                                                <Hint text="Detected automatically. Change it and the times below follow." isDark={isDark} />
                                             </div>
-                                            <Select value={String(b.userTimezone)} options={tzOptions} onChange={(v) => b.setUserTimezone(Number(v))} isDark={isDark} searchable aria-label="Your time zone" />
+                                            <Suspense fallback={<TimeZoneStandIn label={tzOptions.find(o => o.value === String(b.userTimezone))?.label ?? ''} isDark={isDark} />}>
+                                                <Select value={String(b.userTimezone)} options={tzOptions} onChange={(v) => b.setUserTimezone(Number(v))} isDark={isDark} searchable aria-label="Your time zone" />
+                                            </Suspense>
                                         </div>
                                         <div>
                                             <h4 className="slots-title"><Clock size={16} aria-hidden="true" />Available slots</h4>
@@ -242,21 +263,23 @@ export default function BookPage() {
                                                         </button>
                                                     );
                                                 })}
-                                                <CustomTimePicker
-                                                    isDark={isDark}
-                                                    active={b.isCustomTime}
-                                                    value={b.selectedTime}
-                                                    validate={b.validateCustomTime}
-                                                    isUnavailable={b.isCustomTimeUnavailable}
-                                                    onError={(msg) => showAlert({ type: 'warning', message: msg })}
-                                                    onApply={(t) => { b.setSelectedTime(t); b.setIsCustomTime(!b.convertedSlots.includes(t)); }}
-                                                />
+                                                <Suspense fallback={<CustomStandIn />}>
+                                                    <CustomTimePicker
+                                                        isDark={isDark}
+                                                        active={b.isCustomTime}
+                                                        value={b.selectedTime}
+                                                        validate={b.validateCustomTime}
+                                                        isUnavailable={b.isCustomTimeUnavailable}
+                                                        onError={(msg) => showAlert({ type: 'warning', message: msg })}
+                                                        onApply={(t) => { b.setSelectedTime(t); b.setIsCustomTime(!b.convertedSlots.includes(t)); }}
+                                                    />
+                                                </Suspense>
                                             </div>
                                         </div>
                                         <div className="fields">
                                             <div className="fld">
                                                 <label className="label-help" htmlFor="bp-name">Name *
-                                                    <HintTooltip text="Your name shows on the calendar invite. A nickname is fine." isDark={isDark} />
+                                                    <Hint text="Your name shows on the calendar invite. A nickname is fine." isDark={isDark} />
                                                 </label>
                                                 <input id="bp-name" name="name" required autoComplete="name" placeholder="Your name" value={b.meetingData.name}
                                                     onChange={e => b.setMeetingData({ ...b.meetingData, name: e.target.value })} />
@@ -275,7 +298,7 @@ export default function BookPage() {
                                         <button type="submit" className="btn-book" disabled={!canSubmit}>
                                             {b.isSubmitting ? <><Loader2 size={16} className="spin" aria-hidden="true" />Booking...</> : pickedLabel}
                                         </button>
-                                    </Suspense>
+                                    </>
                                 )}
                             </div>
                         </div>

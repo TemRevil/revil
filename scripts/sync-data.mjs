@@ -44,9 +44,11 @@ function decode(v) {
     return null;
 }
 
+// Fields in name order: REST answers a map in a different order each time, and the daily
+// run compares this snapshot with the live one to decide whether to deploy.
 function decodeFields(fields) {
     const out = {};
-    for (const [k, v] of Object.entries(fields)) out[k] = decode(v);
+    for (const k of Object.keys(fields).sort()) out[k] = decode(fields[k]);
     return out;
 }
 
