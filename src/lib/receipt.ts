@@ -3,13 +3,14 @@
  * modal and the AI's send_treasury_receipt tool both use it, so a receipt looks and adds
  * up the same whoever sends it. The functions build copies this file to
  * functions/src/receipt.ts (functions/scripts/sync-shared.mjs): edit it here. It may only
- * import ./money and ./html.
+ * import ./money, ./html and ./emailShell.
  */
 import {
     type Currency, type MoneyIncome, type MoneyProject, type Rates,
     convert, formatMoney, hasInstallments, legacyPaid, projectContractTotal, projectPayments, projectReceived,
 } from './money';
 import { escapeHtml as esc } from './html';
+import { emailShell } from './emailShell';
 
 export interface ReceiptLine {
     name: string;
@@ -175,7 +176,7 @@ export function buildReceiptHtml(d: ReceiptData): string {
 
     const banner = isDue
         ? `
-        <tr><td style="padding:20px 28px 0">
+        <tr><td style="padding:20px 0 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px">
             <tr><td style="padding:14px 16px">
               <div style="color:#9a3412;font-size:14px;font-weight:800">Payment requested</div>
@@ -186,7 +187,7 @@ export function buildReceiptHtml(d: ReceiptData): string {
           </table>
         </td></tr>`
         : `
-        <tr><td style="padding:20px 28px 0">
+        <tr><td style="padding:20px 0 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px">
             <tr><td style="padding:14px 16px">
               <div style="color:#166534;font-size:14px;font-weight:800">Thank you for your payment</div>
@@ -211,7 +212,7 @@ export function buildReceiptHtml(d: ReceiptData): string {
     // Dated proof of every payment, so a client settling in instalments can reconcile the
     // Paid figure against their own bank statement line by line.
     const paymentsBlock = paid.length > 1 ? `
-        <tr><td style="padding:16px 28px 0">
+        <tr><td style="padding:16px 0 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${LINE};border-radius:12px;overflow:hidden">
             <tr style="background:#f8fafc">
               <td style="padding:10px 16px;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Payments received</td>
@@ -231,28 +232,16 @@ export function buildReceiptHtml(d: ReceiptData): string {
           <td style="padding:6px 16px;text-align:right;color:${opts.color || INK};font-size:${opts.strong ? '18px' : '14px'};font-weight:${opts.strong ? '800' : '600'};white-space:nowrap">${value}</td>
         </tr>`;
 
-    return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Receipt ${esc(d.receiptNo)}</title>
-</head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 12px">
-    <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 40px rgba(15,23,42,0.08)">
+    const footer = `${isDue ? 'Questions about this invoice?' : 'Thank you. Questions about this receipt?'} Reply to <a href="mailto:hello@temrevil.com" style="color:${ACCENT};text-decoration:none;font-weight:600">hello@temrevil.com</a>.
+        <div style="margin-top:6px"><a href="https://temrevil.com" style="color:${MUTE};text-decoration:none">temrevil.com</a> &middot; Tem Revil</div>`;
 
-        <!-- header -->
-        <tr><td style="background:${INK};padding:26px 28px">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-            <td style="color:#fff;font-size:20px;font-weight:800;letter-spacing:.5px">TEM&nbsp;REVIL</td>
-            <td style="text-align:right;color:${ACCENT};font-size:12px;font-weight:800;letter-spacing:3px;text-transform:uppercase">${isDue ? 'Invoice' : 'Receipt'}</td>
-          </tr></table>
-        </td></tr>
-
+    return emailShell({
+        title: `Receipt ${d.receiptNo}`,
+        kicker: isDue ? 'Invoice' : 'Receipt',
+        tone: 'light',
+        bodyHtml: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <!-- meta -->
-        <tr><td style="padding:24px 28px 8px">
+        <tr><td style="padding:0 0 8px">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="vertical-align:top">
               <div style="color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Billed to</div>
@@ -268,7 +257,7 @@ export function buildReceiptHtml(d: ReceiptData): string {
 
 ${banner}
         <!-- line items -->
-        <tr><td style="padding:16px 28px 0">
+        <tr><td style="padding:16px 0 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${LINE};border-radius:12px;overflow:hidden">
             <tr style="background:#f8fafc">
               <td style="padding:10px 16px;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Project</td>
@@ -281,7 +270,7 @@ ${banner}
         </td></tr>
 
         <!-- totals -->
-        <tr><td style="padding:14px 28px 4px">
+        <tr><td style="padding:14px 0 4px">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             ${totalRow(d.perPayment ? 'This receipt' : 'Total price', money(d.totals.price))}
             ${totalRow(isDue ? 'Paid to date' : 'Paid', money(d.totals.paid), { color: '#16a34a' })}
@@ -293,20 +282,9 @@ ${banner}
           </table>
         </td></tr>
 ${paymentsBlock}
-        ${d.converted ? `<tr><td style="padding:2px 28px 0"><div style="color:${MUTE};font-size:11px;text-align:right">Amounts converted to ${cur} at current rates.</div></td></tr>` : ''}
-        ${d.note ? `<tr><td style="padding:16px 28px 0"><div style="background:#f8fafc;border:1px solid ${LINE};border-radius:12px;padding:14px 16px;color:${INK};font-size:13px;line-height:1.55">${esc(d.note)}</div></td></tr>` : ''}
-
-        <!-- footer -->
-        <tr><td style="padding:24px 28px 28px">
-          <div style="border-top:1px solid ${LINE};padding-top:18px;color:${MUTE};font-size:12px;line-height:1.6">
-            ${isDue ? 'Questions about this invoice?' : 'Thank you. Questions about this receipt?'} Reply to <a href="mailto:hello@temrevil.com" style="color:${ACCENT};text-decoration:none;font-weight:600">hello@temrevil.com</a>.
-            <div style="margin-top:6px"><a href="https://temrevil.com" style="color:${MUTE};text-decoration:none">temrevil.com</a> &middot; Tem Revil</div>
-          </div>
-        </td></tr>
-
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
+        ${d.converted ? `<tr><td style="padding:2px 0 0"><div style="color:${MUTE};font-size:11px;text-align:right">Amounts converted to ${cur} at current rates.</div></td></tr>` : ''}
+        ${d.note ? `<tr><td style="padding:16px 0 0"><div style="background:#f8fafc;border:1px solid ${LINE};border-radius:12px;padding:14px 16px;color:${INK};font-size:13px;line-height:1.55">${esc(d.note)}</div></td></tr>` : ''}
+      </table>`,
+        footerHtml: footer,
+    });
 }

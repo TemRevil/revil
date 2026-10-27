@@ -101,7 +101,9 @@ export function timezoneOptions(): TimezoneOption[] {
 export function timeZoneOptions(nowMs: number = Date.now()): ZoneOption[] {
     let zones: string[] = [];
     try {
-        zones = Intl.supportedValuesOf('timeZone');
+        // ES2022 API; the site's type target is older, the browsers it supports have it.
+        const intl = Intl as unknown as { supportedValuesOf?: (key: 'timeZone') => string[] };
+        zones = intl.supportedValuesOf?.('timeZone') ?? [];
     } catch {
         // An engine without the zone list: nothing to offer, the offset picker still works.
     }
