@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "postbuild": "node scripts/public-data.mjs && node scripts/share-shell.mjs",
-    "start": "next start",
+    "start": "node scripts/preview.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "sync:data": "node scripts/sync-data.mjs",
