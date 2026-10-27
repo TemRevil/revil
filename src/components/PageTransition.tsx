@@ -13,12 +13,19 @@ interface PageTransitionProps {
 
 const EASE_OUT = 'cubic-bezier(.25, 1, .5, 1)';
 const EASE_IN = 'cubic-bezier(.5, 0, .75, 0)';
-/** The curtain's grow and shrink. */
-const SWEEP = 150;
+/** The curtain's sweep across the page, in and out. */
+const SWEEP = 450;
 /** Each letter's stroke, the gap between letters, and the fill that follows. */
 const WRITE = 100, STAGGER = 30, FILL = 60;
 /** How long the written name stays before the curtain lifts. */
 const HOLD = 150;
+
+type Side = 'top' | 'bottom' | 'right' | 'left';
+const FAR: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
+/** The curtain moved just past one side of the page. */
+const past = (side: Side) =>
+    side === 'top' ? 'translateY(-100%)' : side === 'bottom' ? 'translateY(100%)' :
+        side === 'left' ? 'translateX(-100%)' : 'translateX(100%)';
 
 /**
  * The page switch, in order: the curtain covers the page, the new section is put in place
@@ -31,7 +38,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
     const curtainRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
     const [fontSize, setFontSize] = useState(Math.min(window.innerWidth / 6, 100));
-    const currentDirection: 'top' | 'bottom' | 'right' | 'left' =
+    const currentDirection: Side =
         direction === 2 ? 'right' :
             direction === -2 ? 'left' :
                 direction > 0 ? 'bottom' : 'top';
@@ -62,27 +69,12 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
     useEffect(() => {
         const curtain = curtainRef.current;
         if (!isTransitioning || !curtain) return;
+        // It comes in from the side the visitor scrolled toward and leaves by the far side,
+        // as a transform: the compositor moves it every frame, even while the switch under
+        // it keeps the page busy (sized by width or height, it froze there and skipped).
         const d = dir.current;
-        const horizontal = d === 'right' || d === 'left';
-        const prop = horizontal ? 'width' : 'height';
         const s = curtain.style;
-        const anchor = (start: boolean) => {
-            // Grows from the side it enters by, and shrinks toward the far side.
-            if (horizontal) {
-                const fromRight = (d === 'right') === start;
-                s.left = fromRight ? 'auto' : '0';
-                s.right = fromRight ? '0' : 'auto';
-            } else {
-                const fromTop = (d === 'top') === start;
-                s.top = fromTop ? '0' : 'auto';
-                s.bottom = fromTop ? 'auto' : '0';
-            }
-        };
-        s.top = s.left = '0';
-        s.bottom = s.right = 'auto';
-        s.width = s.height = '100%';
-        anchor(true);
-        s[prop] = '0%';
+        s.transform = past(d);
         s.display = 'block';
 
         const letters = [...(svgRef.current?.querySelectorAll<SVGTSpanElement>('.letter-path') ?? [])];
@@ -111,14 +103,14 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
 
         const finish = () => {
             s.display = 'none';
-            s.width = s.height = '100%';
+            s.transform = '';
             letters.forEach(t => { t.style.visibility = 'hidden'; });
             anims.forEach(a => a.cancel());
             anims.length = 0;
             completed.current();
         };
 
-        void run(curtain, [{ [prop]: '0%' }, { [prop]: '100%' }], { duration: SWEEP, easing: EASE_OUT, fill: 'forwards' })
+        void run(curtain, [{ transform: past(d) }, { transform: 'none' }], { duration: SWEEP, easing: EASE_OUT, fill: 'forwards' })
             .then(() => {
                 if (!live) return;
                 covered.current();
@@ -128,8 +120,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
             .then(() => live ? new Promise(r => setTimeout(r, HOLD)) : undefined)
             .then(() => {
                 if (!live) return;
-                anchor(false);
-                return run(curtain, [{ [prop]: '100%' }, { [prop]: '0%' }], { duration: SWEEP, easing: EASE_IN, fill: 'forwards' });
+                return run(curtain, [{ transform: 'none' }, { transform: past(FAR[d]) }], { duration: SWEEP, easing: EASE_IN, fill: 'forwards' });
             })
             .then(() => { if (live) finish(); })
             .catch(() => { /* cancelled on unmount */ });
@@ -149,7 +140,7 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
             /* Portaled to <body> at z-1000 so the transition curtain layers ABOVE the
                body-portaled nav/availability tooltips (z-60) - covering them during a
                page transition - while still sitting below modals (z-1400+). */
-            className={`fixed inset-0 overflow-hidden z-[1000] ${currentDirection}`}
+            className="fixed inset-0 overflow-hidden z-[1000]"
             style={{ backgroundColor: 'transparent', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', display: 'none' }}
         >
             <div className="absolute flex items-center justify-center" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', height: '100%' }}>
