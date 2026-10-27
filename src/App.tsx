@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransition, type ReactNode } from 'react';
-import { AnimatePresence, LayoutGroup } from 'motion/react';
+import { AnimatePresence, LayoutGroup, motion, useAnimationControls } from 'motion/react';
 import Hero from './components/Hero';
 import { preloadable } from './lib/preloadable';
-import { onIdle, onQuiet } from './lib/idle';
+import { onIdle, onQuiet, whenFramesFlow } from './lib/idle';
 import { isLite, TOUCH_QUERY } from './lib/device';
 import useMediaQuery from './hooks/useMediaQuery';
 import Navbar from './components/Navbar';
@@ -97,6 +97,29 @@ const PUBLIC_SCROLL_SECTIONS: Section[] = ['home', 'stack', 'projects', 'view_li
 const viewKey = (s: Section): Section => (s === 'view_link' ? 'home' : s);
 const sameView = (a: Section, b: Section): boolean => viewKey(a) === viewKey(b);
 
+// How the desktop switcher slides a section in and out: direction ±1 is down/up, ±2 sideways
+// (the secret page). Fixes #4: prevents unintended yellow page UI rotation on transitions.
+const SECTION_VARIANTS = {
+  enter: (direction: number) => {
+    if (Math.abs(direction) === 2) {
+      return { x: direction === 2 ? '100%' : '-100%', y: 0, opacity: 1, scale: 1 };
+    }
+    return { y: direction > 0 ? '100vh' : '-100vh', x: 0, opacity: 1, scale: 0.95 };
+  },
+  center: { x: 0, y: 0, opacity: 1, scale: 1 },
+  exit: (direction: number) => {
+    if (Math.abs(direction) === 2) {
+      return { x: direction === 2 ? '-100%' : '100%', y: 0, opacity: 1, scale: 1 };
+    }
+    return { y: direction < 0 ? '100vh' : '-100vh', x: 0, opacity: 1, scale: 0.95 };
+  },
+};
+const SECTION_TRANSITION = {
+  x: { type: 'spring', stiffness: 300, damping: 30 },
+  y: { type: 'spring', stiffness: 300, damping: 30 },
+  opacity: { duration: 0.2 },
+  scale: { duration: 0.3 },
+} as const;
 // The three that actually stack in the scroll page, in order.
 const MOBILE_STACK: Exclude<Section, 'secret' | 'dashboard' | 'view_link'>[] = ['home', 'stack', 'projects'];
 
@@ -107,33 +130,63 @@ type KeptSection = (typeof MOBILE_STACK)[number];
 const isKept = (s: Section): s is KeptSection => (MOBILE_STACK as Section[]).includes(s);
 
 /**
- * A section kept built and swapped in place, never torn down: building the hero again
- * replayed the whole brush entrance and rebuilt the boil (~0.3s frozen, then 1-2s at
- * 10-20fps), and building Stack or Projects again read Firestore and loaded every image
- * again. Away, it is parked off screen (so the boil and shimmers read it as out of view),
- * inert, and not painted. It doesn't slide: every switch happens under the page curtain,
- * and a slide there only showed as the page moving behind the curtain's blur.
+ * A section slid in and out by hand with the switcher's motion, never torn down: building
+ * the hero again replayed the whole brush entrance and rebuilt the boil (~0.3s frozen,
+ * then 1-2s at 10-20fps), and building Stack or Projects again read Firestore and loaded
+ * every image again. Away, it is parked off screen, inert, and not painted.
  */
-function KeptView({ id, shown, children }: { id: string; shown: boolean; children: ReactNode }) {
+function KeptView({ id, shown, direction, instant, children }: {
+  id: string;
+  shown: boolean;
+  direction: number;
+  /** Shown at the page's first draw: no slide in. */
+  instant: boolean;
+  children: ReactNode;
+}) {
+  const controls = useAnimationControls();
   const box = useRef<HTMLDivElement>(null);
-  // Parked back at the top, as a rebuilt section was: the wheel/swipe paging reads the
-  // scroll position, and a section left at its bottom would page straight past.
+  const [parked, setParked] = useState(!shown);
+  if (shown && parked) setParked(false);
+  const first = useRef(true);
   useEffect(() => {
-    if (!shown && box.current) box.current.scrollTop = 0;
+    const isFirst = first.current;
+    first.current = false;
+    // The slide starts once frames flow again: the switch is a long task, and a slide
+    // started with it ran out its clock while no frame was drawn, so the page jumped.
+    if (shown) {
+      if (isFirst && instant) return;
+      if (!isFirst) controls.set(SECTION_VARIANTS.enter(direction));
+      return whenFramesFlow(() => void controls.start(SECTION_VARIANTS.center));
+    }
+    if (isFirst) return;
+    let live = true;
+    // Parked back at the top, as a rebuilt section was: the wheel/swipe paging reads the
+    // scroll position, and a section left at its bottom would page straight past.
+    const stopWaiting = whenFramesFlow(() => void controls.start(SECTION_VARIANTS.exit(direction)).then(() => {
+      if (!live) return;
+      setParked(true);
+      if (box.current) box.current.scrollTop = 0;
+    }));
+    return () => { live = false; stopWaiting(); };
+    // direction is read as it stands when `shown` changes, like the switcher's custom prop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
   return (
-    <div
+    <motion.div
       ref={box}
       id={id}
+      initial={shown ? (instant ? false : SECTION_VARIANTS.enter(direction)) : SECTION_VARIANTS.exit(1)}
+      animate={controls}
+      transition={SECTION_TRANSITION}
       aria-hidden={!shown || undefined}
       inert={!shown}
-      style={shown ? undefined : { visibility: 'hidden', transform: 'translateY(-100%)' }}
+      style={parked ? { visibility: 'hidden' } : undefined}
       className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar isolate"
     >
       <ErrorBoundary fallback={sectionErrorFallback}>
         {children}
       </ErrorBoundary>
-    </div>
+    </motion.div>
   );
 }
 
@@ -415,7 +468,7 @@ function App() {
     return document.getElementById(`section-${sectionName}`) as HTMLDivElement | null;
   };
 
-  /** Where the running page switch goes, set once its curtain covers the page. */
+  /** Where the running page switch goes, set once its curtain is moving. */
   const pendingSection = useRef<Section | null>(null);
   const navigateTo = useCallback((section: Section) => {
     if (section !== currentSection && !isTransitioning) {
@@ -465,9 +518,9 @@ function App() {
     }
   }, [scrollLayout, navigateTo]);
 
-  // The section changes once the curtain covers the page: building it is a long task, and
-  // started with the curtain it froze the curtain's sweep and the name it writes.
-  const handleCurtainCovered = useCallback(() => {
+  // The section changes once the curtain is moving, so the page slides away under it. The
+  // curtain runs on the compositor, so the switch's long task doesn't stall it.
+  const handleCurtainMoving = useCallback(() => {
     const section = pendingSection.current;
     pendingSection.current = null;
     if (section) setCurrentSection(section);
@@ -520,6 +573,7 @@ function App() {
   // hero has settled Stack and Projects are built off screen, one per idle period. (Not the
   // hero: built off screen, its entrance would play where nobody sees it.)
   const shownView = viewKey(currentSection);
+  const [viewAtLoad] = useState(shownView);
   const [built, setBuilt] = useState<Set<KeptSection>>(() => new Set(isKept(shownView) ? [shownView] : []));
   if (isKept(shownView) && !built.has(shownView)) setBuilt(new Set(built).add(shownView));
   useEffect(() => {
@@ -533,6 +587,8 @@ function App() {
       key={id}
       id={`section-${shownView === id ? currentSection : id}`}
       shown={shownView === id}
+      direction={direction}
+      instant={viewAtLoad === id}
     >
       {children}
     </KeptView>
@@ -761,7 +817,7 @@ function App() {
       {mobileScroll ? (
         // Phone: Home, Stack and Projects in ONE smooth-scrolling page - no curtain, no
         // slide, no swipe-swap. `isolate` traps each section's internal z-index (e.g. Hero's
-        // z-[5000]) below the fixed navbar (z-50), as on the desktop sections.
+        // z-[5000]) below the fixed navbar (z-50), same job the motion transform did above.
         <div
           ref={mobileScrollRef}
           id="mobile-scroll"
@@ -790,19 +846,29 @@ function App() {
       {keptView('projects', (
         <Suspense fallback={null}><ProjectsHub ref={hubRef} isTransitioning={isTransitioning} active={shownView === 'projects'} /></Suspense>
       ))}
-      {!isKept(shownView) && (
-        // `isolate` traps the section's internal z-indexes below the chrome (navbar z-50,
-        // secret button z-40) and the body-portaled tooltips (z-60) and modals (z-1400+).
-        <div
+      <AnimatePresence initial={false} custom={direction} mode="popLayout">
+        {!isKept(shownView) && <motion.div
           key={viewKey(currentSection)}
           id={`section-${currentSection}`}
-          className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar isolate"
+          custom={direction}
+          variants={SECTION_VARIANTS}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={SECTION_TRANSITION}
+          // No explicit z-index: the page content must sit BELOW the chrome
+          // (navbar z-50, secret button z-40, PageTransition curtain z-50) and
+          // below the body-portaled tooltips (z-60) + modals (z-1400+).
+          // framer-motion's transform already creates a stacking context here,
+          // so the section's internal z-indexes (e.g. Hero's z-[5000]) stay
+          // trapped within this layer and don't leak above the chrome.
+          className="absolute inset-0 w-full h-full overflow-y-auto custom-scrollbar"
         >
           <ErrorBoundary fallback={sectionErrorFallback}>
             {renderSection()}
           </ErrorBoundary>
-        </div>
-      )}
+        </motion.div>}
+      </AnimatePresence>
       </>
       )}
       {currentSection !== 'secret' && (
@@ -906,7 +972,7 @@ function App() {
       </LayoutGroup>
       <PageTransition
         isTransitioning={isTransitioning}
-        onCurtainCovered={handleCurtainCovered}
+        onCurtainMoving={handleCurtainMoving}
         onTransitionComplete={handleTransitionComplete}
         nextSectionName={nextSection}
         direction={direction}

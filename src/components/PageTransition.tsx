@@ -5,16 +5,16 @@ import { whenFramesFlow } from '../lib/idle';
 
 interface PageTransitionProps {
     isTransitioning: boolean;
-    onCurtainCovered: () => void;
+    /** The curtain is moving: the sections can switch and slide under it. */
+    onCurtainMoving: () => void;
     onTransitionComplete: () => void;
     nextSectionName?: string;
     direction?: number;
 }
 
-const EASE_OUT = 'cubic-bezier(.25, 1, .5, 1)';
-const EASE_IN = 'cubic-bezier(.5, 0, .75, 0)';
+const EASE_IN_OUT = 'cubic-bezier(.76, 0, .24, 1)';
 /** The curtain's sweep across the page, in and out. */
-const SWEEP = 450;
+const SWEEP = 150;
 /** Each letter's stroke, the gap between letters, and the fill that follows. */
 const WRITE = 100, STAGGER = 30, FILL = 60;
 /** How long the written name stays before the curtain lifts. */
@@ -28,12 +28,12 @@ const past = (side: Side) =>
         side === 'left' ? 'translateX(-100%)' : 'translateX(100%)';
 
 /**
- * The page switch, in order: the curtain covers the page, the new section is put in place
+ * The page switch, in order: the curtain sweeps over the page and the sections slide
  * under it, the name is written once frames are flowing again, and the curtain lifts after
  * the last letter. Each step waits for the one before it: the switch itself is a long task,
  * and the letters timed alongside it were drawn (or skipped) while no frame was shown.
  */
-const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplete, nextSectionName = '', direction = 0 }: PageTransitionProps) => {
+const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete, nextSectionName = '', direction = 0 }: PageTransitionProps) => {
     useBoilHold(isTransitioning);
     const curtainRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
@@ -55,12 +55,12 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
     }, []);
 
     // Read from refs, so a parent re-render mid-switch can't restart the sequence.
-    const covered = useRef(onCurtainCovered);
+    const moving = useRef(onCurtainMoving);
     const completed = useRef(onTransitionComplete);
     const size = useRef(fontSize);
     const dir = useRef(currentDirection);
     useEffect(() => {
-        covered.current = onCurtainCovered;
+        moving.current = onCurtainMoving;
         completed.current = onTransitionComplete;
         size.current = fontSize;
         dir.current = currentDirection;
@@ -110,17 +110,21 @@ const PageTransition = ({ isTransitioning, onCurtainCovered, onTransitionComplet
             completed.current();
         };
 
-        void run(curtain, [{ transform: past(d) }, { transform: 'none' }], { duration: SWEEP, easing: EASE_OUT, fill: 'forwards' })
+        const sweepIn = curtain.animate([{ transform: past(d) }, { transform: 'none' }], { duration: SWEEP, easing: EASE_IN_OUT, fill: 'forwards' });
+        anims.push(sweepIn);
+        // The sections switch once the curtain is on its way: readying them to slide is a
+        // long task, and done first it held the curtain back ~0.5s after the scroll.
+        void sweepIn.ready.then(() => requestAnimationFrame(() => { if (live) moving.current(); }));
+        void sweepIn.finished
             .then(() => {
                 if (!live) return;
-                covered.current();
                 return new Promise<void>(r => { stopWaiting = whenFramesFlow(r); });
             })
             .then(() => live ? write() : undefined)
             .then(() => live ? new Promise(r => setTimeout(r, HOLD)) : undefined)
             .then(() => {
                 if (!live) return;
-                return run(curtain, [{ transform: 'none' }, { transform: past(FAR[d]) }], { duration: SWEEP, easing: EASE_IN, fill: 'forwards' });
+                return run(curtain, [{ transform: 'none' }, { transform: past(FAR[d]) }], { duration: SWEEP, easing: EASE_IN_OUT, fill: 'forwards' });
             })
             .then(() => { if (live) finish(); })
             .catch(() => { /* cancelled on unmount */ });
