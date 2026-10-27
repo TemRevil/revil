@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { doc, onSnapshot, setDoc, serverTimestamp, deleteField } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, serverTimestamp, runTransaction, type DocumentReference } from 'firebase/firestore';
 import { Reorder, motion, AnimatePresence } from 'motion/react';
-import anime from 'animejs';
 import {
     Plus, Download, CheckCircle2, Pencil, Receipt, Briefcase, LayoutDashboard,
     TrendingUp, TrendingDown, Wallet, Sparkles, Clock, Lightbulb, SlidersHorizontal,
@@ -23,7 +22,7 @@ import {
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
     projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, TreasuryIncome, convert,
     Insight, InsightAction, InsightIcon, InsightTone, actionableCount,
-    nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
+    projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
     hasInstallments, installmentMonthlyAmount, installmentsPaidCount, projectContractTotal,
     ProjectStatus, PROJECT_STATUSES, statusMeta, isFinished, isOngoing, normalizeProject,
 } from '../../lib/treasury';
@@ -37,11 +36,14 @@ import SaveBar from './SaveBar';
 import Alert, { AlertType } from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import useTheme from '../../hooks/useTheme';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { EASE } from './motion';
+import { type MapWrite, putEntry, removeEntry, orderWrite, planIncomeSave } from './treasury/writes';
 
 // Treasury is its own admin-only collection, sorted into one document per
 // concern: the projects I handle, spendings (expenses), and settings (currency
-// + FX). The homepage's sanitized name/status list is mirrored to the PUBLIC
-// Settings/HandledProjects doc (prices/earnings never leave Treasury).
+// + FX). The homepage's public name/status list (Settings/HandledProjects) is
+// kept by a backend trigger on Treasury/projects, not written from here.
 const PROJECTS_DOC = doc(db, 'Treasury', 'projects');
 const SPENDINGS_DOC = doc(db, 'Treasury', 'spendings');
 const INCOME_DOC = doc(db, 'Treasury', 'income');
@@ -50,11 +52,10 @@ const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
 const RECEIPTS_DOC = doc(db, 'Treasury', 'receipts');
 
 /** Local 'YYYY-MM-DD' day key for a ms-epoch timestamp (receipts store sentAt in ms). */
-const receiptDayKey = (ms: number): string => {
+const localDayKey = (ms: number): string => {
     const d = new Date(ms);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
 
 type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
 
@@ -288,7 +289,6 @@ const TreasuryChart = ({ data, filter, setFilter, isDark, cur }: {
 };
 
 const DTreasury = () => {
-    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
     const isDark = useTheme();
     const [loading, setLoading] = useState(true);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -320,17 +320,7 @@ const DTreasury = () => {
     const [draft, setDraft] = useState<TreasuryData['config']>({ ...DEFAULT_CONFIG });
     const [settingsDirty, setSettingsDirty] = useState(false);
 
-    const isExtraSmall = windowWidth < 400;
-
-    useEffect(() => {
-        const onResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-    }, []);
-
-    useEffect(() => {
-        anime({ targets: '.treasury-section', opacity: [0, 1], translateY: [14, 0], duration: 450, easing: 'easeOutQuint' });
-    }, [tab]);
+    const isExtraSmall = useMediaQuery('(max-width: 399px)');
 
     useEffect(() => {
         // Treasury docs are admin-only - attach the listeners ONLY once a user is
@@ -404,40 +394,12 @@ const DTreasury = () => {
         showAlert({ type, message: text });
     }, [showAlert]);
 
-    // Mirror only the public subset (name/status/order) of the still-handled
-    // projects to the PUBLIC Settings/HandledProjects doc the homepage Hero reads.
-    // Prices/earnings stay in the admin-only Treasury collection, and so does work
-    // that stopped: paused and closed are marked private in PROJECT_STATUSES, so a
-    // client never reads either word beside their own project name.
-    //
-    // Notes are NOT mirrored. They used to ride along as the homepage's project
-    // description while the editor labelled the box plainly "Notes", so anything
-    // written there - a client's budget, why a job went sideways - was published
-    // without anyone being told. A project note is now private, full stop.
-    const mirrorPublic = useCallback((projects: TreasuryProject[]) => {
-        const handled = projects.filter(p => statusMeta(p.status).publicly).sort((a, b) => a.order - b.order);
-        const map: Record<string, { name: string; status: string; order: number }> = {};
-        handled.forEach((p, i) => { map[p.id] = { name: p.name, status: p.status, order: i }; });
-        // Replaces the whole doc rather than merging, so a description written by an
-        // older build is dropped on the next save instead of lingering in public.
-        setDoc(HANDLED_PUBLIC_DOC, { projects: map, lastWrite: serverTimestamp() }).catch(() => { });
-    }, []);
-
-    const writeProjects = useCallback((projects: TreasuryProject[]) => {
-        setData(prev => ({ ...prev, projects }));
-        const entries: Record<string, Omit<TreasuryProject, 'id'>> = {};
-        projects.forEach(p => { const { id, ...rest } = p; entries[id] = rest; });
-        setDoc(PROJECTS_DOC, { entries, lastWrite: serverTimestamp() })
-            .catch(err => { console.warn('[Treasury] projects save failed', err); showToast('Save failed - check connection', 'warn'); });
-        mirrorPublic(projects);
-    }, [mirrorPublic, showToast]);
-
-    const writeExpenses = useCallback((expenses: TreasuryExpense[]) => {
-        setData(prev => ({ ...prev, expenses }));
-        const entries: Record<string, Omit<TreasuryExpense, 'id'>> = {};
-        expenses.forEach(e => { const { id, ...rest } = e; entries[id] = rest; });
-        setDoc(SPENDINGS_DOC, { entries, lastWrite: serverTimestamp() })
-            .catch(err => { console.warn('[Treasury] spendings save failed', err); showToast('Save failed - check connection', 'warn'); });
+    // Every entry write names its own field paths (see treasury/writes.ts), so a save here
+    // never rewrites rows it didn't touch. The listeners above get Firestore's local echo
+    // straight away, so the screen updates without a hand-kept copy.
+    const commit = useCallback((target: DocumentReference, w: MapWrite, what: string) => {
+        setDoc(target, w.data, { mergeFields: w.mergeFields })
+            .catch(err => { console.warn(`[Treasury] ${what} save failed`, err); showToast('Save failed - check connection', 'warn'); });
     }, [showToast]);
 
     const writeConfig = useCallback((config: TreasuryData['config']) => {
@@ -451,15 +413,9 @@ const DTreasury = () => {
     const configRef = useRef(data.config);
     useEffect(() => { configRef.current = data.config; }, [data.config]);
 
-    const saveProject = (p: TreasuryProject) => {
-        const exists = data.projects.some(x => x.id === p.id);
-        writeProjects(exists ? data.projects.map(x => x.id === p.id ? p : x) : [...data.projects, p]);
-    };
-    const deleteProject = (id: string) => writeProjects(data.projects.filter(p => p.id !== id));
-    const saveExpense = (e: TreasuryExpense) => {
-        const exists = data.expenses.some(x => x.id === e.id);
-        writeExpenses(exists ? data.expenses.map(x => x.id === e.id ? e : x) : [...data.expenses, e]);
-    };
+    const saveProject = (p: TreasuryProject) => { const { id, ...rest } = p; commit(PROJECTS_DOC, putEntry(id, rest), 'project'); };
+    const deleteProject = (id: string) => commit(PROJECTS_DOC, removeEntry(id), 'project');
+    const saveExpense = (e: TreasuryExpense) => { const { id, ...rest } = e; commit(SPENDINGS_DOC, putEntry(id, rest), 'spending'); };
     // Best-effort: drop any uploaded receipt images for an entry when it's deleted.
     const purgeAttachments = (id: string) => {
         listAll(ref(storage, `treasury/${id}`))
@@ -467,64 +423,39 @@ const DTreasury = () => {
             .catch(() => { /* nothing to clean / offline */ });
     };
 
-    const deleteExpense = (id: string) => { purgeAttachments(id); writeExpenses(data.expenses.filter(e => e.id !== id)); };
+    const deleteExpense = (id: string) => { purgeAttachments(id); commit(SPENDINGS_DOC, removeEntry(id), 'spending'); };
 
-    const writeIncome = useCallback((income: TreasuryIncome[]) => {
-        setData(prev => ({ ...prev, income }));
-        const entries: Record<string, Omit<TreasuryIncome, 'id'>> = {};
-        income.forEach(i => { const { id, ...rest } = i; entries[id] = rest; });
-        setDoc(INCOME_DOC, { entries, lastWrite: serverTimestamp() })
-            .catch(err => { console.warn('[Treasury] income save failed', err); showToast('Save failed - check connection', 'warn'); });
-    }, [showToast]);
-
+    // A newly-logged monthly retainer payment advances that project's schedule to the
+    // next due date (even if the money arrived early or late). The payment and the
+    // advance commit in one transaction against the project as stored, so neither can
+    // land without the other.
     const saveIncome = (i: TreasuryIncome) => {
-        const exists = data.income.some(x => x.id === i.id);
-        writeIncome(exists ? data.income.map(x => x.id === i.id ? i : x) : [...data.income, i]);
-        // A newly-logged monthly retainer payment advances that project's schedule
-        // to the next due date (even if the money arrived early or late).
-        if (!exists && i.monthlyPayment && i.projectId) {
-            const proj = data.projects.find(p => p.id === i.projectId);
-            if (proj?.monthly) {
-                const next = nextMonthlyPaymentDate(proj, i.date);
-                saveProject({ ...proj, nextPaymentDate: next });
-                const pretty = new Date(`${next}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                showToast(`Logged ${proj.name}'s monthly payment - next due ${pretty}`, 'good');
-            }
+        const isNew = !data.income.some(x => x.id === i.id);
+        const advances = isNew && i.monthlyPayment && i.projectId && data.projects.find(p => p.id === i.projectId)?.monthly;
+        if (!advances) {
+            const { id, ...rest } = i;
+            commit(INCOME_DOC, putEntry(id, rest), 'income');
+            return;
         }
+        runTransaction(db, async tx => {
+            const stored = (await tx.get(PROJECTS_DOC)).data()?.entries?.[i.projectId!] as Partial<TreasuryProject> | undefined;
+            const plan = planIncomeSave(i, true, stored);
+            tx.set(INCOME_DOC, plan.income.data, { mergeFields: plan.income.mergeFields });
+            if (plan.project) tx.set(PROJECTS_DOC, plan.project.data, { mergeFields: plan.project.mergeFields });
+            return { nextDate: plan.nextDate, name: stored?.name };
+        }).then(({ nextDate, name }) => {
+            if (!nextDate) { showToast('Payment logged', 'good'); return; }
+            const pretty = new Date(`${nextDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            showToast(`Logged ${name ?? 'the project'}'s monthly payment - next due ${pretty}`, 'good');
+        }).catch(err => { console.warn('[Treasury] income save failed', err); showToast('Save failed - check connection', 'warn'); });
     };
-    const deleteIncome = (id: string) => { purgeAttachments(id); writeIncome(data.income.filter(i => i.id !== id)); };
+    const deleteIncome = (id: string) => { purgeAttachments(id); commit(INCOME_DOC, removeEntry(id), 'income'); };
 
-    const writeAccounts = useCallback((accounts: TreasuryAccount[]) => {
-        setData(prev => ({ ...prev, accounts }));
-        const entries: Record<string, Omit<TreasuryAccount, 'id'>> = {};
-        accounts.forEach(a => { const { id, ...rest } = a; entries[id] = rest; });
-        setDoc(ACCOUNTS_DOC, { entries, lastWrite: serverTimestamp() })
-            .catch(err => { console.warn('[Treasury] accounts save failed', err); showToast('Save failed - check connection', 'warn'); });
-    }, [showToast]);
-
-    // Add/edit a single account. Persist ONLY that account's entry (merge) instead
-    // of rewriting the whole doc, so saving one account never clobbers concurrent
-    // changes to another (e.g. an opening-balance edit made via the MCP). Cleared
-    // optional fields are explicitly removed so merge doesn't keep stale values.
-    const saveAccount = (a: TreasuryAccount) => {
-        setData(prev => ({
-            ...prev,
-            accounts: prev.accounts.some(x => x.id === a.id)
-                ? prev.accounts.map(x => x.id === a.id ? a : x)
-                : [...prev.accounts, a],
-        }));
-        const { id, ...rest } = a;
-        const entry: Record<string, unknown> = {
-            ...rest,
-            notes: rest.notes ?? deleteField(),
-            archived: rest.archived ?? deleteField(),
-            excludeFromNetProfit: rest.excludeFromNetProfit ?? deleteField(),
-        };
-        setDoc(ACCOUNTS_DOC, { entries: { [id]: entry }, lastWrite: serverTimestamp() }, { merge: true })
-            .catch(err => { console.warn('[Treasury] account save failed', err); showToast('Save failed - check connection', 'warn'); });
-    };
-    // Delete needs the full-doc rewrite (merge can't remove a map key on its own).
-    const deleteAccount = (id: string) => writeAccounts(data.accounts.filter(a => a.id !== id));
+    // Add/edit a single account: its entry is replaced whole, so an optional field the
+    // edit cleared (notes, archived, excludeFromNetProfit) really goes, and no other
+    // account is touched (e.g. an opening-balance edit made via the MCP).
+    const saveAccount = (a: TreasuryAccount) => { const { id, ...rest } = a; commit(ACCOUNTS_DOC, putEntry(id, rest), 'account'); };
+    const deleteAccount = (id: string) => commit(ACCOUNTS_DOC, removeEntry(id), 'account');
 
     /**
      * Move a project to a status, stamping the date that status is about.
@@ -537,7 +468,7 @@ const DTreasury = () => {
      */
     const setProjectStatus = (p: TreasuryProject, status: ProjectStatus) => {
         if (status === p.status) return;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = localDayKey(Date.now());
         const meta = statusMeta(status);
         const next: TreasuryProject = { ...p, status };
 
@@ -630,14 +561,23 @@ const DTreasury = () => {
         const merged = [...newActive, ...completed].map((p, idx) => ({ ...p, order: idx }));
         setData(d => ({ ...d, projects: merged }));
     };
-    const persistOrder = () => writeProjects(data.projects.map((p, i) => ({ ...p, order: i })));
+    // Only the rows whose position changed get a new `order`, checked against the stored
+    // map so a project removed elsewhere meanwhile isn't brought back as a stub.
+    const persistOrder = () => {
+        const ids = data.projects.map(p => p.id);
+        runTransaction(db, async tx => {
+            const stored = ((await tx.get(PROJECTS_DOC)).data()?.entries || {}) as Record<string, { order?: unknown }>;
+            const w = orderWrite(stored, ids);
+            if (w) tx.set(PROJECTS_DOC, w.data, { mergeFields: w.mergeFields });
+        }).catch(err => { console.warn('[Treasury] order save failed', err); showToast('Save failed - check connection', 'warn'); });
+    };
 
     const exportHtml = () => {
         const html = buildHtmlReport(data, new Date());
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `treasury-${new Date().toISOString().slice(0, 10)}.html`;
+        a.href = url; a.download = `treasury-${localDayKey(Date.now())}.html`;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         showToast('Report downloaded', 'good');
@@ -700,12 +640,12 @@ const DTreasury = () => {
         [data.receipts, receiptCustomer],
     );
     const receiptDayRows = useMemo(
-        () => (receiptDay ? filteredReceipts.filter(r => receiptDayKey(r.sentAt) === receiptDay) : []),
+        () => (receiptDay ? filteredReceipts.filter(r => localDayKey(r.sentAt) === receiptDay) : []),
         [filteredReceipts, receiptDay],
     );
     const receiptsByDay = useMemo(() => {
         const map = new Map<string, TreasuryReceipt[]>();
-        for (const r of filteredReceipts) { const k = receiptDayKey(r.sentAt); (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
+        for (const r of filteredReceipts) { const k = localDayKey(r.sentAt); (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
         return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0])); // newest day first
     }, [filteredReceipts]);
 
@@ -883,7 +823,7 @@ const DTreasury = () => {
     const stepReceiptDay = (delta: number) => {
         const base = receiptDay ? new Date(`${receiptDay}T00:00:00`) : new Date();
         base.setDate(base.getDate() + delta);
-        setReceiptDay(receiptDayKey(base.getTime()));
+        setReceiptDay(localDayKey(base.getTime()));
     };
 
     const renderReceiptRow = (r: TreasuryReceipt) => {
@@ -897,7 +837,7 @@ const DTreasury = () => {
                         {r.via === 'mcp' && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">via AI</span>}
                     </div>
                     <div className="text-[11px] text-sec truncate">
-                        {r.projectNames && r.projectNames.length ? r.projectNames.join(', ') : '—'} · {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        {r.projectNames && r.projectNames.length ? r.projectNames.join(', ') : '-'} · {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     {r.receiptNo && <div className="text-[10px] text-sec/60 font-mono mt-0.5">{r.receiptNo}</div>}
                 </div>
@@ -949,7 +889,12 @@ const DTreasury = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pr-1 pb-6">
-                <div key={tab} className="treasury-section flex flex-col gap-5">
+                {/* Plays on a tab switch only: the dashboard already fades this whole page in
+                    once when it opens, and a second entrance on mount read as a stutter. */}
+                <AnimatePresence mode="wait" initial={false}>
+                <motion.div key={tab} className="flex flex-col gap-5"
+                    initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.45, ease: EASE.outQuint }}>
 
                     {tab === 'overview' && (
                         <>
@@ -1186,8 +1131,8 @@ const DTreasury = () => {
                                             {/* Quick Actions Panel */}
                                             <div className="flex flex-col gap-2 mt-auto pt-4 border-t border-[var(--section-border)]">
                                                 <div className="grid grid-cols-2 gap-2">
-                                                    <button onClick={() => setModal({ mode: 'income', income: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-all"><Plus size={14} /> Log income</button>
-                                                    <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
+                                                    <button onClick={() => setModal({ mode: 'income', income: { projectId: focusedProject.id, date: localDayKey(Date.now()), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-all"><Plus size={14} /> Log income</button>
+                                                    <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: localDayKey(Date.now()), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
                                                 </div>
                                                 <div className="flex flex-col gap-1.5">
                                                     <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sec"><CheckCircle2 size={12} /> Status</div>
@@ -1590,7 +1535,8 @@ const DTreasury = () => {
                             </div>
                         </>
                     )}
-                </div>
+                </motion.div>
+                </AnimatePresence>
             </div>
 
             {/* Staged-settings bar (shared component) */}
