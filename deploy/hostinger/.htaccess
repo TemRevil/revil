@@ -13,23 +13,37 @@ RewriteRule ^ https://temrevil.com%{REQUEST_URI} [R=301,L]
 RewriteCond %{REQUEST_FILENAME}.html -f
 RewriteRule ^(.+?)/?$ $1.html [L]
 
-# Serve real files directly. Anything else is a share link (temrevil.com/<code>) or a
-# dead address: it gets share.html, the app shell marked noindex (scripts/share-shell.mjs),
-# so links still open while search engines stop seeing copies of the homepage.
+# Serve real files directly.
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
-RewriteRule ^ share.html [L]
+# A share link is temrevil.com/<code>, one segment shaped like a link code (the same
+# rule the recorder and trackSession use). It gets share.html, the app shell marked
+# noindex (scripts/share-shell.mjs), which reads the code. Only the server knows which
+# codes exist, so an unknown code still opens the site, unindexed.
+RewriteRule ^[A-Za-z0-9_-]{4,32}/?$ share.html [L]
+
+# Every other address is a real 404, with the site's own 404 page.
+ErrorDocument 404 /404.html
+RewriteRule ^ - [R=404,L]
 
 # ── Security headers (delivered as real HTTP headers, not <meta>) ──
 # frame-ancestors / X-Frame-Options must be HTTP headers to take effect —
 # browsers ignore frame-ancestors when set via a <meta> tag.
 <IfModule mod_headers.c>
-  # Block this site from being embedded in any <iframe> (clickjacking defense).
-  # 'none' = no site may frame us. X-Frame-Options is the legacy fallback for
-  # older browsers that don't support CSP frame-ancestors.
-  Header always set Content-Security-Policy "frame-ancestors 'none';"
+  # Content Security Policy, the whole policy as a real header (a <meta> one can't
+  # carry frame-ancestors). frame-ancestors 'none' blocks framing (clickjacking);
+  # X-Frame-Options below is the fallback for browsers without it.
+  # scripts/csp-headers.mjs rewrites this block at deploy: it hashes each page's inline
+  # scripts and swaps 'unsafe-inline' in script-src for exactly those hashes, per page.
+  # connect-src is every host the code calls: Firebase (Firestore, Storage, Auth,
+  # App Check, Functions), reCAPTCHA, the MCP server, GitHub data, exchange rates,
+  # Unsplash (the default hero image), and the LLM providers the dashboard's
+  # override key calls directly (src/lib/llm.ts).
+  # CSP:BEGIN
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://apis.google.com https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com https://www.gstatic.com https://images.unsplash.com https://avatars.githubusercontent.com; media-src 'self' https://firebasestorage.googleapis.com https://*.firebasestorage.app; connect-src 'self' https://firestore.googleapis.com https://firebasestorage.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://content-firebaseappcheck.googleapis.com https://us-central1-temrevil1.cloudfunctions.net https://www.google.com https://mcp.temrevil.com https://api.github.com https://github-contributions-api.jogruber.de https://open.er-api.com https://images.unsplash.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.openai.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  # CSP:END
   Header always set X-Frame-Options "DENY"
 
   # Don't leak full referrer URLs to third parties.

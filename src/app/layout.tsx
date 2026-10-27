@@ -78,16 +78,6 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  // React's DEV mode requires eval() for HMR / debugging (it never uses eval in production).
-  // So allow 'unsafe-eval' ONLY in development; production stays locked down (no eval).
-  // This is a build-time conditional - `next build` sets NODE_ENV=production, so the
-  // shipped static export NEVER includes 'unsafe-eval'.
-  const scriptSrc =
-    process.env.NODE_ENV === 'development'
-      ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://*.gstatic.com https://www.google.com"
-      : "script-src 'self' 'unsafe-inline' https://apis.google.com https://*.gstatic.com https://www.google.com";
-  const csp = `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.googleapis.com https://*.googleusercontent.com https://firebasestorage.googleapis.com https://www.gstatic.com https://images.unsplash.com https://avatars.githubusercontent.com; media-src 'self' https://firebasestorage.googleapis.com https://*.firebasestorage.app; connect-src 'self' https://mcp.temrevil.com https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://*.a.run.app wss://*.firebaseio.com https://www.google.com https://images.unsplash.com https://github-contributions-api.jogruber.de https://github.com https://api.github.com https://open.er-api.com https://api.anthropic.com https://api.openai.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://www.google.com; base-uri 'self'; form-action 'self' https://*.cloudfunctions.net https://*.a.run.app;`;
-
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
@@ -111,16 +101,9 @@ export default function RootLayout({
         </Script>
         {/* Google Search Console verification */}
         <meta name="google-site-verification" content="uQR0p6nF_uFGSNYBtO-_tKpQ6W-Qu_LrwF77SLoEprc" />
-        {/* Content Security Policy - defense-in-depth against XSS.
-            'unsafe-eval' is dev-only (see scriptSrc above); production omits it.
-            NOTE: 'frame-ancestors' is intentionally NOT here - browsers ignore it in a
-            <meta> tag (and log a warning). Clickjacking protection is delivered as a real
-            HTTP header (Content-Security-Policy: frame-ancestors + X-Frame-Options) from
-            deploy/hostinger/.htaccess instead. */}
-        <meta
-          httpEquiv="Content-Security-Policy"
-          content={csp}
-        />
+        {/* The Content Security Policy is a real HTTP header, set per page with the
+            hashes of that page's inline scripts (deploy/hostinger/.htaccess, filled in by
+            scripts/csp-headers.mjs at deploy). */}
         {/* The three faces the first screen draws with (fonts.css). */}
         <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/archivo-black-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
