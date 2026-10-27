@@ -1,19 +1,12 @@
-import { useState, useEffect } from 'react';
-import anime from 'animejs';
+import { useState, useEffect, useRef, lazy, Suspense, startTransition, type ComponentType } from 'react';
 import { Layout, Footprints, Settings, Bird, LogOut, Tag, User, GitBranch, Landmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import DProjects from './dashboard/D-Projects';
-import DTags from './dashboard/D-Tags';
-import DTrails from './dashboard/D-Trails';
-import DSettings from './dashboard/D-Settings';
-import DCanary from './dashboard/D-Canary';
-import DDeveloper from './dashboard/D-Developer';
-import DTreasury from './dashboard/D-Treasury';
-import Assistant from './dashboard/Assistant';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { db } from '../lib/firebase';
 import { appAuth } from '../lib/appAuth';
+import useMediaQuery from '../hooks/useMediaQuery';
+import { EASE } from './dashboard/motion';
 
 // The parameter name in the function type would trigger `no-unused-vars` in some
 // ESLint configurations, so we suppress that rule for the following type alias.
@@ -23,102 +16,129 @@ interface DashboardProps {
     onNavigate?: OnNavigate;
 }
 
+type TabId = 'projects' | 'tags' | 'trails' | 'developer' | 'treasury' | 'settings' | 'canary';
+
+// Each tab is its own chunk, loaded the first time it opens (or when its nav item is
+// hovered), so opening the dashboard no longer downloads and parses every tab's
+// libraries - recharts, react-markdown, the cropper - up front.
+const tab = (load: () => Promise<{ default: ComponentType }>) => ({ load, Component: lazy(load) });
+const TABS: Record<TabId, ReturnType<typeof tab>> = {
+    projects: tab(() => import('./dashboard/D-Projects')),
+    tags: tab(() => import('./dashboard/D-Tags')),
+    trails: tab(() => import('./dashboard/D-Trails')),
+    developer: tab(() => import('./dashboard/D-Developer')),
+    treasury: tab(() => import('./dashboard/D-Treasury')),
+    settings: tab(() => import('./dashboard/D-Settings')),
+    canary: tab(() => import('./dashboard/D-Canary')),
+};
+const Assistant = lazy(() => import('./dashboard/Assistant'));
+
+const MENU_ITEMS: { id: TabId; label: string; icon: typeof Layout }[] = [
+    { id: 'projects', label: 'Projects', icon: Layout },
+    { id: 'tags', label: 'Tags', icon: Tag },
+    { id: 'trails', label: 'Trails', icon: Footprints },
+    { id: 'developer', label: 'Developer', icon: GitBranch },
+    { id: 'treasury', label: 'Treasury', icon: Landmark },
+    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'canary', label: 'Canary', icon: Bird },
+];
+const isTabId = (s: string): s is TabId => s in TABS;
+
 const Dashboard = ({ onNavigate }: DashboardProps) => {
-    // theme observation removed here; not used directly in this component
-    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-    const [activeTab, setActiveTab] = useState('projects');
+    const [activeTab, setActiveTab] = useState<TabId>('projects');
     const [profileImage, setProfileImage] = useState<string>('');
     // In-dashboard AI copilot ("Spark") can be switched off from Settings → MCP.
     // Defaults on; only skips mounting when explicitly disabled in Settings/MCP.
     const [aiEnabled, setAiEnabled] = useState(true);
+    // Nothing of the dashboard renders, and nothing reads Firestore, until the admin
+    // claim is confirmed - no admin chrome flashing for a stranger, no listeners refused
+    // with permission-denied on a restored session that turns out not to be the owner.
+    const [authorized, setAuthorized] = useState(false);
+    const offAuthRef = useRef<(() => void) | null>(null);
 
-    // Responsive breakpoints
-    const isExtraSmall = windowWidth < 400;  // 320px - 399px
-    const isSmall = windowWidth < 640;        // 400px - 639px
-    const isMobile = windowWidth < 768;       // 640px - 767px
+    // Responsive breakpoints, followed with media queries (no resize listener).
+    const isExtraSmall = useMediaQuery('(max-width: 399px)');
+    const isSmall = useMediaQuery('(max-width: 639px)');
+    const isMobile = useMediaQuery('(max-width: 767px)');
 
     // Auth gate: the dashboard is admin-only. If there's no signed-in user (e.g.
     // it was restored on refresh without a session), bounce home so we never fire
     // admin-only reads/writes that Firestore would reject with permission-denied.
     useEffect(() => {
         const off = onAuthStateChanged(appAuth(), (user) => {
-            if (!user) { onNavigate?.('home'); return; }
+            if (!user) { setAuthorized(false); onNavigate?.('home'); return; }
             // Signed in but not the owner: sign out and leave.
             user.getIdTokenResult().then(r => {
-                if (r.claims.admin !== true) { appAuth().signOut().catch(() => {}); onNavigate?.('home'); }
-            }).catch(() => onNavigate?.('home'));
+                if (r.claims.admin === true) { setAuthorized(true); return; }
+                setAuthorized(false);
+                appAuth().signOut().catch(() => {});
+                onNavigate?.('home');
+            }).catch(() => { setAuthorized(false); onNavigate?.('home'); });
         });
-        return () => off();
+        offAuthRef.current = off;
+        return () => { off(); offAuthRef.current = null; };
     }, [onNavigate]);
 
     useEffect(() => {
+        if (!authorized) return;
         const unsub = onSnapshot(doc(db, 'Settings', 'Account'), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 if (data.imageUrl) setProfileImage(data.imageUrl);
             }
-        });
+        }, () => { /* the header just keeps the placeholder */ });
         return () => unsub();
-    }, []);
+    }, [authorized]);
 
     // Watch the AI assistant toggle (Settings/MCP.assistantEnabled).
     useEffect(() => {
+        if (!authorized) return;
         const unsub = onSnapshot(doc(db, 'Settings', 'MCP'), (snap) => {
             const data = snap.exists() ? snap.data() : {};
             setAiEnabled(data.assistantEnabled !== false);
         }, () => { /* admin-only; ignore transient errors */ });
         return () => unsub();
-    }, []);
+    }, [authorized]);
 
-    useEffect(() => {
-        const handleResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', handleResize);
-        // no theme observer needed here
+    // Logout ends the session for real. It used to only navigate home, which left the
+    // admin signed in: reopening /dashboard on a shared computer walked straight back in.
+    const logout = async () => {
+        // Stop listening first, so the sign-out below doesn't also trigger the gate's own
+        // "no user, go home" and navigate twice.
+        offAuthRef.current?.();
+        offAuthRef.current = null;
+        setAuthorized(false);
+        try { await signOut(appAuth()); } catch (e) { console.warn('[Dashboard] sign-out failed', e); }
+        onNavigate?.('home');
+    };
 
-        // Staggered Sidebar Entrance Animation
-        anime({
-            targets: '.sidebar-item',
-            translateX: [-16, 0],
-            opacity: [0, 1],
-            delay: anime.stagger(30, { start: 50 }),
-            easing: 'easeOutQuint',
-            duration: 350
-        });
+    // Tab switches run as a transition: the current tab stays on screen while the next
+    // one's chunk loads, then the two cross-fade, instead of blanking in between.
+    const openTab = (id: string) => {
+        if (!isTabId(id)) return;
+        startTransition(() => setActiveTab(id));
+    };
 
-        // Logo Entrance
-        anime({
-            targets: '.dashboard-logo',
-            scale: [0.85, 1],
-            opacity: [0, 1],
-            duration: 400,
-            easing: 'easeOutQuint'
-        });
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-        };
-    }, []);
-
-
-
-    const menuItems = [
-        { id: 'projects', label: 'Projects', icon: Layout },
-        { id: 'tags', label: 'Tags', icon: Tag },
-        { id: 'trails', label: 'Trails', icon: Footprints },
-        { id: 'developer', label: 'Developer', icon: GitBranch },
-        { id: 'treasury', label: 'Treasury', icon: Landmark },
-        { id: 'settings', label: 'Settings', icon: Settings },
-        { id: 'canary', label: 'Canary', icon: Bird },
-    ];
+    if (!authorized) {
+        return <div className="w-full h-screen bg-primary" aria-busy="true" />;
+    }
 
     const sidebarWidth = isExtraSmall ? '56px' : (isMobile ? '72px' : '260px');
     const iconSize = isExtraSmall ? 18 : 20;
     const avatarSize = isExtraSmall ? '28px' : '32px';
 
-    const activeItem = menuItems.find(i => i.id === activeTab);
+    const activeItem = MENU_ITEMS.find(i => i.id === activeTab);
     const ActiveIcon = activeItem?.icon;
+    const ActiveTab = TABS[activeTab].Component;
     const headerIconBoxSize = isExtraSmall ? 'w-8 h-8 rounded-lg' : isSmall ? 'w-9 h-9 rounded-xl' : 'w-11 h-11 rounded-2xl';
     const headerIconSize = isExtraSmall ? 16 : isSmall ? 18 : 22;
+
+    // Staggered sidebar entrance: each item slides in from the left in turn.
+    const sidebarItem = (i: number) => ({
+        initial: { opacity: 0, x: -16 },
+        animate: { opacity: 1, x: 0 },
+        transition: { duration: 0.35, ease: EASE.outQuint, delay: 0.05 + i * 0.03 },
+    });
 
     return (
         <div
@@ -143,9 +163,12 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                 }}
             >
                 {/* Logo Area */}
-                <div
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.85 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.4, ease: EASE.outQuint }}
                     className={`
-                        dashboard-logo flex items-center opacity-0
+                        dashboard-logo flex items-center
                         ${isMobile ? 'justify-center' : 'justify-start gap-3 px-3'}
                         ${isExtraSmall ? 'mb-5 px-1' : 'mb-8'}
                     `}
@@ -173,43 +196,30 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                             Revil
                         </span>
                     )}
-                </div>
+                </motion.div>
 
                 {/* Navigation Items - Scrollable if needed */}
-                <nav className={`flex-1 flex flex-col ${isExtraSmall ? 'gap-1' : 'gap-2'} overflow-y-auto`}>
-                    {menuItems.map((item) => {
+                <nav aria-label="Dashboard" className={`flex-1 flex flex-col ${isExtraSmall ? 'gap-1' : 'gap-2'} overflow-y-auto`}>
+                    {MENU_ITEMS.map((item, i) => {
                         const Icon = item.icon;
                         const isActive = activeTab === item.id;
                         return (
-                            <button
+                            <motion.button
                                 key={item.id}
-                                onClick={() => setActiveTab(item.id)}
+                                {...sidebarItem(i)}
+                                onClick={() => openTab(item.id)}
+                                // Warm the tab's chunk on intent, so the click rarely waits.
+                                onMouseEnter={() => { void TABS[item.id].load(); }}
+                                onFocus={() => { void TABS[item.id].load(); }}
+                                // On narrow screens only the icon shows; this keeps the name.
+                                aria-label={item.label}
+                                aria-current={isActive ? 'page' : undefined}
                                 className={`
-                                    sidebar-item relative w-full flex items-center transition-all duration-200 border-0 cursor-pointer
+                                    sidebar-item group relative w-full flex items-center transition-colors duration-200 border-0 cursor-pointer
                                     ${isMobile ? 'justify-center' : 'justify-start'}
                                     ${isExtraSmall ? 'p-2.5 rounded-[10px]' : 'p-3 rounded-xl gap-3'}
                                     ${isActive ? 'bg-[rgba(0,0,0,0.05)] dark:bg-[rgba(255,255,255,0.1)] text-primary' : 'bg-transparent text-sec hover:bg-[rgba(0,0,0,0.02)] dark:hover:bg-[rgba(255,255,255,0.05)] hover:text-primary'}
                                 `}
-                                onMouseEnter={(e) => {
-                                    if (!isActive) {
-                                        anime({
-                                            targets: e.currentTarget.querySelector('svg'),
-                                            scale: 1.2,
-                                            duration: 200,
-                                            easing: 'easeOutQuad'
-                                        });
-                                    }
-                                }}
-                                onMouseLeave={(e) => {
-                                    if (!isActive) {
-                                        anime({
-                                            targets: e.currentTarget.querySelector('svg'),
-                                            scale: 1,
-                                            duration: 200,
-                                            easing: 'easeOutQuad'
-                                        });
-                                    }
-                                }}
                             >
                                 {isActive && (
                                     <motion.div
@@ -218,23 +228,28 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                                         transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                                     />
                                 )}
-                                <Icon size={iconSize} />
+                                <Icon
+                                    size={iconSize}
+                                    className={isActive ? undefined : 'transition-transform duration-200 ease-out group-hover:scale-[1.2]'}
+                                />
                                 {!isMobile && (
                                     <span className="text-[0.95rem] font-medium font-inter">
                                         {item.label}
                                     </span>
                                 )}
-                            </button>
+                            </motion.button>
                         );
                     })}
                 </nav>
 
                 {/* Bottom Actions - Locked at the end */}
                 <div className="pt-4 mt-2 border-t border-[var(--section-border)]">
-                    <button
-                        onClick={() => onNavigate && onNavigate('home')}
+                    <motion.button
+                        {...sidebarItem(MENU_ITEMS.length)}
+                        onClick={logout}
+                        aria-label="Log out"
                         className={`
-                            sidebar-item w-full flex items-center transition-all duration-200 border-0 cursor-pointer bg-transparent text-sec
+                            sidebar-item w-full flex items-center transition-colors duration-200 border-0 cursor-pointer bg-transparent text-sec
                             hover:bg-red-500/5 dark:hover:bg-red-500/10 hover:text-red-500
                             ${isMobile ? 'justify-center px-0' : 'justify-start px-3 gap-3'}
                             ${isExtraSmall ? 'py-2 rounded-[10px]' : 'py-3 rounded-xl'}
@@ -246,7 +261,7 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                                 Logout
                             </span>
                         )}
-                    </button>
+                    </motion.button>
                 </div>
             </aside>
 
@@ -284,42 +299,24 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
                         </div>
                     </div>
 
-                    {/* Content Viewport */}
+                    {/* Content Viewport. This fade is the ONE entrance a tab gets: the tabs
+                        animate only their own sub-section switches, never their first mount,
+                        so nothing paints, hides and fades in a second time. */}
                     <div className="dashboard-content-area flex-1 relative min-h-0">
-                        <AnimatePresence mode="wait">
-                            <motion.div
-                                key={activeTab}
-                                initial={{ opacity: 0, y: 6 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -6 }}
-                                transition={{ duration: 0.15, ease: 'easeInOut' }}
-                                className="w-full h-full flex flex-col"
-                            >
-                                {activeTab === 'projects' ? (
-                                    <DProjects />
-                                ) : activeTab === 'tags' ? (
-                                    <DTags />
-                                ) : activeTab === 'trails' ? (
-                                    <DTrails />
-                                ) : activeTab === 'developer' ? (
-                                    <DDeveloper />
-                                ) : activeTab === 'treasury' ? (
-                                    <DTreasury />
-                                ) : activeTab === 'settings' ? (
-                                    <DSettings />
-                                ) : activeTab === 'canary' ? (
-                                    <DCanary />
-                                ) : (
-                                    <div className={`
-                                        w-full h-[90%] flex items-center justify-center text-center p-4
-                                        border-2 border-dashed border-input-border text-sec font-inter
-                                        ${isExtraSmall ? 'rounded-2xl text-sm' : 'rounded-3xl text-base'}
-                                    `}>
-                                        <span>Content for {activeItem?.label} will go here</span>
-                                    </div>
-                                )}
-                            </motion.div>
-                        </AnimatePresence>
+                        <Suspense fallback={null}>
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key={activeTab}
+                                    initial={{ opacity: 0, y: 6 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -6 }}
+                                    transition={{ duration: 0.15, ease: 'easeInOut' }}
+                                    className="w-full h-full flex flex-col"
+                                >
+                                    <ActiveTab />
+                                </motion.div>
+                            </AnimatePresence>
+                        </Suspense>
                     </div>
                 </div>
             </main>
@@ -327,7 +324,9 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
             {/* AI co-pilot - floating orb, can navigate, click, and read/write data.
                 Gated by Settings → MCP → "Dashboard AI assistant". */}
             {aiEnabled && (
-                <Assistant onNavigate={(page) => setActiveTab(page)} currentPage={activeTab} />
+                <Suspense fallback={null}>
+                    <Assistant onNavigate={openTab} currentPage={activeTab} />
+                </Suspense>
             )}
         </div >
     );
