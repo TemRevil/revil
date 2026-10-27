@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-    writeProject, storagePathFromUrl, placeReordered, changedListings,
+    writeProject, placeReordered, changedListings,
     ProjectNameTaken, ProjectGone, ZERO_VIEWS, type DocTx, type ProjectFields,
 } from './save';
+import { storagePathFromUrl } from '../storagePath';
 
 type Store = Map<string, Record<string, unknown>>;
 

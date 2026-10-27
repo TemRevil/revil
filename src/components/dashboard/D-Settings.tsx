@@ -6,7 +6,7 @@ const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8b
 import Cropper from 'react-easy-crop';
 import MFirebaseStorage from './M-FirebaseStorage';
 import { doc, onSnapshot, setDoc, updateDoc, deleteField, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, getMetadata, getStorage } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, getMetadata, getStorage, deleteObject } from 'firebase/storage';
 import app, { db } from '../../lib/firebase';
 // Local Storage handle (lazy Dashboard chunk) - keeps firebase/storage out of eager.
 const storage = getStorage(app);
@@ -20,6 +20,7 @@ import Loader from '../reactbits/Loader';
 import MConfirmModal from './M-ConfirmModal';
 import { createImage, getCroppedImg, readFileAsDataUrl, type CropArea } from '../../utils/cropImage';
 import useTheme from '../../hooks/useTheme';
+import { summarizeApply, staleHeroPath, type SaveOutcome } from './settings/apply';
 // Replaced failing ui-avatars.com with a local icon-based placeholder logic
 
 
@@ -31,8 +32,8 @@ interface StackItem {
     icon: string;
 }
 
-/* "Projects Being Handled" is now managed in the Treasury page (D-Treasury),
-   which mirrors the public subset into Settings/Availability. */
+/* "Projects Being Handled" is managed in the Treasury page (D-Treasury); a backend
+   trigger keeps its public subset in Settings/HandledProjects. */
 
 
 export default function DSettings() {
@@ -390,11 +391,14 @@ export default function DSettings() {
 
     // Guard to prevent duplicate alerts from rapidly repeating
     const lastAlertRef = useRef<{ message: string; type: AlertType; t: number } | null>(null);
-    const safeSetAlert = (next: { show: boolean; type: AlertType; message: string; duration?: number }) => {
+    const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // `force` replaces an alert already on screen instead of being dropped for it - used
+    // for Apply's outcome, which the owner must always see.
+    const safeSetAlert = (next: { show: boolean; type: AlertType; message: string; duration?: number; force?: boolean }) => {
         const duration = typeof next.duration === 'number' ? next.duration : 4000; // default 4s
         if (next.show) {
             // If an alert is already visible, suppress new alerts to ensure only one is shown
-            if (alert.show) return;
+            if (alert.show && !next.force) return;
 
             const last = lastAlertRef.current;
             if (last && last.message === next.message && last.type === next.type && (Date.now() - last.t) < duration) {
@@ -402,8 +406,10 @@ export default function DSettings() {
             }
             lastAlertRef.current = { message: next.message, type: next.type, t: Date.now() };
             setAlert({ show: true, type: next.type, message: next.message });
+            if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
+            alertTimerRef.current = null;
             if (duration > 0) {
-                setTimeout(() => {
+                alertTimerRef.current = setTimeout(() => {
                     setAlert(prev => ({ ...prev, show: false }));
                     lastAlertRef.current = null;
                 }, duration);
@@ -423,7 +429,10 @@ export default function DSettings() {
     // part anything parses.
     const tzOptions = useMemo(() => timezoneOptions(), []);
 
-    const handleSaveAvailability = async () => {
+    // Every save below reports how it went ('saved' / 'skipped' / 'failed') rather than
+    // swallowing a failure, so Apply can tell the owner exactly what was stored. With
+    // `silent` (Apply) they leave the alert to Apply's summary.
+    const handleSaveAvailability = async (silent = false): Promise<SaveOutcome> => {
         try {
             const selectedTz = tzOptions.find(tz => tz.value === selectedTimezone);
 
@@ -441,100 +450,119 @@ export default function DSettings() {
                 'timezoneOffset': selectedTimezone
             };
 
-            // merge:true so the 'Projects Being Handled' map - now owned and
-            // mirrored by the Treasury page - survives an availability save.
+            // merge:true so the working days/hours stored on the same doc survive.
             await setDoc(doc(db, 'Settings', 'Availability'), payload, { merge: true });
+            return 'saved';
         } catch (error) {
             console.error("Error saving availability:", error);
-            safeSetAlert({ show: true, type: 'error', message: 'Failed to save availability settings' });
+            if (!silent) safeSetAlert({ show: true, type: 'error', message: 'Failed to save availability settings' });
+            return 'failed';
         }
     };
 
-    const handleSaveHeroImage = async (silent = false) => {
+    /** "png" from "photo.PNG"; a name without an extension gets "img". */
+    const extOf = (file: File) => /\.([A-Za-z0-9]+)$/.exec(file.name)?.[1].toLowerCase() || 'img';
+
+    // A hero upload is stored as Hero.image.<ext>, so a new type lands at a new path; the
+    // file it replaces is deleted once the new URL is saved (best effort - a leftover is
+    // only clutter, never shown).
+    const removeStaleHero = (previous: unknown, current: string | null, variant: 'light' | 'dark') => {
+        const stale = staleHeroPath(typeof previous === 'string' ? previous : null, current, variant);
+        if (stale) deleteObject(ref(storage, stale)).catch(e => console.warn('Could not delete the replaced hero image', stale, e));
+    };
+
+    const handleSaveHeroImage = async (silent = false): Promise<SaveOutcome> => {
         // Only save if the user actually changed it
-        if (!heroImageDirty) return;
-        if (!heroImageFile && !heroImagePreview) return;
+        if (!heroImageDirty) return 'skipped';
+        if (!heroImageFile && !heroImagePreview) return 'skipped';
 
         try {
             setIsLoading(true);
+            const accountRef = doc(db, 'Settings', 'Account');
 
+            let url: string;
             if (heroImageFile) {
-                const fileExtension = heroImageFile.name.split('.').pop();
-                const fileName = `Hero.image.${fileExtension}`;
-                const storageRef = ref(storage, `src/imgs/Settings/${fileName}`);
+                const storageRef = ref(storage, `src/imgs/Settings/Hero.image.${extOf(heroImageFile)}`);
                 await uploadBytes(storageRef, heroImageFile);
-                const downloadURL = await getDownloadURL(storageRef);
-
-                await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrl: downloadURL }, { merge: true });
-                setHeroImageFile(null);
+                url = await getDownloadURL(storageRef);
             } else if (heroImagePreview && heroImagePreview.startsWith('http')) {
                 // Selected from Firebase / remote URL - just persist the URL
-                await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrl: heroImagePreview }, { merge: true });
+                url = heroImagePreview;
             } else {
                 // Local data URL without a file - nothing to upload to storage
-                return;
+                return 'skipped';
             }
 
+            const previous = (await getDoc(accountRef)).data()?.heroImageUrl;
+            await setDoc(accountRef, { heroImageUrl: url }, { merge: true });
+            removeStaleHero(previous, url, 'light');
+            setHeroImageFile(null);
             setHeroImageDirty(false);
             if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Hero image updated!', duration: 3000 });
+            return 'saved';
         } catch (error) {
             console.error("Error updating hero image:", error);
-            safeSetAlert({ show: true, type: 'error', message: 'Failed to update hero image.' });
+            if (!silent) safeSetAlert({ show: true, type: 'error', message: 'Failed to update hero image.' });
+            return 'failed';
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleSaveHeroImageDark = async (silent = false) => {
-        if (!heroImageDirtyDark) return;
+    const handleSaveHeroImageDark = async (silent = false): Promise<SaveOutcome> => {
+        if (!heroImageDirtyDark) return 'skipped';
+        const accountRef = doc(db, 'Settings', 'Account');
 
         // Allow saving even if empty (user wants to clear the dark variant)
         if (!heroImageFileDark && !heroImagePreviewDark) {
             try {
+                const previous = (await getDoc(accountRef)).data()?.heroImageUrlDark;
                 // setDoc + merge is safer than updateDoc - works even if the field
                 // or doc didn't exist before. deleteField() removes the value.
-                await setDoc(
-                    doc(db, 'Settings', 'Account'),
-                    { heroImageUrlDark: deleteField() },
-                    { merge: true },
-                );
+                await setDoc(accountRef, { heroImageUrlDark: deleteField() }, { merge: true });
+                removeStaleHero(previous, null, 'dark');
                 setHeroImageDirtyDark(false);
                 if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Dark hero image cleared.', duration: 3000 });
+                return 'saved';
             } catch (error) {
                 console.error('Error clearing dark hero image:', error);
-                safeSetAlert({ show: true, type: 'error', message: 'Failed to clear dark hero image.' });
+                if (!silent) safeSetAlert({ show: true, type: 'error', message: 'Failed to clear dark hero image.' });
+                return 'failed';
             }
-            return;
         }
 
         try {
             setIsLoading(true);
 
+            let url: string;
             if (heroImageFileDark) {
-                const fileExtension = heroImageFileDark.name.split('.').pop();
-                const fileName = `Hero.image.dark.${fileExtension}`;
-                const storageRef = ref(storage, `src/imgs/Settings/${fileName}`);
+                const storageRef = ref(storage, `src/imgs/Settings/Hero.image.dark.${extOf(heroImageFileDark)}`);
                 await uploadBytes(storageRef, heroImageFileDark);
-                const downloadURL = await getDownloadURL(storageRef);
-
-                await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrlDark: downloadURL }, { merge: true });
-                setHeroImageFileDark(null);
+                url = await getDownloadURL(storageRef);
             } else if (heroImagePreviewDark && heroImagePreviewDark.startsWith('http')) {
-                await setDoc(doc(db, 'Settings', 'Account'), { heroImageUrlDark: heroImagePreviewDark }, { merge: true });
+                url = heroImagePreviewDark;
             } else {
-                return;
+                return 'skipped';
             }
 
+            const previous = (await getDoc(accountRef)).data()?.heroImageUrlDark;
+            await setDoc(accountRef, { heroImageUrlDark: url }, { merge: true });
+            removeStaleHero(previous, url, 'dark');
+            setHeroImageFileDark(null);
             setHeroImageDirtyDark(false);
             if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Dark hero image updated!', duration: 3000 });
+            return 'saved';
         } catch (error) {
             console.error("Error updating dark hero image:", error);
-            safeSetAlert({ show: true, type: 'error', message: 'Failed to update dark hero image.' });
+            if (!silent) safeSetAlert({ show: true, type: 'error', message: 'Failed to update dark hero image.' });
+            return 'failed';
         } finally {
             setIsLoading(false);
         }
     };
 
+    // Saves every staged section and reports exactly what stored. A section that failed
+    // keeps its staged changes, and Apply stays available to retry it.
     const handleApplyAll = async () => {
         setIsLoading(true);
         try {
@@ -543,20 +571,27 @@ export default function DSettings() {
                 await handleCropSave();
             }
 
-            await Promise.all([
-                handleSaveAvailability(),
+            const [availabilityR, heroR, heroDarkR, profileImageR, profileInfoR] = await Promise.all([
+                handleSaveAvailability(true),
                 handleSaveHeroImage(true),
                 handleSaveHeroImageDark(true),
                 handleSaveProfileImage(true),
                 handleSaveProfileInfo(true)
             ]);
+            const summary = summarizeApply([
+                ['availability', availabilityR],
+                ['hero image', heroR],
+                ['dark hero image', heroDarkR],
+                ['profile image', profileImageR],
+                ['profile details', profileInfoR],
+            ]);
 
-            setProfileInfoDirty(false);
-            setHasUnsavedChanges(false);
-            safeSetAlert({ show: true, type: 'success', message: 'All settings applied successfully!', duration: 3000 });
+            if (profileInfoR === 'saved') setProfileInfoDirty(false);
+            setHasUnsavedChanges(!summary.ok);
+            safeSetAlert({ show: true, force: true, type: summary.ok ? 'success' : 'error', message: summary.message, duration: summary.ok ? 3000 : 8000 });
         } catch (error) {
             console.error("Error applying all settings:", error);
-            safeSetAlert({ show: true, type: 'error', message: 'Failed to apply some settings.' });
+            safeSetAlert({ show: true, force: true, type: 'error', message: 'Could not apply the changes. They are still staged - try again.' });
         } finally {
             setIsLoading(false);
         }
@@ -738,7 +773,9 @@ export default function DSettings() {
 
             let iconUrl = data.icon;
             if (data.iconFile) {
-                const storageRef = ref(storage, `src/svgs/${data.iconFile.name}`);
+                // Prefixed with the item id so two items with the same file name never share a file;
+                // "stack_" keeps them apart from tag icons, which use `${id}_` in the same folder.
+                const storageRef = ref(storage, `src/svgs/stack_${id}_${data.iconFile.name}`);
                 await uploadBytes(storageRef, data.iconFile);
                 iconUrl = await getDownloadURL(storageRef);
             }
@@ -928,7 +965,7 @@ export default function DSettings() {
     };
 
     // Persist profile name/title/links to Firestore (used by Apply All)
-    const handleSaveProfileInfo = async (silent = false) => {
+    const handleSaveProfileInfo = async (silent = false): Promise<SaveOutcome> => {
         try {
             const linksMap = socialLinks.reduce((acc, link) => {
                 acc[link.name] = link.url;
@@ -945,14 +982,18 @@ export default function DSettings() {
             }, { mergeFields: ['name', 'title', 'Email', 'Social Links'] });
 
             if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Profile updated!', duration: 3000 });
+            return 'saved';
         } catch (err) {
             console.error('Error saving profile info', err);
-            safeSetAlert({ show: true, type: 'error', message: 'Failed to update profile.' });
+            if (!silent) safeSetAlert({ show: true, type: 'error', message: 'Failed to update profile.' });
+            return 'failed';
         }
     };
 
-    const handleSaveProfileImage = async (silent = false) => {
-        if (!profileImageFile && !profileImagePreview) return;
+    const handleSaveProfileImage = async (silent = false): Promise<SaveOutcome> => {
+        // The preview always holds the stored image, so only a staged change is saved.
+        if (!profileImageDirty && !profileImageFile) return 'skipped';
+        if (!profileImageFile && !profileImagePreview) return 'skipped';
 
         try {
             setProfileImageUploading(true);
@@ -969,20 +1010,21 @@ export default function DSettings() {
                 await setDoc(doc(db, 'Settings', 'Account'), { imageUrl: profileImagePreview }, { merge: true });
             } else {
                 // Local data URL without a file - nothing to upload to storage
-                return;
+                return 'skipped';
             }
 
             if (!silent) safeSetAlert({ show: true, type: 'success', message: 'Profile image updated!', duration: 3000 });
 
-            // clear temporary states
+            // clear temporary states (whether anything else is still unsaved is Apply's call)
             setProfileImageDirty(false);
             setProfileImageBackupPreview(null);
             setProfileImageBackupFile(null);
             setProfileImageFile(null);
-            setHasUnsavedChanges(false);
+            return 'saved';
         } catch (error) {
             console.error("Error updating profile image:", error);
-            safeSetAlert({ show: true, type: 'error', message: 'Failed to update profile image.' });
+            if (!silent) safeSetAlert({ show: true, type: 'error', message: 'Failed to update profile image.' });
+            return 'failed';
         } finally {
             setProfileImageUploading(false);
             setIsLoading(false);

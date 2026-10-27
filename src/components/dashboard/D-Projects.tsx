@@ -28,7 +28,8 @@ import { bestDistance, SEARCH_MAX_DISTANCE } from '../../utils/fuzzy';
 import useTheme from '../../hooks/useTheme';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { XS_QUERY, SM_QUERY } from './breakpoints';
-import { writeProject, storagePathFromUrl, placeReordered, changedListings, type ProjectFields, type SaveMode } from './projects/save';
+import { storagePathFromUrl } from './storagePath';
+import { writeProject, placeReordered, changedListings, type ProjectFields, type SaveMode } from './projects/save';
 
 interface RawFirestoreTag {
     Name?: string;
