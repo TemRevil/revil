@@ -13,7 +13,7 @@ import { ProjectData as Project, TagData as Tag, ContributorData } from '../type
 import { getStackIcon, getTechColor, isVideoFile, stillFrame } from '../utils/projectUtils';
 import { isLite } from '../lib/device';
 import { useTailor } from '../lib/analytics/useTailor';
-import { slugOf } from '../utils/projectSlug';
+import { projectSlugs } from '../utils/projectSlug';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../utils/fuzzy';
 
 interface RawContributorData {
@@ -167,7 +167,7 @@ const CardImage = ({ src, alt }: { src: string; alt: string }) => {
     );
 };
 
-const ProjectCard = ({ project, onClick, active }: { project: Project; onClick: () => void; active: boolean }) => {
+const ProjectCard = ({ project, href, onClick, active }: { project: Project; href: string; onClick: () => void; active: boolean }) => {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [isHovered, setIsHovered] = useState(false);
     const [showContributors, setShowContributors] = useState(false);
@@ -310,7 +310,7 @@ const ProjectCard = ({ project, onClick, active }: { project: Project; onClick: 
                         list it. A plain click stays here and opens the window (the card's
                         onClick); ctrl/cmd/middle-click opens the page in a new tab. */}
                     <a
-                        href={`/projects/${slugOf(String(project.id ?? project.title ?? ""))}`}
+                        href={href}
                         className="text-inherit no-underline"
                         onClick={(e) => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) e.preventDefault(); }}
                     >
@@ -483,6 +483,9 @@ const Projects = ({ active = true }: { active?: boolean }) => {
             };
         });
     }, [rawProjects, availableContributors, availableTags]);
+
+    // The same page addresses the build gave each project (projectPages).
+    const slugs = useMemo(() => projectSlugs(rawProjects.map(p => p.id)), [rawProjects]);
 
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
     const selectedProject = useMemo(() =>
@@ -699,6 +702,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                     render={project => (
                         <ProjectCard
                             project={project}
+                            href={`/projects/${slugs.get(String(project.id)) ?? ''}`}
                             active={active}
                             onClick={() => {
                                 window.dispatchEvent(new CustomEvent('revil:project_open', { detail: { id: project.id } }));

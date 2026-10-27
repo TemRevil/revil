@@ -1,5 +1,5 @@
 import publicSnapshot from '../data/public.snapshot.json';
-import { cleanName, nameNote, slugOf } from './projectSlug';
+import { cleanName, nameNote, projectSlugs } from './projectSlug';
 
 /**
  * The public project pages (/projects and /projects/<slug>) are built from the
@@ -80,18 +80,14 @@ export interface ProjectPage {
     project: SnapshotProject;
 }
 
-/** Every project with its page address, in the portfolio's own order. Slugs are unique. */
+/** Every project with its page address (projectSlugs, as the homepage links), in the portfolio's own order. */
 export const projectPages: ProjectPage[] = (() => {
-    const seen = new Map<string, number>();
-    return [...(publicSnapshot.collections.Projects as unknown as SnapshotProject[])]
+    const projects = publicSnapshot.collections.Projects as unknown as SnapshotProject[];
+    const slugs = projectSlugs(projects.map((p) => p.id));
+    return [...projects]
         // 0 is what Canary saves for a project never reordered: last, as the homepage grid has it.
         .sort((a, b) => (a.Listing || 999) - (b.Listing || 999))
-        .map((project) => {
-            const base = slugOf(project.id);
-            const n = (seen.get(base) || 0) + 1;
-            seen.set(base, n);
-            return { slug: n > 1 ? `${base}-${n}` : base, name: cleanName(project.id), note: nameNote(project.id), project };
-        });
+        .map((project) => ({ slug: slugs.get(project.id)!, name: cleanName(project.id), note: nameNote(project.id), project }));
 })();
 
 export const projectPageUrl = (slug: string) => `${SITE_URL}/projects/${slug}`;
