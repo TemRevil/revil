@@ -109,7 +109,19 @@ export function projectReceived(p: MoneyProject, income: MoneyIncome[], rates: R
         p.id !== undefined && i.projectId === p.id && (!p.monthly || i.monthlyPayment)
     );
     const sum = linked.reduce((s, i) => s + convert(i.amount || 0, i.currency, p.priceCurrency, rates), 0);
-    return (p.paidAmount || 0) + sum;
+    return legacyPaid(p) + sum;
+}
+
+/**
+ * The legacy manual paidAmount as every view counts it, in the project's currency. A
+ * one-off project can't have received more than it owes (installment surcharge
+ * included), so a larger figure typed by hand is capped there; a retainer, or a project
+ * with no price yet, has no total to cap against.
+ */
+export function legacyPaid(p: Pick<MoneyProject, 'paidAmount' | 'priceAmount' | 'monthly' | 'installmentMonths' | 'installmentPercent'>): number {
+    const paid = p.paidAmount || 0;
+    const owed = projectContractTotal(p);
+    return p.monthly || !owed ? paid : Math.min(paid, owed);
 }
 
 /**
@@ -165,7 +177,7 @@ export function computeTotals(data: MoneyLedger): TreasuryTotals {
     // all logged income (linked or standalone). No double counting - income is
     // never folded into paidAmount. Income tied to an excluded account is left
     // out (legacy paidAmount has no account, so it always counts).
-    for (const p of data.projects) earned += convert(p.monthly ? (p.paidAmount || 0) : Math.min(p.paidAmount || 0, p.priceAmount || p.paidAmount || 0), p.priceCurrency, cur, rates);
+    for (const p of data.projects) earned += convert(legacyPaid(p), p.priceCurrency, cur, rates);
     for (const i of (data.income || [])) { if (i.accountId && excluded.has(i.accountId)) continue; earned += convert(i.amount || 0, i.currency, cur, rates); }
 
     // Client-paid expenses are recorded for reference only - they're not my money.
@@ -230,16 +242,18 @@ export function projectPaymentStatus(p: MoneyProject, income: MoneyIncome[], rat
 /** A Date as 'YYYY-MM-DD' on its own (local) calendar. */
 export const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+/** Days in the month of a date. */
+const daysInMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+
 /**
- * Advance a 'YYYY-MM-DD' date by one calendar month, clamping the day to the end of
- * the target month's length so e.g. Jan 31 → Feb 28 (not an overflow into March).
+ * Advance a 'YYYY-MM-DD' date by one calendar month onto `billingDay`, clamped to the
+ * target month's length so e.g. Jan 31 → Feb 28 (not an overflow into March).
  */
-function addOneMonth(dateStr: string): string {
+function addOneMonth(dateStr: string, billingDay: number): string {
     const d = new Date(`${dateStr}T00:00:00`);
     if (Number.isNaN(d.getTime())) return dateStr;
-    const day = d.getDate();
-    const lastDayOfNext = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
-    return ymd(new Date(d.getFullYear(), d.getMonth() + 1, Math.min(day, lastDayOfNext)));
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return ymd(new Date(next.getFullYear(), next.getMonth(), Math.min(billingDay, daysInMonth(next))));
 }
 
 /**
@@ -249,14 +263,24 @@ function addOneMonth(dateStr: string): string {
  * early or late); otherwise seeds the first cycle from the project's start date,
  * falling back to the payment date. Always lands one calendar month after the
  * cycle just paid.
+ *
+ * The billing day is the start date's day of the month: a scheduled date sitting on
+ * the last day of a short month was clamped there, and must not drag every later
+ * payment earlier (Jan 31 → Feb 28 → Mar 31, not Mar 28).
  */
 export function nextMonthlyPaymentDate(p: Pick<MoneyProject, 'nextPaymentDate' | 'startDate'>, paymentDate: string): string {
-    const valid = (s?: string | null) => !!s && !Number.isNaN(new Date(`${s}T00:00:00`).getTime());
+    const at = (s?: string | null) => (s ? new Date(`${s}T00:00:00`) : null);
+    const valid = (s?: string | null) => !!s && !Number.isNaN(at(s)!.getTime());
     const anchor = valid(p.nextPaymentDate) ? p.nextPaymentDate!
         : valid(p.startDate) ? p.startDate!
         : valid(paymentDate) ? paymentDate
         : ymd(new Date());
-    return addOneMonth(anchor);
+    const a = at(anchor)!;
+    let billingDay = a.getDate();
+    if (valid(p.startDate) && billingDay === daysInMonth(a)) {
+        billingDay = Math.max(billingDay, at(p.startDate)!.getDate());
+    }
+    return addOneMonth(anchor, billingDay);
 }
 
 /**

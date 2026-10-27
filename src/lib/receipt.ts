@@ -7,7 +7,7 @@
  */
 import {
     type Currency, type MoneyIncome, type MoneyProject, type Rates,
-    convert, formatMoney, hasInstallments, projectContractTotal, projectPayments, projectReceived,
+    convert, formatMoney, hasInstallments, legacyPaid, projectContractTotal, projectPayments, projectReceived,
 } from './money';
 import { escapeHtml as esc } from './html';
 
@@ -134,7 +134,7 @@ export function receiptPaymentRows<T extends MoneyIncome>(
             // The legacy per-project paidAmount predates the income log and carries no date,
             // yet projectReceived still counts it - so a whole-project breakdown that ignored
             // it would not add up to the Paid figure printed right above it. Give it a row.
-            const legacy = p.paidAmount || 0;
+            const legacy = legacyPaid(p);
             if (!one && legacy > 0) {
                 rows.unshift({ date: '', amount: convert(legacy, p.priceCurrency, cur, rates), project: p.name || 'Project' });
             }
