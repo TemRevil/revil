@@ -1,14 +1,5 @@
-import { useRef, useEffect, useState, lazy, Suspense } from 'react';
-import { motion } from 'motion/react';
-import type { LottieRefCurrentProps } from 'lottie-react';
-import ErrorBoundary from './ErrorBoundary';
-
-// lottie-react (~heavy) and Fire.json only appear in the below-the-fold Developer
-// section, yet were being pulled into the eager first-paint bundle via the static
-// App -> ProjectsHub -> Developer -> StreakCircle chain. Lazy-loading the player
-// AND dynamic-importing the JSON keeps both out of the critical chunk.
-// `import type` above is erased at build, so it adds no runtime weight.
-const Lottie = lazy(() => import('lottie-react'));
+import { motion, useReducedMotion } from 'motion/react';
+import FireMark from './FireMark';
 
 interface StreakCircleProps {
     streak: number;
@@ -17,24 +8,7 @@ interface StreakCircleProps {
 
 const StreakCircle = ({ streak, isLoading = false }: StreakCircleProps) => {
     const hasStreak = streak > 0;
-    const lottieRef = useRef<LottieRefCurrentProps>(null);
-    const [fireData, setFireData] = useState<object | null>(null);
-
-    // Load the animation JSON on demand (kept out of the eager graph).
-    useEffect(() => {
-        let active = true;
-        import('../../public/Fire.json').then((m) => { if (active) setFireData(m.default as object); });
-        return () => { active = false; };
-    }, []);
-
-    // Ensure the animation is always playing once loaded (resilient to remounts/HMR)
-    useEffect(() => {
-        if (!fireData) return;
-        const id = requestAnimationFrame(() => {
-            lottieRef.current?.play();
-        });
-        return () => cancelAnimationFrame(id);
-    }, [fireData]);
+    const reduceMotion = useReducedMotion();
 
     return (
         <motion.div
@@ -49,7 +23,7 @@ const StreakCircle = ({ streak, isLoading = false }: StreakCircleProps) => {
                 userSelect: 'none',
             }}
         >
-            {/* Fire - lazy-mounted; the 100x100 box is always reserved (no layout shift) */}
+            {/* Fire - a fixed 100x100 box (no layout shift) */}
             <div
                 style={{
                     width: 100,
@@ -61,23 +35,7 @@ const StreakCircle = ({ streak, isLoading = false }: StreakCircleProps) => {
                     marginBottom: -8,
                 }}
             >
-                {fireData && (
-                    // Boundary + Suspense both fall back to null: the reserved 100x100
-                    // box prevents layout shift, and a failed lottie chunk fetch leaves
-                    // the streak number/label intact instead of blanking the section.
-                    <ErrorBoundary fallback={null}>
-                        <Suspense fallback={null}>
-                            <Lottie
-                                lottieRef={lottieRef}
-                                animationData={fireData}
-                                loop
-                                autoplay
-                                rendererSettings={{ preserveAspectRatio: 'xMidYMid meet' }}
-                                style={{ width: '100%', height: '100%' }}
-                            />
-                        </Suspense>
-                    </ErrorBoundary>
-                )}
+                <FireMark still={!!reduceMotion} />
             </div>
 
             {/* Number - uses page text color so it's always legible */}
