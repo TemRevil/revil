@@ -1,206 +1,182 @@
-# Revil | Main Profile
-![Next.js](https://img.shields.io/badge/Next.js%2016-black?style=flat-square&logo=next.js)
-![React](https://img.shields.io/badge/React%2019-%2320232a.svg?style=flat-square&logo=react&logoColor=%2361DAFB)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind%204-%2338B2AC.svg?style=flat-square&logo=tailwind-css&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)
-![Motion](https://img.shields.io/badge/Motion-000000?style=flat-square&logo=framer&logoColor=white)
-![Firebase](https://img.shields.io/badge/Firebase-%23039BE5.svg?style=flat-square&logo=firebase)
+# Revil
 
-**Revil** is my **Main Professional Profile** and a premium, ultra-responsive developer portfolio ecosystem. Designed for high-end digital presence, it consists of a stunning user-facing showcase and a powerful, real-time Administrative Dashboard to manage every facet of my professional career as a **Frontend & AI Expert**.
+The source of [temrevil.com](https://temrevil.com): a portfolio site with a booking page,
+and a private admin dashboard behind it, on Next.js and Firebase.
 
----
+- **Public site**: the homepage (hero, stack, projects, contact and booking modals),
+  `/book` (book a call), `/projects` and `/projects/<slug>` (static case-study pages),
+  and `/mcp-login` (the sign-in step of the MCP server's OAuth flow).
+- **Dashboard** (admin only): projects, tags, visit analytics, GitHub activity, treasury
+  (finances and receipts), settings, the inbox and meetings calendar, and an AI assistant.
+- **Backend**: Firebase Auth, Firestore, Storage and Cloud Functions. Every secret stays in
+  the functions; the browser only holds public Firebase identifiers.
 
-##  Core Pillars
+## Stack
 
-###  High-Fidelity UI/UX
-Designed with a "Ceramic-Glass" aesthetic, Revil features:
-- **Liquid Navigation**: Ultra-smooth page transitions and scroll-aware animations powered by **Anime.js** and **Framer Motion**.
-- **Adaptive Precision**: A hand-crafted CSS design system providing a seamless experience from 320px mobile devices to 4K displays.
-- **Atmospheric Themes**: Intelligent Dark/Light mode system with deep glassmorphism and animated background blobs.
+| Area | Technology |
+| :--- | :--- |
+| Front end | Next.js 16 (App Router, static export), React 19, TypeScript |
+| Styling | Tailwind CSS 4 and a hand-written CSS design system |
+| Motion | Motion, Anime.js, Lottie (one icon) |
+| Backend | Firebase: Auth, Firestore, Storage, Cloud Functions (Node 22), App Check |
+| Email | Resend over SMTP, from the functions |
+| Hosting | Hostinger (Apache) for the site, Firebase Hosting for the MCP endpoint |
+| Tests | Vitest; `@firebase/rules-unit-testing` with the Firebase emulators |
 
-### ️ The Admin Dashboard (Canary)
-A private, real-time command center built for elite project management:
-- **Project Orchestrator**: Add, edit, and organize projects with dynamic image cropping and multi-tag filtering.
-- **Canary Engine**: A built-in mail inbox for direct client communication and a meeting calendar with **Google Calendar API** synchronization.
-- **The "Algorithm"**: Proprietary session tracking that monitors project engagement, stack time, and visitor intent.
-- **Link Architect**: Generate trackable custom URLs for specific clients to monitor when they view your portfolio.
-
-###  Technical Excellence
-- **React 19 & Next.js 16**: Leveraging the latest in front-end performance, App Router, and server-side capabilities.
-- **Robust Security**: Hardened Firestore rules, environment variable isolation, CSP compliance, and secure sanitized SVG rendering.
-- **Cloud Infrastructure**: Scalable backend logic using Firebase Cloud Functions, Realtime live data synchronization, and secure file handling via Firebase Storage.
-
----
-
-##  Experience it Locally
-
-### Prerequisites
-- Node.js (v22+)
-- Firebase CLI (`npm install -g firebase-tools`)
-
-### Installation
-```bash
-# Clone the repository
-git clone https://github.com/TemRevil/revil.git
-
-# Install dependencies
-npm install
-
-# Configure Firebase - copy the example and fill in your own project's values
-cp .env.example .env.local
-
-# Start development server
-npm run dev
-```
-
-> **Note:** App Check is enforced, so a fresh local run is blocked from reading
-> Firestore until you register a debug token. Start the app, copy the token
-> printed in the browser console, and add it under
-> **Firebase Console → App Check → Apps → Manage debug tokens**.
-> See [`.env.example`](.env.example) for every variable and what it does.
-
-##  Continuous Integration & Security
-
-We maintain high-end reliability and stability across the entire project through automated defenses and strict security policies:
-- **Zero-Error Automation**: Every push to the protected `main` branch runs through aggressive GitHub Action workflows. It rigidly tests against `npm run lint`, `npm run build`, and enforces strict TypeScript standards.
-- **Data & Configuration Security**: The project utilizes hardened, defense-in-depth Firestore and Storage rules, consolidated real-time listeners, and strict CSP headers. Environment variables are managed securely using `NEXT_PUBLIC_*` prefixes.
-- **DOM tamper deterrence**: `ClientProtection` runs a `MutationObserver` on the root nodes that strips injected `<script>`/`<style>` tags and hostile inline styles. It's a best-effort deterrent against console/extension tampering — **not** a security boundary (a hostile extension has full page access regardless). The actual XSS defenses are the strict CSP, `sanitizeSvg()` on any `dangerouslySetInnerHTML`, and the hardened Firestore/Storage rules.
-- **Email Red Alerts**: If a syntax error, bad prop, or type issue is ever committed, the deployment instantly aborts to protect production, and GitHub natively emails the owner with a link to the exact line of code failure.
-
----
-
-##  Architecture Overview
-
+## Layout
 
 ```text
 src/
-├── app/                 # Next.js App Router (layout, pages, globals.css)
-│   └── ClientProtection.tsx # Core DOM shield & security layer
-├── components/          # React components
-│   ├── dashboard/       # Specialized Admin Dashboard modules
-│   └── M-*.tsx          # Reusable Modals
-├── hooks/               # Custom React hooks (e.g., useTheme)
-├── lib/                 # Core logic (Firebase setup, data structures)
-├── utils/               # Global utility functions (e.g., sanitizeSvg)
-└── App.tsx              # Main Navigation & Global Application Wrapper
+  app/              Next.js routes (/, /book, /projects, /mcp-login), metadata, SEO files
+  components/       sections, modals (M-*.tsx), book/ (the /book page), dashboard/ (D-*.tsx tabs)
+  lib/              Firebase setup, public data reads (liveDoc, dataCache), money, receipts, analytics
+  utils/            booking rules, time zones, site profile (JSON-LD)
+  data/             publicPaths.json and the build's data snapshot
+functions/          the main Cloud Functions codebase
+functions-meeting/  the `meeting` codebase (syncMeeting)
+scripts/            build, data, preview, deploy and admin scripts (below)
+tests/rules/        Firestore and Storage security-rules tests
+deploy/hostinger/   .htaccess for the Apache host
+firestore.rules, storage.rules, firebase.json
 ```
 
-### Backend (Firebase Cloud Functions)
+## Running it locally
 
-The site is a **static export** - there is no Next.js server. Everything dynamic
-runs in Cloud Functions, which hold every secret so nothing sensitive reaches the
-browser. Functions in `functions/` deploy from this repo:
+Requirements: Node.js 22 or newer. For the rules tests, the Firebase CLI
+(`npm install -g firebase-tools`) and Java 21.
+
+```bash
+npm ci
+cp .env.example .env.local   # fill in your Firebase project's web config
+npm run dev                  # http://localhost:3000
+```
+
+App Check is enforced, so a fresh local run cannot read Firestore until you register a
+debug token: start the app, copy the token printed in the browser console, and add it in
+the Firebase console under App Check > Apps > Manage debug tokens. Every variable is
+explained in [`.env.example`](.env.example).
+
+| Command | What it does |
+| :--- | :--- |
+| `npm run dev` | Development server |
+| `npm run build` | Static export to `dist/`, then bakes the data snapshot into the pages (`scripts/public-data.mjs`) and writes `share.html` (`scripts/share-shell.mjs`) |
+| `npm start` | Serves `dist/` on http://127.0.0.1:4173, routed like the live `.htaccess` (`scripts/preview.mjs`) |
+| `npm run lint` | ESLint over the site, the functions and the scripts |
+| `npm test` | Unit tests (Vitest) |
+| `npm run test:rules` | Security-rules tests in the Firestore and Storage emulators (needs the Firebase CLI and Java) |
+| `npm run sync:data` | Refreshes `src/data/public.snapshot.json` from Firestore (needs `gcloud auth login` or `FIRESTORE_ACCESS_TOKEN`) |
+| `npm run og:card` | Renders `public/og.png` with a local Chrome or Edge |
+
+## How the data flows
+
+**Public pages** read a handful of public Firestore documents over the REST API with an
+App Check token (`src/lib/liveDoc.ts`) instead of loading the Firestore SDK. Until a read
+answers they show a cached copy: this device's, or the snapshot baked into the page at
+build time. The snapshot comes from `scripts/sync-data.mjs`, which reads the paths in
+`src/data/publicPaths.json`; both readers share one REST decoder (`src/lib/firestoreRest.mjs`).
+
+**Visitors never write to Firestore directly.** The contact form and the booking form call
+the `submitContact` and `bookMeeting` functions, which validate every field, rate-limit,
+and write with the Admin SDK. Contact attachments are uploaded to Storage under `emails/`
+first; the function only accepts links into that folder of the project's own bucket.
+
+**The dashboard** signs in with Google and needs the `admin` custom claim. It reads and
+writes Firestore and Storage directly, within the security rules.
+
+## Backend
+
+Functions in `functions/` (Node 22):
 
 | Function | Trigger | What it does |
 | :--- | :--- | :--- |
-| `submitContact` | Callable (public, App Check) | Validates and rate-limits a contact-form message, then stores it in `Settings/Canary` |
-| `bookMeeting` | Callable (public, App Check) | Validates and rate-limits a booking, checks the slot is free, creates the Calendar event + Meet link and stores the meeting |
-| `cleanupAttachments` | Scheduled (daily) | Deletes contact-form uploads that no message points to, once they are a day old |
-| `notifyCanary` | Firestore write on `Settings/Canary` | Emails the owner on a new message/booking, auto-acknowledges the guest, and rebuilds the public busy-slot mirror |
-| `sendReceipt` | Callable (admin) | Emails a client receipt built in the dashboard, BCC'ing the owner |
-| `sendReply` | Callable (admin) | Sends a branded reply (with attachments) to a contact message |
-| `notifyLogin` | Callable | Alerts the owner on a dashboard sign-in |
-| `syncSession` | HTTPS | Records the "Algorithm" session analytics |
-| `llm` | Callable (admin) | Proxies the dashboard assistant so the provider key stays server-side |
-| `mcp` | HTTPS | Remote **MCP server** (OAuth 2.1) letting an AI client read and manage the portfolio, treasury, bookings and receipts |
+| `submitContact` | Callable, public, App Check | Validates and rate-limits a contact message, stores it in `Settings/Canary` |
+| `bookMeeting` | Callable, public, App Check | Validates a booking, checks the slot, creates the Calendar event and Meet link through the Apps Script, stores the meeting |
+| `notifyCanary` | Firestore write on `Settings/Canary` | Emails the owner, acknowledges the guest, rebuilds the public busy-slot mirror `Settings/BookedSlots` |
+| `cleanupAttachments` | Scheduled, daily | Deletes contact uploads no message points to, once they are a day old |
+| `notifyLogin` | Callable | Alerts the owner of a dashboard sign-in |
+| `sendReceipt` | Callable, admin | Emails a receipt built in the dashboard |
+| `sendReply` | Callable, admin | Sends a reply, with attachments, to a contact message |
+| `llm` | Callable, admin | Proxies the dashboard assistant, so the provider key stays server-side |
+| `trackSession` | HTTPS, App Check | Records visit analytics |
+| `mcp` | HTTPS | MCP server with OAuth 2.1, served at the Firebase Hosting site in `firebase.json` |
 
-Visitors cannot write to Firestore directly: the contact form and the booking
-form call `submitContact` and `bookMeeting`, which check every field and apply a
-site-wide cooldown plus a per-IP limit before writing with the Admin SDK.
+`syncMeeting` (in `functions-meeting/`, admin only) forwards the dashboard's calendar
+changes to the same Google Apps Script, which owns the Calendar events and Meet links.
 
-**`syncMeeting`** lives in a **second codebase**, `functions-meeting/`, because it
-runs on a different Node runtime (24) to the main backend (22). It is a thin
-admin-only, App Check-gated proxy that forwards to a Google Apps Script, which owns
-the actual Google Calendar event and its Meet link. The dashboard calls it to
-create, move and cancel meetings; public bookings go through `bookMeeting`, which
-posts to the same script. The MCP booking tools reach the same script too, so a
-cancel or reschedule updates the guest's invite.
+Shared logic (booking rules, money, receipts, HTML escaping) lives once under `src/` and
+is copied into `functions/src/` by `functions/scripts/sync-shared.mjs`; the functions'
+build runs it, and CI checks the copies with `--check`.
+
+Functions are deployed by hand, always scoped:
 
 ```bash
-firebase deploy --only functions:meeting   # deploy the syncMeeting codebase
-firebase deploy --only functions:mcp       # deploy one function from `default`
+firebase deploy --only functions:mcp,functions:notifyCanary   # named functions
+firebase deploy --only functions:meeting                      # one codebase
+firebase deploy --only firestore:rules,storage                # security rules
 ```
 
-```text
-Visitor books  ──►  bookMeeting  ──►  Apps Script  ──►  Google Calendar + Meet
-                         │
-                         └──►  Settings/Canary  ──►  notifyCanary  ──►  emails + public busy slots
-```
+A bare `firebase deploy` also republishes hosting and the rules. If discovery times out
+("Cannot determine backend specification"), retry with `FUNCTIONS_DISCOVERY_TIMEOUT=120`.
 
 ### Secrets
 
-No credential is ever committed or shipped to the client. The `NEXT_PUBLIC_*`
-values in [`.env.example`](.env.example) are public Firebase identifiers, guarded
-by App Check and security rules. Everything genuinely sensitive lives in Google
-Secret Manager and is read only inside a function:
+Real credentials live in Google Secret Manager and are read only inside functions:
 
 ```bash
-firebase functions:secrets:set SMTP_USER        # owner inbox
-firebase functions:secrets:set RESEND_API_KEY   # transactional email relay
-firebase functions:secrets:set LLM_API_KEY      # assistant provider key
-firebase functions:secrets:set MEETING_SYNC_URL # Apps Script calendar endpoint
+firebase functions:secrets:set SMTP_USER         # owner inbox
+firebase functions:secrets:set RESEND_API_KEY    # email relay
+firebase functions:secrets:set LLM_API_KEY       # assistant provider key
+firebase functions:secrets:set MEETING_SYNC_URL  # Apps Script endpoint (anyone with it can edit the calendar)
 ```
 
-`MEETING_SYNC_URL` is a credential in its own right: anyone holding that URL can
-create, move or cancel events on the owner's calendar, so it is stored as a
-secret rather than hardcoded.
+## Security
 
-> **Deploying functions:** always scope the deploy. A bare `firebase deploy` also
-> republishes hosting and Firestore/Storage rules, which is rarely what you want:
-> ```bash
-> firebase deploy --only functions:mcp,functions:notifyCanary   # named functions
-> firebase deploy --only functions:meeting                      # whole codebase
-> ```
-> If discovery times out with *"Cannot determine backend specification"*, retry
-> with `FUNCTIONS_DISCOVERY_TIMEOUT=120` - the main codebase is slow to load.
+- **Firestore rules** (`firestore.rules`): portfolio documents and a named list of
+  `Settings` documents are publicly readable; everything else needs the `admin` claim.
+  `MCP` and `RateLimits` are for the functions only, and analytics, visit stories and the
+  MCP audit log can be read and cleared by the admin but never written from a browser.
+- **Storage rules** (`storage.rules`): visitors may upload one new file of an allowed
+  type (images, PDF, plain text, Office) under 10 MB to `emails/`, and read its metadata
+  only in the first ten minutes (for its download link). Everything else is admin only.
+- **App Check** guards the public functions and the public Firestore reads.
+- **Tests**: `tests/rules/` checks both rule files in the emulators, in CI on every push.
+- The admin claim is granted once with `scripts/set-admin.mjs` (it uses the functions'
+  `firebase-admin`, so run `npm --prefix functions ci` first):
 
----
+  ```bash
+  GOOGLE_APPLICATION_CREDENTIALS=/path/outside/the/repo/key.json node scripts/set-admin.mjs <uid-or-email>
+  node scripts/set-admin.mjs --check <uid-or-email>
+  ```
 
-## Deploy
+## CI and deploy
 
-The site is a static export (`npm run build` writes `dist/`). Every push to `main`
-runs **Release to Hostinger** (`.github/workflows/deploy-hostinger.yml`): it lints,
-type-checks and builds, uploads `dist` over SSH, and swaps it into
-`domains/temrevil.com/public_html`, keeping the previous release as a timestamped
-backup. `.github/workflows/ci.yml` runs the same checks on pull requests.
+- **CI** (`.github/workflows/ci.yml`) runs on every push and pull request: lint,
+  type-check, unit tests and build of the site; the shared-code sync check and a
+  type-check of each functions codebase; and the security-rules tests in the emulators.
+- **Release** (`.github/workflows/deploy-hostinger.yml`) runs on every push to `main`, by
+  hand, and daily at 03:17 UTC. It refreshes the data snapshot, runs lint, the sync check,
+  type-check, unit tests and the build, then uploads `dist/` over SSH and runs
+  `scripts/deploy/activate.sh` on the server: the new release is swapped in with two
+  renames back to back, the previous one is kept as a backup (the newest five are kept),
+  and the homepage and one new script must answer before the run passes. If they don't,
+  `scripts/deploy/rollback.sh` puts the previous release back. The daily run only ships
+  when the Firestore content changed. A successful release pings IndexNow.
+- **GitHub Pages** (`.github/workflows/pages-redirect.yml`) publishes a redirect to the
+  canonical domain.
 
-**Data snapshot.** Before each build, `npm run sync:data` reads the public
-Firestore content (the paths in `src/data/publicPaths.json`) into
-`src/data/public.snapshot.json`, which the homepage and `/book` embed so they open
-on data already there. CI signs in to Google Cloud with Workload Identity
-Federation (no stored key) as a read-only service account. A daily run (03:17 UTC)
-redeploys only when that content changed. Without the variables below, CI builds
-from the committed snapshot.
+Every workflow action is pinned to a commit SHA.
 
-Repository **secrets**: `HOSTINGER_SSH_HOST`, `HOSTINGER_SSH_PORT`,
-`HOSTINGER_SSH_USERNAME`, `HOSTINGER_SSH_PASSWORD`, and the `NEXT_PUBLIC_FIREBASE_*`
-values from [`.env.example`](.env.example).
+Release secrets: `HOSTINGER_SSH_HOST`, `HOSTINGER_SSH_PORT`, `HOSTINGER_SSH_USERNAME`,
+`HOSTINGER_SSH_KEY` (a private key without a passphrase, whose public key is authorised on
+the host), `HOSTINGER_KNOWN_HOSTS` (the host's line from
+`ssh-keyscan -p <port> <host>`, checked once against the host's real fingerprint), and the
+`NEXT_PUBLIC_FIREBASE_*` values from `.env.example`. The job stops with a clear error when
+one is missing. Release variables: `GCP_WORKLOAD_IDENTITY_PROVIDER` and
+`GCP_SNAPSHOT_SERVICE_ACCOUNT`, a read-only service account reached through Workload
+Identity Federation with no stored key. Without them the build uses the committed snapshot.
 
-Repository **variables**: `GCP_WORKLOAD_IDENTITY_PROVIDER` and
-`GCP_SNAPSHOT_SERVICE_ACCOUNT` (the snapshot reader).
+## License
 
----
-
-## ️ Tech Stack
-
-| Domain | Technology |
-| :--- | :--- |
-| **Framework** | [React 19](https://react.dev/), [Next.js 16](https://nextjs.org/) |
-| **Backend** | [Firebase](https://firebase.google.com/) (Firestore, Functions, Storage) |
-| **Animation** | [Anime.js](https://animejs.com/), [Framer Motion](https://motion.dev/) |
-| **Security** | Strict CSP, hardened Firestore/Storage rules, `sanitizeSvg`, DOM tamper-deterrent |
-| **Icons** | [Lucide React](https://lucide.dev/) |
-| **Styling** | Vanilla CSS (Custom Design System), Tailwind CSS v4 |
-| **Logic** | TypeScript |
-
----
-
-##  License
-
-Distributed under the MIT License. See `LICENSE` for more information.
-
----
+MIT. See `LICENSE`.
 
 Built by Tem Revil, with Claude as coding assistant.
-**[Visit Website](https://temrevil.com)** • **Main Portfolio of Mohammed Ahmed**
-
