@@ -199,14 +199,8 @@ function App() {
     try {
       if (localStorage.getItem('revil_section') === 'dashboard') return 'dashboard';
     } catch { /* ignore */ }
-    const path = window.location.pathname;
-    const base = "";
-    const normPath = path.replace(/\/$/, '');
-    const normBase = base.replace(/\/$/, '');
-    if (normPath !== normBase && normPath !== '') {
-      return 'view_link';
-    }
-    return 'home';
+    // Any path but the root is a share link (the server answers those with this page).
+    return window.location.pathname.replace(/\/$/, '') !== '' ? 'view_link' : 'home';
   });
   const [previousSection, setPreviousSection] = useState<Section>('home');
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -562,7 +556,8 @@ function App() {
   }), []);
 
   const handleContributorClick = useCallback((contributor: Contributor) => startTransition(() => {
-    setSelectedContributor(contributor as unknown as ContributorViewData);
+    // A File only ever exists in the dashboard's unsaved drafts; a published one is a URL.
+    setSelectedContributor({ ...contributor, image: typeof contributor.image === 'string' ? contributor.image : undefined });
     setShowContributorModal(true);
   }), []);
 
@@ -755,7 +750,8 @@ function App() {
       }
     };
 
-    window.addEventListener('wheel', handleWheel, { passive: false });
+    // Passive: it only reads the wheel, never cancels it, so scrolling never waits on it.
+    window.addEventListener('wheel', handleWheel, { passive: true });
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('wheel', handleWheel);
@@ -896,12 +892,10 @@ function App() {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-            e.currentTarget.style.paddingRight = '8px';
             e.currentTarget.style.color = 'var(--text-primary)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-            e.currentTarget.style.paddingRight = '4px';
             e.currentTarget.style.color = 'var(--text-muted)';
           }}
           aria-label="Go to Secret Page"
