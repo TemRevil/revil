@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import './fonts.css'
 import './globals.css'
-import ClientProtection from './ClientProtection'
 import { LITE_SCRIPT } from '../lib/device'
 import { SITE_URL as siteUrl, SITE_NAME as siteName, SITE_TITLE as siteTitle, SITE_DESCRIPTION as siteDescription, SHARE_CARD } from '../utils/siteProfile'
 
@@ -21,46 +20,6 @@ export const metadata: Metadata = {
   title: siteTitle,
   description: siteDescription,
   applicationName: siteName,
-  keywords: [
-    // Navigational - brand searches
-    'Tem Revil',
-    'Temrevil',
-    'Mohammed Ahmed',
-    'Mohammed Ahmed developer',
-    'Tem Revil portfolio',
-    'Mohammed Ahmed portfolio',
-    'temrevil.com',
-    // Informational - "who is" / discovery
-    'frontend engineer Egypt',
-    'frontend engineer El Mansoura',
-    'frontend developer El Mansourah',
-    'AI engineer Egypt',
-    'React developer Egypt',
-    'Next.js developer Egypt',
-    'TypeScript developer portfolio',
-    'web developer El Mansoura',
-    'software engineer Dakahlia',
-    'frontend developer portfolio examples',
-    'React portfolio website',
-    // Commercial - hiring intent
-    'hire React developer Egypt',
-    'hire frontend developer Egypt',
-    'freelance frontend developer Egypt',
-    'freelance React developer remote',
-    'frontend engineer for hire',
-    'best frontend developer Egypt',
-    // Transactional - direct engagement
-    'contact frontend developer Egypt',
-    'book frontend developer consultation',
-    // Technical / skill-based
-    'Firebase developer',
-    'Framer Motion developer',
-    'motion UI developer',
-    'Tailwind CSS developer',
-    'Next.js Firebase portfolio',
-    'React TypeScript developer',
-    'Electron developer Egypt',
-  ],
   authors: [{ name: 'Mohammed Ahmed', url: siteUrl }],
   creator: 'Mohammed Ahmed',
   publisher: siteName,
@@ -104,10 +63,6 @@ export const metadata: Metadata = {
     shortcut: '/icon-192.webp',
   },
   other: {
-    'geo.region': 'EG-DK',
-    'geo.placename': 'El Mansoura',
-    'geo.position': '31.0409;31.3785',
-    'ICBM': '31.0409, 31.3785',
     // GEO: Signals for AI content engines
     'subject': 'Frontend & AI Engineer Portfolio',
     'topic': 'Web Development, React, Next.js, TypeScript, Firebase, AI Integration',
@@ -173,7 +128,6 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>
-        <ClientProtection />
         <div id="root">{children}</div>
       </body>
     </html>
