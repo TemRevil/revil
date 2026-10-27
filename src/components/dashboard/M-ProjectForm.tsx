@@ -10,6 +10,8 @@ import { ProjectData, TagData, ContributorData } from '../../types';
 import FileImage from '../FileImage';
 import { useObjectURL } from '../../hooks/useObjectURL';
 import useTheme from '../../hooks/useTheme';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { BELOW_LG_QUERY } from './breakpoints';
 
 interface ProjectFormData extends Omit<ProjectData, 'images' | 'icon'> {
     images: (File | string)[];
@@ -19,7 +21,8 @@ interface ProjectFormData extends Omit<ProjectData, 'images' | 'icon'> {
 interface MProjectFormProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (data: ProjectFormData) => void;
+    /** Resolves true once the project is stored; the form closes only then. */
+    onSave: (data: ProjectFormData) => Promise<boolean>;
     initialData?: ProjectFormData | null;
 }
 
@@ -86,6 +89,8 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
     });
 
     const isDark = useTheme();
+    const belowLg = useMediaQuery(BELOW_LG_QUERY);
+    const [saving, setSaving] = useState(false);
     const [selectTagOpen, setSelectTagOpen] = useState(false);
     const [selectContribOpen, setSelectContribOpen] = useState(false);
     const [availableTags, setAvailableTags] = useState<TagData[]>([]);
@@ -236,10 +241,15 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
         setSelectContribOpen(false);
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // Closes only after the save is stored. A failed save keeps the form open with the
+    // draft as typed (the dashboard shows why), so nothing has to be entered again.
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        onSave(formData);
-        onClose();
+        if (saving) return;
+        setSaving(true);
+        const saved = await onSave(formData);
+        setSaving(false);
+        if (saved) onClose();
     };
 
     // Calculate completion percentage
@@ -282,7 +292,7 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                                 <div className="relative shrink-0">
                                     <div className={`w-10 h-10 lg:w-12 lg:h-12 rounded-lg flex items-center justify-center shadow-lg`}
                                         style={{ background: 'linear-gradient(135deg, #3395ff 0%, rgb(99, 102, 241) 100%)' }}>
-                                        <Edit className="text-white" size={window.innerWidth < 1024 ? 20 : 24} />
+                                        <Edit className="text-white" size={belowLg ? 20 : 24} />
                                     </div>
                                 </div>
                                 <div className="min-w-0 flex-1">
@@ -634,10 +644,12 @@ const MProjectForm = ({ isOpen, onClose, onSave, initialData }: Omit<MProjectFor
                             <button
                                 type="submit"
                                 form="projectForm"
-                                className="btn btn-primary px-6 py-2 shadow-lg hover:scale-105 text-sm font-bold"
+                                disabled={saving}
+                                aria-busy={saving}
+                                className="btn btn-primary px-6 py-2 shadow-lg hover:scale-105 disabled:opacity-60 disabled:hover:scale-100 text-sm font-bold"
                                 style={{ background: 'linear-gradient(135deg, #3395ff 0%, rgb(99, 102, 241) 100%)' }}
                             >
-                                {initialData ? 'Update' : 'Create'} Project
+                                {saving ? 'Saving...' : `${initialData ? 'Update' : 'Create'} Project`}
                             </button>
                         </div>
                     </div>
