@@ -9,6 +9,7 @@
     "postbuild": "node scripts/public-data.mjs && node scripts/share-shell.mjs",
     "start": "next start",
     "lint": "eslint .",
+    "test": "vitest run",
     "sync:data": "node scripts/sync-data.mjs",
     "og:card": "node scripts/og-card.mjs"
   },
@@ -53,6 +54,8 @@
     "globals": "^17.8.0",
     "postcss": "^8.5.25",
     "tailwindcss": "^4.3.3",
-    "typescript-eslint": "^8.65.0"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^3.2.7"
   }
 }
