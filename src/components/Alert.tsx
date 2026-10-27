@@ -1,6 +1,6 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { X, CheckCircle, AlertTriangle, AlertCircle, Info } from 'lucide-react';
-import anime from 'animejs';
+import { motion } from 'motion/react';
 
 export type AlertType = 'success' | 'error' | 'warning' | 'info';
 
@@ -11,9 +11,20 @@ interface AlertProps {
     duration?: number;
 }
 
-export default function Alert({ type, message, onClose, duration = 3000 }: AlertProps) {
-    const alertRef = useRef<HTMLDivElement>(null);
-    const closingRef = useRef(false);
+// The Penner curves the toast always used (easeOutQuart in, easeInQuad out).
+const EASE_OUT_QUART = [0.25, 1, 0.5, 1] as const;
+const EASE_IN_QUAD = [0.11, 0, 0.5, 0] as const;
+const HIDDEN = { opacity: 0, y: -20, scale: 0.95 };
+
+export default function Alert(props: AlertProps) {
+    // Keyed on the content: call sites reuse this one instance for the next toast, and a
+    // fresh key gives the new message its own entrance and timer instead of inheriting a
+    // toast that was already fading out.
+    return <Toast key={`${props.type}|${props.message}`} {...props} />;
+}
+
+function Toast({ type, message, onClose, duration = 3000 }: AlertProps) {
+    const [closing, setClosing] = useState(false);
     /* Every call site passes an inline `() => hideAlert()`, so `onClose` is a new function
        on each parent render. Holding it in a ref keeps handleClose stable, which keeps the
        auto-dismiss effect below from tearing down and restarting its timer on renders that
@@ -23,38 +34,7 @@ export default function Alert({ type, message, onClose, duration = 3000 }: Alert
     // ref while rendering, and the dismiss timer only reads this long after the commit.
     useEffect(() => { onCloseRef.current = onClose; });
 
-    const handleClose = useCallback(() => {
-        if (!alertRef.current || closingRef.current) return;
-        // Exit animation. `opacity: [1, 0]` forces opacity back to 1 on the first frame, so
-        // running this a second time on an already-faded toast reads as a flash.
-        closingRef.current = true;
-        anime({
-            targets: alertRef.current,
-            translateY: [0, -20],
-            opacity: [1, 0],
-            scale: [1, 0.95],
-            duration: 250,
-            easing: 'easeInQuad',
-            complete: () => onCloseRef.current()
-        });
-    }, []);
-
-    useEffect(() => {
-        if (!alertRef.current) return;
-        // Keyed on the content, not just on mount: call sites reuse this one instance for the
-        // next toast, and without this a second message would inherit the faded-out element
-        // and a closingRef still stuck at true - visible as nothing at all.
-        closingRef.current = false;
-        // Entrance animation
-        anime({
-            targets: alertRef.current,
-            translateY: [-20, 0],
-            opacity: [0, 1],
-            scale: [0.95, 1],
-            duration: 500,
-            easing: 'easeOutQuart'
-        });
-    }, [message, type]);
+    const handleClose = useCallback(() => setClosing(true), []);
 
     useEffect(() => {
         if (duration > 0) {
@@ -92,8 +72,13 @@ export default function Alert({ type, message, onClose, duration = 3000 }: Alert
     const Icon = currentStyle.icon;
 
     return (
-        <div
-            ref={alertRef}
+        <motion.div
+            // Hidden from the first paint, then in; on close it leaves before onClose runs.
+            initial={HIDDEN}
+            animate={closing
+                ? { ...HIDDEN, transition: { duration: 0.25, ease: EASE_IN_QUAD } }
+                : { opacity: 1, y: 0, scale: 1, transition: { duration: 0.5, ease: EASE_OUT_QUART } }}
+            onAnimationComplete={() => { if (closing) onCloseRef.current(); }}
             role={type === 'error' || type === 'warning' ? 'alert' : 'status'}
             aria-live={type === 'error' || type === 'warning' ? 'assertive' : 'polite'}
             /* Above the z-[9999] modals. An alert is almost always ABOUT something that just
@@ -120,6 +105,6 @@ export default function Alert({ type, message, onClose, duration = 3000 }: Alert
             >
                 <X size={18} />
             </button>
-        </div>
+        </motion.div>
     );
 }
