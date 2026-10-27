@@ -9,11 +9,14 @@ service firebase.storage {
     }
 
     // Contact form email attachments - public upload with strict constraints.
-    // `get` stays public so the uploader's getDownloadURL() (called right after
-    // upload to store the link) works and the admin's notification email links
-    // resolve. It is `get`, not `read`: `read` also grants `list`, which let anyone
-    // who knew one folder ID list every file in it. Folder IDs are unguessable
-    // random strings, so attachments can't be discovered.
+    // A visitor may `get` (read the metadata of) an attachment only in the first ten
+    // minutes after it was uploaded: that is what the contact form's getDownloadURL(),
+    // called right after the upload, needs. After that, knowing a path is not enough to
+    // read a visitor's file. The stored link carries a download token, and tokenized
+    // links bypass these rules, so the owner's notification mail and the dashboard still
+    // open attachments; the functions read them with the Admin SDK. The admin can read
+    // them here too (the catch-all below). It is `get`, never `read`: `read` also grants
+    // `list`, which would let anyone who knew one folder ID list every file in it.
     // Note: SVG is intentionally NOT in the allowlist - SVGs can execute JS when
     // served as image/svg+xml. Allowed: raster images, PDF, plain text, MS Office.
     // The content-type pattern is exact: the old ones ended in `.*`, so a value
@@ -22,11 +25,12 @@ service firebase.storage {
     // counts as `create`, so without it anyone who knew an attachment's path could
     // replace it with a different file after the owner had looked at it.
     // Storage rules cannot count uploads; the cleanupAttachments function deletes
-    // any upload that no message points to once it is a day old.
+    // any upload that no message points to once it is a day old. Enforcing App Check
+    // on Storage (a console setting) keeps scripts without a token out entirely.
     // Deleting an attachment is the cleanup function's job - it uses the Admin SDK,
     // which bypasses these rules.
     match /emails/{emailId}/{fileName} {
-      allow get: if true;
+      allow get: if request.time < resource.timeCreated + duration.value(10, 'm');
       allow create: if resource == null
         && emailId.size() <= 40
         && fileName.size() <= 200
@@ -50,8 +54,11 @@ service firebase.storage {
       // Admin-only write via custom claim (`admin: true`)
       // Set this once: admin.auth().setCustomUserClaims(uid, { admin: true })
       // Using a claim instead of hardcoded email so admin can change without re-deploying rules.
-      allow write: if isAdmin()
+      allow create, update: if isAdmin()
         && request.resource.size < 50 * 1024 * 1024;
+      // A delete has no request.resource, so it can't share the size check above: the
+      // old single `write` rule errored on every delete and refused it.
+      allow delete: if isAdmin();
     }
   }
 }
