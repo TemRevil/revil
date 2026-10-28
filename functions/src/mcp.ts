@@ -50,14 +50,14 @@ import { parseAvailability, meetingInstant, utcOffsetHours, DEFAULT_HOST_TZ } fr
 import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail";
 import { clientIp } from "./geoip";
 import {
-  APPROVAL_TTL_MS, CODE_TTL_MS, LOGIN_TTL_MS, UNUSED_CLIENT_TTL_MS, adminChecker, clientPath, consumeSecret, expiresAt,
-  grantRefusal, isConnectedClient, knownClient, lookupAccessToken, parseMcpConfig, rand, redeemAuthCode, redeemRefreshToken,
-  storeSecret, sweepMcp, takeRateSlot,
+  APPROVAL_TTL_MS, CODE_TTL_MS, LOGIN_TTL_MS, adminChecker, clientPath, consumeSecret,
+  authorizeSlot, grantRefusal, lookupAccessToken, parseMcpConfig, rand, redeemAuthCode, redeemRefreshToken, registerClient,
+  storeSecret, sweepMcp,
   type AdminSubject, type ApprovalRec, type CodeRec, type GrantDeps, type LoginRec, type McpCfg, type TokenRec,
 } from "./mcpGrants";
 import {
   INVALID_DATE, SCOPE_READ, SCOPE_WRITE, SUPPORTED_SCOPES, UNTRUSTED_NOTE, hasScope, isValidYmd, markUntrusted,
-  narrowScope, parseScope, projectNameError, receiptRecipient, toStoredDate, toStoredTime, type SlotLimits,
+  narrowScope, parseScope, projectNameError, receiptRecipient, toStoredDate, toStoredTime,
 } from "./mcpRules";
 import { incomeEntryId, recordIncome, saveMeeting } from "./mcpWrites";
 import { visitViews } from "./mcpVisits";
@@ -310,24 +310,23 @@ function validRedirectUri(v: unknown): boolean {
 }
 
 // ── Rate limits for the two endpoints anyone can call ──────────────
-// /register and /authorize need no sign-in and each one writes a document, so an
-// unknown caller is capped per hashed IP (the same clientIp() rule the site's forms
-// use). There is no overall cap, which strangers could fill to lock the owner out; a
-// client the owner already approved is never limited at all. What these requests
-// create expires fast (a login in 10 minutes, an unused client in a day) and
-// cleanupMcp deletes it.
-const REGISTER_LIMITS: SlotLimits = { perIp: 10, windowMs: 3_600_000 };
-const AUTHORIZE_LIMITS: SlotLimits = { perIp: 30, windowMs: 3_600_000 };
+// /register and /authorize need no sign-in and each one writes a document, so every
+// request is capped per hashed IP (the same clientIp() rule the site's forms use).
+// A client id is public, so a connected client is not exempt: it draws from its own
+// roomier per-caller bucket. There is no shared cap that strangers could fill to lock
+// the owner out. What these requests create expires fast (a login in 10 minutes, an
+// unused client in a day) and cleanupMcp deletes it. The limits live in ./mcpGrants.
 
-/** Take a slot for this caller; on refusal answers 429 and returns false. */
-async function withinLimit(kind: "register" | "authorize", limits: SlotLimits, req: Request, res: Response): Promise<boolean> {
+/** This caller's key for the per-IP buckets: a hash, never the address itself. */
+function callerKey(req: Request): string {
   const ip = clientIp(req.headers, req.ip) || "unknown";
-  const key = createHash("sha256").update(ip).digest("hex").slice(0, 32);
-  const verdict = await takeRateSlot(db(), kind, key, limits, now());
-  if (verdict.ok) return true;
-  res.set("Retry-After", String(Math.ceil(verdict.retryAfterMs / 1000)));
+  return createHash("sha256").update(ip).digest("hex").slice(0, 32);
+}
+
+/** Answer a refused slot with 429 and a Retry-After. */
+function tooMany(res: Response, retryAfterMs: number): void {
+  res.set("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
   json(res, 429, { error: "slow_down", error_description: "Too many requests - try again later." });
-  return false;
 }
 
 async function register(req: Request, res: Response): Promise<void> {
@@ -349,29 +348,10 @@ async function register(req: Request, res: Response): Promise<void> {
   }
   const clientName = (typeof body.client_name === "string" && body.client_name.trim() ? body.client_name : "MCP Client").slice(0, 200);
 
-  // The owner's own client registering again gets its approved registration back,
-  // with nothing written and no limit to hit.
-  const known = await knownClient(db(), redirectUris, clientName, now());
-  if (known) {
-    const { expiresAt: _exp, connectedAt: _con, ...record } = known;
-    return json(res, 201, { ...record, client_id_issued_at: Math.floor(Number(known.createdAt || now()) / 1000) });
-  }
-  if (!(await withinLimit("register", REGISTER_LIMITS, req, res))) return;
-
-  const clientId = `mcp_${rand(16)}`;
-  const record = {
-    client_id: clientId,
-    redirect_uris: redirectUris,
-    client_name: clientName,
-    token_endpoint_auth_method: "none",
-    grant_types: ["authorization_code", "refresh_token"],
-    response_types: ["code"],
-    createdAt: now(),
-  };
-  // A client that never completes a connection is swept after a day; issuing tokens
-  // pushes this out (mcpGrants writeTokenPair).
-  await db().doc(clientPath(clientId)).set({ ...record, expiresAt: expiresAt(now() + UNUSED_CLIENT_TTL_MS) });
-  return json(res, 201, { ...record, client_id_issued_at: Math.floor(now() / 1000) });
+  const t = now();
+  const r = await registerClient(db(), { redirectUris, clientName, callerKey: callerKey(req), now: t });
+  if (!r.ok) return tooMany(res, r.retryAfterMs);
+  return json(res, 201, { ...r.record, client_id_issued_at: Math.floor(Number(r.record.createdAt || t) / 1000) });
 }
 
 // ── OAuth: /authorize → bounce to Google for the human login ───────
@@ -398,8 +378,9 @@ async function authorize(req: Request, res: Response): Promise<void> {
   if (!client || !(client.redirect_uris || []).includes(redirectUri) || (typeof clientExp === "number" && clientExp <= now())) {
     return json(res, 400, { error: "invalid_client", error_description: "unknown client / redirect_uri" });
   }
-  // A client the owner approved before is never held up by anonymous traffic.
-  if (!isConnectedClient(client, now()) && !(await withinLimit("authorize", AUTHORIZE_LIMITS, req, res))) return;
+  // Every request is limited per caller; a connected client has its own, roomier bucket.
+  const slot = await authorizeSlot(db(), client, callerKey(req), now());
+  if (!slot.ok) return tooMany(res, slot.retryAfterMs);
 
   // Stash the pending request; resume after the bridge page confirms the admin.
   // `authTime` is when this authorization began; it rides along to every record

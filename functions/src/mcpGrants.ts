@@ -59,10 +59,10 @@ export function isConnectedClient(c: Record<string, unknown> | undefined, now: n
 
 /**
  * A client the owner already connected with this exact metadata, or null. MCP clients
- * register again on every fresh connect; handing back the approved registration means
- * the owner's reconnect never depends on the anonymous registration limit. That is
- * safe to give anyone: a public client id only ever sends codes to its own redirect
- * URIs, behind PKCE and the owner's consent.
+ * register again on every fresh connect; handing back the approved registration keeps
+ * the collection from filling with copies. A public client id only ever sends codes
+ * to its own redirect URIs, behind PKCE and the owner's consent, and the lookup sits
+ * behind the same per-caller limit as any registration (registerClient).
  */
 export async function knownClient(db: Firestore, redirectUris: string[], clientName: string, now: number): Promise<Record<string, unknown> | null> {
   const idx = await db.doc(knownPath(redirectUris, clientName)).get();
@@ -79,7 +79,7 @@ export async function knownClient(db: Firestore, redirectUris: string[], clientN
  * up the owner's slots, and the document expires (and is swept) with its window.
  */
 export async function takeRateSlot(
-  db: Firestore, kind: "register" | "authorize", callerKey: string, limits: SlotLimits, now: number,
+  db: Firestore, kind: "register" | "authorize" | "authorizeKnown", callerKey: string, limits: SlotLimits, now: number,
 ): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
   const ref = db.doc(`MCP/rl_${kind}_${callerKey}`);
   return db.runTransaction(async (tx) => {
@@ -88,6 +88,64 @@ export async function takeRateSlot(
     tx.set(ref, { hits: r.hits, expiresAt: expiresAt(now + limits.windowMs) });
     return { ok: true };
   });
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+export const REGISTER_LIMITS: SlotLimits = { perIp: 10, windowMs: HOUR_MS };
+export const AUTHORIZE_LIMITS: SlotLimits = { perIp: 30, windowMs: HOUR_MS };
+/** A connected client's own, roomier bucket: still per caller, never unlimited. */
+export const KNOWN_AUTHORIZE_LIMITS: SlotLimits = { perIp: 120, windowMs: HOUR_MS };
+
+type Slot = { ok: true } | { ok: false; retryAfterMs: number };
+
+/**
+ * The /authorize rate decision for one caller and one (already validated) client.
+ * Every request is limited per caller: a client id is public, so "connected" cannot
+ * mean "exempt". A connected client draws from a separate, larger bucket, so a
+ * caller's unknown-client traffic never eats into the reconnects of a client the
+ * owner approved. There is still no shared cap that other callers could exhaust.
+ */
+export async function authorizeSlot(db: Firestore, client: Record<string, unknown>, callerKey: string, now: number): Promise<Slot> {
+  return isConnectedClient(client, now)
+    ? takeRateSlot(db, "authorizeKnown", callerKey, KNOWN_AUTHORIZE_LIMITS, now)
+    : takeRateSlot(db, "authorize", callerKey, AUTHORIZE_LIMITS, now);
+}
+
+/** The registration fields a client is created with and answered with. */
+export interface ClientRecord {
+  client_id: string; redirect_uris: string[]; client_name: string; token_endpoint_auth_method: "none";
+  grant_types: string[]; response_types: string[]; createdAt: number;
+}
+
+/**
+ * Dynamic client registration for one caller. Every registration takes a slot from
+ * the caller's per-IP limit first, including one whose metadata matches a client the
+ * owner connected; that one gets the approved client back instead of a new document,
+ * otherwise a new client is created that expires unless it connects.
+ */
+export async function registerClient(
+  db: Firestore, m: { redirectUris: string[]; clientName: string; callerKey: string; now: number },
+): Promise<{ ok: false; retryAfterMs: number } | { ok: true; record: ClientRecord }> {
+  const slot = await takeRateSlot(db, "register", m.callerKey, REGISTER_LIMITS, m.now);
+  if (!slot.ok) return slot;
+  const known = await knownClient(db, m.redirectUris, m.clientName, m.now);
+  if (known) {
+    const { expiresAt: _exp, connectedAt: _con, ...record } = known;
+    return { ok: true, record: record as unknown as ClientRecord };
+  }
+  const record: ClientRecord = {
+    client_id: `mcp_${rand(16)}`,
+    redirect_uris: m.redirectUris,
+    client_name: m.clientName,
+    token_endpoint_auth_method: "none",
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
+    createdAt: m.now,
+  };
+  // A client that never completes a connection is swept after a day; issuing tokens
+  // pushes this out (writeTokenPair).
+  await db.doc(clientPath(record.client_id)).set({ ...record, expiresAt: expiresAt(m.now + UNUSED_CLIENT_TTL_MS) });
+  return { ok: true, record };
 }
 
 // ── Settings/MCP ──────────────────────────────────────────────────────
@@ -184,8 +242,9 @@ function writeTokenPair(
   tx.set(db.doc(secretPath("tokens", access)), { ...tokenRec, expiresAt: expiresAt(accessExp) });
   tx.set(db.doc(secretPath("refresh", refresh)), { ...refreshRec, expiresAt: expiresAt(refreshExp) });
   // Tokens are only ever issued after the owner approved this client, so from here on
-  // it is a known client: its own requests skip the anonymous rate limits, and a fresh
-  // registration with the same metadata gets this client back (see knownClient).
+  // it is a known client: its /authorize requests draw from a roomier per-caller
+  // bucket, and a fresh registration with the same metadata gets this client back
+  // (see authorizeSlot and registerClient).
   const clientExp = now + CLIENT_TTL_MS;
   tx.set(db.doc(clientPath(g.clientId)), { expiresAt: expiresAt(clientExp), connectedAt: now }, { merge: true });
   const uris = client?.redirect_uris;
