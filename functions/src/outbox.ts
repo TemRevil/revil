@@ -15,7 +15,7 @@
  */
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import admin from "firebase-admin";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { createTransporter, HELLO_EMAIL, resendKey } from "./mail.js";
 
 export const MAIL_JOBS = "MailJobs";
@@ -90,7 +90,7 @@ export function retryReset(job: Partial<MailJob> | undefined, now: number): Pick
  * job's status afterwards, or null when there was no failed job with that id.
  */
 export async function retryFailed(id: string): Promise<JobStatus | null> {
-  const db = admin.firestore();
+  const db = getFirestore();
   const ref = db.collection(MAIL_JOBS).doc(id);
   const reset = await db.runTransaction(async (tx) => {
     const patch = retryReset((await tx.get(ref)).data() as MailJob | undefined, Date.now());
@@ -106,7 +106,7 @@ export async function retryFailed(id: string): Promise<JobStatus | null> {
 export async function enqueueMail(id: string, mail: MailMessage): Promise<void> {
   const job: MailJob = { ...mail, status: "pending", attempts: 0, nextAttemptAt: Date.now(), createdAt: Date.now() };
   try {
-    await admin.firestore().collection(MAIL_JOBS).doc(id).create(job);
+    await getFirestore().collection(MAIL_JOBS).doc(id).create(job);
   } catch (err) {
     if ((err as { code?: number }).code === 6) return; // ALREADY_EXISTS: queued before
     throw err;
@@ -121,13 +121,13 @@ export async function enqueueMail(id: string, mail: MailMessage): Promise<void> 
 export async function sendNow(id: string, mail: MailMessage): Promise<{ status: JobStatus; lastError?: string }> {
   await enqueueMail(id, mail);
   await deliver(id);
-  const job = (await admin.firestore().collection(MAIL_JOBS).doc(id).get()).data() as MailJob | undefined;
+  const job = (await getFirestore().collection(MAIL_JOBS).doc(id).get()).data() as MailJob | undefined;
   return { status: job?.status ?? "pending", ...(job?.lastError ? { lastError: job.lastError } : {}) };
 }
 
 /** Claim, send and record one job. Safe to call twice: only one run gets the claim. */
 export async function deliver(id: string): Promise<void> {
-  const db = admin.firestore();
+  const db = getFirestore();
   const ref = db.collection(MAIL_JOBS).doc(id);
   const now = Date.now();
   const job = await db.runTransaction(async (tx) => {
@@ -151,16 +151,16 @@ export async function deliver(id: string): Promise<void> {
     });
     await ref.update({
       status: "sent", sentAt: Date.now(),
-      html: admin.firestore.FieldValue.delete(),
-      nextAttemptAt: admin.firestore.FieldValue.delete(),
-      lastError: admin.firestore.FieldValue.delete(),
+      html: FieldValue.delete(),
+      nextAttemptAt: FieldValue.delete(),
+      lastError: FieldValue.delete(),
     });
   } catch (err) {
     const attempts = (job.attempts || 0) + 1;
     const lastError = safeError(err);
     console.error(`Mail job ${id} failed (attempt ${attempts}):`, lastError);
     await ref.update(attempts >= MAX_ATTEMPTS
-      ? { status: "failed", lastError, nextAttemptAt: admin.firestore.FieldValue.delete() }
+      ? { status: "failed", lastError, nextAttemptAt: FieldValue.delete() }
       : { status: "pending", lastError, nextAttemptAt: Date.now() + backoffMs(attempts) });
   }
 }
@@ -173,7 +173,7 @@ export const sendMail = onDocumentCreated(
 export const retryMail = onSchedule(
   { schedule: "every 5 minutes", region: "us-central1", secrets: [resendKey] },
   async () => {
-    const due = await admin.firestore().collection(MAIL_JOBS)
+    const due = await getFirestore().collection(MAIL_JOBS)
       .where("nextAttemptAt", "<=", Date.now()).limit(50).get();
     for (const doc of due.docs) {
       try { await deliver(doc.id); } catch (err) { console.error(`retryMail ${doc.id}:`, (err as Error)?.message); }

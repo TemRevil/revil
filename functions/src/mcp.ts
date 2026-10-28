@@ -31,11 +31,11 @@
 import { onRequest, type Request } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineSecret } from "firebase-functions/params";
-import admin from "firebase-admin";
+import { getAuth } from "firebase-admin/auth";
 import { createHash } from "crypto";
 import { z } from "zod";
 import type { Response } from "express";
-import { FieldPath, type DocumentSnapshot } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore, type DocumentSnapshot } from "firebase-admin/firestore";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   buildReceiptHtml, receiptNumber, projectReceiptLine, receiptPaymentRows, LEGACY_PAYMENT_LABEL, type ReceiptLine,
@@ -157,7 +157,7 @@ function baseUrl(): string {
   return configured.replace(/\/+$/, "");
 }
 
-const db = () => admin.firestore();
+const db = () => getFirestore();
 
 async function mcpConfig(): Promise<McpCfg> {
   const snap = await db().doc("Settings/MCP").get();
@@ -167,7 +167,7 @@ async function mcpConfig(): Promise<McpCfg> {
 /** A Firebase Auth user for the admin checks, or null when the account is gone. */
 async function getAuthUser(uid: string): Promise<AdminSubject | null> {
   try {
-    return await admin.auth().getUser(uid);
+    return await getAuth().getUser(uid);
   } catch (err) {
     if ((err as { code?: string })?.code === "auth/user-not-found") return null;
     throw err;
@@ -424,7 +424,7 @@ async function firebaseCallback(req: Request, res: Response): Promise<void> {
   let decoded;
   try {
     // checkRevoked: a disabled account or one whose sessions were revoked is refused here too.
-    decoded = await admin.auth().verifyIdToken(idToken, true);
+    decoded = await getAuth().verifyIdToken(idToken, true);
   } catch {
     return callbackError(req, res, 401, "Invalid sign-in token.");
   }
@@ -583,7 +583,7 @@ async function verifyBearer(req: Request): Promise<TokenRec | null> {
 }
 
 // ── MCP tools ──────────────────────────────────────────────────────
-const SERVER_TIMESTAMP = () => admin.firestore.FieldValue.serverTimestamp();
+const SERVER_TIMESTAMP = () => FieldValue.serverTimestamp();
 const ok = (obj: unknown): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(obj, null, 2) }] });
 const fail = (msg: string): CallToolResult => ({ content: [{ type: "text", text: msg }], isError: true });
 
@@ -1232,7 +1232,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       if (a.category) {
         const r = await resolveCategory(a.category);
         if (r.error) return fail(r.error);
-        patch.Category = r.id ?? admin.firestore.FieldValue.delete();
+        patch.Category = r.id ?? FieldValue.delete();
         categoryLabel = r.name || PERSONAL_CATEGORY_NAME;
       }
       if (a.date) patch.Date = toStoredDate(a.date);
@@ -1337,7 +1337,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       }
 
       await db().doc("Settings/Canary").update({
-        [`Meetings.${a.id}`]: admin.firestore.FieldValue.delete(),
+        [`Meetings.${a.id}`]: FieldValue.delete(),
         lastMeetingWrite: SERVER_TIMESTAMP(),
       });
       return ok({
@@ -2094,7 +2094,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     async (a) => {
       const docPath = a.kind === "expense" ? "Treasury/spendings" : "Treasury/income";
       await db().doc(docPath).set(
-        { entries: { [a.id]: admin.firestore.FieldValue.delete() }, lastWrite: SERVER_TIMESTAMP() },
+        { entries: { [a.id]: FieldValue.delete() }, lastWrite: SERVER_TIMESTAMP() },
         { merge: true },
       );
       return ok({ status: "deleted", kind: a.kind, id: a.id });
