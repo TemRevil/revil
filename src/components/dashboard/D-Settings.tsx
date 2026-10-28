@@ -1172,7 +1172,9 @@ export default function DSettings() {
 
             {/* Content Container with overflow-x-hidden for clean transitions */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col gap-6 p-4 custom-scrollbar">
-                <AnimatePresence mode="wait">
+                {/* initial={false}: the dashboard fades the whole tab in once, so the first
+                    section is already in place; a section only enters on a switch. */}
+                <AnimatePresence mode="wait" initial={false}>
                     {activeTab === 'availability' && (
                         <motion.div
                             key="availability"

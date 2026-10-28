@@ -37,6 +37,7 @@ import Alert, { AlertType } from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import useTheme from '../../hooks/useTheme';
 import useMediaQuery from '../../hooks/useMediaQuery';
+import { XS_QUERY } from './breakpoints';
 import { EASE } from './motion';
 import { type MapWrite, putEntry, removeEntry, orderWrite, planIncomeSave } from './treasury/writes';
 
@@ -320,7 +321,7 @@ const DTreasury = () => {
     const [draft, setDraft] = useState<TreasuryData['config']>({ ...DEFAULT_CONFIG });
     const [settingsDirty, setSettingsDirty] = useState(false);
 
-    const isExtraSmall = useMediaQuery('(max-width: 399px)');
+    const isExtraSmall = useMediaQuery(XS_QUERY);
 
     useEffect(() => {
         // Treasury docs are admin-only - attach the listeners ONLY once a user is

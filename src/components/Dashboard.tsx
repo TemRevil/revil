@@ -6,6 +6,8 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { db } from '../lib/firebase';
 import { appAuth } from '../lib/appAuth';
 import useMediaQuery from '../hooks/useMediaQuery';
+import { PHONE_QUERY } from '../lib/device';
+import { XS_QUERY, SM_QUERY } from './dashboard/breakpoints';
 import { EASE } from './dashboard/motion';
 
 // The parameter name in the function type would trigger `no-unused-vars` in some
@@ -57,9 +59,9 @@ const Dashboard = ({ onNavigate }: DashboardProps) => {
     const offAuthRef = useRef<(() => void) | null>(null);
 
     // Responsive breakpoints, followed with media queries (no resize listener).
-    const isExtraSmall = useMediaQuery('(max-width: 399px)');
-    const isSmall = useMediaQuery('(max-width: 639px)');
-    const isMobile = useMediaQuery('(max-width: 767px)');
+    const isExtraSmall = useMediaQuery(XS_QUERY);
+    const isSmall = useMediaQuery(SM_QUERY);
+    const isMobile = useMediaQuery(PHONE_QUERY);
 
     // Auth gate: the dashboard is admin-only. If there's no signed-in user (e.g.
     // it was restored on refresh without a session), bounce home so we never fire
