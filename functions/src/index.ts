@@ -15,9 +15,9 @@ const db = admin.firestore();
 // never ships in the public client bundle.
 const llmApiKey = defineSecret("LLM_API_KEY");
 
-// Remote MCP server (agentic portfolio access over OAuth) - defined in its own
-// module and re-exported so `firebase deploy --only functions:mcp` works.
-export { mcp } from "./mcp.js";
+// Remote MCP server (agentic portfolio access over OAuth) and its daily cleanup -
+// defined in their own module and re-exported so `firebase deploy --only functions:mcp` works.
+export { mcp, cleanupMcp } from "./mcp.js";
 import { meetingSyncUrl } from "./mcp.js";
 import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail.js";
 import { escapeHtml as escHtml } from "./html.js";
