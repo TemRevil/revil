@@ -18,6 +18,7 @@ import Select from '../Select';
 import Toggle from '../Toggle';
 import ElasticSlider from '../reactbits/ElasticSlider';
 import useTheme from '../../hooks/useTheme';
+import { decimalInput } from './digits';
 
 type Mode = 'project' | 'expense' | 'income';
 
@@ -373,7 +374,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className={labelCls}>{monthly ? 'Monthly rate' : 'Price'}</label>
-                                    <input className={inputCls} type="number" inputMode="decimal" value={priceAmount} onChange={e => setPriceAmount(e.target.value)} placeholder="0" />
+                                    <input className={inputCls} type="text" inputMode="decimal" value={priceAmount} onChange={e => setPriceAmount(decimalInput(e.target.value))} placeholder="0" />
                                 </div>
                                 <div>
                                     <label className={labelCls}>Currency</label>
@@ -560,7 +561,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className={labelCls}>Amount ({CURRENCY_SYMBOL[activeCurrency]} {activeCurrency})</label>
-                                    <input className={inputCls} type="number" inputMode="decimal" value={expAmount} onChange={e => setExpAmount(e.target.value)} placeholder="0" />
+                                    <input className={inputCls} type="text" inputMode="decimal" value={expAmount} onChange={e => setExpAmount(decimalInput(e.target.value))} placeholder="0" />
                                 </div>
                                 <div>
                                     <label className={labelCls}>Date</label>
@@ -650,7 +651,7 @@ const MTreasuryEntry = ({ mode, config, project, expense, income, projects, acco
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className={labelCls}>Amount ({CURRENCY_SYMBOL[activeCurrency]} {activeCurrency})</label>
-                                    <input className={inputCls} type="number" inputMode="decimal" value={incAmount} onChange={e => setIncAmount(e.target.value)} placeholder="0" autoFocus />
+                                    <input className={inputCls} type="text" inputMode="decimal" value={incAmount} onChange={e => setIncAmount(decimalInput(e.target.value))} placeholder="0" autoFocus />
                                 </div>
                                 <div>
                                     <label className={labelCls}>Date received</label>

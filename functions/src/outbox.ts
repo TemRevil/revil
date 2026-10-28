@@ -30,6 +30,8 @@ export interface MailMessage {
   /** Display name for HELLO_EMAIL, e.g. "Revil Portfolio". */
   fromName: string;
   cc?: string;
+  /** A silent copy, e.g. the owner on a receipt sent to a customer. */
+  bcc?: string;
   replyTo?: string;
   /** A few words for the dashboard: "Contact notification", "Booking acknowledgement". */
   label: string;
@@ -73,6 +75,33 @@ export function jobId(...parts: string[]): string {
   return parts.map((p) => p.replace(/[^A-Za-z0-9_-]/g, "-")).join("_").slice(0, 200);
 }
 
+/**
+ * The change that puts a failed job back in the queue, or null when the job is not
+ * failed (pending and sending jobs are already being retried; sent ones are done).
+ * Its attempts start again from zero, so it gets the full set of retries.
+ */
+export function retryReset(job: Partial<MailJob> | undefined, now: number): Pick<MailJob, "status" | "attempts" | "nextAttemptAt"> | null {
+  if (!job || job.status !== "failed" || typeof job.html !== "string") return null;
+  return { status: "pending", attempts: 0, nextAttemptAt: now };
+}
+
+/**
+ * Re-queue a failed job and try it at once (the dashboard's "retry"). Returns the
+ * job's status afterwards, or null when there was no failed job with that id.
+ */
+export async function retryFailed(id: string): Promise<JobStatus | null> {
+  const db = admin.firestore();
+  const ref = db.collection(MAIL_JOBS).doc(id);
+  const reset = await db.runTransaction(async (tx) => {
+    const patch = retryReset((await tx.get(ref)).data() as MailJob | undefined, Date.now());
+    if (patch) tx.update(ref, patch);
+    return patch;
+  });
+  if (!reset) return null;
+  await deliver(id);
+  return (((await ref.get()).data() as MailJob | undefined)?.status) ?? null;
+}
+
 /** Queue a mail once. A job that already exists (a retried trigger) is left as it is. */
 export async function enqueueMail(id: string, mail: MailMessage): Promise<void> {
   const job: MailJob = { ...mail, status: "pending", attempts: 0, nextAttemptAt: Date.now(), createdAt: Date.now() };
@@ -82,6 +111,18 @@ export async function enqueueMail(id: string, mail: MailMessage): Promise<void> 
     if ((err as { code?: number }).code === 6) return; // ALREADY_EXISTS: queued before
     throw err;
   }
+}
+
+/**
+ * Queue a mail and try it straight away, for a caller that wants to say whether it
+ * went (an MCP tool sending a receipt). If this first try fails the job stays queued
+ * and is retried like any other, so the answer is "sent", or "queued" with the reason.
+ */
+export async function sendNow(id: string, mail: MailMessage): Promise<{ status: JobStatus; lastError?: string }> {
+  await enqueueMail(id, mail);
+  await deliver(id);
+  const job = (await admin.firestore().collection(MAIL_JOBS).doc(id).get()).data() as MailJob | undefined;
+  return { status: job?.status ?? "pending", ...(job?.lastError ? { lastError: job.lastError } : {}) };
 }
 
 /** Claim, send and record one job. Safe to call twice: only one run gets the claim. */
@@ -102,6 +143,7 @@ export async function deliver(id: string): Promise<void> {
       from: `"${job.fromName.replace(/["\r\n]/g, "")}" <${HELLO_EMAIL}>`,
       to: job.to,
       cc: job.cc || undefined,
+      bcc: job.bcc || undefined,
       replyTo: job.replyTo || undefined,
       subject: job.subject,
       html: job.html,

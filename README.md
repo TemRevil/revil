@@ -32,8 +32,7 @@ src/
   lib/              Firebase setup, public data reads (liveDoc, dataCache), money, receipts, analytics
   utils/            booking rules, time zones, site profile (JSON-LD)
   data/             publicPaths.json and the build's data snapshot
-functions/          the main Cloud Functions codebase
-functions-meeting/  the `meeting` codebase (syncMeeting)
+functions/          the Cloud Functions (one codebase)
 scripts/            build, data, preview, deploy and admin scripts (below)
 tests/rules/        Firestore and Storage security-rules tests
 deploy/hostinger/   .htaccess for the Apache host
@@ -89,10 +88,15 @@ Functions in `functions/` (Node 22):
 
 | Function | Trigger | What it does |
 | :--- | :--- | :--- |
-| `submitContact` | Callable, public, App Check | Validates and rate-limits a contact message, stores it in `Settings/Canary` |
-| `bookMeeting` | Callable, public, App Check | Validates a booking, checks the slot, creates the Calendar event and Meet link through the Apps Script, stores the meeting |
-| `notifyCanary` | Firestore write on `Settings/Canary` | Emails the owner, acknowledges the guest, rebuilds the public busy-slot mirror `Settings/BookedSlots` |
-| `cleanupAttachments` | Scheduled, daily | Deletes contact uploads no message points to, once they are a day old |
+| `submitContact` | Callable, public, App Check | Validates a contact message, rate-limits it per IP and per email address, stores it in `Settings/Canary` |
+| `bookMeeting` | Callable, public, App Check | Validates a booking, checks the time, creates the Calendar event and Meet link through the Apps Script (only a clear success counts), stores the meeting |
+| `notifyCanary` | Firestore write on `Settings/Canary` | Queues the owner's notification and the guest's acknowledgement, rebuilds the public busy-slot mirror `Settings/BookedSlots` (upcoming slots only) |
+| `sendMail` / `retryMail` | `MailJobs` create / every 5 minutes | The mail outbox: sends each queued mail, retries failures with backoff, keeps permanent failures as `failed` |
+| `retryMailJob` | Callable, admin | Puts a failed mail job back in the queue and tries it at once |
+| `syncMeeting` | Callable, admin, App Check | Forwards the dashboard's calendar changes (create, update, cancel) to the Apps Script |
+| `mirrorHandledProjects` | Firestore write on `Treasury/projects` | Publishes the public project list `Settings/HandledProjects` (name, status, order only) |
+| `cleanupAttachments` | Scheduled, daily | Deletes stray contact and reply uploads, expired rate-limit records and old sent mail, and refreshes the busy-slot mirror |
+| `cleanupMcp` | Scheduled, every 6 hours | Removes expired MCP logins, codes, tokens and unused client registrations |
 | `notifyLogin` | Callable | Alerts the owner of a dashboard sign-in |
 | `sendReceipt` | Callable, admin | Emails a receipt built in the dashboard |
 | `sendReply` | Callable, admin | Sends a reply, with attachments, to a contact message |
@@ -100,19 +104,28 @@ Functions in `functions/` (Node 22):
 | `trackSession` | HTTPS, App Check | Records visit analytics |
 | `mcp` | HTTPS | MCP server with OAuth 2.1, served at the Firebase Hosting site in `firebase.json` |
 
-`syncMeeting` (in `functions-meeting/`, admin only) forwards the dashboard's calendar
-changes to the same Google Apps Script, which owns the Calendar events and Meet links.
+The Google Apps Script owns the Calendar events and Meet links; `bookMeeting`,
+`syncMeeting` and the MCP tools all reach it through `functions/src/calendar.ts`.
 
-Shared logic (booking rules, money, receipts, HTML escaping) lives once under `src/` and
+Shared logic (booking rules, time zones, money, receipts, the email shell, the public
+project list, HTML escaping) lives once under `src/` and
 is copied into `functions/src/` by `functions/scripts/sync-shared.mjs`; the functions'
 build runs it, and CI checks the copies with `--check`.
 
 Functions are deployed by hand, always scoped:
 
 ```bash
+firebase deploy --only functions                              # every function
 firebase deploy --only functions:mcp,functions:notifyCanary   # named functions
-firebase deploy --only functions:meeting                      # one codebase
 firebase deploy --only firestore:rules,storage                # security rules
+```
+
+`syncMeeting` used to live in a second codebase (`meeting`). On the first deploy after
+it moved into `functions/`, delete the old one first, or the deploy refuses the clash:
+
+```bash
+firebase functions:delete syncMeeting --region us-central1
+firebase deploy --only functions
 ```
 
 A bare `firebase deploy` also republishes hosting and the rules. If discovery times out
@@ -133,8 +146,9 @@ firebase functions:secrets:set MEETING_SYNC_URL  # Apps Script endpoint (anyone 
 
 - **Firestore rules** (`firestore.rules`): portfolio documents and a named list of
   `Settings` documents are publicly readable; everything else needs the `admin` claim.
-  `MCP` and `RateLimits` are for the functions only, and analytics, visit stories and the
-  MCP audit log can be read and cleared by the admin but never written from a browser.
+  `MCP` and `RateLimits` are for the functions only; analytics, visit stories, the MCP
+  audit log and the mail outbox (`MailJobs`) can be read and cleared by the admin but
+  never written from a browser; `Settings/HandledProjects` is written only by its function.
 - **Storage rules** (`storage.rules`): visitors may upload one new file of an allowed
   type (images, PDF, plain text, Office) under 10 MB to `emails/`, and read its metadata
   only in the first ten minutes (for its download link). Everything else is admin only.
@@ -152,7 +166,7 @@ firebase functions:secrets:set MEETING_SYNC_URL  # Apps Script endpoint (anyone 
 
 - **CI** (`.github/workflows/ci.yml`) runs on every push and pull request: lint,
   type-check, unit tests and build of the site; the shared-code sync check and a
-  type-check of each functions codebase; and the security-rules tests in the emulators.
+  type-check of the functions; and the security-rules tests in the emulators.
 - **Release** (`.github/workflows/deploy-hostinger.yml`) runs on every push to `main`, by
   hand, and daily at 03:17 UTC. It refreshes the data snapshot, runs lint, the sync check,
   type-check, unit tests and the build, then uploads `dist/` over SSH and runs

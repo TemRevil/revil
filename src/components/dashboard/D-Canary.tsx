@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import anime from 'animejs';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion, type Variants } from 'motion/react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, Phone, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply, Tags, BookOpen } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, deleteField, setDoc } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
@@ -21,6 +20,13 @@ import CustomTimePicker from '../CustomTimePicker';
 import Select from '../Select';
 import Loader from '../reactbits/Loader';
 import useTheme from '../../hooks/useTheme';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { BELOW_LG_QUERY } from './breakpoints';
+import { EASE } from './motion';
+import { hostZone, type HostZone } from '../../utils/bookingRules';
+import { meetingStart, slotOccupied, cancelRequest, calendarErrorText } from './canary/meetings';
+import MailFailures from './canary/MailFailures';
+import { ViaBadge, ColorSwatches, CategoryBadge } from './canary/Badges';
 
 type OptionsTab = 'hours' | 'categories' | 'book';
 const OPTIONS_TABS: { key: OptionsTab; label: string; icon: typeof Clock }[] = [
@@ -49,14 +55,6 @@ interface Meeting {
     /** Where a guest booked it: the /book page or the contact modal. Absent = older, or added here. */
     via?: 'book' | 'contact';
 }
-
-/** Which of the two booking paths a guest used. Sky for /book, pink for the modal (as in Trails). */
-const ViaBadge = ({ via }: { via: 'book' | 'contact' }) => (
-    <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-md font-semibold"
-        style={via === 'book' ? { color: '#0ea5e9', background: 'rgba(14,165,233,0.12)' } : { color: '#ec4899', background: 'rgba(236,72,153,0.12)' }}>
-        {via === 'book' ? 'Book page' : 'Contact'}
-    </div>
-);
 
 interface Email {
     id: string;
@@ -104,15 +102,16 @@ const MONTHS = [
     "July", "August", "September", "October", "November", "December"
 ];
 
-// Parse the host's UTC offset (in hours) from the "Current Time" string stored in
-// Settings/Availability (e.g. "... UTC+03:00"). Mirrors the parser in M-Contact so
-// the dashboard and the public booking modal agree on the host's timezone.
-const getOffsetFromUTCString = (tzStr: string) => {
-    const match = (tzStr || '').match(/UTC([+-]\d{2}):(\d{2})/);
-    if (!match) return 0;
-    const hours = parseInt(match[1], 10);
-    const minutes = parseInt(match[2], 10);
-    return hours + (minutes / 60) * (hours < 0 ? -1 : 1);
+// Section switch: the section slides in the way the owner moved (custom = direction) and
+// its panels follow a beat apart. Calm, as the old anime timeline was.
+const SECTION_VARIANTS: Variants = {
+    hidden: (d: number) => ({ opacity: 0, x: d * 50 }),
+    shown: { opacity: 1, x: 0, transition: { duration: 0.3, ease: EASE.outExpo, delayChildren: 0.02, staggerChildren: 0.03 } },
+    gone: (d: number) => ({ opacity: 0, x: -d * 30, transition: { duration: 0.15, ease: EASE.inQuad } }),
+};
+const PANEL_VARIANTS: Variants = {
+    hidden: { opacity: 0, y: 20, scale: 0.99 },
+    shown: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.45, ease: EASE.outExpo } },
 };
 
 // True when `d` falls on a day that has already passed (midnight-to-midnight, local).
@@ -126,41 +125,6 @@ const isPastDay = (d: Date) => {
     day.setHours(0, 0, 0, 0);
     return day < today;
 };
-
-/** The colour picker shared by the add and rename rows of the categories panel. */
-const ColorSwatches = ({ value, onPick, isDark }: { value: string; onPick: (c: string) => void; isDark: boolean }) => (
-    <div className="flex items-center gap-1.5 flex-wrap" role="radiogroup" aria-label="Category colour">
-        {CATEGORY_COLORS.map(c => {
-            const on = value === c;
-            return (
-                <button
-                    key={c}
-                    type="button"
-                    role="radio"
-                    aria-checked={on}
-                    aria-label={`Colour ${c}`}
-                    onClick={() => onPick(c)}
-                    // The ring sits outside the dot so picking one doesn't resize it.
-                    className="w-7 h-7 grid place-items-center rounded-full cursor-pointer transition-shadow"
-                    style={{ boxShadow: on ? `0 0 0 2px ${isDark ? '#0b0b0f' : '#fff'}, 0 0 0 4px ${c}` : 'none' }}
-                >
-                    <span className="w-5 h-5 rounded-full" style={{ background: c }} />
-                </button>
-            );
-        })}
-    </div>
-);
-
-/** Small coloured pill naming a booking's category - list rows and details view. */
-const CategoryBadge = ({ cat, size = 'sm' }: { cat: MeetingCategory; size?: 'sm' | 'md' }) => (
-    <span
-        className={`inline-flex items-center gap-1.5 rounded-md font-semibold ${size === 'md' ? 'px-2.5 py-1 text-xs' : 'p-1 px-1.5 text-[11px]'}`}
-        style={{ background: `${cat.color}1f`, color: cat.color }}
-    >
-        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cat.color }} />
-        {cat.name}
-    </span>
-);
 
 const DCanary = () => {
     // Everything below that animates layout falls back to an instant change here.
@@ -185,9 +149,13 @@ const DCanary = () => {
     const [isBookingOpen, setIsBookingOpen] = useState(false);
     const [modalDirection, setModalDirection] = useState(0);
     const [modalViewDate, setModalViewDate] = useState(new Date());
-    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+    const belowLg = useMediaQuery(BELOW_LG_QUERY);
+    const narrow = useMediaQuery('(max-width: 419px)');
+    const wideModal = useMediaQuery('(min-width: 820px)');
     const [meetings, setMeetings] = useState<Meeting[]>([]);
-    const [hostTimezoneString, setHostTimezoneString] = useState('');
+    // The owner's clock (an IANA zone, or a fixed offset for an older Availability doc).
+    // Until Availability loads, this machine's own offset stands in.
+    const [hostClock, setHostClock] = useState<HostZone>(() => -(new Date().getTimezoneOffset() / 60));
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     // Owner-defined meeting categories (Options tab) + the filter over the bookings
@@ -220,10 +188,8 @@ const DCanary = () => {
     const [openOptionsId, setOpenOptionsId] = useState<string | null>(null);
     const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
 
-    // Animation state
-    const [isTransitioning, setIsTransitioning] = useState(false);
-    const directionRef = useRef(0);
-    const hasAnimatedRef = useRef<'bookings' | 'mails' | 'hours' | null>(null);
+    // Section switch direction: 1 slides the next section in from the right.
+    const [sectionDir, setSectionDir] = useState(0);
 
     // Firestore Integration
     useEffect(() => {
@@ -278,87 +244,25 @@ const DCanary = () => {
         return () => unsubscribe();
     }, []);
 
-    useEffect(() => {
-        const handleResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
     // Track the host's timezone so reschedules reconstruct the correct UTC instant.
     useEffect(() => {
         const unsub = onSnapshot(doc(db, 'Settings', 'Availability'), (snap) => {
             const data = snap.exists() ? snap.data() : undefined;
-            const ct = data ? data['Current Time'] : undefined;
-            if (ct) setHostTimezoneString(ct);
+            if (data) setHostClock(hostZone(data));
             // Load the working-days/hours config, but don't clobber unsaved edits.
             if (!availDirtyRef.current) setAvailDraft(parseAvailabilityConfig(data));
         });
         return () => unsub();
     }, []);
 
-    // Meeting Time fields are stored in the HOST's wall clock, so the UTC instant is
-    // (host wall clock − host offset). Falls back to the dashboard machine's own
-    // offset if Availability hasn't loaded yet.
-    const hostOffset = hostTimezoneString
-        ? getOffsetFromUTCString(hostTimezoneString)
-        : -(new Date().getTimezoneOffset() / 60);
-
     const handleTabChange = (newTab: 'bookings' | 'mails' | 'hours') => {
-        if (newTab === activeSection || isTransitioning) return;
-
-        hasAnimatedRef.current = null;
+        if (newTab === activeSection) return;
         const indices = { bookings: 0, mails: 1, hours: 2 };
-        const direction = indices[newTab] > indices[activeSection] ? 1 : -1;
-        directionRef.current = direction;
-        setIsTransitioning(true);
-
-        anime({
-            targets: '.canary-section',
-            translateX: [0, -direction * 30],
-            opacity: [1, 0],
-            duration: 150,
-            easing: 'easeInQuad',
-            complete: () => {
-                setActiveSection(newTab);
-            }
-        });
+        setSectionDir(indices[newTab] > indices[activeSection] ? 1 : -1);
+        setActiveSection(newTab);
     };
-
-    useEffect(() => {
-        const runAnimation = () => {
-            const targets = document.querySelectorAll('.canary-section');
-            if (targets.length === 0) return;
-            if (hasAnimatedRef.current === activeSection) return;
-
-            hasAnimatedRef.current = activeSection;
-
-            const timeline = anime.timeline({
-                easing: 'easeOutExpo',
-                complete: () => {
-                    setIsTransitioning(false);
-                }
-            });
-
-            timeline.add({
-                targets: '.canary-section',
-                opacity: [0, 1],
-                translateX: [directionRef.current * 50, 0],
-                duration: 300
-            }, 0);
-
-            timeline.add({
-                targets: '.canary-panel',
-                opacity: [0, 1],
-                translateY: [20, 0],
-                scale: [0.99, 1],
-                delay: anime.stagger(30, { start: 20 }),
-                duration: 450
-            }, 0);
-        };
-
-        const tid = setTimeout(runAnimation, 30);
-        return () => clearTimeout(tid);
-    }, [activeSection]);
+    // Which way the sections slide; still with reduced motion, so only the fade remains.
+    const sectionCustom = reduceMotion ? 0 : sectionDir;
 
     const calendarDays = useMemo(() => {
         const year = viewDate.getFullYear();
@@ -417,53 +321,47 @@ const DCanary = () => {
     // The edited time is one typed into the Custom slot, not one of the fixed hours.
     const customOn = !!editingMeeting?.time && !TIME_OPTIONS.includes(editingMeeting.time);
 
+    // The calendar event is cancelled by its exact id only. A session stored without one
+    // (added before ids were kept) is never searched for by email, name or time: that
+    // search could find, and cancel, someone else's event. The owner is told instead.
     const handleDelete = async (id: string, meeting?: Meeting) => {
         setIsLoading(true);
+        // What happened to the calendar event, reported once the app delete is stored.
+        const done: { calendar: 'cancelled' | 'failed' | 'no-id' | 'none'; why?: string } = { calendar: 'none' };
         try {
-            // 1. Sync with Google Calendar FIRST (before deleting from DB)
-            if (meeting?.email && meeting?.date && meeting?.time) {
-                // Calculate time for legacy search (Crucial for fallback deletion).
-                // meeting.time is host wall clock → UTC = wall clock − host offset.
-                // (Previously used the guest offset, which made the fallback search
-                // target the wrong instant and could miss the event to cancel.)
-                const timeParts = meeting.time.split(' ');
-                const [hStr, mStr] = timeParts[0].split(':');
-                let h = parseInt(hStr);
-                if (timeParts[1] === 'PM' && h !== 12) h += 12;
-                if (timeParts[1] === 'AM' && h === 12) h = 0;
-
-                // Construct the UTC date object
-                const start = new Date(Date.UTC(meeting.date.getFullYear(), meeting.date.getMonth(), meeting.date.getDate(), h, parseInt(mStr)) - (hostOffset * 3600000));
-
+            const cancel = meeting ? cancelRequest(meeting) : null;
+            if (cancel) {
                 try {
-                    const syncMeeting = httpsCallable(functions, 'syncMeeting');
-
-                    // Call backend to cancel event
-                    await syncMeeting({
-                        action: 'cancel',
-                        eventId: meeting.googleEventId, // Priority 1: Try ID
-                        email: meeting.email,           // Priority 2: Search by Email
-                        name: meeting.title,            // Priority 3: Search by Client Name (Title)
-                        startTime: start.toISOString()  // Used to find the specific Day
-                    });
-
-
+                    await httpsCallable(functions, 'syncMeeting')(cancel);
+                    done.calendar = 'cancelled';
                 } catch (syncErr) {
                     console.error("Google Sync Delete Error:", syncErr);
-                    showAlert({ type: 'warning', message: 'Deleted from app, but calendar sync failed.' });
+                    done.calendar = 'failed';
+                    done.why = calendarErrorText(syncErr);
                 }
+            } else if (meeting?.email) {
+                done.calendar = 'no-id';
             }
 
-            // 2. Delete from Firestore
-            const docRef = doc(db, 'Settings', 'Canary');
-            await updateDoc(docRef, {
+            await updateDoc(doc(db, 'Settings', 'Canary'), {
                 [`Meetings.${id}`]: deleteField()
             });
 
-            showAlert({ type: 'success', message: 'Session cancelled successfully' });
+            if (done.calendar === 'failed') {
+                showAlert({ type: 'warning', message: `Session cancelled in the app, but its calendar event was not removed: ${done.why} Remove it in Google Calendar.` });
+            } else if (done.calendar === 'no-id') {
+                showAlert({ type: 'warning', message: 'Session cancelled in the app. It had no linked calendar event, so remove any event for it in Google Calendar.' });
+            } else {
+                showAlert({ type: 'success', message: 'Session cancelled successfully' });
+            }
         } catch (error) {
             console.error(error);
-            showAlert({ type: 'error', message: 'Failed to cancel session' });
+            showAlert({
+                type: 'error',
+                message: done.calendar === 'cancelled'
+                    ? 'The calendar event was removed, but the session could not be deleted from the app. Try again.'
+                    : 'Failed to cancel session',
+            });
         } finally {
             setIsLoading(false);
         }
@@ -486,13 +384,7 @@ const DCanary = () => {
         }
 
         if (isTimeChanged || isDateChanged) {
-            const isOccupied = meetings.some(m =>
-                m.id !== editingMeeting.id &&
-                m.date.toDateString() === editingMeeting.date.toDateString() &&
-                m.time === editingMeeting.time
-            );
-
-            if (isOccupied) {
+            if (slotOccupied(editingMeeting, meetings, hostClock)) {
                 showAlert({ type: 'warning', message: 'This time slot is already occupied.' });
                 return;
             }
@@ -508,23 +400,24 @@ const DCanary = () => {
 
         setIsLoading(true);
         try {
-            // editingMeeting.time is in the HOST's wall clock, so the UTC instant is
-            // (host wall clock − host offset). Using the guest's offset here was the
-            // reschedule bug: it shifted invites by (hostOffset − guestOffset) hours.
-            const timeParts = editingMeeting.time.split(' ');
-            const [hStr, mStr] = timeParts[0].split(':');
-            let h = parseInt(hStr);
-            if (timeParts[1] === 'PM' && h !== 12) h += 12;
-            if (timeParts[1] === 'AM' && h === 12) h = 0;
+            // editingMeeting.time is the HOST's wall clock; meetingStart turns it into the
+            // UTC instant the same way the public booking rules do.
+            const startMs = meetingStart(editingMeeting, hostClock);
+            if (startMs === null) {
+                showAlert({ type: 'error', message: `"${editingMeeting.time}" is not a time this can read.` });
+                return;
+            }
+            const start = new Date(startMs);
+            const end = new Date(startMs + 3600000);
 
-            const start = new Date(Date.UTC(editingMeeting.date.getFullYear(), editingMeeting.date.getMonth(), editingMeeting.date.getDate(), h, parseInt(mStr)) - (hostOffset * 3600000));
-            const end = new Date(start.getTime() + 3600000);
-
-            let newGoogleId = editingMeeting.googleEventId; // --- GOOGLE CALENDAR SYNC ---
-            if (editingMeeting.email) {
-                const syncMeeting = httpsCallable(functions, 'syncMeeting');
-                if (editingMeeting.googleEventId) {
-                    await syncMeeting({
+            // Only a session with a linked event is moved in the calendar. One without an
+            // id is updated in the app alone: finding its event by search could move or
+            // cancel the wrong one.
+            const calendarChanged = isTimeChanged || isDateChanged || isTitleChanged;
+            const unlinked = !!editingMeeting.email && !editingMeeting.googleEventId && calendarChanged;
+            if (editingMeeting.email && editingMeeting.googleEventId && calendarChanged) {
+                try {
+                    await httpsCallable(functions, 'syncMeeting')({
                         action: 'update',
                         eventId: editingMeeting.googleEventId,
                         name: editingMeeting.title,
@@ -533,34 +426,11 @@ const DCanary = () => {
                         startTime: start.toISOString(),
                         endTime: end.toISOString()
                     });
-                } else {
-                    const oldTimeParts = originalMeeting.time.split(' ');
-                    const [oldHStr, oldMStr] = oldTimeParts[0].split(':');
-                    let oldH = parseInt(oldHStr);
-                    if (oldTimeParts[1] === 'PM' && oldH !== 12) oldH += 12;
-                    if (oldTimeParts[1] === 'AM' && oldH === 12) oldH = 0;
-
-                    const oldStart = new Date(Date.UTC(originalMeeting.date.getFullYear(), originalMeeting.date.getMonth(), originalMeeting.date.getDate(), oldH, parseInt(oldMStr)) - (hostOffset * 3600000));
-
-                    await syncMeeting({
-                        action: 'cancel',
-                        email: originalMeeting.email,
-                        startTime: oldStart.toISOString()
-                    });
-
-                    const response = await syncMeeting({
-                        action: 'create',
-                        name: editingMeeting.title,
-                        email: editingMeeting.email,
-                        reason: editingMeeting.reason || '',
-                        startTime: start.toISOString(),
-                        endTime: end.toISOString()
-                    });
-
-                    const resData = response.data as { status?: string; id?: string };
-                    if (resData.status === 'success' && resData.id) {
-                        newGoogleId = resData.id;
-                    }
+                } catch (syncErr) {
+                    // Nothing was changed yet, so the session simply stays where it was.
+                    console.error('Google Sync Update Error:', syncErr);
+                    showAlert({ type: 'error', message: `Session not moved: ${calendarErrorText(syncErr)}` });
+                    return;
                 }
             }
 
@@ -582,14 +452,12 @@ const DCanary = () => {
                 updatePayload[`Meetings.${editingMeeting.id}.Category`] = editingMeeting.category ?? deleteField();
             }
 
-            if (newGoogleId) {
-                updatePayload[`Meetings.${editingMeeting.id}.GoogleEventId`] = newGoogleId;
-            }
-
             await updateDoc(docRef, updatePayload);
 
             setEditingMeeting(null);
-            showAlert({ type: 'success', message: 'Session rescheduled successfully' });
+            showAlert(unlinked
+                ? { type: 'warning', message: 'Session updated in the app. It has no linked calendar event, so change any event for it in Google Calendar by hand.' }
+                : { type: 'success', message: 'Session rescheduled successfully' });
         } catch (error) {
             console.error(error);
             showAlert({ type: 'error', message: 'Failed to update session' });
@@ -813,8 +681,8 @@ const DCanary = () => {
     };
 
     const categoriesEditor = (
-        <div
-            className="canary-panel w-full flex flex-col gap-6 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
+        <motion.div variants={PANEL_VARIANTS}
+            className="w-full flex flex-col gap-6 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
             style={{ backgroundColor: containerBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
         >
             <div className="flex items-start gap-4">
@@ -955,12 +823,12 @@ const DCanary = () => {
                 </div>
                 <ColorSwatches value={newCatColor} onPick={setNewCatColor} isDark={isDark} />
             </div>
-        </div>
+        </motion.div>
     );
 
     const hoursPanel = (
-            <div
-                className="canary-panel w-full flex flex-col gap-7 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
+            <motion.div variants={PANEL_VARIANTS}
+                className="w-full flex flex-col gap-7 p-6 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm"
                 style={{ backgroundColor: containerBg, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }}
             >
                 <div className="flex items-start gap-4">
@@ -1057,13 +925,13 @@ const DCanary = () => {
                         {availSaving ? 'Saving…' : 'Save hours'}
                     </button>
                 </div>
-            </div>
+            </motion.div>
     );
 
     // Options is split into sections instead of stacking every panel on one page; a
     // floating bar at the bottom switches between them, like the Projects sub-nav.
-    // Portaled to <body>: anime.js leaves a transform on .canary-section, and a transformed
-    // ancestor would pin a position:fixed bar to the section instead of the viewport.
+    // Portaled to <body>: the section slides with a transform, and a transformed ancestor
+    // would pin a position:fixed bar to the section instead of the viewport.
     const optionsBar = typeof document !== 'undefined' && activeSection === 'hours' && createPortal(
         <nav aria-label="Options sections" className="fixed bottom-5 left-1/2 -translate-x-1/2 max-[560px]:left-4 max-[560px]:translate-x-0 z-[1100]">
             <motion.div
@@ -1105,7 +973,7 @@ const DCanary = () => {
 
     const hoursEditor = (
         // Bottom padding keeps the last panel's buttons clear of the floating bar.
-        <div className="canary-section w-full pb-28">
+        <motion.div key="hours" custom={sectionCustom} variants={SECTION_VARIANTS} initial="hidden" animate="shown" exit="gone" className="w-full pb-28">
             <AnimatePresence mode="wait" custom={optionsDir} initial={false}>
                 <motion.div
                     key={optionsTab}
@@ -1128,7 +996,7 @@ const DCanary = () => {
                 </motion.div>
             </AnimatePresence>
             {optionsBar}
-        </div>
+        </motion.div>
     );
 
     return (
@@ -1173,6 +1041,13 @@ const DCanary = () => {
                 </button>
             </div>
 
+            {/* Mail the functions gave up on; renders nothing while all of it went out. */}
+            <MailFailures isDark={isDark} showAlert={showAlert} />
+
+            {/* A section enters only when the owner switches to it. On the tab's first
+                paint it is already in place: the dashboard fades the whole tab in once, and
+                a second entrance on top of that was the double animation. */}
+            <AnimatePresence mode="wait" initial={false} custom={sectionCustom}>
             {activeSection === 'hours' ? hoursEditor : activeSection === 'bookings' ? (
                 // alignItems is set here rather than through lg:items-stretch so the
                 // bookings column always matches the calendar beside it. The calendar is
@@ -1180,9 +1055,9 @@ const DCanary = () => {
                 // the panel growing and shrinking as you step between an empty day and a
                 // busy one. Inline because this file's responsive variants lose to their
                 // own base class (see the grid-cols note in the modal).
-                <div className="canary-section grid grid-cols-1 lg:grid-cols-canary gap-8" style={{ alignItems: windowWidth >= 1024 ? 'stretch' : 'start' }}>
+                <motion.div key="bookings" custom={sectionCustom} variants={SECTION_VARIANTS} initial="hidden" animate="shown" exit="gone" className="grid grid-cols-1 lg:grid-cols-canary gap-8" style={{ alignItems: belowLg ? 'start' : 'stretch' }}>
                     {/* Left: Calendar Component */}
-                    <div className="canary-panel w-full h-fit flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm relative overflow-visible"
+                    <motion.div variants={PANEL_VARIANTS} className="w-full h-fit flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm relative overflow-visible"
                         style={{
                             backgroundColor: containerBg,
                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -1273,7 +1148,7 @@ const DCanary = () => {
                                                         </span>
 
                                                         <div className="flex gap-0.5 md:gap-1 justify-center relative z-10">
-                                                            {dayMeetings.slice(0, windowWidth < 420 ? 1 : 3).map((m) => (
+                                                            {dayMeetings.slice(0, narrow ? 1 : 3).map((m) => (
                                                                 <div
                                                                     key={m.id}
                                                                     className="w-1 h-1 rounded-full"
@@ -1289,10 +1164,10 @@ const DCanary = () => {
                                 </motion.div>
                             </AnimatePresence>
                         </div>
-                    </div>
+                    </motion.div>
 
                     {/* Meeting List - Right Panel */}
-                    <div className="canary-panel flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm min-h-0"
+                    <motion.div variants={PANEL_VARIANTS} className="flex flex-col gap-4 min-[460px]:gap-6 p-4 min-[460px]:p-8 rounded-[24px] min-[460px]:rounded-[32px] border shadow-sm min-h-0"
                         style={{
                             backgroundColor: containerBg,
                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -1400,13 +1275,13 @@ const DCanary = () => {
                             <Plus size={16} />
                             CREATE NEW SESSION
                         </button>
-                    </div>
-                </div>
+                    </motion.div>
+                </motion.div>
             ) : (
                 /* Mails Section */
-                <div className="canary-section grid grid-cols-1 lg:grid-cols-mail gap-6 md:gap-8 h-full min-h-[600px] max-h-[900px]">
+                <motion.div key="mails" custom={sectionCustom} variants={SECTION_VARIANTS} initial="hidden" animate="shown" exit="gone" className="grid grid-cols-1 lg:grid-cols-mail gap-6 md:gap-8 h-full min-h-[600px] max-h-[900px]">
                     {/* Left: Mails List */}
-                    <div className="canary-panel flex flex-col gap-4 p-6 md:p-8 rounded-[24px] md:rounded-[32px] border shadow-sm h-full overflow-hidden"
+                    <motion.div variants={PANEL_VARIANTS} className="flex flex-col gap-4 p-6 md:p-8 rounded-[24px] md:rounded-[32px] border shadow-sm h-full overflow-hidden"
                         style={{
                             backgroundColor: containerBg,
                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -1484,10 +1359,10 @@ const DCanary = () => {
                                 </div>
                             )}
                         </div>
-                    </div>
+                    </motion.div>
 
                     {/* Right: Mail View */}
-                    <div className="canary-panel flex flex-col gap-6 p-6 md:p-8 rounded-[24px] md:rounded-[32px] border shadow-sm h-full overflow-hidden"
+                    <motion.div variants={PANEL_VARIANTS} className="flex flex-col gap-6 p-6 md:p-8 rounded-[24px] md:rounded-[32px] border shadow-sm h-full overflow-hidden"
                         style={{
                             backgroundColor: containerBg,
                             borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
@@ -1627,10 +1502,11 @@ const DCanary = () => {
                                 <span className="text-sm font-bold uppercase tracking-widest">Select a message to view</span>
                             </div>
                         )}
-                    </div>
-                </div>
+                    </motion.div>
+                </motion.div>
             )
             }
+            </AnimatePresence>
 
             {/* Meeting details (info-first; Edit hands off to the edit modal) */}
             {
@@ -1779,8 +1655,8 @@ const DCanary = () => {
                                     <div className="px-5 md:px-7 py-5 md:py-6 overflow-y-auto custom-scrollbar">
                                         {/* Explicit columns rather than a md: variant: responsive grid-cols
                                             variants do not survive this file's class ordering (the base
-                                            grid-cols wins), and windowWidth is already tracked here. */}
-                                        <div style={{ display: 'grid', gridTemplateColumns: windowWidth >= 820 ? '1fr 264px' : '1fr', gap: windowWidth >= 820 ? '2rem' : '1.5rem' }}>
+                                            grid-cols wins), and the width is already tracked here. */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: wideModal ? '1fr 264px' : '1fr', gap: wideModal ? '2rem' : '1.5rem' }}>
                                             {/* Left: what the booking IS */}
                                             <div className="flex flex-col gap-5 min-w-0">
                                                 <div className="flex flex-col gap-2">

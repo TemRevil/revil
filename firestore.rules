@@ -3,6 +3,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Function to check if the user is the admin (uses Firebase Custom Claims)
+    // Collections only Cloud Functions write (Admin SDK); each has its own block below.
+    function functionCollections() {
+      return ['MCP', 'Analytics', 'RateLimits', 'McpAudit', 'MailJobs'];
+    }
+
+    // Single documents only a Cloud Function writes, inside otherwise admin-writable
+    // collections.
+    function functionOwned(coll, doc) {
+      return coll == 'Settings' && doc == 'HandledProjects';
+    }
+
     function isAdmin() {
       return request.auth != null && request.auth.token.admin == true;
     }
@@ -75,15 +86,21 @@ service cloud.firestore {
     //
     // Listed by name rather than "everything but Canary", so a doc added later (or
     // Settings/MCP, whose switches are nobody else's business) is private by default.
+    //
+    // HandledProjects is written only by the mirrorHandledProjects Cloud Function
+    // (from Treasury/projects), so no client - the owner's included - may write it:
+    // the projection of what is public lives in one place, server-side.
     match /Settings/{settingsDoc} {
       allow read: if settingsDoc in ['Account', 'Availability', 'BookedSlots', 'BookPage',
                                      'Developer', 'HandledProjects', 'Tech Stack'];
-      allow write: if isAdmin();
+      allow write: if isAdmin() && !functionOwned('Settings', settingsDoc);
     }
 
     // Any deeper Settings subcollection docs default to admin-only. Nothing public
     // lives under Settings any more - visit analytics moved to /Analytics below.
-    match /Settings/{document=**} {
+    // (Subcollections only: a recursive match here would also re-grant writes to the
+    // function-owned docs above.)
+    match /Settings/{settingsDoc}/{rest=**} {
       allow read, write: if isAdmin();
     }
 
@@ -122,6 +139,14 @@ service cloud.firestore {
       allow read, delete: if isAdmin();
     }
 
+    // The mail outbox: every notification the functions send, with its delivery
+    // state. Written only by the functions (Admin SDK). The dashboard may read it
+    // and clear jobs; a retry goes through the retryMailJob callable, never a
+    // client write, so a job's recipient or content can't be changed from a browser.
+    match /MailJobs/{jobId} {
+      allow read, delete: if isAdmin();
+    }
+
     // Secure everything else (require admin access).
     //
     // This CANNOT be a bare `match /{document=**}`. Firestore rules are additive -
@@ -133,15 +158,16 @@ service cloud.firestore {
     // Settings/Canary from the public Settings read.
     //
     // So the catch-all names the top-level collection in a single-segment variable
-    // and subtracts those two, plus RateLimits and McpAudit (only functions write
-    // them). Everything under them is governed only by their own
+    // and subtracts those two, plus RateLimits, McpAudit and MailJobs (only
+    // functions write them), and the single function-owned Settings doc. Everything under them is governed only by their own
     // blocks above; the dashboard's real needs there (share links read/write, visit
     // stories read/delete) are granted explicitly and still work.
     match /{coll}/{doc} {
-      allow read, write: if isAdmin() && !(coll in ['MCP', 'Analytics', 'RateLimits', 'McpAudit']);
+      allow read: if isAdmin() && !(coll in functionCollections());
+      allow write: if isAdmin() && !(coll in functionCollections()) && !functionOwned(coll, doc);
     }
     match /{coll}/{doc}/{rest=**} {
-      allow read, write: if isAdmin() && !(coll in ['MCP', 'Analytics', 'RateLimits', 'McpAudit']);
+      allow read, write: if isAdmin() && !(coll in functionCollections());
     }
   }
 }

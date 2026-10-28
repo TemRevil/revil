@@ -46,8 +46,10 @@ import {
   installmentMonthlyAmount, projectContractTotal, projectBalance,
   projectPaymentStatus, projectReceived, accountBalance,
 } from "./money";
-import { parseAvailability, meetingInstant, utcOffsetHours, DEFAULT_HOST_TZ } from "./booking";
-import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail";
+import { parseAvailability, meetingInstant, hostZone, offsetAt, type HostZone } from "./booking";
+import { HELLO_EMAIL, resendKey, smtpUser } from "./mail";
+import { callCalendar, replySucceeded } from "./calendar";
+import { jobId, sendNow, type MailMessage } from "./outbox";
 import { clientIp } from "./geoip";
 import {
   APPROVAL_TTL_MS, CODE_TTL_MS, LOGIN_TTL_MS, adminChecker, clientPath, consumeSecret,
@@ -202,17 +204,16 @@ function formatLocal(offsetHours: number): TimeInfo {
 }
 
 /**
- * The owner's UTC offset, read exactly as the public booking (bookMeeting) reads it:
- * Settings/Availability "Current Time" through booking.ts. One source, so a meeting
- * stored over MCP and one booked on the site sit on the same clock. (The numeric
- * `timezoneOffset` field next to it is no longer read here.)
+ * The owner's clock, read exactly as the public booking (bookMeeting) reads it:
+ * Settings/Availability through booking.ts `hostZone` - the IANA `timeZone` when set
+ * (so daylight saving is followed), else the fixed "Current Time" offset. One source,
+ * so a meeting stored over MCP and one booked on the site sit on the same clock.
  */
-async function hostOffset(): Promise<number> {
+async function hostClock(): Promise<HostZone> {
   try {
-    const snap = await db().doc("Settings/Availability").get();
-    return utcOffsetHours(snap.data()?.["Current Time"] ?? DEFAULT_HOST_TZ);
+    return hostZone((await db().doc("Settings/Availability").get()).data());
   } catch {
-    return utcOffsetHours(DEFAULT_HOST_TZ);
+    return hostZone(undefined);
   }
 }
 
@@ -711,6 +712,35 @@ async function resolveCategory(input: string): Promise<{ id?: string | null; nam
   return { id: hit.id, name: hit.name };
 }
 
+/**
+ * Send a receipt to a customer through the mail outbox, with the owner as a silent
+ * copy. "sent" when the first try went out; otherwise "queued" with the reason - the
+ * outbox keeps retrying and a final failure stays visible in MailJobs. null when it
+ * could not even be queued.
+ */
+async function sendReceiptMail(id: string, m: { to: string; subject: string; html: string; label: string }):
+  Promise<{ status: "sent" } | { status: "queued"; note: string } | null> {
+  const owner = smtpUser.value();
+  const mail: MailMessage = {
+    to: m.to,
+    bcc: owner && owner.toLowerCase() !== m.to.toLowerCase() ? owner : undefined,
+    replyTo: HELLO_EMAIL,
+    fromName: "Tem Revil",
+    subject: m.subject,
+    html: m.html,
+    label: m.label,
+  };
+  try {
+    const r = await sendNow(jobId(id), mail);
+    return r.status === "sent"
+      ? { status: "sent" }
+      : { status: "queued", note: `Not delivered yet${r.lastError ? ` (${r.lastError})` : ""}; it is retried automatically and shows in the dashboard if it keeps failing.` };
+  } catch (err) {
+    console.error("[mcp] receipt could not be queued:", (err as Error)?.message);
+    return null;
+  }
+}
+
 export function registerTools(server: McpServerInstance, cfg: McpCfg, time: TimeInfo, session: { sub?: string; iat?: number; scope?: string }): void {
   // Patch registerTool once so EVERY tool registered below is wrapped with audit logging,
   // without editing each registration. The clock ping (get_current_time) is skipped - it
@@ -1088,8 +1118,8 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       // BookedSlots mirror compare against: Date "DD/MM/YYYY", Time "hh:mm AM/PM".
       const storedDate = toStoredDate(a.date);
       const storedTime = toStoredTime(a.time);
-      const offset = await hostOffset();
-      const startMs = meetingInstant({ Date: storedDate, Time: storedTime }, offset);
+      const zone = await hostClock();
+      const startMs = meetingInstant({ Date: storedDate, Time: storedTime }, zone);
       if (startMs === null) return fail("Could not read that date and time.");
 
       const id = `${now()}_${rand(4)}`;
@@ -1106,7 +1136,8 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       };
       // Checked against the stored meetings and written in one transaction, by the
       // same collision rule as the public booking form.
-      const saved = await saveMeeting(db(), { id, patch: payload, startMs, hostOffset: offset, isNew: true, stamp: SERVER_TIMESTAMP() });
+      // The collision rule reads stored meetings at the owner's offset at this instant.
+      const saved = await saveMeeting(db(), { id, patch: payload, startMs, hostOffset: offsetAt(zone, startMs), isNew: true, stamp: SERVER_TIMESTAMP() });
       if (saved === "clash") {
         return fail(`${storedDate} at ${storedTime} collides with an existing booking. Check list_bookings and pick a free time.`);
       }
@@ -1123,8 +1154,8 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
   // the same calendar behaviour the dashboard has.
 
   /** Stored "DD/MM/YYYY" + "hh:mm AM/PM" (host wall clock) -> real UTC instant (booking.ts meetingInstant). */
-  const storedToUtc = (storedDate: unknown, storedTime: unknown, offset: number): Date | null => {
-    const ms = meetingInstant({ Date: String(storedDate || ""), Time: String(storedTime || "") }, offset);
+  const storedToUtc = (storedDate: unknown, storedTime: unknown, zone: HostZone): Date | null => {
+    const ms = meetingInstant({ Date: String(storedDate || ""), Time: String(storedTime || "") }, zone);
     return ms === null ? null : new Date(ms);
   };
 
@@ -1134,25 +1165,19 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     startTime?: string; endTime?: string;
   }
 
-  /** Post to the Apps Script. Best-effort: never throws into a tool call. */
-  const syncCalendar = async (payload: CalendarPayload): Promise<{ ok: boolean; id?: string; error?: string }> => {
+  /**
+   * Post to the Apps Script through ./calendar (the one client bookMeeting and
+   * syncMeeting use: timeout, no URL or raw error in the logs). Best-effort: never
+   * throws into a tool call. Only a clear success counts; a refusal and an answer that
+   * never came are told apart, without passing on the script's own text.
+   */
+  const syncCalendar = async (payload: CalendarPayload): Promise<{ ok: boolean; error?: string }> => {
     const url = (meetingSyncUrl.value() || "").trim();
-    if (!url) return { ok: false, error: "MEETING_SYNC_URL is not configured." };
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(20000),
-      });
-      const data = await res.json().catch(() => ({})) as { status?: string; id?: string; message?: string };
-      if (!res.ok || data?.status === "error") {
-        return { ok: false, error: data?.message || `calendar sync failed (HTTP ${res.status})` };
-      }
-      return { ok: true, id: data?.id };
-    } catch (err) {
-      return { ok: false, error: (err as Error)?.message || "calendar sync failed" };
-    }
+    if (!url) return { ok: false, error: "MEETING_SYNC_URL is not configured" };
+    const reply = await callCalendar(url, { ...payload });
+    if (replySucceeded(reply)) return { ok: true };
+    const refused = !!reply.body && typeof reply.body === "object" && (reply.body as { status?: unknown }).status === "error";
+    return { ok: false, error: refused ? "the calendar refused the change" : "the calendar did not confirm the change" };
   };
 
   /** One hour, matching every existing booking path (dashboard + public form). */
@@ -1224,16 +1249,16 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       const finalEmail = String(patch.Email ?? existing.Email ?? "");
       const finalName = String(patch.Name ?? existing.Name ?? "");
       const slotMoved = !!(patch.Date || patch.Time);
-      const offset = await hostOffset();
+      const zone = await hostClock();
       let startMs: number | null = null;
       if (slotMoved) {
-        startMs = meetingInstant({ Date: finalDate, Time: finalTime }, offset);
+        startMs = meetingInstant({ Date: finalDate, Time: finalTime }, zone);
         if (startMs === null) return fail("Could not read the new date and time.");
       }
 
       // Saved first, in one transaction with the collision check (only when the slot
       // moves), so the calendar event never follows a move that was refused.
-      const saved = await saveMeeting(db(), { id: a.id, patch, startMs, hostOffset: offset, isNew: false, stamp: SERVER_TIMESTAMP() });
+      const saved = await saveMeeting(db(), { id: a.id, patch, startMs, hostOffset: offsetAt(zone, startMs ?? Date.now()), isNew: false, stamp: SERVER_TIMESTAMP() });
       if (saved === "missing") return fail(`No booking with id ${a.id}. Use list_bookings to find the right id.`);
       if (saved === "clash") {
         return fail(`${finalDate} at ${finalTime} collides with another booking. Check list_bookings and pick a free time.`);
@@ -1241,7 +1266,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
 
       let calendar = "no calendar event attached to this booking";
       if (existing.GoogleEventId && (slotMoved || patch.Name || patch.Email || patch["What For"])) {
-        const start = storedToUtc(finalDate, finalTime, offset);
+        const start = storedToUtc(finalDate, finalTime, zone);
         if (!start) {
           calendar = "Could not read the booking's stored date/time, so the calendar event was left alone.";
         } else {
@@ -1298,7 +1323,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       // not yet destroyed the details needed to find the event again.
       let calendar = "no calendar event attached to this booking";
       if (existing.GoogleEventId || existing.Email) {
-        const start = storedToUtc(existing.Date, existing.Time, await hostOffset());
+        const start = storedToUtc(existing.Date, existing.Time, await hostClock());
         const r = await syncCalendar({
           action: "cancel",
           eventId: existing.GoogleEventId,          // preferred: exact event
@@ -1778,21 +1803,14 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         payments,
       });
 
-      try {
-        const transporter = createTransporter();
-        const owner = smtpUser.value();
-        await transporter.sendMail({
-          from: `"Tem Revil" <${HELLO_EMAIL}>`,
-          to,
-          bcc: owner && owner.toLowerCase() !== to.toLowerCase() ? owner : undefined,
-          replyTo: HELLO_EMAIL,
-          subject: kind === "due" ? `Payment request ${receiptNo} from Tem Revil` : `Receipt ${receiptNo} from Tem Revil`,
-          html,
-        });
-      } catch (err) {
-        console.error("[mcp] send_treasury_receipt failed:", err);
-        return fail("Failed to send the receipt email.");
-      }
+      // Through the outbox: a send that fails now is retried and stays on record.
+      const delivery = await sendReceiptMail(`mcp-receipt_${receiptNo}_${now().toString(36)}`, {
+        to,
+        subject: kind === "due" ? `Payment request ${receiptNo} from Tem Revil` : `Receipt ${receiptNo} from Tem Revil`,
+        html,
+        label: kind === "due" ? "Payment request" : "Receipt",
+      });
+      if (!delivery) return fail("Failed to queue the receipt email.");
 
       // Log it to the sent-receipts history (best-effort - the email already went out).
       try {
@@ -1818,7 +1836,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       }
 
       return ok({
-        status: "sent",
+        ...delivery,
         to,
         receiptNo,
         currency: cur,
@@ -1941,21 +1959,13 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         .filter((l) => l.currency === headCur)
         .reduce((s, l) => s + (l.amount || 0), 0));
 
-      try {
-        const transporter = createTransporter();
-        const owner = smtpUser.value();
-        await transporter.sendMail({
-          from: `"Tem Revil" <${HELLO_EMAIL}>`,
-          to,
-          bcc: owner && owner.toLowerCase() !== to.toLowerCase() ? owner : undefined,
-          replyTo: HELLO_EMAIL,
-          subject: (a.subject || "Receipt from Revil").slice(0, 200),
-          html,
-        });
-      } catch (err) {
-        console.error("[mcp] send_itemized_receipt failed:", err);
-        return fail("Failed to send the receipt email.");
-      }
+      const delivery = await sendReceiptMail(`mcp-itemized_${receiptNo}_${now().toString(36)}`, {
+        to,
+        subject: (a.subject || "Receipt from Revil").slice(0, 200),
+        html,
+        label: "Itemized receipt",
+      });
+      if (!delivery) return fail("Failed to queue the receipt email.");
 
       try {
         const rid = `rcp_${now().toString(36)}${rand(3)}`;
@@ -1978,7 +1988,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         console.error("[mcp] itemized receipt sent but history log failed:", logErr);
       }
 
-      return ok({ status: "sent", to, receiptNo, lines: lines.length, headline: { currency: headCur, total: headTotal } });
+      return ok({ ...delivery, to, receiptNo, lines: lines.length, headline: { currency: headCur, total: headTotal } });
     });
 
   server.registerTool("add_income",
@@ -2119,7 +2129,7 @@ async function handleMcp(req: Request, res: Response): Promise<void> {
 
   // Live clock (in the admin's configured timezone) + prompt rules, handed to the
   // LLM via the MCP `initialize` instructions field on every connect.
-  const time = formatLocal(await hostOffset());
+  const time = formatLocal(offsetAt(await hostClock(), Date.now()));
   const server = new McpServerCtor(
     {
       name: "revil-portfolio",
