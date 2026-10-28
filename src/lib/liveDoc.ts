@@ -7,6 +7,7 @@
 // shown after a while, instead of listening live. Until a read answers, readers get the
 // copy lib/dataCache keeps (this page, this device, or the build's snapshot).
 import { cachedCollection, cachedDoc, isPublic, PUBLIC_PATHS, readAt, remember, type Data, type Row } from './dataCache';
+import { decodeFields, type RestValue } from './firestoreRest.mjs';
 
 type FirebaseApp = typeof import('./firebaseApp');
 
@@ -44,28 +45,6 @@ async function appCheckToken(): Promise<string> {
     const [{ appCheck }, { getToken }] = await Promise.all([loadFirebase(), import('firebase/app-check')]);
     if (!appCheck) return '';
     return (await getToken(appCheck, false)).token;
-}
-
-type RestValue = Record<string, unknown>;
-
-/** Firestore REST tags every value with its type; unwrap to what the SDK's data() returns (timestamps as ISO strings). */
-function decode(v: RestValue): unknown {
-    if ('stringValue' in v) return v.stringValue;
-    if ('integerValue' in v) return Number(v.integerValue);
-    if ('doubleValue' in v) return Number(v.doubleValue);
-    if ('booleanValue' in v) return v.booleanValue;
-    if ('timestampValue' in v) return v.timestampValue;
-    if ('mapValue' in v) return decodeFields((v.mapValue as { fields?: Record<string, RestValue> }).fields);
-    if ('arrayValue' in v) return ((v.arrayValue as { values?: RestValue[] }).values || []).map(decode);
-    return null;
-}
-
-// Fields in name order: REST answers a map in a different order each time, and the same
-// content must compare equal to the cached copy (see watch).
-function decodeFields(fields: Record<string, RestValue> = {}): Data {
-    const out: Data = {};
-    for (const k of Object.keys(fields).sort()) out[k] = decode(fields[k]);
-    return out;
 }
 
 const BASE = `https://firestore.googleapis.com/v1/projects/${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}/databases/(default)/documents/`;
