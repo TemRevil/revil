@@ -24,6 +24,13 @@ import { summarizeApply, staleHeroPath, type SaveOutcome } from './settings/appl
 // Replaced failing ui-avatars.com with a local icon-based placeholder logic
 
 
+/** Hours east of UTC from a "UTC+05:30 (IST)" style "Current Time", or null. Half-hour zones keep their minutes. */
+const offsetFromCurrentTime = (value: unknown): number | null => {
+    const m = /UTC([+-])(\d{2}):(\d{2})/.exec(typeof value === 'string' ? value : '');
+    if (!m) return null;
+    return (m[1] === '-' ? -1 : 1) * (parseInt(m[2], 10) + parseInt(m[3], 10) / 60);
+};
+
 const isValidContactEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s.trim());
 
 interface StackItem {
@@ -445,9 +452,10 @@ export default function DSettings() {
             const payload = {
                 'Current Availability': `${availability}%`,
                 'Current Time': selectedTz ? selectedTz.label : fallbackTzStr,
-                // Add raw values for easier parsing and consistency
                 'availabilityPercent': availability,
-                'timezoneOffset': selectedTimezone
+                // The offset lives in "Current Time" alone, which booking and the MCP
+                // both read; the old numeric copy is removed so it can't disagree.
+                'timezoneOffset': deleteField()
             };
 
             // merge:true so the working days/hours stored on the same doc survive.
@@ -644,9 +652,8 @@ export default function DSettings() {
                     if (!isNaN(percentage)) setAvailability(percentage);
                 }
 
-                if (availData.timezoneOffset !== undefined) {
-                    setSelectedTimezone(availData.timezoneOffset);
-                }
+                const offset = offsetFromCurrentTime(availData['Current Time']);
+                if (offset !== null) setSelectedTimezone(offset);
             }
 
             setHasUnsavedChanges(false);
@@ -704,22 +711,8 @@ export default function DSettings() {
                 }
 
                 // Parse and set timezone
-                if (data.timezoneOffset !== undefined) {
-                    setSelectedTimezone(data.timezoneOffset);
-                } else {
-                    const timezoneString = data['Current Time'] as string;
-                    if (timezoneString) {
-                        // Capture the minutes too so half-hour zones (e.g. UTC+05:30)
-                        // round-trip as 5.5 instead of being truncated to 5 by parseInt.
-                        const offsetMatch = timezoneString.match(/UTC([+-])(\d{2}):(\d{2})/);
-                        if (offsetMatch) {
-                            const sign = offsetMatch[1] === '-' ? -1 : 1;
-                            const hours = parseInt(offsetMatch[2], 10);
-                            const minutes = parseInt(offsetMatch[3], 10);
-                            setSelectedTimezone(sign * (hours + minutes / 60));
-                        }
-                    }
-                }
+                const offset = offsetFromCurrentTime(data['Current Time']);
+                if (offset !== null) setSelectedTimezone(offset);
             }
         }, (err) => {
             const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
