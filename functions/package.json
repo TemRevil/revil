@@ -1,5 +1,5 @@
 {
-  "name": "functions",
+  "name": "functions-default",
   "version": "1.0.0",
   "description": "Revil portfolio Cloud Functions",
   "main": "lib/index.js",
@@ -8,10 +8,10 @@
   },
   "scripts": {
     "prebuild": "node scripts/refresh-geoip.mjs --if-missing && node scripts/sync-shared.mjs",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "sync-shared": "node scripts/sync-shared.mjs",
     "refresh-geoip": "node scripts/refresh-geoip.mjs",
-    "build:watch": "tsc --watch",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "npm run build && firebase deploy --only functions"
   },
@@ -26,6 +26,6 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.9.0",
     "@types/nodemailer": "^8.0.1",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3"
   }
 }
