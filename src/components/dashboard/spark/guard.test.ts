@@ -8,12 +8,12 @@ describe('mustConfirm', () => {
     });
 
     it('always asks before a whole-document replace, even in auto mode', () => {
-        expect(mustConfirm({ kind: 'write', path: 'Treasury/income', merge: false }, true)).toBe(true);
+        expect(mustConfirm({ kind: 'write', path: 'TreasuryIncome/inc_1', merge: false }, true)).toBe(true);
     });
 
     it('lets auto mode skip a routine merge write, and asks for it otherwise', () => {
-        expect(mustConfirm({ kind: 'write', path: 'Treasury/income', merge: true }, true)).toBe(false);
-        expect(mustConfirm({ kind: 'write', path: 'Treasury/income', merge: true }, false)).toBe(true);
+        expect(mustConfirm({ kind: 'write', path: 'TreasuryIncome/inc_1', merge: true }, true)).toBe(false);
+        expect(mustConfirm({ kind: 'write', path: 'TreasuryIncome/inc_1', merge: true }, false)).toBe(true);
     });
 
     it('always asks before a memory change, through either tool', () => {

@@ -82,19 +82,27 @@ first; the function only accepts links into that folder of the project's own buc
 **The dashboard** signs in with Google and needs the `admin` custom claim. It reads and
 writes Firestore and Storage directly, within the security rules.
 
+**Private data is one document per entry**, in the collections named in
+`src/lib/collections.ts`: `CanaryMessages`, `CanaryMeetings` (each meeting's `start` is a
+UTC instant, with the owner's `timeZone` beside it), `TreasuryProjects`, `TreasuryIncome`,
+`TreasurySpendings`, `TreasuryAccounts` and `TreasuryReceipts`. `scripts/migrate-per-entry.mjs`
+moved them there from the old maps in `Settings/Canary` and `Treasury/*`; it backs up to
+`backups/` (git-ignored) and runs as a dry run unless given `--apply` or `--remove-old`.
+
 ## Backend
 
 Functions in `functions/` (Node 22):
 
 | Function | Trigger | What it does |
 | :--- | :--- | :--- |
-| `submitContact` | Callable, public, App Check | Validates a contact message, rate-limits it per IP and per email address, stores it in `Settings/Canary` |
+| `submitContact` | Callable, public, App Check | Validates a contact message, rate-limits it per IP and per email address, stores it as a `CanaryMessages` document |
 | `bookMeeting` | Callable, public, App Check | Validates a booking, checks the time, creates the Calendar event and Meet link through the Apps Script (only a clear success counts), stores the meeting |
-| `notifyCanary` | Firestore write on `Settings/Canary` | Queues the owner's notification and the guest's acknowledgement, rebuilds the public busy-slot mirror `Settings/BookedSlots` (upcoming slots only) |
+| `notifyCanaryMessage` | Firestore write on `CanaryMessages/{id}` | Queues the owner's notification and the sender's acknowledgement for a new message; deletes a removed message's attachments |
+| `notifyCanaryMeeting` | Firestore write on `CanaryMeetings/{id}` | Queues the owner's notification and the guest's acknowledgement for a new meeting, rebuilds the public busy-slot mirror `Settings/BookedSlots` (upcoming start instants only) |
 | `sendMail` / `retryMail` | `MailJobs` create / every 5 minutes | The mail outbox: sends each queued mail, retries failures with backoff, keeps permanent failures as `failed` |
 | `retryMailJob` | Callable, admin | Puts a failed mail job back in the queue and tries it at once |
 | `syncMeeting` | Callable, admin, App Check | Forwards the dashboard's calendar changes (create, update, cancel) to the Apps Script |
-| `mirrorHandledProjects` | Firestore write on `Treasury/projects` | Publishes the public project list `Settings/HandledProjects` (name, status, order only) |
+| `mirrorTreasuryProjects` | Firestore write on `TreasuryProjects/{id}` | Publishes the public project list `Settings/HandledProjects` (name, status, order only) |
 | `cleanupAttachments` | Scheduled, daily | Deletes stray contact and reply uploads, expired rate-limit records and old sent mail, and refreshes the busy-slot mirror |
 | `cleanupMcp` | Scheduled, every 6 hours | Removes expired MCP logins, codes, tokens and unused client registrations |
 | `notifyLogin` | Callable | Alerts the owner of a dashboard sign-in |
@@ -116,7 +124,7 @@ Functions are deployed by hand, always scoped:
 
 ```bash
 firebase deploy --only functions                              # every function
-firebase deploy --only functions:mcp,functions:notifyCanary   # named functions
+firebase deploy --only functions:mcp,functions:bookMeeting    # named functions
 firebase deploy --only firestore:rules,storage                # security rules
 ```
 

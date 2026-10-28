@@ -23,8 +23,8 @@ import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail.js";
 import { escapeHtml as escHtml } from "./html.js";
 import { clientIp } from "./geoip.js";
 import {
-  bookingRefusal, hostWallClock, hostZone, isUpcoming, meetingInstant, parseAvailability,
-  MEETING_MS, type BookedSlot, type HostZone,
+  bookingRefusal, hostWallClock, hostZone, isUpcoming, parseAvailability, slotStart, zoneRecord,
+  MEETING_MS, type HostZone,
 } from "./booking.js";
 import { emailShell, SITE_URL } from "./emailShell.js";
 import { handledProjectsMirror, sameMirror, type HandledProject } from "./handledProjects.js";
@@ -32,16 +32,18 @@ import { HOLD_MS, holdActive, holdIds, quota, readQuotas, refundQuotas, takeQuot
 import { callCalendar, readCreateReply, replySucceeded, MEET_LINK_RE } from "./calendar.js";
 import { enqueueMail, jobId, retryFailed, MAIL_JOBS, type MailMessage } from "./outbox.js";
 import {
-  approxDocBytes, attachmentPath, futureSlots, greetingName, offsetLabel, replyPath,
-  timeAtOffset, unrepliedCount, visitorOffset,
+  attachmentPath, futureSlots, greetingName, offsetLabel, replyPath, timeAtOffset, upcomingFrom, visitorOffset,
 } from "./forms.js";
+import { COLLECTIONS } from "./collections.js";
 
 // Mail is delivered by the outbox (./outbox): every notification is a MailJobs
 // document first, retried until it is sent and kept as `failed` if it never is.
 export { sendMail, retryMail } from "./outbox.js";
 
 // ── Shapes of the Firestore records these functions read ─────────────
-interface EmailEntry {
+// One document per contact message (CanaryMessages/{id}) and per meeting
+// (CanaryMeetings/{id}); the id is the key the entry always had.
+interface MessageDoc {
   Name?: string;
   Email?: string;
   Number?: string;
@@ -52,29 +54,34 @@ interface EmailEntry {
   RepliedAt?: number;
   /** false when the visitor's acknowledgement quota was used up at submission. */
   Ack?: boolean;
+  /** Set on entries copied from the old Settings/Canary map: they were notified then. */
+  migratedFrom?: string;
 }
-interface MeetingEntry {
+interface MeetingDoc {
   Name?: string;
   Email?: string;
-  Date?: string;
-  Time?: string;
+  /** When it starts, as a UTC ISO instant. */
+  start?: string;
+  /** The owner's clock when it was booked: a zone name, or a fixed offset. */
+  timeZone?: string | null;
+  utcOffset?: number | null;
   UserLocalTime?: string;
   UserTimezone?: number;
   MeetingLink?: string;
   "What For"?: string;
   Reason?: string;
   Ack?: boolean;
-}
-interface CanaryDoc {
-  Emails?: Record<string, EmailEntry>;
-  Meetings?: Record<string, MeetingEntry>;
+  migratedFrom?: string;
 }
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-const CANARY = "Settings/Canary";
 const AVAILABILITY = "Settings/Availability";
 const BOOKED_SLOTS = "Settings/BookedSlots";
+const messages = () => db.collection(COLLECTIONS.messages);
+const meetings = () => db.collection(COLLECTIONS.meetings);
+/** Meetings that have not ended yet, in start order. */
+const upcomingMeetings = (nowMs: number) => meetings().where("start", ">", upcomingFrom(nowMs)).orderBy("start");
 
 /** The project's default Storage bucket: the only one any stored link may point into. */
 function ourBucket(): string {
@@ -189,20 +196,20 @@ async function queue(id: string, mail: MailMessage): Promise<void> {
 }
 
 /**
- * Rebuilds the public busy-slot list from the current Settings/Canary, inside one
- * transaction. Reading Canary in the transaction is what makes it safe: a trigger run
- * for an older Canary write can't overwrite the list with what was true then, because
- * a newer Canary makes the transaction retry with the newer meetings. Only meetings
- * that have not ended are published, with Date and Time and nothing else.
+ * Rebuilds the public busy-slot list from a query of the meetings that have not ended,
+ * inside one transaction - never from the one meeting a trigger fired for. Reading the
+ * query in the transaction is what makes it safe: a run for an older write can't put
+ * back what was true then, because a newer meeting write makes the transaction retry
+ * with the newer meetings. Each slot is a start instant and nothing else.
  */
 async function refreshBookedSlots(): Promise<void> {
-  const canaryRef = db.doc(CANARY);
-  const availRef = db.doc(AVAILABILITY);
   const slotsRef = db.doc(BOOKED_SLOTS);
   await db.runTransaction(async (tx) => {
-    const [canary, avail, cur] = await Promise.all([tx.get(canaryRef), tx.get(availRef), tx.get(slotsRef)]);
-    const slots = futureSlots((canary.data() as CanaryDoc | undefined)?.Meetings, hostZone(avail.data()), Date.now());
+    const now = Date.now();
+    const [snap, cur] = await Promise.all([tx.get(upcomingMeetings(now)), tx.get(slotsRef)]);
+    const slots = futureSlots(snap.docs.map((d) => d.data() as MeetingDoc), now);
     if (cur.exists && JSON.stringify(cur.data()?.Slots) === JSON.stringify(slots)) return;
+    // Replaces the whole doc, so a slot list in an older shape is dropped with it.
     tx.set(slotsRef, { Slots: slots, lastWrite: admin.firestore.FieldValue.serverTimestamp() });
   });
 }
@@ -216,33 +223,34 @@ async function refreshBookedSlots(): Promise<void> {
 export { trackSession } from "./analytics.js";
 
 // =====================================================================
-//  2. notifyCanary - Firestore trigger on Settings/Canary
-//     Queues the owner's notification and the visitor's acknowledgement for each
-//     new message and meeting, removes a deleted message's uploads, and refreshes
-//     the public busy-slot list.
+//  2. notifyCanaryMessage / notifyCanaryMeeting - Firestore triggers, one run per
+//     message or meeting document.
+//     A new message or meeting queues the owner's notification and the visitor's
+//     acknowledgement; a deleted message has its uploads removed; every meeting
+//     write refreshes the public busy-slot list.
 //
-//     Every mail is queued under an id made from the entry's key, and a job is
+//     Every mail is queued under an id made from the entry's id, and a job is
 //     only ever created once, so a trigger that runs twice for one write can't
-//     send anything twice.
+//     send anything twice. Entries the migration copied over (migratedFrom) were
+//     notified when they first arrived, so they send nothing.
 // =====================================================================
-export const notifyCanary = onDocumentWritten(
+export const notifyCanaryMessage = onDocumentWritten(
   {
-    document: CANARY,
+    document: `${COLLECTIONS.messages}/{messageId}`,
     region: "us-central1",
     secrets: [smtpUser],
   },
   async (event) => {
-    const before = (event.data?.before?.data() || {}) as CanaryDoc;
-    const after = (event.data?.after?.data() || {}) as CanaryDoc;
+    const key = event.params.messageId;
+    const before = event.data?.before?.exists ? event.data.before.data() as MessageDoc : null;
+    const e = event.data?.after?.exists ? event.data.after.data() as MessageDoc : null;
     const bucket = ourBucket();
 
-    // ── Deleted messages: remove their uploads ─────────────────
+    // ── A deleted message: remove its uploads ──────────────────
     // Only paths that really are contact uploads (emails/<folder>/<file> in our
     // bucket). A hand-edited entry naming any other file - a site image - is skipped.
-    const oldEmails = before.Emails || {};
-    const newEmails = after.Emails || {};
-    for (const key of Object.keys(oldEmails).filter((k) => !newEmails[k])) {
-      for (const f of oldEmails[key]?.["Files Attached"] || []) {
+    if (before && !e) {
+      for (const f of before["Files Attached"] || []) {
         const path = attachmentPath(f?.url, bucket);
         if (!path) {
           if (f?.url) console.warn(`Message ${key}: skipped an attachment link outside emails/`);
@@ -254,16 +262,14 @@ export const notifyCanary = onDocumentWritten(
           console.error(`Failed to delete an attachment of message ${key}:`, (err as Error)?.message);
         }
       }
+      return;
     }
 
+    // ── A new message ──────────────────────────────────────────
+    if (before || !e || !e.Name || e.migratedFrom) return;
     const owner = ownerInboxes();
     const zone = await readHostZone();
-
-    // ── New messages ───────────────────────────────────────────
-    for (const key of Object.keys(newEmails).filter((k) => !oldEmails[k])) {
-      const e = newEmails[key];
-      if (!e || !e.Name) continue;
-
+    {
       const sentAt = Number(new Date(e.Timestamp ?? NaN));
       const ts = Number.isFinite(sentAt) ? hostTime(sentAt, zone) : "Unknown";
 
@@ -319,21 +325,34 @@ export const notifyCanary = onDocumentWritten(
       }
     }
 
-    // ── New meetings ───────────────────────────────────────────
-    const oldMeetings = before.Meetings || {};
-    const newMeetings = after.Meetings || {};
-    for (const key of Object.keys(newMeetings).filter((k) => !oldMeetings[k])) {
-      const m = newMeetings[key];
-      if (!m || !m.Name) continue;
+  },
+);
 
+export const notifyCanaryMeeting = onDocumentWritten(
+  {
+    document: `${COLLECTIONS.meetings}/{meetingId}`,
+    region: "us-central1",
+    secrets: [smtpUser],
+  },
+  async (event) => {
+    const key = event.params.meetingId;
+    const before = event.data?.before?.exists ?? false;
+    const m = event.data?.after?.exists ? event.data.after.data() as MeetingDoc : null;
+
+    // ── A new meeting ──────────────────────────────────────────
+    if (!before && m && m.Name && !m.migratedFrom) {
+      const owner = ownerInboxes();
+      const zone = await readHostZone();
       const meetLink = typeof m.MeetingLink === "string" && MEET_LINK_RE.test(m.MeetingLink) ? m.MeetingLink : null;
       const meetButton = meetLink
         ? `<div style="margin-top:24px;text-align:center"><a href="${escAttr(meetLink)}" class="btn">Join Google Meet</a></div>`
         : "";
-      const at = meetingInstant(m, zone);
+      const at = slotStart(m);
       const guestOffset = visitorOffset(m.UserTimezone);
-      const ownerWhen = at === null ? `${m.Date || ""} ${m.Time || ""}`.trim() : hostTime(at, zone);
+      const ownerWhen = at === null ? "Unknown time" : hostTime(at, zone);
       const guestWhen = at !== null && guestOffset !== null ? timeAtOffset(at, guestOffset) : null;
+      const wall = at === null ? null : hostWallClock(at, zone);
+      const subjectWhen = wall ? ` on ${wall.date} at ${wall.time}` : "";
 
       const mName = escHtml(m.Name);
       await queue(jobId("meeting-owner", key), {
@@ -341,11 +360,11 @@ export const notifyCanary = onDocumentWritten(
         to: owner.cc ? [owner.to, owner.cc] : owner.to,
         fromName: "Revil Portfolio",
         replyTo: GUEST_EMAIL_RE.test(String(m.Email || "")) ? m.Email : undefined,
-        subject: escSubject(`Meeting booked: ${m.Name} on ${m.Date} at ${m.Time}`),
+        subject: escSubject(`Meeting booked: ${m.Name}${subjectWhen}`),
         label: "Booking notification",
         html: emailShell({
           title: "New Meeting Booked",
-          preheader: `${m.Name} booked a meeting on ${m.Date}`,
+          preheader: `${m.Name} booked a meeting${wall ? ` on ${wall.date}` : ""}`,
           bodyHtml: `
           <h2>New Meeting Booked</h2>
           <p>Someone scheduled a meeting through your portfolio.</p>
@@ -374,9 +393,9 @@ export const notifyCanary = onDocumentWritten(
     }
 
     // ── Public busy slots ──────────────────────────────────────
-    // Settings/Canary is admin-read-only (visitor details, Meet links); the public
-    // calendar reads Settings/BookedSlots instead. Writing that doc does not
-    // re-trigger this function, so there is no loop.
+    // CanaryMeetings is admin-only (visitor details, Meet links); the public calendar
+    // reads Settings/BookedSlots instead, rebuilt from a query of every meeting that
+    // has not ended. Writing that doc does not re-trigger this function.
     try {
       await refreshBookedSlots();
     } catch (err) {
@@ -388,25 +407,19 @@ export const notifyCanary = onDocumentWritten(
 // =====================================================================
 //  2b. Public submissions - submitContact, bookMeeting
 //
-//  Visitors have NO write access to Settings/Canary: they call these functions,
-//  which validate every field, rate-limit per visitor IP and per email address
-//  (./limits - there is no site-wide lock, so one sender can't block everyone),
-//  and write through the Admin SDK. notifyCanary then queues the emails.
+//  Visitors have NO write access to CanaryMessages or CanaryMeetings: they call
+//  these functions, which validate every field, rate-limit per visitor IP and per
+//  email address (./limits - there is no site-wide lock, so one sender can't block
+//  everyone), and write one document through the Admin SDK. notifyCanaryMessage and
+//  notifyCanaryMeeting then queue the emails.
 // =====================================================================
 
-/** Messages the owner hasn't replied to. Replied ones stop counting. */
-const CONTACT_INBOX_CAP = 50;
-/** The owner is warned once a day when unreplied messages reach this. */
+/** The owner is warned once a day when this many messages wait for a reply. */
 const CONTACT_INBOX_WARN = 40;
 /** Upcoming meetings: past ones never count. */
 const MEETINGS_CAP = 100;
-/** Settings/Canary is one document (1 MiB max): stop taking new entries well before. */
-const CANARY_MAX_BYTES = 800_000;
-const CANARY_WARN_BYTES = 600_000;
 const MAX_ATTACHMENTS = 5;
 const CUSTOM_GRID_MS = 15 * 60_000;
-
-const FULL_INBOX = `The inbox is full right now - please email ${HELLO_EMAIL} directly.`;
 
 /** The caller's address, as the rate limits see it. */
 function callerIp(raw: { headers: Record<string, string | string[] | undefined>; ip?: string }): string {
@@ -443,7 +456,7 @@ function emailField(v: unknown): string {
   return s;
 }
 
-/** Same key shape the site always used for Emails/Meetings map entries. */
+/** A message or meeting id: the same shape the entries always had. */
 function entryId(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -466,25 +479,35 @@ async function attachmentsField(v: unknown): Promise<Array<{ name: string; url: 
   return out;
 }
 
-/** Warn the owner, once a day, that the inbox document is filling up. */
-async function warnInboxFilling(unreplied: number, bytes: number): Promise<void> {
-  if (unreplied < CONTACT_INBOX_WARN && bytes < CANARY_WARN_BYTES) return;
+/**
+ * Messages still waiting for a reply: every message minus the replied ones, as two
+ * count queries (no message is read).
+ */
+async function unrepliedMessages(): Promise<number> {
+  const [all, replied] = await Promise.all([
+    messages().count().get(),
+    messages().where("RepliedAt", ">", 0).count().get(),
+  ]);
+  return Math.max(0, all.data().count - replied.data().count);
+}
+
+/** Tell the owner, at most once a day, that messages are piling up unanswered. */
+async function warnInboxPiling(): Promise<void> {
+  const unreplied = await unrepliedMessages();
+  if (unreplied < CONTACT_INBOX_WARN) return;
   const day = new Date().toISOString().slice(0, 10);
   await queue(jobId("inbox-filling", day), {
     to: smtpUser.value(),
     fromName: "Revil Portfolio",
-    subject: "Your portfolio inbox is nearly full",
-    label: "Inbox nearly full",
+    subject: `${unreplied} portfolio messages are waiting for a reply`,
+    label: "Unreplied messages",
     html: emailShell({
-      title: "Inbox nearly full",
+      title: "Messages waiting",
       bodyHtml: `
-          <h2>Your inbox is nearly full</h2>
-          <p>The contact form stops taking messages at ${CONTACT_INBOX_CAP} unreplied messages, or when the inbox record nears its storage limit. Reply to or delete a few messages in the dashboard to keep it open.</p>
+          <h2>Messages are waiting for a reply</h2>
+          <p>The contact form keeps taking messages; this is a reminder that a number of them are still unanswered. Reply to them or delete them in the dashboard.</p>
           <div class="divider"></div>
-          <div>${infoRows([
-            ["Unreplied", `${unreplied} of ${CONTACT_INBOX_CAP}`],
-            ["Storage", `${Math.round((bytes / CANARY_MAX_BYTES) * 100)}% of the limit`],
-          ])}</div>
+          <div>${infoRows([["Unreplied", String(unreplied)]])}</div>
         `,
     }),
   });
@@ -494,7 +517,7 @@ export const submitContact = onCall(
   { region: "us-central1", enforceAppCheck: true, secrets: [smtpUser] },
   async (request) => {
     const d = (request.data || {}) as Record<string, unknown>;
-    const entry: EmailEntry = {
+    const entry: MessageDoc = {
       Name: textField(d.name, "Name", 100, true),
       Email: emailField(d.email),
       "Files Attached": await attachmentsField(d.files),
@@ -510,25 +533,22 @@ export const submitContact = onCall(
       quota("contact-email", entry.Email!, 3, DAY_MS, `This address has sent a few messages today - please email ${HELLO_EMAIL} instead.`),
     ];
     const acks = ackQuotas(entry.Email!, ip);
-    const canaryRef = db.doc(CANARY);
+    const ref = messages().doc(entryId());
 
-    const load = await db.runTransaction(async (tx) => {
-      const [canary, snaps] = await Promise.all([tx.get(canaryRef), readQuotas(tx, db, [...quotas, ...acks])]);
-      const data = (canary.data() || {}) as CanaryDoc;
-      const unreplied = unrepliedCount(data.Emails);
+    await db.runTransaction(async (tx) => {
+      const snaps = await readQuotas(tx, db, [...quotas, ...acks]);
       const row = { ...entry };
-      const bytes = approxDocBytes(data) + approxDocBytes(row);
-      if (unreplied >= CONTACT_INBOX_CAP || bytes > CANARY_MAX_BYTES) {
-        throw new HttpsError("resource-exhausted", FULL_INBOX);
-      }
       const now = Date.now();
       const used = takeQuotas(tx, db, quotas, snaps.slice(0, quotas.length), now);
       if (used) throw new HttpsError("resource-exhausted", used.message);
       if (takeQuotas(tx, db, acks, snaps.slice(quotas.length), now)) row.Ack = false;
-      tx.set(canaryRef, { Emails: { [entryId()]: row } }, { merge: true });
-      return { unreplied: unreplied + 1, bytes };
+      tx.create(ref, row);
     });
-    await warnInboxFilling(load.unreplied, load.bytes);
+    try {
+      await warnInboxPiling();
+    } catch (err) {
+      console.error("Could not count unreplied messages:", (err as Error)?.message);
+    }
     return { ok: true };
   },
 );
@@ -558,7 +578,7 @@ async function alertUnconfirmedBooking(requestId: string, what: string, email: s
 
 /**
  * Public booking. Validates the request, reserves the time, creates the Calendar event
- * (with Meet link) and records the meeting in Canary.
+ * (with Meet link) and records the meeting as its own CanaryMeetings document.
  *
  * Only an explicit success from the Calendar script with a usable event id counts
  * (./calendar). A refusal is passed on as a plain message; anything else - a timeout,
@@ -586,10 +606,9 @@ export const bookMeeting = onCall(
     const availability = (await db.doc(AVAILABILITY).get()).data() || {};
     const cfg = parseAvailability(availability);
     const zone = hostZone(availability);
-    const host = hostWallClock(startMs, zone);
     const ip = callerIp(request.rawRequest);
-    const canaryRef = db.doc(CANARY);
     const requestId = entryId();
+    const meetingRef = meetings().doc(requestId);
 
     // Refunded when the booking does not happen; the attempts quota is not.
     const bookings = [
@@ -606,22 +625,20 @@ export const bookMeeting = onCall(
     let ackAllowed = true;
     await db.runTransaction(async (tx) => {
       const counted = [...bookings, ...attempts];
-      const [canary, snaps, holds] = await Promise.all([
-        tx.get(canaryRef),
+      // Only meetings that have not ended: past calls never count against the cap,
+      // and none of them can overlap a time that is still bookable.
+      const [upcoming, snaps, holds] = await Promise.all([
+        tx.get(upcomingMeetings(now)),
         readQuotas(tx, db, [...counted, ...acks]),
         Promise.all(holdRefs.map((r) => tx.get(r))),
       ]);
-      const data = (canary.data() || {}) as CanaryDoc;
-      const meetings: BookedSlot[] = Object.values(data.Meetings || {}).filter(Boolean);
-      if (meetings.filter((m) => isUpcoming(m, zone, now)).length >= MEETINGS_CAP) {
-        throw new HttpsError("resource-exhausted", `Bookings are full right now - please email ${HELLO_EMAIL}.`);
-      }
-      if (approxDocBytes(data) > CANARY_MAX_BYTES) {
+      const booked = upcoming.docs.map((doc) => doc.data() as MeetingDoc).filter((m) => isUpcoming(m, now));
+      if (booked.length >= MEETINGS_CAP) {
         throw new HttpsError("resource-exhausted", `Bookings are full right now - please email ${HELLO_EMAIL}.`);
       }
       // The same day, time and overlap rules the booking calendar draws from
       // (booking.ts, generated from src/utils/bookingRules.ts).
-      const refusal = bookingRefusal(startMs, { nowMs: now, userTimezone, hostOffset: zone, cfg, meetings });
+      const refusal = bookingRefusal(startMs, { nowMs: now, userTimezone, hostOffset: zone, cfg, meetings: booked });
       if (refusal) throw new HttpsError("failed-precondition", refusal);
       if (holds.some((h) => holdActive(h.data(), now))) {
         throw new HttpsError("already-exists", "That time slot is no longer available. Please pick another.");
@@ -669,11 +686,11 @@ export const bookMeeting = onCall(
       throw new HttpsError("unavailable", `The booking couldn't be confirmed - please email ${HELLO_EMAIL} and I'll sort it out.`);
     }
 
-    // 3. Record it (notifyCanary queues the emails and refreshes BookedSlots).
+    // 3. Record it (notifyCanaryMeeting queues the emails and refreshes BookedSlots).
     try {
-      const entry: MeetingEntry & Record<string, unknown> = {
-        Date: host.date,
-        Time: host.time,
+      const entry: MeetingDoc & Record<string, unknown> = {
+        start: startTime,
+        ...zoneRecord(zone),
         UserLocalTime: userLocalTime,
         UserTimezone: userTimezone,
         Email: email,
@@ -685,7 +702,7 @@ export const bookMeeting = onCall(
         Via: via,
         ...(ackAllowed ? {} : { Ack: false }),
       };
-      await canaryRef.set({ Meetings: { [requestId]: entry } }, { merge: true });
+      await meetingRef.create(entry);
     } catch (err) {
       console.error("bookMeeting: recording failed, cancelling the event:", (err as Error)?.message);
       const cancel = await callCalendar(url, { action: "cancel", eventId: outcome.id, requestId, email, name: calendarName, startTime });
@@ -768,21 +785,24 @@ export const retryMailJob = onCall(
   },
 );
 // =====================================================================
-//  2d. mirrorHandledProjects - keeps the PUBLIC Settings/HandledProjects (the
-//      homepage's "projects I handle") in step with the private Treasury/projects,
+//  2d. mirrorTreasuryProjects - keeps the PUBLIC Settings/HandledProjects (the
+//      homepage's "projects I handle") in step with the private TreasuryProjects,
 //      whoever wrote it: the dashboard, Spark or the MCP tools. Only name, status
 //      and position are published (./handledProjects holds the one projection).
 // =====================================================================
-export const mirrorHandledProjects = onDocumentWritten(
-  { document: "Treasury/projects", region: "us-central1" },
+export const mirrorTreasuryProjects = onDocumentWritten(
+  { document: `${COLLECTIONS.treasuryProjects}/{projectId}`, region: "us-central1" },
   async () => {
-    const srcRef = db.doc("Treasury/projects");
+    const srcRef = db.collection(COLLECTIONS.treasuryProjects);
     const outRef = db.doc("Settings/HandledProjects");
-    // Read the source inside the transaction, so a run for an older write can't
-    // publish an older list over a newer one.
+    // Rebuilt from a query of every project inside the transaction, never from the
+    // one project this run fired for, so a run for an older write can't publish an
+    // older list over a newer one.
     await db.runTransaction(async (tx) => {
       const [src, out] = await Promise.all([tx.get(srcRef), tx.get(outRef)]);
-      const next = handledProjectsMirror(src.data()?.entries);
+      const entries: Record<string, unknown> = {};
+      for (const doc of src.docs) entries[doc.id] = doc.data();
+      const next = handledProjectsMirror(entries);
       const prev = out.data()?.projects as Record<string, HandledProject> | undefined;
       const clean = !!prev && typeof prev === "object" && Object.keys(out.data() || {}).every((k) => k === "projects" || k === "lastWrite")
         && Object.values(prev).every((p) => !!p && typeof p === "object" && Object.keys(p).length === 3);
@@ -841,10 +861,10 @@ export const cleanupAttachments = onSchedule(
     const cutoff = now - DAY_MS;
     const bucket = ourBucket();
 
-    const canary = (await db.doc(CANARY).get()).data() as CanaryDoc | undefined;
+    const kept = await messages().select("Files Attached").get();
     const keep = new Set<string>();
-    for (const e of Object.values(canary?.Emails || {})) {
-      for (const f of e?.["Files Attached"] || []) {
+    for (const doc of kept.docs) {
+      for (const f of (doc.data() as MessageDoc)["Files Attached"] || []) {
         const path = attachmentPath(f?.url, bucket);
         if (path) keep.add(path);
       }
@@ -1029,22 +1049,17 @@ export const sendReceipt = onCall(
       // fail the send, which already went out).
       try {
         const id = `rcp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-        await db.doc("Treasury/receipts").set({
-          entries: {
-            [id]: {
-              receiptNo: meta?.receiptNo || "",
-              to: email,
-              sentAt: Date.now(),
-              currency: meta?.currency || "USD",
-              total: typeof meta?.total === "number" ? meta.total : 0,
-              ...(typeof meta?.balance === "number" ? { balance: meta.balance } : {}),
-              projectIds: Array.isArray(meta?.projectIds) ? meta.projectIds : [],
-              projectNames: Array.isArray(meta?.projectNames) ? meta.projectNames : [],
-              via: "dashboard",
-            },
-          },
-          lastWrite: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+        await db.collection(COLLECTIONS.treasuryReceipts).doc(id).set({
+          receiptNo: meta?.receiptNo || "",
+          to: email,
+          sentAt: Date.now(),
+          currency: meta?.currency || "USD",
+          total: typeof meta?.total === "number" ? meta.total : 0,
+          ...(typeof meta?.balance === "number" ? { balance: meta.balance } : {}),
+          projectIds: Array.isArray(meta?.projectIds) ? meta.projectIds : [],
+          projectNames: Array.isArray(meta?.projectNames) ? meta.projectNames : [],
+          via: "dashboard",
+        });
       } catch (logErr) {
         console.error("Receipt sent but history log failed:", logErr);
       }

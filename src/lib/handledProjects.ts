@@ -1,13 +1,13 @@
 /**
  * The public "projects I handle" list - the ONE definition of what of the private
- * Treasury/projects document may be published to Settings/HandledProjects.
+ * TreasuryProjects collection may be published to Settings/HandledProjects.
  *
  * Only name, status and position leave Treasury. Prices, earnings, clients and notes
  * never do, and neither does work that stopped (paused, closed) or ended (completed):
  * a client should never read "paused" or "closed" next to their own project.
  *
- * A Cloud Function trigger keeps the mirror in step with every writer of Treasury
- * (the dashboard, Spark and the MCP tools). The functions build copies this file to
+ * A Cloud Function trigger (mirrorTreasuryProjects) keeps the mirror in step with
+ * every writer of TreasuryProjects (the dashboard, Spark and the MCP tools). The functions build copies this file to
  * functions/src/handledProjects.ts (functions/scripts/sync-shared.mjs): edit it here.
  * It must stay dependency-free. The status list matches PROJECT_STATUSES in
  * ./treasury, which should import it from here.
@@ -41,7 +41,7 @@ export function storedStatus(raw: Record<string, unknown>): ProjectStatus {
 
 export interface HandledProject { name: string; status: string; order: number }
 
-/** The public mirror of a Treasury/projects `entries` map, keyed by project id. */
+/** The public mirror of the treasury projects, given as `{ [projectId]: project }`. */
 export function handledProjectsMirror(entries: unknown): Record<string, HandledProject> {
     const rows = entries && typeof entries === 'object' ? Object.entries(entries as Record<string, unknown>) : [];
     const handled = rows

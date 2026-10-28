@@ -35,7 +35,7 @@ import admin from "firebase-admin";
 import { createHash } from "crypto";
 import { z } from "zod";
 import type { Response } from "express";
-import { FieldPath, type DocumentSnapshot } from "firebase-admin/firestore";
+import { FieldPath, type QuerySnapshot } from "firebase-admin/firestore";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   buildReceiptHtml, receiptNumber, projectReceiptLine, receiptPaymentRows, LEGACY_PAYMENT_LABEL, type ReceiptLine,
@@ -46,7 +46,10 @@ import {
   installmentMonthlyAmount, projectContractTotal, projectBalance,
   projectPaymentStatus, projectReceived, accountBalance,
 } from "./money";
-import { parseAvailability, meetingInstant, hostZone, offsetAt, type HostZone } from "./booking";
+import {
+  parseAvailability, hostWallClock, hostZone, isoInstant, offsetAt, slotStart, zoneRecord, MEETING_MS, type HostZone,
+} from "./booking";
+import { COLLECTIONS } from "./collections";
 import { HELLO_EMAIL, resendKey, smtpUser } from "./mail";
 import { callCalendar, replySucceeded } from "./calendar";
 import { jobId, sendNow, type MailMessage } from "./outbox";
@@ -59,7 +62,7 @@ import {
 } from "./mcpGrants";
 import {
   INVALID_DATE, SCOPE_READ, SCOPE_WRITE, SUPPORTED_SCOPES, UNTRUSTED_NOTE, hasScope, isValidYmd, markUntrusted,
-  narrowScope, parseScope, projectNameError, receiptRecipient, toStoredDate, toStoredTime,
+  narrowScope, ownerInstant, ownerYmdHm, parseScope, projectNameError, receiptRecipient,
 } from "./mcpRules";
 import { incomeEntryId, recordIncome, saveMeeting } from "./mcpWrites";
 import { visitViews } from "./mcpVisits";
@@ -583,7 +586,6 @@ async function verifyBearer(req: Request): Promise<TokenRec | null> {
 }
 
 // ── MCP tools ──────────────────────────────────────────────────────
-const SERVER_TIMESTAMP = () => admin.firestore.FieldValue.serverTimestamp();
 const ok = (obj: unknown): CallToolResult => ({ content: [{ type: "text", text: JSON.stringify(obj, null, 2) }] });
 const fail = (msg: string): CallToolResult => ({ content: [{ type: "text", text: msg }], isError: true });
 
@@ -635,11 +637,13 @@ async function logAudit(e: {
   }
 }
 
-/** Pull the `entries` map off a treasury doc into a typed array. */
-function readEntries<T extends object>(s: DocumentSnapshot): Array<T & { id: string }> {
-  const map = (s.data()?.entries ?? {}) as Record<string, T>;
-  return Object.entries(map).map(([id, v]) => ({ id, ...v }));
+/** Every document of a per-entry collection as a typed array, each with its id. */
+function readEntries<T extends object>(s: QuerySnapshot): Array<T & { id: string }> {
+  return s.docs.map((d) => ({ ...(d.data() as T), id: d.id }));
 }
+
+/** One of the per-entry collections (./collections). */
+const entries = (name: keyof typeof COLLECTIONS) => db().collection(COLLECTIONS[name]);
 
 // ── Availability (working days + hours) - parsed by booking.ts, which mirrors src/utils/availability.ts ──
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -799,17 +803,24 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     });
 
   server.registerTool("list_bookings",
-    { title: "List bookings", description: "Scheduled meetings/calls booked through the site.", inputSchema: {}, annotations: { readOnlyHint: true } },
+    { title: "List bookings", description: "Scheduled meetings/calls booked through the site. Each has `start` (the UTC instant) and `date` / `time` on the owner's clock (YYYY-MM-DD, 24-hour HH:MM), the same formats add_booking and update_booking take.", inputSchema: {}, annotations: { readOnlyHint: true } },
     async () => {
-      const snap = await db().doc("Settings/Canary").get();
-      const meetings = snap.exists ? (snap.data()?.Meetings || {}) : {};
-      const cats = await readCategories();
+      const [snap, cats, zone] = await Promise.all([entries("meetings").get(), readCategories(), hostClock()]);
       // Guests from the public form write their own name, email and reason.
       return ok({
         note: UNTRUSTED_NOTE,
-        bookings: Object.entries(meetings).map(([id, m]) => {
-          const entry = m as Record<string, unknown>;
-          return { id, ...markUntrusted(entry, ["Name", "Email", "What For", "UserLocalTime"]), category: categoryName(cats, entry.Category) };
+        bookings: snap.docs.map((d) => {
+          const entry = d.data() as Record<string, unknown>;
+          const at = slotStart(entry);
+          // `start` is the stored UTC instant; date and time are it on the owner's clock now.
+          const when = at === null ? { date: null, time: null } : ownerYmdHm(at, zone);
+          return {
+            id: d.id,
+            ...markUntrusted(entry, ["Name", "Email", "What For", "UserLocalTime"]),
+            date: when.date,
+            time: when.time,
+            category: categoryName(cats, entry.Category),
+          };
         }),
       });
     });
@@ -843,12 +854,12 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       annotations: { readOnlyHint: true },
     },
     async () => {
-      const snap = await db().doc("Settings/Canary").get();
-      const emails = snap.exists ? (snap.data()?.Emails || {}) : {};
+      const snap = await entries("messages").get();
       return ok({
         note: UNTRUSTED_NOTE,
-        messages: Object.entries(emails).map(([id, e]) => {
-          const entry = (e || {}) as Record<string, unknown>;
+        messages: snap.docs.map((d) => {
+          const id = d.id;
+          const entry = d.data() as Record<string, unknown>;
           const files = Array.isArray(entry["Files Attached"]) ? entry["Files Attached"] as Array<{ name?: unknown; url?: unknown }> : [];
           return {
             id,
@@ -945,10 +956,10 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       "A closed project's unpaid balance is `writtenOff`, not `outstanding`: the client walked away, so it is not money still owed.", inputSchema: {}, annotations: { readOnlyHint: true } },
     async () => {
       const [proj, spend, inc, acc, settings] = await Promise.all([
-        db().doc("Treasury/projects").get(),
-        db().doc("Treasury/spendings").get(),
-        db().doc("Treasury/income").get(),
-        db().doc("Treasury/accounts").get(),
+        entries("treasuryProjects").get(),
+        entries("treasurySpendings").get(),
+        entries("treasuryIncome").get(),
+        entries("treasuryAccounts").get(),
         db().doc("Treasury/settings").get(),
       ]);
       const settingsData = (settings.data() || {}) as TreasurySettings;
@@ -1008,9 +1019,9 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     { title: "List treasury accounts", description: "All money accounts (bank/cash/card/wallet) with their current balance.", inputSchema: {}, annotations: { readOnlyHint: true } },
     async () => {
       const [acc, inc, spend, settings] = await Promise.all([
-        db().doc("Treasury/accounts").get(),
-        db().doc("Treasury/income").get(),
-        db().doc("Treasury/spendings").get(),
+        entries("treasuryAccounts").get(),
+        entries("treasuryIncome").get(),
+        entries("treasurySpendings").get(),
         db().doc("Treasury/settings").get(),
       ]);
       const rates = ((settings.data() || {}) as TreasurySettings).rates || DEFAULT_RATES;
@@ -1114,19 +1125,17 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         categoryLabel = r.name || PERSONAL_CATEGORY_NAME;
       }
 
-      // Convert to the host-perspective formats the dashboard calendar + the public
-      // BookedSlots mirror compare against: Date "DD/MM/YYYY", Time "hh:mm AM/PM".
-      const storedDate = toStoredDate(a.date);
-      const storedTime = toStoredTime(a.time);
+      // The owner's wall-clock date and time become one UTC instant, stored with the
+      // clock it was read on; the dashboard and the public calendar show it from that.
       const zone = await hostClock();
-      const startMs = meetingInstant({ Date: storedDate, Time: storedTime }, zone);
-      if (startMs === null) return fail("Could not read that date and time.");
+      const startMs = ownerInstant(a.date, a.time, zone);
+      const shown = hostWallClock(startMs, zone);
 
       const id = `${now()}_${rand(4)}`;
       const payload = {
         Name: a.name,
-        Date: storedDate,
-        Time: storedTime,
+        start: isoInstant(startMs),
+        ...zoneRecord(zone),
         ...(a.email ? { Email: a.email } : {}),
         ...(a.reason ? { "What For": a.reason } : {}),
         ...(a.meetingLink ? { MeetingLink: a.meetingLink } : {}),
@@ -1136,14 +1145,13 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       };
       // Checked against the stored meetings and written in one transaction, by the
       // same collision rule as the public booking form.
-      // The collision rule reads stored meetings at the owner's offset at this instant.
-      const saved = await saveMeeting(db(), { id, patch: payload, startMs, hostOffset: offsetAt(zone, startMs), isNew: true, stamp: SERVER_TIMESTAMP() });
+      const saved = await saveMeeting(db(), { id, patch: payload, startMs, isNew: true });
       if (saved === "clash") {
-        return fail(`${storedDate} at ${storedTime} collides with an existing booking. Check list_bookings and pick a free time.`);
+        return fail(`${shown.date} at ${shown.time} collides with an existing booking. Check list_bookings and pick a free time.`);
       }
       return ok({
-        status: "booked", id, date: storedDate, time: storedTime, hasMeetingLink: !!a.meetingLink, category: categoryLabel,
-        ...(backdated ? { backdated: true, note: `Recorded on ${storedDate}, which is in the past (today is ${time.date}).` } : {}),
+        status: "booked", id, start: payload.start, date: a.date, time: a.time, hasMeetingLink: !!a.meetingLink, category: categoryLabel,
+        ...(backdated ? { backdated: true, note: `Recorded on ${a.date}, which is in the past (today is ${time.date}).` } : {}),
       });
     });
 
@@ -1152,12 +1160,6 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
   // satisfy - but it is only a proxy that forwards the payload to a Google Apps Script.
   // So we post the SAME payloads straight to that script, giving MCP cancels/reschedules
   // the same calendar behaviour the dashboard has.
-
-  /** Stored "DD/MM/YYYY" + "hh:mm AM/PM" (host wall clock) -> real UTC instant (booking.ts meetingInstant). */
-  const storedToUtc = (storedDate: unknown, storedTime: unknown, zone: HostZone): Date | null => {
-    const ms = meetingInstant({ Date: String(storedDate || ""), Time: String(storedTime || "") }, zone);
-    return ms === null ? null : new Date(ms);
-  };
 
   interface CalendarPayload {
     action: "cancel" | "update" | "create";
@@ -1179,9 +1181,6 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     const refused = !!reply.body && typeof reply.body === "object" && (reply.body as { status?: unknown }).status === "error";
     return { ok: false, error: refused ? "the calendar refused the change" : "the calendar did not confirm the change" };
   };
-
-  /** One hour, matching every existing booking path (dashboard + public form). */
-  const MEETING_MS = 3600000;
 
   server.registerTool("update_booking",
     {
@@ -1210,9 +1209,8 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       annotations: { destructiveHint: false },
     },
     async (a) => {
-      const snap = await db().doc("Settings/Canary").get();
-      const meetings = (snap.exists ? snap.data()?.Meetings : null) || {};
-      const existing = meetings[a.id];
+      const snap = await entries("meetings").doc(a.id).get();
+      const existing = snap.exists ? snap.data() as Record<string, string | undefined> : null;
       if (!existing) return fail(`No booking with id ${a.id}. Use list_bookings to find the right id.`);
 
       // Same rule as add_booking: the past is refused unless the owner confirmed it. Moving a
@@ -1235,40 +1233,47 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         patch.Category = r.id ?? admin.firestore.FieldValue.delete();
         categoryLabel = r.name || PERSONAL_CATEGORY_NAME;
       }
-      if (a.date) patch.Date = toStoredDate(a.date);
-      if (a.time) patch.Time = toStoredTime(a.time);
       if (a.name) patch.Name = a.name;
       if (a.email) patch.Email = a.email;
       if (a.reason) patch["What For"] = a.reason;
       if (a.meetingLink) patch.MeetingLink = a.meetingLink;
+
+      // A new date or time is read on the owner's clock; the part not passed keeps the
+      // booking's current value there.
+      const zone = await hostClock();
+      const oldStart = slotStart(existing);
+      const slotMoved = !!(a.date || a.time);
+      let startMs: number | null = null;
+      if (slotMoved) {
+        const was = oldStart === null ? null : ownerYmdHm(oldStart, zone);
+        const date = a.date ?? was?.date;
+        const at = a.time ?? was?.time;
+        if (!date || !at) return fail("This booking has no readable start time, so pass both `date` and `time`.");
+        startMs = ownerInstant(date, at, zone);
+        patch.start = isoInstant(startMs);
+        Object.assign(patch, zoneRecord(zone));
+      }
       if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
 
       // Move the calendar event when the slot (or the guest's details) actually changed.
-      const finalDate = String(patch.Date ?? existing.Date);
-      const finalTime = String(patch.Time ?? existing.Time);
+      const finalStart = startMs ?? oldStart;
+      const finalWhen = finalStart === null ? null : ownerYmdHm(finalStart, zone);
       const finalEmail = String(patch.Email ?? existing.Email ?? "");
       const finalName = String(patch.Name ?? existing.Name ?? "");
-      const slotMoved = !!(patch.Date || patch.Time);
-      const zone = await hostClock();
-      let startMs: number | null = null;
-      if (slotMoved) {
-        startMs = meetingInstant({ Date: finalDate, Time: finalTime }, zone);
-        if (startMs === null) return fail("Could not read the new date and time.");
-      }
 
       // Saved first, in one transaction with the collision check (only when the slot
       // moves), so the calendar event never follows a move that was refused.
-      const saved = await saveMeeting(db(), { id: a.id, patch, startMs, hostOffset: offsetAt(zone, startMs ?? Date.now()), isNew: false, stamp: SERVER_TIMESTAMP() });
+      const saved = await saveMeeting(db(), { id: a.id, patch, startMs, isNew: false });
       if (saved === "missing") return fail(`No booking with id ${a.id}. Use list_bookings to find the right id.`);
       if (saved === "clash") {
-        return fail(`${finalDate} at ${finalTime} collides with another booking. Check list_bookings and pick a free time.`);
+        return fail(`${finalWhen?.date} at ${finalWhen?.time} collides with another booking. Check list_bookings and pick a free time.`);
       }
 
       let calendar = "no calendar event attached to this booking";
       if (existing.GoogleEventId && (slotMoved || patch.Name || patch.Email || patch["What For"])) {
-        const start = storedToUtc(finalDate, finalTime, zone);
+        const start = finalStart === null ? null : new Date(finalStart);
         if (!start) {
-          calendar = "Could not read the booking's stored date/time, so the calendar event was left alone.";
+          calendar = "Could not read the booking's stored start time, so the calendar event was left alone.";
         } else {
           const r = await syncCalendar({
             action: "update",
@@ -1292,11 +1297,12 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         status: "updated",
         id: a.id,
         changed: Object.keys(patch),
-        date: finalDate,
-        time: finalTime,
+        start: finalStart === null ? null : isoInstant(finalStart),
+        date: finalWhen?.date ?? null,
+        time: finalWhen?.time ?? null,
         calendar,
         ...(categoryLabel ? { category: categoryLabel } : {}),
-        ...(a.date && a.date < time.date ? { backdated: true, note: `Moved to ${finalDate}, which is in the past (today is ${time.date}).` } : {}),
+        ...(a.date && a.date < time.date ? { backdated: true, note: `Moved to ${a.date}, which is in the past (today is ${time.date}).` } : {}),
       });
     });
 
@@ -1314,16 +1320,18 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       annotations: { destructiveHint: true },
     },
     async (a) => {
-      const snap = await db().doc("Settings/Canary").get();
-      const meetings = (snap.exists ? snap.data()?.Meetings : null) || {};
-      const existing = meetings[a.id];
+      const ref = entries("meetings").doc(a.id);
+      const snap = await ref.get();
+      const existing = snap.exists ? snap.data() as Record<string, string | undefined> : null;
       if (!existing) return fail(`No booking with id ${a.id}. Use list_bookings to find the right id.`);
+      const at = slotStart(existing);
+      const when = at === null ? null : ownerYmdHm(at, await hostClock());
 
       // Cancel the calendar event FIRST (same order as the dashboard): if it fails we have
       // not yet destroyed the details needed to find the event again.
       let calendar = "no calendar event attached to this booking";
       if (existing.GoogleEventId || existing.Email) {
-        const start = storedToUtc(existing.Date, existing.Time, await hostClock());
+        const start = at === null ? null : new Date(at);
         const r = await syncCalendar({
           action: "cancel",
           eventId: existing.GoogleEventId,          // preferred: exact event
@@ -1336,15 +1344,12 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
           : `Google Calendar event NOT cancelled (${r.error}). Tell the owner to cancel it from the dashboard.`;
       }
 
-      await db().doc("Settings/Canary").update({
-        [`Meetings.${a.id}`]: admin.firestore.FieldValue.delete(),
-        lastMeetingWrite: SERVER_TIMESTAMP(),
-      });
+      await ref.delete();
       return ok({
         status: "cancelled",
         id: a.id,
         // Echo what was removed so the owner sees exactly what went.
-        cancelled: { name: existing.Name, date: existing.Date, time: existing.Time, email: existing.Email },
+        cancelled: { name: existing.Name, start: existing.start ?? null, date: when?.date ?? null, time: when?.time ?? null, email: existing.Email },
         calendar,
       });
     });
@@ -1429,15 +1434,14 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     },
     async (a) => {
       const id = `acct_${rand(6)}`;
-      const acc = await db().doc("Treasury/accounts").get();
-      const order = acc.exists ? Object.keys(acc.data()?.entries || {}).length : 0;
+      const order = (await entries("treasuryAccounts").count().get()).data().count;
       const entry = {
         name: a.name, type: a.type || "bank", currency: a.currency,
         openingBalance: a.openingBalance || 0,
         ...(a.notes ? { notes: a.notes } : {}),
         order, createdAt: now(),
       };
-      await db().doc("Treasury/accounts").set({ entries: { [id]: entry }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      await entries("treasuryAccounts").doc(id).create(entry);
       return ok({ status: "added", id });
     });
 
@@ -1457,16 +1461,15 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       annotations: { destructiveHint: false },
     },
     async (a) => {
-      const snap = await db().doc("Treasury/accounts").get();
-      const existing = snap.exists ? (snap.data()?.entries || {})[a.id] : null;
-      if (!existing) return fail(`No account with id ${a.id}. Use list_accounts to find the right id.`);
+      const ref = entries("treasuryAccounts").doc(a.id);
+      if (!(await ref.get()).exists) return fail(`No account with id ${a.id}. Use list_accounts to find the right id.`);
       const src = a as Record<string, unknown>;
       const patch: Record<string, unknown> = {};
       for (const k of ["name", "type", "currency", "openingBalance", "notes", "archived"]) {
         if (src[k] !== undefined) patch[k] = src[k];
       }
       if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
-      await db().doc("Treasury/accounts").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      await ref.update(patch);
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
     });
 
@@ -1501,7 +1504,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         ...(a.notes ? { notes: a.notes } : {}),
         date: d.date, createdAt: now(),
       };
-      await db().doc("Treasury/spendings").set({ entries: { [id]: entry }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      await entries("treasurySpendings").doc(id).create(entry);
       // Echo the date actually recorded + the server's clock, so a stale-dated call is visible.
       return ok({ status: "added", id, date: d.date, serverDate: time.date });
     });
@@ -1526,9 +1529,8 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       annotations: { destructiveHint: false },
     },
     async (a) => {
-      const snap = await db().doc("Treasury/spendings").get();
-      const existing = snap.exists ? (snap.data()?.entries || {})[a.id] : null;
-      if (!existing) return fail(`No expense with id ${a.id}. Use treasury_overview to find the right id.`);
+      const ref = entries("treasurySpendings").doc(a.id);
+      if (!(await ref.get()).exists) return fail(`No expense with id ${a.id}. Use treasury_overview to find the right id.`);
       // Validate AND keep the result. The old form threw `d.date` away and let the
       // loop below copy the raw input, so `date: ""` sailed through (resolveEntryDate
       // returns today, with no error, for empty input) and blanked the entry's date -
@@ -1546,7 +1548,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       }
       if (resolvedDate !== undefined) patch.date = resolvedDate;
       if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
-      await db().doc("Treasury/spendings").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      await ref.update(patch);
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
     });
 
@@ -1585,8 +1587,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       }
 
       const id = `proj_${rand(6)}`;
-      const pdoc = await db().doc("Treasury/projects").get();
-      const existing = pdoc.exists ? (pdoc.data()?.entries || {}) : {};
+      const order = (await entries("treasuryProjects").count().get()).data().count;
 
       const entry = {
         name: a.name.trim(),
@@ -1602,13 +1603,10 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         ...(a.notes ? { notes: a.notes } : {}),
         startDate: a.startDate || null,
         endDate: null,
-        order: Object.keys(existing).length,
+        order,
         createdAt: now(),
       };
-      await db().doc("Treasury/projects").set(
-        { entries: { [id]: entry }, lastWrite: SERVER_TIMESTAMP() },
-        { merge: true },
-      );
+      await entries("treasuryProjects").doc(id).create(entry);
 
       const total = a.price * (1 + (plan ? (a.installmentPercent || 0) : 0) / 100);
       return ok({
@@ -1651,10 +1649,9 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       annotations: { destructiveHint: false },
     },
     async (a) => {
-      const ref = db().doc("Treasury/projects");
+      const ref = entries("treasuryProjects").doc(a.id);
       const snap = await ref.get();
-      const entries = (snap.exists ? snap.data()?.entries : {}) || {};
-      const cur = entries[a.id] as Project | undefined;
+      const cur = snap.exists ? snap.data() as Project : undefined;
       if (!cur) return fail(`No treasury project with id "${a.id}". List them with treasury_overview.`);
 
       const patch: Record<string, unknown> = {};
@@ -1700,7 +1697,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         return fail("A monthly retainer can't also be paid in installments - it has no fixed total. Clear one or the other.");
       }
 
-      await ref.set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      await ref.update(patch);
 
       const total = projectContractTotal(merged);
       return ok({
@@ -1740,8 +1737,8 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     },
     async (a) => {
       const [pdoc, idoc, sdoc] = await Promise.all([
-        db().doc("Treasury/projects").get(),
-        db().doc("Treasury/income").get(),
+        entries("treasuryProjects").get(),
+        entries("treasuryIncome").get(),
         db().doc("Treasury/settings").get(),
       ]);
       const allProjects = readEntries<Project>(pdoc);
@@ -1815,22 +1812,17 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       // Log it to the sent-receipts history (best-effort - the email already went out).
       try {
         const rid = `rcp_${now().toString(36)}${rand(3)}`;
-        await db().doc("Treasury/receipts").set({
-          entries: {
-            [rid]: {
-              receiptNo,
-              to,
-              sentAt: now(),
-              currency: cur,
-              total: round2(totals.price),
-              balance: round2(totals.balance),
-              projectIds: selected.map((p) => p.id),
-              projectNames: selected.map((p) => p.name),
-              via: "mcp",
-            },
-          },
-          lastWrite: SERVER_TIMESTAMP(),
-        }, { merge: true });
+        await entries("treasuryReceipts").doc(rid).set({
+          receiptNo,
+          to,
+          sentAt: now(),
+          currency: cur,
+          total: round2(totals.price),
+          balance: round2(totals.balance),
+          projectIds: selected.map((p) => p.id),
+          projectNames: selected.map((p) => p.name),
+          via: "mcp",
+        });
       } catch (logErr) {
         console.error("[mcp] receipt sent but history log failed:", logErr);
       }
@@ -1889,7 +1881,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     },
     async (a) => {
       const [pdoc, sdoc] = await Promise.all([
-        db().doc("Treasury/projects").get(),
+        entries("treasuryProjects").get(),
         db().doc("Treasury/settings").get(),
       ]);
       const allProjects = readEntries<Project>(pdoc);
@@ -1969,21 +1961,16 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
 
       try {
         const rid = `rcp_${now().toString(36)}${rand(3)}`;
-        await db().doc("Treasury/receipts").set({
-          entries: {
-            [rid]: {
-              receiptNo,
-              to,
-              sentAt: now(),
-              currency: headCur,
-              total: headTotal,
-              projectIds: selected.map((p) => p.id),
-              projectNames: selected.map((p) => p.name),
-              via: "mcp",
-            },
-          },
-          lastWrite: SERVER_TIMESTAMP(),
-        }, { merge: true });
+        await entries("treasuryReceipts").doc(rid).set({
+          receiptNo,
+          to,
+          sentAt: now(),
+          currency: headCur,
+          total: headTotal,
+          projectIds: selected.map((p) => p.id),
+          projectNames: selected.map((p) => p.name),
+          via: "mcp",
+        });
       } catch (logErr) {
         console.error("[mcp] itemized receipt sent but history log failed:", logErr);
       }
@@ -2032,7 +2019,6 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         id,
         entry,
         ...(a.monthlyPayment && a.projectId ? { monthlyProjectId: a.projectId } : {}),
-        stamp: SERVER_TIMESTAMP(),
       });
       if (r.duplicate) {
         return ok({
@@ -2060,9 +2046,8 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       annotations: { destructiveHint: false },
     },
     async (a) => {
-      const snap = await db().doc("Treasury/income").get();
-      const existing = snap.exists ? (snap.data()?.entries || {})[a.id] : null;
-      if (!existing) return fail(`No income with id ${a.id}. Use treasury_overview to find the right id.`);
+      const ref = entries("treasuryIncome").doc(a.id);
+      if (!(await ref.get()).exists) return fail(`No income with id ${a.id}. Use treasury_overview to find the right id.`);
       // Validate AND keep the result. The old form threw `d.date` away and let the
       // loop below copy the raw input, so `date: ""` sailed through (resolveEntryDate
       // returns today, with no error, for empty input) and blanked the entry's date -
@@ -2080,7 +2065,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       }
       if (resolvedDate !== undefined) patch.date = resolvedDate;
       if (!Object.keys(patch).length) return fail("Nothing to update - pass at least one field to change.");
-      await db().doc("Treasury/income").set({ entries: { [a.id]: patch }, lastWrite: SERVER_TIMESTAMP() }, { merge: true });
+      await ref.update(patch);
       return ok({ status: "updated", id: a.id, changed: Object.keys(patch) });
     });
 
@@ -2092,11 +2077,9 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       annotations: { destructiveHint: true },
     },
     async (a) => {
-      const docPath = a.kind === "expense" ? "Treasury/spendings" : "Treasury/income";
-      await db().doc(docPath).set(
-        { entries: { [a.id]: admin.firestore.FieldValue.delete() }, lastWrite: SERVER_TIMESTAMP() },
-        { merge: true },
-      );
+      const ref = entries(a.kind === "expense" ? "treasurySpendings" : "treasuryIncome").doc(a.id);
+      if (!(await ref.get()).exists) return fail(`No ${a.kind} with id ${a.id}. Use treasury_overview to find the right id.`);
+      await ref.delete();
       return ok({ status: "deleted", kind: a.kind, id: a.id });
     });
 }

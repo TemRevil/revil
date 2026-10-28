@@ -5,9 +5,9 @@
  * parser that powers the dictate/type "agent" box, the insight generator that
  * surfaces money suggestions, and the standalone-HTML report builder.
  *
- * Storage: one admin-only Firestore doc per concern under `Treasury/` (projects,
- * income, spendings, accounts, receipts, settings), so prices and earnings are never
- * public. The homepage's "projects I handle" list is a sanitized mirror a backend
+ * Storage: admin-only Firestore, one document per entry (TreasuryProjects,
+ * TreasuryIncome, TreasurySpendings, TreasuryAccounts, TreasuryReceipts; see
+ * ./collections) plus Treasury/settings, so prices and earnings are never public. The homepage's "projects I handle" list is a sanitized mirror a backend
  * trigger keeps (see ./handledProjects).
  */
 

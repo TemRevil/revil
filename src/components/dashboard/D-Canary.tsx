@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useReducedMotion, type Variants } from 'motion/react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Edit2, X, Check, Plus, Trash2, Mail, Phone, FileText, ExternalLink, Video, ImageIcon, Paperclip, MoreVertical, Reply, Tags, BookOpen } from 'lucide-react';
-import { doc, onSnapshot, updateDoc, deleteField, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, onSnapshot, updateDoc, deleteField, setDoc, writeBatch } from 'firebase/firestore';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app, { db } from '../../lib/firebase';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, WEEKDAY_LABELS, ALL_HOURS, parseAvailabilityConfig, buildHostSlots, formatHourSlot } from '../../utils/availability';
@@ -23,8 +23,9 @@ import useTheme from '../../hooks/useTheme';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { BELOW_LG_QUERY } from './breakpoints';
 import { EASE } from './motion';
-import { hostZone, type HostZone } from '../../utils/bookingRules';
-import { meetingStart, slotOccupied, cancelRequest, calendarErrorText } from './canary/meetings';
+import { hostZone, isoInstant, zoneRecord, type HostZone } from '../../utils/bookingRules';
+import { COLLECTIONS } from '../../lib/collections';
+import { meetingStart, slotOnHostClock, slotOccupied, cancelRequest, calendarErrorText } from './canary/meetings';
 import MailFailures from './canary/MailFailures';
 import { ViaBadge, ColorSwatches, CategoryBadge } from './canary/Badges';
 
@@ -43,8 +44,12 @@ interface Attachment {
 interface Meeting {
     id: string;
     title: string;
+    /** "hh:mm AM/PM" on the owner's clock, worked out from `startMs` for display. */
     time: string;
+    /** The owner's calendar day, as a local Date at midnight. */
     date: Date;
+    /** When it starts: the stored UTC instant. */
+    startMs: number;
     email?: string;
     link?: string;
     reason?: string;
@@ -68,10 +73,11 @@ interface Email {
     repliedAt?: number;
 }
 
+/** A CanaryMeetings document. */
 interface MeetingData {
     Name?: string;
-    Time: string;
-    Date: string;
+    /** UTC ISO instant. */
+    start?: string;
     Email?: string;
     MeetingLink?: string;
     "What For"?: string;
@@ -81,6 +87,7 @@ interface MeetingData {
     Via?: string;
 }
 
+/** A CanaryMessages document. */
 interface EmailData {
     Name: string;
     Email: string;
@@ -152,10 +159,33 @@ const DCanary = () => {
     const belowLg = useMediaQuery(BELOW_LG_QUERY);
     const narrow = useMediaQuery('(max-width: 419px)');
     const wideModal = useMediaQuery('(min-width: 820px)');
-    const [meetings, setMeetings] = useState<Meeting[]>([]);
+    const [meetingDocs, setMeetingDocs] = useState<Array<{ id: string; data: MeetingData }>>([]);
     // The owner's clock (an IANA zone, or a fixed offset for an older Availability doc).
     // Until Availability loads, this machine's own offset stands in.
     const [hostClock, setHostClock] = useState<HostZone>(() => -(new Date().getTimezoneOffset() / 60));
+    // Each meeting's stored instant, shown on the owner's clock. A meeting without a
+    // readable `start` is left out rather than shown at a made-up time.
+    const meetings = useMemo(() => meetingDocs
+        .map(({ id, data: m }): Meeting | null => {
+            const slot = slotOnHostClock(m.start, hostClock);
+            if (!slot) return null;
+            return {
+                id,
+                title: m.Name || 'Untitled Session',
+                time: slot.time,
+                date: slot.date,
+                startMs: slot.startMs,
+                email: m.Email,
+                link: m.MeetingLink,
+                reason: m["What For"],
+                userTimezone: m.UserTimezone || -(new Date().getTimezoneOffset() / 60),
+                googleEventId: m.GoogleEventId,
+                category: typeof m.Category === 'string' ? m.Category : undefined,
+                via: m.Via === 'book' || m.Via === 'contact' ? m.Via : undefined
+            };
+        })
+        .filter((m): m is Meeting => m !== null)
+        .sort((a, b) => a.startMs - b.startMs), [meetingDocs, hostClock]);
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     // Owner-defined meeting categories (Options tab) + the filter over the bookings
@@ -191,39 +221,21 @@ const DCanary = () => {
     // Section switch direction: 1 slides the next section in from the right.
     const [sectionDir, setSectionDir] = useState(0);
 
-    // Firestore Integration
+    // Firestore Integration: one document per meeting and per message; the categories
+    // stay a map on Settings/Canary.
     useEffect(() => {
-        const unsubscribe = onSnapshot(doc(db, 'Settings', 'Canary'), (snapshot) => {
-            if (snapshot.exists()) {
-                const data = snapshot.data();
-                const meetingsMap = (data.Meetings || {}) as Record<string, MeetingData>;
-                const meetingsList: Meeting[] = Object.entries(meetingsMap)
-                    .map(([id, m]): Meeting | null => {
-                        // Guard untrusted Firestore data: a meeting written without a valid
-                        // DD/MM/YYYY Date string would throw on .split and blank the whole list.
-                        const parts = (m.Date || '').split('/').map(Number);
-                        if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
-                        const [d, mon, y] = parts;
-                        return {
-                            id,
-                            title: m.Name || 'Untitled Session',
-                            time: m.Time,
-                            date: new Date(y, mon - 1, d),
-                            email: m.Email,
-                            link: m.MeetingLink,
-                            reason: m["What For"],
-                            userTimezone: m.UserTimezone || -(new Date().getTimezoneOffset() / 60),
-                            googleEventId: m.GoogleEventId,
-                            category: typeof m.Category === 'string' ? m.Category : undefined,
-                            via: m.Via === 'book' || m.Via === 'contact' ? m.Via : undefined
-                        };
-                    })
-                    .filter((m): m is Meeting => m !== null);
-                setMeetings(meetingsList);
-
-                const emailsMap = (data.Emails || {}) as Record<string, EmailData>;
-                const emailsList: Email[] = Object.entries(emailsMap).map(([id, e]) => ({
-                    id,
+        const onError = (what: string) => (err: unknown) => {
+            console.warn(`[Connection] Canary ${what} sync error:`, err);
+            if (!navigator.onLine) console.warn("User is offline");
+        };
+        const unsubMeetings = onSnapshot(collection(db, COLLECTIONS.meetings), (snap) => {
+            setMeetingDocs(snap.docs.map((d) => ({ id: d.id, data: d.data() as MeetingData })));
+        }, onError('meetings'));
+        const unsubMessages = onSnapshot(collection(db, COLLECTIONS.messages), (snap) => {
+            setEmails(snap.docs.map((d) => {
+                const e = d.data() as EmailData;
+                return {
+                    id: d.id,
                     name: e.Name,
                     email: e.Email,
                     message: e.Message,
@@ -232,16 +244,13 @@ const DCanary = () => {
                     timestamp: e.Timestamp,
                     attachments: e["Files Attached"] || [],
                     repliedAt: e.RepliedAt
-                })).sort((a, b) => b.timestamp - a.timestamp);
-                setEmails(emailsList);
-
-                setCategories(parseCategories(data.Categories));
-            }
-        }, (err) => {
-            console.warn("[Connection] Canary sync error:", err);
-            if (!navigator.onLine) console.warn("User is offline");
-        });
-        return () => unsubscribe();
+                };
+            }).sort((a, b) => b.timestamp - a.timestamp));
+        }, onError('messages'));
+        const unsubCategories = onSnapshot(doc(db, 'Settings', 'Canary'), (snapshot) => {
+            setCategories(parseCategories(snapshot.exists() ? snapshot.data().Categories : undefined));
+        }, onError('categories'));
+        return () => { unsubMeetings(); unsubMessages(); unsubCategories(); };
     }, []);
 
     // Track the host's timezone so reschedules reconstruct the correct UTC instant.
@@ -343,9 +352,7 @@ const DCanary = () => {
                 done.calendar = 'no-id';
             }
 
-            await updateDoc(doc(db, 'Settings', 'Canary'), {
-                [`Meetings.${id}`]: deleteField()
-            });
+            await deleteDoc(doc(db, COLLECTIONS.meetings, id));
 
             if (done.calendar === 'failed') {
                 showAlert({ type: 'warning', message: `Session cancelled in the app, but its calendar event was not removed: ${done.why} Remove it in Google Calendar.` });
@@ -434,25 +441,17 @@ const DCanary = () => {
                 }
             }
 
-            const docRef = doc(db, 'Settings', 'Canary');
-            const day = editingMeeting.date.getDate().toString().padStart(2, '0');
-            const mon = (editingMeeting.date.getMonth() + 1).toString().padStart(2, '0');
-            const y = editingMeeting.date.getFullYear();
-            const dateStr = `${day}/${mon}/${y}`;
-
-            const updatePayload: Record<string, unknown> = {
-                [`Meetings.${editingMeeting.id}.Date`]: dateStr,
-                [`Meetings.${editingMeeting.id}.Time`]: editingMeeting.time,
-                [`Meetings.${editingMeeting.id}.Name`]: editingMeeting.title
-            };
+            // The new start is stored as an instant, with the clock it was picked on.
+            const updatePayload: Record<string, unknown> = { Name: editingMeeting.title };
+            if (isTimeChanged || isDateChanged) Object.assign(updatePayload, { start: isoInstant(startMs), ...zoneRecord(hostClock) });
 
             // Personal is the absence of a category, so picking it deletes the field
             // rather than storing the sentinel id - keeps one representation, not two.
             if (isCategoryChanged) {
-                updatePayload[`Meetings.${editingMeeting.id}.Category`] = editingMeeting.category ?? deleteField();
+                updatePayload.Category = editingMeeting.category ?? deleteField();
             }
 
-            await updateDoc(docRef, updatePayload);
+            await updateDoc(doc(db, COLLECTIONS.meetings, editingMeeting.id), updatePayload);
 
             setEditingMeeting(null);
             showAlert(unlinked
@@ -470,9 +469,7 @@ const DCanary = () => {
         setConfirmDelete(null);
         setOpenOptionsId(null);
         try {
-            await updateDoc(doc(db, 'Settings', 'Canary'), {
-                [`Emails.${emailId}`]: deleteField()
-            });
+            await deleteDoc(doc(db, COLLECTIONS.messages, emailId));
             if (selectedEmail?.id === emailId) {
                 setSelectedEmail(null);
             }
@@ -488,11 +485,11 @@ const DCanary = () => {
         setOpenOptionsId(null);
     };
 
-    // Mark a message replied after a reply is sent (Canary is admin-writable here).
+    // Mark a message replied after a reply is sent (CanaryMessages is admin-writable).
     const markReplied = async (emailId: string) => {
         const at = Date.now();
         try {
-            await updateDoc(doc(db, 'Settings', 'Canary'), { [`Emails.${emailId}.RepliedAt`]: at });
+            await updateDoc(doc(db, COLLECTIONS.messages, emailId), { RepliedAt: at });
         } catch (error) {
             console.error('Failed to mark message replied:', error);
         }
@@ -665,11 +662,14 @@ const DCanary = () => {
     const deleteCategory = async (cat: MeetingCategory) => {
         setCatBusy(true);
         try {
-            const payload: Record<string, unknown> = { [`Categories.${cat.id}`]: deleteField() };
-            meetings.filter(m => m.category === cat.id).forEach(m => {
-                payload[`Meetings.${m.id}.Category`] = deleteField();
+            // One batch: the category and its use on every booking go together. A booking
+            // whose start can't be read still counts, so it is never left in a dead bucket.
+            const batch = writeBatch(db);
+            batch.update(canaryRef(), { [`Categories.${cat.id}`]: deleteField() });
+            meetingDocs.filter(m => m.data.Category === cat.id).forEach(m => {
+                batch.update(doc(db, COLLECTIONS.meetings, m.id), { Category: deleteField() });
             });
-            await updateDoc(canaryRef(), payload);
+            await batch.commit();
             if (editingCatId === cat.id) setEditingCatId(null);
             if (categoryFilter === cat.id) setCategoryFilter('all');
             showAlert({ type: 'success', message: 'Category deleted' });

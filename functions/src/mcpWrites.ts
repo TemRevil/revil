@@ -5,27 +5,39 @@
  */
 import type { Firestore } from "firebase-admin/firestore";
 import { nextMonthlyPaymentDate } from "./money";
-import { bookingClash } from "./mcpRules";
 import { sha256url } from "./mcpGrants";
-import type { BookedSlot } from "./booking";
+import { MEETING_MS, isTaken, isoInstant, type BookedSlot } from "./booking";
+import { COLLECTIONS } from "./collections";
 
 /**
- * Write (or patch) one meeting in Settings/Canary, refusing it when its start collides
- * with another stored meeting. `startMs` is null when the slot is not changing, so a
- * name or link edit never trips over an old overlap. `isNew` false means the meeting
- * must already exist.
+ * Write (or patch) one meeting document, refusing it when its start collides with
+ * another stored meeting. `startMs` is null when the slot is not changing, so a name
+ * or link edit never trips over an old overlap. `isNew` false means the meeting must
+ * already exist.
+ *
+ * The overlap check reads every meeting starting within one meeting length either
+ * side of the new start, inside the transaction: a booking written into that range
+ * by anyone else before this commits makes the transaction retry and see it.
  */
 export async function saveMeeting(
   db: Firestore,
-  m: { id: string; patch: Record<string, unknown>; startMs: number | null; hostOffset: number; isNew: boolean; stamp: unknown },
+  m: { id: string; patch: Record<string, unknown>; startMs: number | null; isNew: boolean },
 ): Promise<"saved" | "clash" | "missing"> {
-  const ref = db.doc("Settings/Canary");
+  const col = db.collection(COLLECTIONS.meetings);
+  const ref = col.doc(m.id);
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const meetings = ((snap.data() || {}).Meetings || {}) as Record<string, BookedSlot>;
-    if (!m.isNew && !meetings[m.id]) return "missing";
-    if (m.startMs !== null && bookingClash(m.startMs, m.hostOffset, meetings, m.id)) return "clash";
-    tx.set(ref, { Meetings: { [m.id]: m.patch }, lastMeetingWrite: m.stamp }, { merge: true });
+    const [cur, near] = await Promise.all([
+      tx.get(ref),
+      m.startMs === null
+        ? Promise.resolve(null)
+        : tx.get(col.where("start", ">", isoInstant(m.startMs - MEETING_MS)).where("start", "<", isoInstant(m.startMs + MEETING_MS))),
+    ]);
+    if (!m.isNew && !cur.exists) return "missing";
+    if (m.startMs !== null && near) {
+      const others = near.docs.filter((d) => d.id !== m.id).map((d) => d.data() as BookedSlot);
+      if (isTaken(m.startMs, others)) return "clash";
+    }
+    tx.set(ref, m.patch, { merge: true });
     return "saved";
   });
 }
@@ -44,21 +56,21 @@ export const incomeEntryId = (key: string): string => `inc_${sha256url(key).slic
  */
 export async function recordIncome(
   db: Firestore,
-  r: { id: string; entry: Record<string, unknown> & { date: string }; monthlyProjectId?: string; stamp: unknown },
+  r: { id: string; entry: Record<string, unknown> & { date: string }; monthlyProjectId?: string },
 ): Promise<{ duplicate: boolean; nextPaymentDate?: string }> {
-  const incomeRef = db.doc("Treasury/income");
-  const projectsRef = db.doc("Treasury/projects");
+  const incomeRef = db.collection(COLLECTIONS.treasuryIncome).doc(r.id);
+  const projectRef = r.monthlyProjectId ? db.collection(COLLECTIONS.treasuryProjects).doc(r.monthlyProjectId) : null;
   return db.runTransaction(async (tx) => {
-    const [inc, projects] = await Promise.all([
+    const [inc, project] = await Promise.all([
       tx.get(incomeRef),
-      r.monthlyProjectId ? tx.get(projectsRef) : Promise.resolve(null),
+      projectRef ? tx.get(projectRef) : Promise.resolve(null),
     ]);
-    if ((inc.data()?.entries || {})[r.id]) return { duplicate: true };
-    tx.set(incomeRef, { entries: { [r.id]: r.entry }, lastWrite: r.stamp }, { merge: true });
-    const proj = r.monthlyProjectId ? (projects?.data()?.entries || {})[r.monthlyProjectId] : null;
-    if (!proj || !proj.monthly) return { duplicate: false };
+    if (inc.exists) return { duplicate: true };
+    tx.create(incomeRef, r.entry);
+    const proj = project?.exists ? project.data() : null;
+    if (!projectRef || !proj || !proj.monthly) return { duplicate: false };
     const nextPaymentDate = nextMonthlyPaymentDate(proj, r.entry.date);
-    tx.set(projectsRef, { entries: { [r.monthlyProjectId as string]: { nextPaymentDate } }, lastWrite: r.stamp }, { merge: true });
+    tx.update(projectRef, { nextPaymentDate });
     return { duplicate: false, nextPaymentDate };
   });
 }

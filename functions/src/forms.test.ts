@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approxDocBytes, attachmentPath, futureSlots, greetingName, replyPath, timeAtOffset, unrepliedCount, visitorOffset } from "./forms.js";
+import { attachmentPath, futureSlots, greetingName, replyPath, timeAtOffset, upcomingFrom, visitorOffset } from "./forms.js";
 
 const BUCKET = "temrevil1.appspot.com";
 const fb = (bucket: string, path: string) =>
@@ -66,29 +66,24 @@ describe("guest times", () => {
 
 describe("public busy slots", () => {
   const now = Date.UTC(2026, 9, 27, 12); // 27/10/2026 12:00 UTC
-  const meetings = {
-    old: { Date: "04/04/2026", Time: "10:00 AM", Name: "Past guest", Email: "p@example.com" },
-    ending: { Date: "27/10/2026", Time: "01:30 PM" }, // UTC+2: 11:30 UTC, still running
-    later: { Date: "30/10/2026", Time: "09:00 AM", MeetingLink: "https://meet.google.com/abc" },
-    soon: { Date: "28/10/2026", Time: "09:00 AM" },
-    junk: { Date: 5 },
-  };
+  const meetings = [
+    { start: "2026-04-04T08:00:00.000Z", Name: "Past guest", Email: "p@example.com" },
+    { start: "2026-10-30T07:00:00.000Z", MeetingLink: "https://meet.google.com/abc", timeZone: "Africa/Cairo" },
+    { start: "2026-10-27T11:30:00.000Z" }, // started 30 minutes ago, still running
+    { start: "2026-10-28T07:00:00.000Z" },
+    { Date: "29/10/2026", Time: "09:00 AM" }, // the old shape: never published
+    null,
+  ];
 
-  it("publishes only meetings that have not ended, in time order, with no other field", () => {
-    expect(futureSlots(meetings, 2, now)).toEqual([
-      { Date: "27/10/2026", Time: "01:30 PM" },
-      { Date: "28/10/2026", Time: "09:00 AM" },
-      { Date: "30/10/2026", Time: "09:00 AM" },
+  it("publishes only meetings that have not ended, in time order, with nothing but the start", () => {
+    expect(futureSlots(meetings, now)).toEqual([
+      { start: "2026-10-27T11:30:00.000Z" },
+      { start: "2026-10-28T07:00:00.000Z" },
+      { start: "2026-10-30T07:00:00.000Z" },
     ]);
   });
-});
 
-describe("inbox load", () => {
-  it("counts only messages not yet replied to", () => {
-    expect(unrepliedCount({ a: { Name: "x" }, b: { Name: "y", RepliedAt: 5 }, c: null })).toBe(1);
-  });
-
-  it("measures stored size in UTF-8 bytes", () => {
-    expect(approxDocBytes({ a: "é" })).toBe(Buffer.byteLength('{"a":"é"}'));
+  it("queries from one meeting length back, so a meeting still running is included", () => {
+    expect(upcomingFrom(now)).toBe("2026-10-27T11:00:00.000Z");
   });
 });

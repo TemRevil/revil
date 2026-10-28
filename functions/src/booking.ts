@@ -33,10 +33,13 @@ export interface AvailabilityConfig {
     hours: number[];
 }
 
-/** Every stored meeting carries the owner's wall-clock "DD/MM/YYYY" + "hh:mm AM/PM". */
+/**
+ * A stored meeting as these rules read it: when it starts, as a UTC ISO instant
+ * ("2026-10-28T14:00:00.000Z"). Dates and times on anyone's clock are worked out from
+ * it for display, never stored.
+ */
 export interface BookedSlot {
-    Date?: string;
-    Time?: string;
+    start?: unknown;
 }
 
 // Preserves the historic hardcoded schedule until the owner edits it: every day on,
@@ -169,7 +172,7 @@ export function utcOffsetHours(tz: unknown): number {
 
 const pad2 = (n: number) => n.toString().padStart(2, '0');
 
-/** "hh:mm AM/PM" - the label every slot and stored meeting Time uses. */
+/** "hh:mm AM/PM" - the label every slot and displayed meeting time uses. */
 function timeLabel(h24: number, min: number): string {
     return `${pad2(h24 % 12 || 12)}:${pad2(min)} ${h24 >= 12 ? 'PM' : 'AM'}`;
 }
@@ -197,7 +200,7 @@ export function dayIndexAt(instantMs: number, offsetHours: number): number {
     return Math.floor((instantMs + offsetHours * HOUR_MS) / DAY_MS);
 }
 
-/** The wall clock at a fixed offset for an instant, in the Date/Time shape meetings use. */
+/** The wall clock at a fixed offset for an instant, as "DD/MM/YYYY" and "hh:mm AM/PM". */
 export function wallClock(instantMs: number, offsetHours: number): { date: string; time: string; weekday: number } {
     const w = new Date(instantMs + offsetHours * HOUR_MS);
     return {
@@ -207,7 +210,7 @@ export function wallClock(instantMs: number, offsetHours: number): { date: strin
     };
 }
 
-/** The owner's wall clock for an instant: the Date/Time a meeting is stored under. */
+/** The owner's wall clock for an instant: the date and time a meeting is shown at. */
 export function hostWallClock(instantMs: number, zone: HostZone): { date: string; time: string; weekday: number } {
     return wallClock(instantMs, offsetAt(zone, instantMs));
 }
@@ -219,33 +222,53 @@ export function visitorTimeToInstant(visitorDay: number, label: string, userTime
     return visitorDay * DAY_MS + min * 60000 - userTimezone * HOUR_MS;
 }
 
-/** The instant a stored meeting starts at, or null when its Date/Time don't parse. */
-export function meetingInstant(m: BookedSlot, hostOffset: HostZone): number | null {
-    const d = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(m?.Date || ''));
-    const min = parseTimeLabel(String(m?.Time || ''));
-    if (!d || min === null) return null;
-    return zonedInstant(dayIndex(+d[3], +d[2] - 1, +d[1]), min, hostOffset);
+/** The instant an owner's "hh:mm AM/PM" on a calendar day (dayIndex) happens in their zone. */
+export function hostTimeToInstant(day: number, label: string, zone: HostZone): number | null {
+    const min = parseTimeLabel(label);
+    return min === null ? null : zonedInstant(day, min, zone);
+}
+
+// Exactly what Date#toISOString writes: always UTC, always milliseconds.
+const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/** An instant as a meeting stores it: "2026-10-28T14:00:00.000Z". */
+export function isoInstant(instantMs: number): string {
+    return new Date(instantMs).toISOString();
+}
+
+/** When a stored meeting starts, or null when its `start` is not an ISO instant. */
+export function slotStart(m: BookedSlot | null | undefined): number | null {
+    const s = m?.start;
+    if (typeof s !== 'string' || !ISO_INSTANT_RE.test(s)) return null;
+    const ms = Date.parse(s);
+    return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * The owner's clock as a meeting records it beside its instant: the zone name, or the
+ * fixed offset an Availability doc without a named zone gives. Both fields are always
+ * written, so moving between the two never leaves a stale one behind.
+ */
+export function zoneRecord(zone: HostZone): { timeZone: string | null; utcOffset: number | null } {
+    return typeof zone === 'string' ? { timeZone: zone, utcOffset: null } : { timeZone: null, utcOffset: zone };
 }
 
 /** Whether a one-hour meeting starting at startMs would overlap a stored one. */
-function overlapsStored(startMs: number, zone: HostZone, meetings: BookedSlot[]): boolean {
+function overlapsStored(startMs: number, meetings: BookedSlot[]): boolean {
     return meetings.some((m) => {
-        const at = m ? meetingInstant(m, zone) : null;
+        const at = slotStart(m);
         return at !== null && Math.abs(at - startMs) < MEETING_MS;
     });
 }
 
-/**
- * Whether a one-hour meeting starting at startMs would overlap one already stored.
- * `hostOffset` is the owner's offset at startMs (offsetAt gives it for a zone).
- */
-export function isTaken(startMs: number, hostOffset: number, meetings: BookedSlot[]): boolean {
-    return overlapsStored(startMs, hostOffset, meetings);
+/** Whether a one-hour meeting starting at startMs would overlap one already stored. */
+export function isTaken(startMs: number, meetings: BookedSlot[]): boolean {
+    return overlapsStored(startMs, meetings);
 }
 
 /** A stored meeting that has not ended yet. One that can't be read never counts. */
-export function isUpcoming(m: BookedSlot, zone: HostZone, nowMs: number): boolean {
-    const at = meetingInstant(m, zone);
+export function isUpcoming(m: BookedSlot, nowMs: number): boolean {
+    const at = slotStart(m);
     return at !== null && at + MEETING_MS > nowMs;
 }
 
@@ -281,7 +304,7 @@ export function presetSlotsForDay(visitorDay: number, { nowMs, userTimezone, hos
             out.push({
                 startMs,
                 label: timeLabel(v.getUTCHours(), v.getUTCMinutes()),
-                taken: overlapsStored(startMs, hostOffset, meetings),
+                taken: overlapsStored(startMs, meetings),
                 passed: startMs < nowMs + BOOKING_BUFFER_MS,
             });
         }
@@ -310,7 +333,7 @@ export function customTimeRefusal(startMs: number, { nowMs, hostOffset, cfg, mee
     if (!cfg.workingDays.includes(hostWallClock(startMs, hostOffset).weekday)) {
         return "That time falls on a day I'm not working, pick another.";
     }
-    if (overlapsStored(startMs, hostOffset, meetings)) return 'That time overlaps an existing booking, pick another.';
+    if (overlapsStored(startMs, meetings)) return 'That time overlaps an existing booking, pick another.';
     return null;
 }
 

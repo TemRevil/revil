@@ -22,8 +22,14 @@ const PUBLIC_DOCS = [
     'Settings/BookPage', 'Settings/Developer', 'Settings/HandledProjects', 'Settings/Tech Stack',
 ];
 
+// One document per message, meeting and treasury entry (src/lib/collections.ts).
+const ENTRY_DOCS = [
+    'CanaryMessages/m1', 'CanaryMeetings/b1', 'TreasuryProjects/p1', 'TreasuryIncome/i1',
+    'TreasurySpendings/s1', 'TreasuryAccounts/a1', 'TreasuryReceipts/r1',
+];
+
 const PRIVATE_DOCS = [
-    'Settings/Canary', 'Settings/MCP', 'Settings/Hero/sub/x', 'Treasury/projects', 'Spark/memory',
+    'Settings/Canary', 'Settings/MCP', 'Settings/Hero/sub/x', 'Treasury/settings', 'Spark/memory', ...ENTRY_DOCS,
     'Analytics/Totals', 'Analytics/Links/Items/l1', 'Analytics/Sessions/Items/s1', 'McpAudit/e1', 'MailJobs/j1', 'Anything/else',
 ];
 
@@ -47,7 +53,7 @@ describe('private documents', () => {
         await assertFails(user().doc(path).get());
     });
 
-    it.each(['Settings/Canary', 'Settings/MCP', 'Treasury/projects', 'Spark/memory', 'Anything/else', 'Settings/Hero/sub/x'])(
+    it.each(['Settings/Canary', 'Settings/MCP', 'Treasury/settings', 'Spark/memory', 'Anything/else', 'Settings/Hero/sub/x', ...ENTRY_DOCS])(
         'the admin can read and write %s', async (path) => {
             await assertSucceeds(admin().doc(path).set({ v: 1 }));
             await assertSucceeds(admin().doc(path).get());
@@ -57,6 +63,18 @@ describe('private documents', () => {
     it('nobody can list the private Settings documents through the collection', async () => {
         await seed('Settings/Canary');
         await assertFails(anon().collection('Settings').get());
+    });
+
+    it.each(ENTRY_DOCS.map((p) => p.split('/')[0]))('only the admin can list %s', async (coll) => {
+        await seed(`${coll}/x`);
+        await assertFails(anon().collection(coll).get());
+        await assertFails(user().collection(coll).get());
+        await assertSucceeds(admin().collection(coll).get());
+    });
+
+    it('a visitor cannot write a message or a meeting straight into the inbox', async () => {
+        await assertFails(anon().doc('CanaryMessages/m2').set({ Name: 'x', Email: 'x@example.com', Message: 'hi' }));
+        await assertFails(user().doc('CanaryMeetings/b2').set({ Name: 'x', start: '2026-11-02T08:00:00.000Z' }));
     });
 });
 

@@ -2,8 +2,7 @@
  * Pure rules the MCP server applies before it writes anything or sends any email.
  * Kept free of Firebase so they can be tested on their own.
  */
-import { isTaken, type BookedSlot } from "./booking";
-
+import { dayIndex, offsetAt, zonedInstant, type HostZone } from "./booking";
 // ── dates ─────────────────────────────────────────────────────────────
 
 /**
@@ -137,26 +136,17 @@ export function projectNameError(name: unknown): string | null {
 
 // ── bookings ──────────────────────────────────────────────────────────
 
-/** "YYYY-MM-DD" -> the owner's stored "DD/MM/YYYY". */
-export const toStoredDate = (d: string): string => { const [Y, M, D] = d.split("-"); return `${D}/${M}/${Y}`; };
-
-/** "HH:MM" (24-hour) -> the owner's stored "hh:mm AM/PM". */
-export function toStoredTime(t: string): string {
-  const [hhStr, mm] = t.split(":");
-  const h24 = parseInt(hhStr, 10);
-  return `${String(h24 % 12 || 12).padStart(2, "0")}:${mm} ${h24 >= 12 ? "PM" : "AM"}`;
+/** "YYYY-MM-DD" + 24-hour "HH:MM" on the owner's clock -> the UTC instant it happens at. */
+export function ownerInstant(ymd: string, hm: string, zone: HostZone): number {
+  const [Y, M, D] = ymd.split("-").map(Number);
+  const [h, min] = hm.split(":").map(Number);
+  return zonedInstant(dayIndex(Y, M - 1, D), h * 60 + min, zone);
 }
 
-/**
- * Whether a meeting starting at `startMs` collides with one already stored, by the
- * same test the public booking uses (booking.ts isTaken). `excludeId` leaves out the
- * booking being moved, so a reschedule never collides with itself.
- */
-export function bookingClash(
-  startMs: number, hostOffset: number, meetings: Record<string, BookedSlot>, excludeId?: string,
-): boolean {
-  const others = Object.entries(meetings || {}).filter(([id]) => id !== excludeId).map(([, m]) => m);
-  return isTaken(startMs, hostOffset, others);
+/** An instant on the owner's clock as "YYYY-MM-DD" and 24-hour "HH:MM" (the tools' own formats). */
+export function ownerYmdHm(instantMs: number, zone: HostZone): { date: string; time: string } {
+  const iso = new Date(instantMs + offsetAt(zone, instantMs) * 3_600_000).toISOString();
+  return { date: iso.slice(0, 10), time: iso.slice(11, 16) };
 }
 
 // ── rate limits ───────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ import {
 import Select from '../Select';
 import Markdown from './Markdown';
 import { EASE } from './motion';
+import { COLLECTIONS } from '../../lib/collections';
 import { mustConfirm, isRiskyClick, labelsMatch, trimHistory, memoryDiff, type SparkMemory } from './spark/guard';
 
 type Status = 'idle' | 'connecting' | 'thinking' | 'acting' | 'speaking' | 'error';
@@ -60,13 +61,13 @@ const MEMORY_DOC = doc(db, 'Spark', 'Memory');
 // Firestore paths backing each dashboard page - what read_screen pulls so Spark
 // can "see" whatever the user is currently looking at.
 const PAGE_SOURCES: Record<string, string[]> = {
-    treasury: ['Treasury/projects', 'Treasury/income', 'Treasury/spendings', 'Treasury/settings'],
+    treasury: [COLLECTIONS.treasuryProjects, COLLECTIONS.treasuryIncome, COLLECTIONS.treasurySpendings, COLLECTIONS.treasuryAccounts, 'Treasury/settings'],
     trails: ['Analytics/Totals', 'Analytics/Days/Items', 'Analytics/Links/Items', 'Analytics/Socials/Items', 'Analytics/Sessions/Items'],
     projects: ['Projects'],
     tags: ['Tags'],
     developer: ['Settings/Developer'],
     settings: ['Settings/Account', 'Settings/Availability', 'Settings/HandledProjects', 'Settings/Tech Stack'],
-    canary: ['Settings/Canary'],
+    canary: [COLLECTIONS.messages, COLLECTIONS.meetings, 'Settings/Canary'],
 };
 /**
  * What Spark is allowed to write to, and what it may delete.
@@ -75,15 +76,19 @@ const PAGE_SOURCES: Record<string, string[]> = {
  * `read_screen` on the Canary page feeds visitor-written contact-form text into
  * that same model's context - so a visitor could write instructions into a contact
  * message and, once the owner asked Spark about the inbox, have them come back out
- * as `delete_data Treasury/income`. With auto mode on there was no confirm in the
+ * as `delete_data TreasuryIncome/<id>`. With auto mode on there was no confirm in the
  * way at all. An allowlist is the boundary that makes prompt injection survivable:
  * the worst an injected instruction can now reach is a documented dashboard field.
  *
- * Deliberately NOT here: Settings/Canary (visitor PII - Spark reads it, never edits
- * it), Settings/HandledProjects (auto-written from Treasury; editing it directly
- * desynchronises the public homepage), MCP/* (live OAuth tokens) and Analytics/*
- * apart from share links (function-written; forging a visit story is not a thing
- * the assistant should be able to do).
+ * Deliberately NOT here: CanaryMessages, CanaryMeetings and Settings/Canary (visitor
+ * PII - Spark reads them, never edits them), Settings/HandledProjects (auto-written
+ * from TreasuryProjects; editing it directly desynchronises the public homepage),
+ * TreasuryReceipts (the log of receipts the functions sent), MCP/* (live OAuth
+ * tokens) and Analytics/* apart from share links (function-written; forging a visit
+ * story is not a thing the assistant should be able to do).
+ *
+ * Each treasury entry is its own document, so removing one is a delete - which always
+ * waits for the owner's click (spark/guard.ts), auto mode or not.
  */
 const WRITABLE: { prefix: string; exact?: boolean; deletable?: boolean }[] = [
     { prefix: 'Projects', deletable: true },
@@ -92,7 +97,11 @@ const WRITABLE: { prefix: string; exact?: boolean; deletable?: boolean }[] = [
     { prefix: 'Settings/Availability', exact: true },
     { prefix: 'Settings/Developer', exact: true },
     { prefix: 'Settings/Tech Stack', exact: true },
-    { prefix: 'Treasury' },
+    { prefix: 'Treasury/settings', exact: true },
+    { prefix: COLLECTIONS.treasuryProjects, deletable: true },
+    { prefix: COLLECTIONS.treasuryIncome, deletable: true },
+    { prefix: COLLECTIONS.treasurySpendings, deletable: true },
+    { prefix: COLLECTIONS.treasuryAccounts, deletable: true },
     { prefix: 'Analytics/Links/Items', deletable: true },
     { prefix: 'Spark/Memory', exact: true },
 ];

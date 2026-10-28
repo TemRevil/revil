@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-    DAY_MS, MEETING_MS, bookingRefusal, customTimeRefusal, dayIndex, hostWallClock, hostZone,
-    isTaken, isTimeZone, isUpcoming, meetingInstant, offsetAt, parseAvailability,
-    presetSlotsForDay, zonedInstant, type DayContext,
+    DAY_MS, MEETING_MS, bookingRefusal, customTimeRefusal, dayIndex, hostTimeToInstant, hostWallClock, hostZone,
+    isTaken, isTimeZone, isUpcoming, isoInstant, offsetAt, parseAvailability,
+    presetSlotsForDay, slotStart, zoneRecord, zonedInstant, type DayContext,
 } from './bookingRules';
 
 const HOUR = 3600000;
@@ -14,29 +14,32 @@ const JUL15 = dayIndex(2026, 6, 15);
 
 /** The UTC instant of an owner wall-clock time at a fixed offset. */
 const at = (day: number, h: number, m: number, offset: number) => day * DAY_MS + h * HOUR + m * MIN - offset * HOUR;
+/** A stored meeting starting at that instant. */
+const booked = (ms: number) => ({ start: isoInstant(ms) });
 
 describe('isTaken', () => {
     // A 10:00 meeting on the owner's clock (UTC+2).
-    const meetings = [{ Date: '15/01/2026', Time: '10:00 AM' }];
+    const meetings = [booked(at(JAN15, 10, 0, 2))];
 
     it('treats a time inside an existing one-hour meeting as taken', () => {
         for (const minute of [0, 15, 30, 45]) {
-            expect(isTaken(at(JAN15, 10, minute, 2), 2, meetings)).toBe(true);
+            expect(isTaken(at(JAN15, 10, minute, 2), meetings)).toBe(true);
         }
     });
 
     it('treats a time whose hour would run into an existing meeting as taken', () => {
-        expect(isTaken(at(JAN15, 9, 15, 2), 2, meetings)).toBe(true);
-        expect(isTaken(at(JAN15, 9, 45, 2), 2, meetings)).toBe(true);
+        expect(isTaken(at(JAN15, 9, 15, 2), meetings)).toBe(true);
+        expect(isTaken(at(JAN15, 9, 45, 2), meetings)).toBe(true);
     });
 
     it('leaves the hours either side free', () => {
-        expect(isTaken(at(JAN15, 9, 0, 2), 2, meetings)).toBe(false);
-        expect(isTaken(at(JAN15, 11, 0, 2), 2, meetings)).toBe(false);
+        expect(isTaken(at(JAN15, 9, 0, 2), meetings)).toBe(false);
+        expect(isTaken(at(JAN15, 11, 0, 2), meetings)).toBe(false);
     });
 
-    it('ignores meetings it cannot read', () => {
-        expect(isTaken(at(JAN15, 10, 0, 2), 2, [{ Date: 'soon', Time: '10:00 AM' }, { Date: '15/01/2026' }])).toBe(false);
+    it('ignores meetings it cannot read, the old Date and Time strings included', () => {
+        const unreadable = [{ start: 'soon' }, { start: Date.UTC(2026, 0, 15, 8) }, { Date: '15/01/2026', Time: '10:00 AM' }, {}];
+        expect(isTaken(at(JAN15, 10, 0, 2), unreadable)).toBe(false);
     });
 });
 
@@ -46,7 +49,7 @@ describe('custom times', () => {
         userTimezone: 2,
         hostOffset: 2,
         cfg: parseAvailability(null),
-        meetings: [{ Date: '15/01/2026', Time: '10:00 AM' }],
+        meetings: [booked(at(JAN15, 10, 0, 2))],
     };
 
     it('refuses a custom time that overlaps a booking', () => {
@@ -55,7 +58,7 @@ describe('custom times', () => {
     });
 
     it('marks an overlapped preset slot as taken', () => {
-        const withCustom = { ...ctx, meetings: [{ Date: '15/01/2026', Time: '10:30 AM' }] };
+        const withCustom = { ...ctx, meetings: [booked(at(JAN15, 10, 30, 2))] };
         const slots = presetSlotsForDay(JAN15, withCustom);
         const label = (h: number) => slots.find((s) => s.startMs === at(JAN15, h, 0, 2));
         expect(label(10)?.taken).toBe(true);
@@ -79,15 +82,14 @@ describe('host zone and daylight saving', () => {
         expect(zonedInstant(JUL15, 9 * 60, 2)).toBe(Date.UTC(2026, 6, 15, 7));
     });
 
-    it('stores and reads back a meeting in summer and winter alike', () => {
+    it('shows a meeting on the owner clock, and reads that clock back, in summer and winter alike', () => {
         const summer = Date.UTC(2026, 6, 15, 7);
         const winter = Date.UTC(2026, 0, 15, 8);
-        const s = hostWallClock(summer, 'Europe/Berlin');
-        const w = hostWallClock(winter, 'Europe/Berlin');
-        expect(s).toMatchObject({ date: '15/07/2026', time: '09:00 AM' });
-        expect(w).toMatchObject({ date: '15/01/2026', time: '09:00 AM' });
-        expect(meetingInstant({ Date: s.date, Time: s.time }, 'Europe/Berlin')).toBe(summer);
-        expect(meetingInstant({ Date: w.date, Time: w.time }, 'Europe/Berlin')).toBe(winter);
+        expect(hostWallClock(summer, 'Europe/Berlin')).toMatchObject({ date: '15/07/2026', time: '09:00 AM' });
+        expect(hostWallClock(winter, 'Europe/Berlin')).toMatchObject({ date: '15/01/2026', time: '09:00 AM' });
+        expect(hostTimeToInstant(JUL15, '09:00 AM', 'Europe/Berlin')).toBe(summer);
+        expect(hostTimeToInstant(JAN15, '09:00 AM', 'Europe/Berlin')).toBe(winter);
+        expect(hostTimeToInstant(JAN15, 'nine', 'Europe/Berlin')).toBeNull();
     });
 
     it('offers the preset hours on the owner clock whatever the season', () => {
@@ -110,16 +112,31 @@ describe('host zone and daylight saving', () => {
 });
 
 describe('isUpcoming', () => {
-    const m = { Date: '15/01/2026', Time: '10:00 AM' };
     const start = at(JAN15, 10, 0, 2);
+    const m = booked(start);
 
     it('counts a meeting until it has ended', () => {
-        expect(isUpcoming(m, 2, start - DAY_MS)).toBe(true);
-        expect(isUpcoming(m, 2, start + MEETING_MS - 1)).toBe(true);
-        expect(isUpcoming(m, 2, start + MEETING_MS)).toBe(false);
+        expect(isUpcoming(m, start - DAY_MS)).toBe(true);
+        expect(isUpcoming(m, start + MEETING_MS - 1)).toBe(true);
+        expect(isUpcoming(m, start + MEETING_MS)).toBe(false);
     });
 
     it('never counts a meeting it cannot read', () => {
-        expect(isUpcoming({ Date: '', Time: '' }, 2, 0)).toBe(false);
+        expect(isUpcoming({ start: '' }, 0)).toBe(false);
+    });
+});
+
+describe('stored instants', () => {
+    it('reads back only the exact ISO shape a meeting is stored in', () => {
+        expect(slotStart({ start: '2026-10-28T14:00:00.000Z' })).toBe(Date.UTC(2026, 9, 28, 14));
+        expect(slotStart({ start: isoInstant(Date.UTC(2027, 0, 1)) })).toBe(Date.UTC(2027, 0, 1));
+        expect(slotStart({ start: '2026-10-28T14:00:00+02:00' })).toBeNull();
+        expect(slotStart({ start: '2026-10-28' })).toBeNull();
+        expect(slotStart(null)).toBeNull();
+    });
+
+    it('records the zone name, or the fixed offset when no zone is named', () => {
+        expect(zoneRecord('Africa/Cairo')).toEqual({ timeZone: 'Africa/Cairo', utcOffset: null });
+        expect(zoneRecord(3)).toEqual({ timeZone: null, utcOffset: 3 });
     });
 });

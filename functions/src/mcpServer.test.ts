@@ -8,10 +8,13 @@ import {
 import { incomeEntryId, recordIncome, saveMeeting } from "./mcpWrites";
 
 // ── A small in-memory Firestore with optimistic transactions ─────────
-// Enough of the Admin SDK surface for the MCP code: doc get/set/delete/update,
+// Enough of the Admin SDK surface for the MCP code: doc get/set/create/delete/update,
 // transactions that retry when a document they read changed before commit (as
-// Firestore's do), batches and a collection scan. Every read yields to the event
-// loop, so two "parallel" calls really interleave.
+// Firestore's do), batches, and collection queries (where / orderBy / count). A query
+// read inside a transaction makes it retry when ANY document of that collection
+// changes before commit - coarser than Firestore, which watches the query's range,
+// but it never misses a write that Firestore would catch. Every read yields to the
+// event loop, so two "parallel" calls really interleave.
 
 type Data = Record<string, unknown>;
 const tick = () => new Promise<void>((r) => setImmediate(r));
@@ -45,22 +48,71 @@ class FakeRef {
   get id() { return this.path.split("/").pop() as string; }
   async get() { await tick(); return new FakeSnap(this, this.db.read(this.path)); }
   async set(data: Data, opts?: { merge?: boolean }) { await tick(); this.db.write(this.path, data, !!opts?.merge); }
-  async update(data: Data) { await tick(); this.db.write(this.path, data, true); }
+  async create(data: Data) {
+    await tick();
+    if (this.db.read(this.path)) throw new Error(`already exists: ${this.path}`);
+    this.db.write(this.path, data, false);
+  }
+  async update(data: Data) {
+    await tick();
+    if (!this.db.read(this.path)) throw new Error(`no document: ${this.path}`);
+    this.db.write(this.path, data, true);
+  }
   async delete() { await tick(); this.db.remove(this.path); }
 }
 
-type Op = { kind: "set"; path: string; data: Data; merge: boolean } | { kind: "delete"; path: string };
+type Filter = [field: string, op: string, value: unknown];
+
+function matches(d: Data, [field, op, want]: Filter): boolean {
+  const v = d[field];
+  if (v === undefined || typeof v !== typeof want) return false;
+  const [a, b] = [v as number | string, want as number | string];
+  switch (op) {
+    case "==": return a === b;
+    case "<": return a < b;
+    case "<=": return a <= b;
+    case ">": return a > b;
+    case ">=": return a >= b;
+    default: throw new Error(`unsupported operator ${op}`);
+  }
+}
+
+class FakeQuery {
+  constructor(readonly db: FakeDb, readonly name: string, readonly filters: Filter[] = [], readonly order?: string) {}
+  doc(id: string) { return this.db.doc(`${this.name}/${id}`); }
+  where(field: string, op: string, value: unknown) { return new FakeQuery(this.db, this.name, [...this.filters, [field, op, value]], this.order); }
+  orderBy(field: string) { return new FakeQuery(this.db, this.name, this.filters, field); }
+  select() { return this; }
+  run() {
+    const docs = this.db.paths()
+      .filter((p) => p.startsWith(`${this.name}/`) && p.split("/").length === 2)
+      .map((p) => new FakeSnap(this.db.doc(p), this.db.read(p)))
+      .filter((s) => this.filters.every((f) => matches(s.data() as Data, f)));
+    const key = this.order;
+    if (key) docs.sort((x, y) => String(x.get(key)).localeCompare(String(y.get(key))));
+    return { docs, size: docs.length, empty: docs.length === 0 };
+  }
+  async get() { await tick(); return this.run(); }
+  count() { return { get: async () => { await tick(); const n = this.run().size; return { data: () => ({ count: n }) }; } }; }
+}
+
+type Op = { kind: "set"; path: string; data: Data; merge: boolean } | { kind: "create"; path: string; data: Data } | { kind: "delete"; path: string };
 
 class FakeTx {
   readonly reads = new Map<string, number>();
   readonly ops: Op[] = [];
   constructor(private readonly db: FakeDb) {}
-  async get(ref: FakeRef) {
+  async get(target: FakeRef | FakeQuery) {
     await tick();
-    this.reads.set(ref.path, this.db.version(ref.path));
-    return new FakeSnap(ref, this.db.read(ref.path));
+    if (target instanceof FakeQuery) {
+      this.reads.set(`collection:${target.name}`, this.db.version(`collection:${target.name}`));
+      return target.run();
+    }
+    this.reads.set(target.path, this.db.version(target.path));
+    return new FakeSnap(target, this.db.read(target.path));
   }
   set(ref: FakeRef, data: Data, opts?: { merge?: boolean }) { this.ops.push({ kind: "set", path: ref.path, data, merge: !!opts?.merge }); return this; }
+  create(ref: FakeRef, data: Data) { this.ops.push({ kind: "create", path: ref.path, data }); return this; }
   update(ref: FakeRef, data: Data) { this.ops.push({ kind: "set", path: ref.path, data, merge: true }); return this; }
   delete(ref: FakeRef) { this.ops.push({ kind: "delete", path: ref.path }); return this; }
 }
@@ -71,7 +123,10 @@ class FakeDb {
   doc(path: string) { return new FakeRef(this, path); }
   read(path: string) { const d = this.docs.get(path); return d === undefined ? undefined : clone(d); }
   version(path: string) { return this.versions.get(path) || 0; }
-  private bump(path: string) { this.versions.set(path, this.version(path) + 1); }
+  private bump(path: string) {
+    const col = `collection:${path.split("/").slice(0, -1).join("/")}`;
+    for (const key of [path, col]) this.versions.set(key, this.version(key) + 1);
+  }
   write(path: string, data: Data, merge: boolean) {
     const prev = this.docs.get(path);
     this.docs.set(path, merge && prev ? deepMerge(prev, data) : { ...data });
@@ -85,27 +140,17 @@ class FakeDb {
       const out = await fn(tx);
       await tick();
       if ([...tx.reads].some(([p, v]) => this.version(p) !== v)) continue; // someone wrote what we read: retry
+      if (tx.ops.some((op) => op.kind === "create" && this.read(op.path))) throw new Error("already exists");
       for (const op of tx.ops) {
         if (op.kind === "set") this.write(op.path, op.data, op.merge);
+        else if (op.kind === "create") this.write(op.path, op.data, false);
         else this.remove(op.path);
       }
       return out;
     }
     throw new Error("transaction contention");
   }
-  collection(name: string) {
-    const scan = {
-      select: () => scan,
-      get: async () => {
-        await tick();
-        const docs = this.paths()
-          .filter((p) => p.startsWith(`${name}/`) && p.split("/").length === 2)
-          .map((p) => new FakeSnap(this.doc(p), this.read(p)));
-        return { docs, size: docs.length, empty: docs.length === 0 };
-      },
-    };
-    return scan;
-  }
+  collection(name: string) { return new FakeQuery(this, name); }
   batch() {
     const ops: Op[] = [];
     const b = {
@@ -115,8 +160,8 @@ class FakeDb {
       commit: async () => {
         await tick();
         for (const op of ops) {
-          if (op.kind === "set") this.write(op.path, op.data, op.merge);
-          else this.remove(op.path);
+          if (op.kind === "delete") this.remove(op.path);
+          else this.write(op.path, op.data, op.kind === "set" && op.merge);
         }
       },
     };
@@ -368,45 +413,56 @@ describe("cleanup", () => {
 });
 
 describe("bookings", () => {
-  const HOST = 2; // UTC+02:00
-  // 10:00 owner time on 2026-11-02 = 08:00 UTC
+  // 10:00 owner time (UTC+02:00) on 2026-11-02 = 08:00 UTC
   const TEN = Date.UTC(2026, 10, 2, 8, 0);
-  const meeting = { Name: "Guest", Date: "02/11/2026", Time: "10:00 AM" };
+  const at = (ms: number) => ({ Name: "Guest", start: new Date(ms).toISOString(), timeZone: null, utcOffset: 2 });
+  const meetings = () => fake.paths().filter((p) => p.startsWith("CanaryMeetings/"));
 
   it("refuses a second meeting in a taken slot, even when both are added at once", async () => {
-    const add = (id: string) => saveMeeting(db, { id, patch: meeting, startMs: TEN, hostOffset: HOST, isNew: true, stamp: 1 });
-    const results = await Promise.all([add("a"), add("b")]);
+    const add = (id: string, ms: number) => saveMeeting(db, { id, patch: at(ms), startMs: ms, isNew: true });
+    const results = await Promise.all([add("a", TEN), add("b", TEN + 30 * 60_000)]);
     expect(results.sort()).toEqual(["clash", "saved"]);
+    expect(meetings()).toHaveLength(1);
+  });
+
+  it("stores each meeting as its own document and allows back-to-back slots", async () => {
+    expect(await saveMeeting(db, { id: "a", patch: at(TEN), startMs: TEN, isNew: true })).toBe("saved");
+    expect(await saveMeeting(db, { id: "b", patch: at(TEN + 3_600_000), startMs: TEN + 3_600_000, isNew: true })).toBe("saved");
+    expect(fake.read("CanaryMeetings/b")?.start).toBe("2026-11-02T09:00:00.000Z");
+    expect(meetings()).toHaveLength(2);
   });
 
   it("lets a booking be rescheduled onto its own slot, and refuses a missing one", async () => {
-    await saveMeeting(db, { id: "a", patch: meeting, startMs: TEN, hostOffset: HOST, isNew: true, stamp: 1 });
-    expect(await saveMeeting(db, { id: "a", patch: { Name: "Renamed" }, startMs: TEN, hostOffset: HOST, isNew: false, stamp: 2 })).toBe("saved");
-    expect(await saveMeeting(db, { id: "zzz", patch: { Name: "x" }, startMs: null, hostOffset: HOST, isNew: false, stamp: 2 })).toBe("missing");
+    await saveMeeting(db, { id: "a", patch: at(TEN), startMs: TEN, isNew: true });
+    expect(await saveMeeting(db, { id: "a", patch: { Name: "Renamed" }, startMs: TEN, isNew: false })).toBe("saved");
+    expect(fake.read("CanaryMeetings/a")).toMatchObject({ Name: "Renamed", start: "2026-11-02T08:00:00.000Z" });
+    expect(await saveMeeting(db, { id: "zzz", patch: { Name: "x" }, startMs: null, isNew: false })).toBe("missing");
+    expect(fake.read("CanaryMeetings/zzz")).toBeUndefined();
   });
 });
 
 describe("monthly payments", () => {
   beforeEach(async () => {
-    await fake.doc("Treasury/projects").set({ entries: { p1: { name: "Retainer", monthly: true, nextPaymentDate: "2026-11-05" } } });
+    await fake.doc("TreasuryProjects/p1").set({ name: "Retainer", monthly: true, nextPaymentDate: "2026-11-05" });
   });
   const pay = (key: string) => recordIncome(db, {
     id: incomeEntryId(key), entry: { amount: 100, currency: "USD", date: "2026-11-04", projectId: "p1", monthlyPayment: true },
-    monthlyProjectId: "p1", stamp: 1,
+    monthlyProjectId: "p1",
   });
+  const income = () => fake.paths().filter((p) => p.startsWith("TreasuryIncome/"));
 
   it("records a retried payment once and advances the due date once", async () => {
     const first = await pay("req-1");
     const retry = await pay("req-1");
     expect(first).toEqual({ duplicate: false, nextPaymentDate: "2026-12-05" });
     expect(retry.duplicate).toBe(true);
-    expect(Object.keys((fake.read("Treasury/income")?.entries || {}) as object)).toHaveLength(1);
-    expect((fake.read("Treasury/projects")?.entries as Record<string, { nextPaymentDate: string }>).p1.nextPaymentDate).toBe("2026-12-05");
+    expect(income()).toHaveLength(1);
+    expect(fake.read("TreasuryProjects/p1")?.nextPaymentDate).toBe("2026-12-05");
   });
 
   it("advances once per payment when two different payments land together", async () => {
     await Promise.all([pay("req-1"), pay("req-2")]);
-    expect(Object.keys((fake.read("Treasury/income")?.entries || {}) as object)).toHaveLength(2);
-    expect((fake.read("Treasury/projects")?.entries as Record<string, { nextPaymentDate: string }>).p1.nextPaymentDate).toBe("2027-01-05");
+    expect(income()).toHaveLength(2);
+    expect(fake.read("TreasuryProjects/p1")?.nextPaymentDate).toBe("2027-01-05");
   });
 });

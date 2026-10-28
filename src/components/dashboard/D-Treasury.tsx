@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { doc, onSnapshot, setDoc, serverTimestamp, runTransaction, type DocumentReference } from 'firebase/firestore';
+import { collection, deleteDoc, doc, onSnapshot, setDoc, serverTimestamp, runTransaction, type QuerySnapshot } from 'firebase/firestore';
 import { Reorder, motion, AnimatePresence } from 'motion/react';
 import {
     Plus, Download, CheckCircle2, Pencil, Receipt, Briefcase, LayoutDashboard,
@@ -36,19 +36,23 @@ import useTheme from '../../hooks/useTheme';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { XS_QUERY } from './breakpoints';
 import { EASE } from './motion';
-import { type MapWrite, putEntry, removeEntry, orderWrite, planIncomeSave } from './treasury/writes';
+import { entryDoc, orderUpdates, planIncomeSave } from './treasury/writes';
+import { COLLECTIONS } from '../../lib/collections';
 import { ChartFilter, ChartPoint, TreasuryChart } from './treasury/TreasuryChart';
 
-// Treasury is its own admin-only collection, sorted into one document per
-// concern: the projects I handle, spendings (expenses), and settings (currency
-// + FX). The homepage's public name/status list (Settings/HandledProjects) is
-// kept by a backend trigger on Treasury/projects, not written from here.
-const PROJECTS_DOC = doc(db, 'Treasury', 'projects');
-const SPENDINGS_DOC = doc(db, 'Treasury', 'spendings');
-const INCOME_DOC = doc(db, 'Treasury', 'income');
-const ACCOUNTS_DOC = doc(db, 'Treasury', 'accounts');
+// Treasury is admin-only: one document per project, payment, expense, account and
+// sent receipt (lib/collections), plus Treasury/settings for currency + FX. The
+// homepage's public name/status list (Settings/HandledProjects) is kept by a backend
+// trigger on TreasuryProjects, not written from here.
+const PROJECTS = collection(db, COLLECTIONS.treasuryProjects);
+const SPENDINGS = collection(db, COLLECTIONS.treasurySpendings);
+const INCOME = collection(db, COLLECTIONS.treasuryIncome);
+const ACCOUNTS = collection(db, COLLECTIONS.treasuryAccounts);
+const RECEIPTS = collection(db, COLLECTIONS.treasuryReceipts);
 const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
-const RECEIPTS_DOC = doc(db, 'Treasury', 'receipts');
+
+/** A collection snapshot as rows, each with its document id. */
+const rowsOf = <T,>(snap: QuerySnapshot) => snap.docs.map(d => ({ ...(d.data() as Omit<T, 'id'>), id: d.id }) as T);
 
 /** Local 'YYYY-MM-DD' day key for a ms-epoch timestamp (receipts store sentAt in ms). */
 const localDayKey = (ms: number): string => {
@@ -117,39 +121,31 @@ const DTreasury = () => {
         const onErr = (e: { code?: string }) => { if (e?.code !== 'permission-denied') console.warn('[Treasury] listener error', e); setLoading(false); };
 
         const attach = () => {
-            unsubs.push(onSnapshot(PROJECTS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Record<string, unknown>>;
-                const projects = Object.entries(entries)
-                    .map(([id, p], i) => normalizeProject(id, p, i))
+            unsubs.push(onSnapshot(PROJECTS, snap => {
+                const projects = snap.docs
+                    .map((d, i) => normalizeProject(d.id, d.data(), i))
                     .sort((a, b) => a.order - b.order);
                 setData(prev => ({ ...prev, projects }));
                 setLoading(false);
             }, onErr));
-            unsubs.push(onSnapshot(SPENDINGS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryExpense, 'id'>>;
-                const expenses = Object.entries(entries)
-                    .map(([id, e]) => ({ id, ...e } as TreasuryExpense))
+            unsubs.push(onSnapshot(SPENDINGS, snap => {
+                const expenses = rowsOf<TreasuryExpense>(snap)
                     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                 setData(prev => ({ ...prev, expenses }));
             }, onErr));
-            unsubs.push(onSnapshot(INCOME_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryIncome, 'id'>>;
-                const income = Object.entries(entries)
-                    .map(([id, i]) => ({ id, ...i } as TreasuryIncome))
+            unsubs.push(onSnapshot(INCOME, snap => {
+                const income = rowsOf<TreasuryIncome>(snap)
                     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                 setData(prev => ({ ...prev, income }));
             }, onErr));
-            unsubs.push(onSnapshot(ACCOUNTS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryAccount, 'id'>>;
-                const accounts = Object.entries(entries)
-                    .map(([id, a], i) => ({ id, ...a, order: a.order ?? i } as TreasuryAccount))
+            unsubs.push(onSnapshot(ACCOUNTS, snap => {
+                const accounts = rowsOf<TreasuryAccount>(snap)
+                    .map((a, i) => ({ ...a, order: a.order ?? i }))
                     .sort((a, b) => a.order - b.order);
                 setData(prev => ({ ...prev, accounts }));
             }, onErr));
-            unsubs.push(onSnapshot(RECEIPTS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryReceipt, 'id'>>;
-                const receipts = Object.entries(entries)
-                    .map(([id, r]) => ({ id, ...r }))
+            unsubs.push(onSnapshot(RECEIPTS, snap => {
+                const receipts = rowsOf<TreasuryReceipt>(snap)
                     .sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0)); // newest first
                 setData(prev => ({ ...prev, receipts }));
             }, onErr));
@@ -178,13 +174,21 @@ const DTreasury = () => {
         showAlert({ type, message: text });
     }, [showAlert]);
 
-    // Every entry write names its own field paths (see treasury/writes.ts), so a save here
-    // never rewrites rows it didn't touch. The listeners above get Firestore's local echo
-    // straight away, so the screen updates without a hand-kept copy.
-    const commit = useCallback((target: DocumentReference, w: MapWrite, what: string) => {
-        setDoc(target, w.data, { mergeFields: w.mergeFields })
-            .catch(err => { console.warn(`[Treasury] ${what} save failed`, err); showToast('Save failed - check connection', 'warn'); });
+    // Every entry is its own document (see treasury/writes.ts): a save replaces that one
+    // document whole and a delete removes it, so no other row is ever rewritten. The
+    // listeners above get Firestore's local echo straight away, so the screen updates
+    // without a hand-kept copy.
+    const failed = useCallback((what: string) => (err: unknown) => {
+        console.warn(`[Treasury] ${what} save failed`, err);
+        showToast('Save failed - check connection', 'warn');
     }, [showToast]);
+    const putRow = useCallback((col: typeof PROJECTS, entry: { id: string }, what: string) => {
+        const { id, data: row } = entryDoc(entry);
+        setDoc(doc(col, id), row).catch(failed(what));
+    }, [failed]);
+    const removeRow = useCallback((col: typeof PROJECTS, id: string, what: string) => {
+        deleteDoc(doc(col, id)).catch(failed(what));
+    }, [failed]);
 
     const writeConfig = useCallback((config: TreasuryData['config']) => {
         setData(prev => ({ ...prev, config }));
@@ -197,9 +201,9 @@ const DTreasury = () => {
     const configRef = useRef(data.config);
     useEffect(() => { configRef.current = data.config; }, [data.config]);
 
-    const saveProject = (p: TreasuryProject) => { const { id, ...rest } = p; commit(PROJECTS_DOC, putEntry(id, rest), 'project'); };
-    const deleteProject = (id: string) => commit(PROJECTS_DOC, removeEntry(id), 'project');
-    const saveExpense = (e: TreasuryExpense) => { const { id, ...rest } = e; commit(SPENDINGS_DOC, putEntry(id, rest), 'spending'); };
+    const saveProject = (p: TreasuryProject) => putRow(PROJECTS, p, 'project');
+    const deleteProject = (id: string) => removeRow(PROJECTS, id, 'project');
+    const saveExpense = (e: TreasuryExpense) => putRow(SPENDINGS, e, 'spending');
     // Best-effort: drop any uploaded receipt images for an entry when it's deleted.
     const purgeAttachments = (id: string) => {
         listAll(ref(storage, `treasury/${id}`))
@@ -207,7 +211,7 @@ const DTreasury = () => {
             .catch(() => { /* nothing to clean / offline */ });
     };
 
-    const deleteExpense = (id: string) => { purgeAttachments(id); commit(SPENDINGS_DOC, removeEntry(id), 'spending'); };
+    const deleteExpense = (id: string) => { purgeAttachments(id); removeRow(SPENDINGS, id, 'spending'); };
 
     // A newly-logged monthly retainer payment advances that project's schedule to the
     // next due date (even if the money arrived early or late). The payment and the
@@ -217,15 +221,16 @@ const DTreasury = () => {
         const isNew = !data.income.some(x => x.id === i.id);
         const advances = isNew && i.monthlyPayment && i.projectId && data.projects.find(p => p.id === i.projectId)?.monthly;
         if (!advances) {
-            const { id, ...rest } = i;
-            commit(INCOME_DOC, putEntry(id, rest), 'income');
+            putRow(INCOME, i, 'income');
             return;
         }
         runTransaction(db, async tx => {
-            const stored = (await tx.get(PROJECTS_DOC)).data()?.entries?.[i.projectId!] as Partial<TreasuryProject> | undefined;
+            const projectRef = doc(PROJECTS, i.projectId!);
+            const snap = await tx.get(projectRef);
+            const stored = snap.exists() ? snap.data() as Partial<TreasuryProject> : undefined;
             const plan = planIncomeSave(i, true, stored);
-            tx.set(INCOME_DOC, plan.income.data, { mergeFields: plan.income.mergeFields });
-            if (plan.project) tx.set(PROJECTS_DOC, plan.project.data, { mergeFields: plan.project.mergeFields });
+            tx.set(doc(INCOME, plan.income.id), plan.income.data);
+            if (plan.project) tx.update(projectRef, plan.project.data);
             return { nextDate: plan.nextDate, name: stored?.name };
         }).then(({ nextDate, name }) => {
             if (!nextDate) { showToast('Payment logged', 'good'); return; }
@@ -233,13 +238,13 @@ const DTreasury = () => {
             showToast(`Logged ${name ?? 'the project'}'s monthly payment - next due ${pretty}`, 'good');
         }).catch(err => { console.warn('[Treasury] income save failed', err); showToast('Save failed - check connection', 'warn'); });
     };
-    const deleteIncome = (id: string) => { purgeAttachments(id); commit(INCOME_DOC, removeEntry(id), 'income'); };
+    const deleteIncome = (id: string) => { purgeAttachments(id); removeRow(INCOME, id, 'income'); };
 
     // Add/edit a single account: its entry is replaced whole, so an optional field the
     // edit cleared (notes, archived, excludeFromNetProfit) really goes, and no other
     // account is touched (e.g. an opening-balance edit made via the MCP).
-    const saveAccount = (a: TreasuryAccount) => { const { id, ...rest } = a; commit(ACCOUNTS_DOC, putEntry(id, rest), 'account'); };
-    const deleteAccount = (id: string) => commit(ACCOUNTS_DOC, removeEntry(id), 'account');
+    const saveAccount = (a: TreasuryAccount) => putRow(ACCOUNTS, a, 'account');
+    const deleteAccount = (id: string) => removeRow(ACCOUNTS, id, 'account');
 
     /**
      * Move a project to a status, stamping the date that status is about.
@@ -345,14 +350,15 @@ const DTreasury = () => {
         const merged = [...newActive, ...completed].map((p, idx) => ({ ...p, order: idx }));
         setData(d => ({ ...d, projects: merged }));
     };
-    // Only the rows whose position changed get a new `order`, checked against the stored
-    // map so a project removed elsewhere meanwhile isn't brought back as a stub.
+    // Only the rows whose position changed get a new `order`, checked against each
+    // project as stored so one removed elsewhere meanwhile isn't brought back as a stub.
     const persistOrder = () => {
         const ids = data.projects.map(p => p.id);
         runTransaction(db, async tx => {
-            const stored = ((await tx.get(PROJECTS_DOC)).data()?.entries || {}) as Record<string, { order?: unknown }>;
-            const w = orderWrite(stored, ids);
-            if (w) tx.set(PROJECTS_DOC, w.data, { mergeFields: w.mergeFields });
+            const snaps = await Promise.all(ids.map(id => tx.get(doc(PROJECTS, id))));
+            const stored: Record<string, { order?: unknown }> = {};
+            snaps.forEach(s => { if (s.exists()) stored[s.id] = s.data(); });
+            for (const u of orderUpdates(stored, ids)) tx.update(doc(PROJECTS, u.id), { order: u.order });
         }).catch(err => { console.warn('[Treasury] order save failed', err); showToast('Save failed - check connection', 'warn'); });
     };
 

@@ -2,7 +2,7 @@
  * Small pure rules behind the public forms and the mail they cause, kept apart from
  * index.ts so they can be tested without Firebase.
  */
-import { isUpcoming, meetingInstant, wallClock, type HostZone } from "./booking.js";
+import { MEETING_MS, isUpcoming, isoInstant, slotStart, wallClock, type BookedSlot } from "./booking.js";
 
 /** Only an upload a visitor really made to emails/<folder>/<file>. */
 export const ATTACHMENT_PATH_RE = /^emails\/[A-Za-z0-9_-]{1,40}\/[^/]{1,200}$/;
@@ -94,34 +94,18 @@ export function visitorOffset(v: unknown): number | null {
 }
 
 /**
- * Settings/Canary holds every message and meeting in one document, and a Firestore
- * document can't pass 1 MiB. This is a close over-estimate of its stored size (field
- * names and values as UTF-8 JSON), so the forms stop accepting well before the limit
- * instead of failing every write, the owner's own included, once it is reached.
+ * What Settings/BookedSlots publishes: the start of each meeting that has not ended yet,
+ * in time order - no names, emails, links, and no history of past calls.
  */
-export function approxDocBytes(data: unknown): number {
-  return Buffer.byteLength(JSON.stringify(data ?? {}), "utf8");
+export function futureSlots(meetings: Array<BookedSlot | null | undefined>, nowMs: number): Array<{ start: string }> {
+  return meetings
+    .filter((m): m is BookedSlot => !!m && isUpcoming(m, nowMs))
+    .map((m) => slotStart(m) as number)
+    .sort((a, b) => a - b)
+    .map((at) => ({ start: isoInstant(at) }));
 }
 
-/** Messages the owner has not replied to yet: what the inbox cap counts. */
-export function unrepliedCount(emails: Record<string, unknown> | undefined): number {
-  return Object.values(emails || {}).filter((e) =>
-    !!e && typeof e === "object" && !(e as { RepliedAt?: unknown }).RepliedAt).length;
-}
-
-interface SlotLike { Date: string; Time: string }
-const isSlot = (m: unknown): m is SlotLike =>
-  !!m && typeof m === "object" && typeof (m as SlotLike).Date === "string" && typeof (m as SlotLike).Time === "string";
-
-/**
- * What Settings/BookedSlots publishes: the Date and Time of each meeting that has not
- * ended yet, in time order - no names, emails, links, and no history of past calls.
- */
-export function futureSlots(meetings: Record<string, unknown> | undefined, zone: HostZone, nowMs: number): SlotLike[] {
-  return Object.values(meetings || {})
-    .filter(isSlot)
-    .filter((m) => isUpcoming(m, zone, nowMs))
-    .map((m) => ({ Date: m.Date, Time: m.Time, at: meetingInstant(m, zone) ?? 0 }))
-    .sort((a, b) => a.at - b.at)
-    .map(({ Date, Time }) => ({ Date, Time }));
+/** Where the query for meetings that have not ended yet starts: anything starting after this. */
+export function upcomingFrom(nowMs: number): string {
+  return isoInstant(nowMs - MEETING_MS);
 }

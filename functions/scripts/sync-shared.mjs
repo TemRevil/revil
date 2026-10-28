@@ -8,7 +8,8 @@
  * Each source below (repo root) is the one definition of its logic: the booking rules
  * the calendar draws from and bookMeeting enforces, the treasury money math the
  * dashboard and the AI tools both report, the receipt both of them email, the email
- * shell every mail is framed in, and the public handled-projects projection.
+ * shell every mail is framed in, the public handled-projects projection, and the names
+ * of the per-entry collections.
  * Firebase deploys only this folder, so the functions build (prebuild) copies them in.
  * The sources must stay dependency-free (they may import each other by the same name).
  */
@@ -26,6 +27,7 @@ const FILES = [
   ['src/lib/receipt.ts', 'receipt.ts'],
   ['src/lib/emailShell.ts', 'emailShell.ts'],
   ['src/lib/handledProjects.ts', 'handledProjects.ts'],
+  ['src/lib/collections.ts', 'collections.ts'],
 ];
 
 const check = process.argv.includes('--check');

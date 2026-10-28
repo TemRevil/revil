@@ -198,7 +198,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
         }
       }
 
-      // 2. Send the message. Visitors cannot write Settings/Canary; the
+      // 2. Send the message. Visitors cannot write CanaryMessages; the
       // submitContact function validates the message, rate-limits it and stores it.
       const { httpsCallable, getFunctions } = await import('firebase/functions');
       const submitContact = httpsCallable(getFunctions(app), 'submitContact');

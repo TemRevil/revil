@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { toBookedSlot, meetingStart, slotOccupied, cancelRequest, calendarErrorText } from './meetings';
+import { meetingStart, slotOnHostClock, slotOccupied, cancelRequest, calendarErrorText } from './meetings';
 
 const at = (y: number, mon: number, d: number) => new Date(y, mon - 1, d);
+const stored = (id: string, y: number, mon: number, d: number, time: string, zone: number | string) =>
+    ({ id, startMs: meetingStart({ date: at(y, mon, d), time }, zone) as number });
 
 describe('meetingStart', () => {
     it('reads the owner wall clock as a UTC instant', () => {
@@ -16,15 +18,31 @@ describe('meetingStart', () => {
         expect(meetingStart({ date: at(2027, 7, 15), time: '10:00 AM' }, 'Europe/Berlin')).toBe(Date.UTC(2027, 6, 15, 8, 0));
     });
 
-    it('stores the day the way bookings do', () => {
-        expect(toBookedSlot({ date: at(2027, 3, 5), time: '09:00 AM' })).toEqual({ Date: '05/03/2027', Time: '09:00 AM' });
+});
+
+describe('slotOnHostClock', () => {
+    it('shows a stored instant as the day and time on the owner clock', () => {
+        expect(slotOnHostClock('2027-03-05T11:30:00.000Z', 3)).toEqual({ startMs: Date.UTC(2027, 2, 5, 11, 30), date: at(2027, 3, 5), time: '02:30 PM' });
+        // Late evening UTC is already the next day in Tokyo.
+        expect(slotOnHostClock('2027-03-05T22:00:00.000Z', 'Asia/Tokyo')).toMatchObject({ date: at(2027, 3, 6), time: '07:00 AM' });
+    });
+
+    it('round-trips with meetingStart', () => {
+        const slot = slotOnHostClock('2027-07-15T08:00:00.000Z', 'Europe/Berlin');
+        expect(slot && meetingStart(slot, 'Europe/Berlin')).toBe(Date.UTC(2027, 6, 15, 8, 0));
+    });
+
+    it('refuses anything that is not a stored instant', () => {
+        expect(slotOnHostClock(undefined, 0)).toBeNull();
+        expect(slotOnHostClock('05/03/2027', 0)).toBeNull();
+        expect(slotOnHostClock('2027-03-05T11:30:00Z', 0)).toBeNull();
     });
 });
 
 describe('slotOccupied', () => {
     const meetings = [
-        { id: 'a', date: at(2027, 3, 5), time: '09:00 AM' },
-        { id: 'b', date: at(2027, 3, 5), time: '11:00 AM' },
+        stored('a', 2027, 3, 5, '09:00 AM', 2),
+        stored('b', 2027, 3, 5, '11:00 AM', 2),
     ];
 
     it('finds another meeting at the same start and ignores the one being moved', () => {
