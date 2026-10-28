@@ -434,11 +434,12 @@ export default function DSettings() {
 
     // Every named zone, labelled with today's offset. A saved zone this browser doesn't
     // list (an alias) is still shown, so the picker never opens blank.
+    const [openedAt] = useState(() => Date.now());
     const zoneOptions = useMemo(() => timeZoneOptions(), []);
     const zoneNames = useMemo(() => zoneOptions.map(o => o.value), [zoneOptions]);
     const zonePickerOptions = zoneOptions.some(o => o.value === selectedZone)
         ? zoneOptions
-        : [{ value: selectedZone, label: zoneLabel(selectedZone, Date.now()) }, ...zoneOptions];
+        : [{ value: selectedZone, label: zoneLabel(selectedZone, openedAt) }, ...zoneOptions];
 
     // Every save below reports how it went ('saved' / 'skipped' / 'failed') rather than
     // swallowing a failure, so Apply can tell the owner exactly what was stored. With

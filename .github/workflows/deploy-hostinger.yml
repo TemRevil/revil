@@ -137,8 +137,10 @@ jobs:
           name: site-dist
           path: deploy_bundle
 
+      # The policy's script-src gets the exact hashes of each page's inline scripts, so the
+      # live site runs without 'unsafe-inline'.
       - name: Add Apache runtime config
-        run: cp deploy/hostinger/.htaccess deploy_bundle/.htaccess
+        run: node scripts/csp-headers.mjs deploy_bundle deploy/hostinger/.htaccess deploy_bundle/.htaccess
 
       - name: Create release archive
         run: tar -czf release.tgz -C deploy_bundle .

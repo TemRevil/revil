@@ -5,7 +5,7 @@ import tsEslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', '.next', 'functions/lib']),
+  globalIgnores(['dist', '.next', 'functions/lib', '.claude']),
   // Build and maintenance scripts and config files (.mjs) are ES modules run by Node:
   // the recommended rules, with Node globals. src/lib/firestoreRest.mjs is shared with the
   // browser but uses no globals of either.
@@ -16,6 +16,10 @@ export default defineConfig([
       globals: globals.node,
       sourceType: 'module',
       ecmaVersion: 'latest',
+    },
+    rules: {
+      // Destructuring a key out with ...rest is how scripts drop a field from a copy.
+      'no-unused-vars': ['error', { ignoreRestSiblings: true }],
     },
   },
   // Cloud Functions are TypeScript (functions/src → functions/lib) with their own

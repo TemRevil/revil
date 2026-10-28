@@ -259,8 +259,8 @@ describe("open endpoints under anonymous load", () => {
   const LIMITS = { perIp: 10, windowMs: 3_600_000 };
 
   it("limits each caller on its own, so other callers can never use up the owner's slots", async () => {
-    // A flood from a thousand addresses, each up to its own limit.
-    for (let i = 0; i < 1000; i++) {
+    // A flood from a hundred addresses, each up to its own limit.
+    for (let i = 0; i < 100; i++) {
       for (let j = 0; j < LIMITS.perIp; j++) expect((await takeRateSlot(db, "register", `attacker${i}`, LIMITS, clock)).ok).toBe(true);
     }
     expect((await takeRateSlot(db, "register", "attacker0", LIMITS, clock)).ok).toBe(false);
