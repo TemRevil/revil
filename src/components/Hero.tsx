@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Briefcase, Calendar } from 'lucide-react';
 import { holdFirebase, watchDoc } from '../lib/liveDoc';
@@ -8,6 +8,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import useTheme from '../hooks/useTheme';
 import { Chars, PaintDefs, splitSlogan, useHostClock, usePaint } from './book/paintKit';
 import { onIdle } from '../lib/idle';
+import { useHydrated } from './useHydrated';
 import './book/book.css';
 
 interface HeroProject {
@@ -242,7 +243,11 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
 
     // Shared Settings/Account listener. Starts from the cached copy (lib/dataCache), so the
     // hero never waits for Firebase to show the name and title.
-    const { account } = useSettings();
+    // The prerendered hero is drawn from the stand-ins below; while it hydrates the first
+    // render must be that same hero, so the cached copy is only used once hydrated.
+    const hydrated = useHydrated();
+    const { account: liveAccount } = useSettings();
+    const account = hydrated ? liveAccount : null;
     const profileName = (account?.name || 'Tem Revil').trim();
     const profileTitle = account?.title || 'Frontend & AI Engineer';
     const [firstName, ...rest] = profileName.split(/\s+/);
@@ -252,11 +257,18 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     // Availability % + time zone live in Settings/Availability; the handled-projects list
     // comes from the public, sanitized Settings/HandledProjects mirror. Both start from the
     // cached copy, so the pills never show a stand-in first.
-    const [availData, setAvailData] = useState<HostStatus>(() => (cachedDoc(['Settings', 'Availability']) ?? {}) as HostStatus);
-    const [handledData, setHandledData] = useState<HandledData | null>(() => (cachedDoc(['Settings', 'HandledProjects']) ?? null) as HandledData | null);
+    // The cached copies once hydrated (see above), until the live ones answer.
+    const cached = useMemo(() => hydrated ? {
+        avail: cachedDoc(['Settings', 'Availability']) as HostStatus | null | undefined,
+        handled: cachedDoc(['Settings', 'HandledProjects']) as HandledData | null | undefined,
+    } : null, [hydrated]);
+    const [liveAvail, setLiveAvail] = useState<HostStatus | null>(null);
+    const [liveHandled, setLiveHandled] = useState<HandledData | null>(null);
+    const availData: HostStatus = liveAvail ?? cached?.avail ?? {};
+    const handledData: HandledData | null = liveHandled ?? cached?.handled ?? null;
     useEffect(() => {
-        const unsubAvail = watchDoc(['Settings', 'Availability'], (data) => { if (data) setAvailData(data as HostStatus); });
-        const unsubHandled = watchDoc(['Settings', 'HandledProjects'], (data) => { if (data) setHandledData(data as HandledData); });
+        const unsubAvail = watchDoc(['Settings', 'Availability'], (data) => { if (data) setLiveAvail(data as HostStatus); });
+        const unsubHandled = watchDoc(['Settings', 'HandledProjects'], (data) => { if (data) setLiveHandled(data as HandledData); });
         return () => { unsubAvail(); unsubHandled(); };
     }, []);
     const status = availabilityStatus(availData['Current Availability']);
@@ -268,6 +280,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
     // Firebase waits for the entrance (see holdFirebase); 10s caps it if the entrance never runs.
     const [entranceDone] = useState(() => {
         let done = () => { };
+        if (typeof window === 'undefined') return done; // prerendering: nothing to hold
         const p = new Promise<void>(r => { done = r; setTimeout(r, 10000); });
         holdFirebase(p);
         return done;

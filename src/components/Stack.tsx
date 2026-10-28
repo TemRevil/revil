@@ -1,5 +1,6 @@
 import { createElement, useEffect, useRef, useState, useMemo } from 'react';
 import anime from 'animejs';
+import { travel } from '../lib/device';
 import { watchDoc } from '../lib/liveDoc';
 import { cachedDoc, type Data } from '../lib/dataCache';
 import { Github, Instagram, Linkedin, Twitter, Facebook, Mail, Link as LinkIcon, Twitch, Youtube, Code } from 'lucide-react';
@@ -24,7 +25,7 @@ const StackItem = ({ icon, name, iconSize, delay, active }: StackItemProps) => {
         anime({
             targets: itemRef.current,
             opacity: [0, 1],
-            filter: ['blur(20px)', 'blur(0px)'],
+            filter: travel(['blur(20px)', 'blur(0px)']) || 'blur(0px)',
             duration: 1200,
             delay: delay,
             easing: 'easeOutExpo'
@@ -95,7 +96,7 @@ const SocialIcon = ({ name, url, delay, active }: { name: string; url: string; d
         anime({
             targets: iconRef.current,
             opacity: [0, 1],
-            translateY: [20, 0],
+            translateY: travel([20, 0]),
             duration: 800,
             delay: delay,
             easing: 'easeOutQuad'
@@ -249,7 +250,7 @@ const Stack = ({ active = true }: { active?: boolean }) => {
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
-            translateY: [20, 0],
+            translateY: travel([20, 0]),
             duration: 600,
             easing: 'easeOutExpo'
         });
@@ -257,7 +258,7 @@ const Stack = ({ active = true }: { active?: boolean }) => {
         anime({
             targets: titleRef.current,
             opacity: [0, 1],
-            translateY: [30, 0],
+            translateY: travel([30, 0]),
             duration: 800,
             delay: 100,
             easing: 'easeOutExpo'

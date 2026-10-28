@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useBoilHold } from './book/paintKit';
 import { whenFramesFlow } from '../lib/idle';
+import { prefersReducedMotion } from '../lib/device';
+import { useHydrated } from './useHydrated';
 
 interface PageTransitionProps {
     isTransitioning: boolean;
@@ -19,6 +21,8 @@ const SWEEP = 150;
 const WRITE = 100, STAGGER = 30, FILL = 60;
 /** How long the written name stays before the curtain lifts. */
 const HOLD = 150;
+/** With reduced motion: the curtain fades in and out over the page instead of sweeping. */
+const FADE = 150;
 
 type Side = 'top' | 'bottom' | 'right' | 'left';
 const FAR: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
@@ -37,7 +41,8 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
     useBoilHold(isTransitioning);
     const curtainRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
-    const [fontSize, setFontSize] = useState(Math.min(window.innerWidth / 6, 100));
+    const hydrated = useHydrated();
+    const [fontSize, setFontSize] = useState(100);
     const currentDirection: Side =
         direction === 2 ? 'right' :
             direction === -2 ? 'left' :
@@ -49,7 +54,7 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
         const handleResize = () => {
             setFontSize(Math.max(40, Math.min(window.innerWidth / 6, 100)));
         };
-
+        handleResize();
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
@@ -74,7 +79,13 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
         // it keeps the page busy (sized by width or height, it froze there and skipped).
         const d = dir.current;
         const s = curtain.style;
-        s.transform = past(d);
+        // Reduced motion: nothing travels. The curtain fades in, the name is simply there,
+        // and the curtain fades out.
+        const still = prefersReducedMotion();
+        const hidden: Keyframe = still ? { opacity: 0 } : { transform: past(d) };
+        const shown: Keyframe = still ? { opacity: 1 } : { transform: 'none' };
+        const gone: Keyframe = still ? { opacity: 0 } : { transform: past(FAR[d]) };
+        if (still) s.opacity = '0'; else s.transform = past(d);
         s.display = 'block';
 
         const letters = [...(svgRef.current?.querySelectorAll<SVGTSpanElement>('.letter-path') ?? [])];
@@ -86,8 +97,12 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
             return a.finished;
         };
 
-        const write = () => {
+        const write = (): Promise<unknown> => {
             const L = size.current * 3;
+            if (still) {
+                letters.forEach(t => { t.style.visibility = 'visible'; t.style.fillOpacity = '1'; t.style.strokeOpacity = '.3'; });
+                return Promise.resolve();
+            }
             return Promise.all(letters.map((t, i) => {
                 const ts = t.style;
                 ts.strokeDasharray = `${L}`;
@@ -104,13 +119,14 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
         const finish = () => {
             s.display = 'none';
             s.transform = '';
-            letters.forEach(t => { t.style.visibility = 'hidden'; });
+            s.opacity = '';
+            letters.forEach(t => { t.style.visibility = 'hidden'; t.style.fillOpacity = ''; t.style.strokeOpacity = ''; });
             anims.forEach(a => a.cancel());
             anims.length = 0;
             completed.current();
         };
 
-        const sweepIn = curtain.animate([{ transform: past(d) }, { transform: 'none' }], { duration: SWEEP, easing: EASE_IN_OUT, fill: 'forwards' });
+        const sweepIn = curtain.animate([hidden, shown], { duration: still ? FADE : SWEEP, easing: EASE_IN_OUT, fill: 'forwards' });
         anims.push(sweepIn);
         // The sections switch once the curtain is on its way: readying them to slide is a
         // long task, and done first it held the curtain back ~0.5s after the scroll.
@@ -124,7 +140,7 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
             .then(() => live ? new Promise(r => setTimeout(r, HOLD)) : undefined)
             .then(() => {
                 if (!live) return;
-                return run(curtain, [{ transform: 'none' }, { transform: past(FAR[d]) }], { duration: SWEEP, easing: EASE_IN_OUT, fill: 'forwards' });
+                return run(curtain, [shown, gone], { duration: still ? FADE : SWEEP, easing: EASE_IN_OUT, fill: 'forwards' });
             })
             .then(() => { if (live) finish(); })
             .catch(() => { /* cancelled on unmount */ });
@@ -136,7 +152,8 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
         };
     }, [isTransitioning]);
 
-    if (typeof document === 'undefined') return null;
+    // Portaled to <body>, so only once the page has hydrated (the prerendered HTML has none).
+    if (!hydrated) return null;
 
     return createPortal(
         <div

@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense, startTransition, type ReactNode } from 'react';
-import { AnimatePresence, LayoutGroup, motion, useAnimationControls } from 'motion/react';
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore, lazy, Suspense, startTransition, type ReactNode } from 'react';
+import { AnimatePresence, LayoutGroup, MotionConfig, motion, useAnimationControls, useReducedMotion } from 'motion/react';
 import Hero from './components/Hero';
 import { preloadable } from './lib/preloadable';
 import { onIdle, onQuiet, whenFramesFlow } from './lib/idle';
 import { isLite, TOUCH_QUERY } from './lib/device';
+import { useHydrated } from './components/useHydrated';
 import useMediaQuery from './hooks/useMediaQuery';
 import Navbar from './components/Navbar';
 import PageTransition from './components/PageTransition';
@@ -97,6 +98,45 @@ const PUBLIC_SCROLL_SECTIONS: Section[] = ['home', 'stack', 'projects', 'view_li
 const viewKey = (s: Section): Section => (s === 'view_link' ? 'home' : s);
 const sameView = (a: Section, b: Section): boolean => viewKey(a) === viewKey(b);
 
+// Each public section has its own address: the page's path (the root, or a share link's)
+// with #stack or #projects, or no hash for home. Moving between sections adds a history
+// entry, so Back returns to the section before and a section can be linked to.
+const SECTION_HASH: Partial<Record<Section, string>> = { stack: '#stack', projects: '#projects' };
+const isPublic = (s: Section) => PUBLIC_SCROLL_SECTIONS.includes(s);
+/** The public section an address points at (its hash, else home or the share link). */
+function sectionAt(loc: Location): Section {
+  const hash = loc.hash.toLowerCase();
+  if (hash === '#stack') return 'stack';
+  if (hash === '#projects') return 'projects';
+  return loc.pathname.replace(/\/$/, '') !== '' ? 'view_link' : 'home';
+}
+let started: Section | undefined;
+/**
+ * Where this visit starts, read once: the dashboard the admin left (remembered on this
+ * device; it has no address), else the section in the address, else home - or the share
+ * link, which draws the same hero.
+ */
+function startSection(): Section {
+  if (started) return started;
+  started = sectionAt(window.location);
+  try {
+    if (localStorage.getItem('revil_section') === 'dashboard') started = 'dashboard';
+  } catch { /* storage blocked: follow the address */ }
+  return started;
+}
+// Read as the app's code loads, before anything can change the storage or the address.
+if (typeof window !== 'undefined') startSection();
+const noSubscribe = () => () => { };
+/** The address of a public section, on this page's path. */
+const addressOf = (s: Section) => window.location.pathname + window.location.search + (SECTION_HASH[viewKey(s)] ?? '');
+/** Adds (or, for a correction, replaces) the history entry for a public section. */
+function showAddress(s: Section, replace = false) {
+  const next = addressOf(s);
+  if (next === window.location.pathname + window.location.search + window.location.hash) return;
+  if (replace) window.history.replaceState(window.history.state, '', next);
+  else window.history.pushState(window.history.state, '', next);
+}
+
 // How the desktop switcher slides a section in and out: direction ±1 is down/up, ±2 sideways
 // (the secret page). Fixes #4: prevents unintended yellow page UI rotation on transitions.
 const SECTION_VARIANTS = {
@@ -120,6 +160,17 @@ const SECTION_TRANSITION = {
   opacity: { duration: 0.2 },
   scale: { duration: 0.3 },
 } as const;
+// Reduced motion: the sections don't travel, they cross-fade.
+const SECTION_FADE = {
+  enter: () => ({ x: 0, y: 0, opacity: 0, scale: 1 }),
+  center: { x: 0, y: 0, opacity: 1, scale: 1 },
+  exit: () => ({ x: 0, y: 0, opacity: 0, scale: 1 }),
+};
+const FADE_TRANSITION = { duration: 0.2, ease: 'easeInOut' } as const;
+const useSectionMotion = () => {
+  const reduced = useReducedMotion();
+  return reduced ? { variants: SECTION_FADE, transition: FADE_TRANSITION } : { variants: SECTION_VARIANTS, transition: SECTION_TRANSITION };
+};
 // The three that actually stack in the scroll page, in order.
 const MOBILE_STACK: Exclude<Section, 'secret' | 'dashboard' | 'view_link'>[] = ['home', 'stack', 'projects'];
 
@@ -135,18 +186,22 @@ const isKept = (s: Section): s is KeptSection => (MOBILE_STACK as Section[]).inc
  * then 1-2s at 10-20fps), and building Stack or Projects again read Firestore and loaded
  * every image again. Away, it is parked off screen, inert, and not painted.
  */
-function KeptView({ id, shown, direction, instant, children }: {
+function KeptView({ id, shown, direction, instant, jump, children }: {
   id: string;
   shown: boolean;
   direction: number;
   /** Shown at the page's first draw: no slide in. */
   instant: boolean;
+  /** The page is opening on another section than the prerendered one: no slide, it is just there. */
+  jump: boolean;
   children: ReactNode;
 }) {
+  const { variants, transition } = useSectionMotion();
   const controls = useAnimationControls();
   const box = useRef<HTMLDivElement>(null);
   const [parked, setParked] = useState(!shown);
   if (shown && parked) setParked(false);
+  if (!shown && jump && !parked) setParked(true);
   const first = useRef(true);
   useEffect(() => {
     const isFirst = first.current;
@@ -155,14 +210,20 @@ function KeptView({ id, shown, direction, instant, children }: {
     // started with it ran out its clock while no frame was drawn, so the page jumped.
     if (shown) {
       if (isFirst && instant) return;
-      if (!isFirst) controls.set(SECTION_VARIANTS.enter(direction));
-      return whenFramesFlow(() => void controls.start(SECTION_VARIANTS.center));
+      if (jump) { controls.set(variants.center); return; }
+      if (!isFirst) controls.set(variants.enter(direction));
+      return whenFramesFlow(() => void controls.start(variants.center));
     }
     if (isFirst) return;
+    if (jump) {
+      controls.set(variants.exit(direction));
+      if (box.current) box.current.scrollTop = 0;
+      return;
+    }
     let live = true;
     // Parked back at the top, as a rebuilt section was: the wheel/swipe paging reads the
     // scroll position, and a section left at its bottom would page straight past.
-    const stopWaiting = whenFramesFlow(() => void controls.start(SECTION_VARIANTS.exit(direction)).then(() => {
+    const stopWaiting = whenFramesFlow(() => void controls.start(variants.exit(direction)).then(() => {
       if (!live) return;
       setParked(true);
       if (box.current) box.current.scrollTop = 0;
@@ -175,9 +236,9 @@ function KeptView({ id, shown, direction, instant, children }: {
     <motion.div
       ref={box}
       id={id}
-      initial={shown ? (instant ? false : SECTION_VARIANTS.enter(direction)) : SECTION_VARIANTS.exit(1)}
+      initial={shown ? (instant ? false : variants.enter(direction)) : variants.exit(1)}
       animate={controls}
-      transition={SECTION_TRANSITION}
+      transition={transition}
       aria-hidden={!shown || undefined}
       inert={!shown}
       style={parked ? { visibility: 'hidden' } : undefined}
@@ -191,17 +252,15 @@ function KeptView({ id, shown, direction, instant, children }: {
 }
 
 function App() {
-  const [currentSection, setCurrentSection] = useState<Section>(() => {
-    if (typeof window === 'undefined') return 'home';
-    // Persisted return: if the admin was on the dashboard, a refresh keeps them
-    // there (dashboard is reached via in-app nav, not the URL, so it'd otherwise
-    // reset to home). Only 'dashboard' is restored - public sections follow the URL.
-    try {
-      if (localStorage.getItem('revil_section') === 'dashboard') return 'dashboard';
-    } catch { /* ignore */ }
-    // Any path but the root is a share link (the server answers those with this page).
-    return window.location.pathname.replace(/\/$/, '') !== '' ? 'view_link' : 'home';
-  });
+  // The homepage is prerendered on home, so the render that hydrates it is home too; right
+  // after, the page moves to where this visit really starts (startSection). `chosen` is
+  // every move after that.
+  const booted = useHydrated();
+  const start = useSyncExternalStore(noSubscribe, startSection, () => 'home' as Section);
+  const [chosen, setChosen] = useState<Section | null>(null);
+  const currentSection = chosen ?? start;
+  /** Until the first move the section only changes by starting elsewhere: no slide, it is just there. */
+  const jump = chosen === null;
   const [previousSection, setPreviousSection] = useState<Section>('home');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [nextSection, setNextSection] = useState<Section>('home');
@@ -287,6 +346,27 @@ function App() {
   }, [heroSettled, mountedSections]);
   const isMounted = (id: Section) => mountedSections.has(id);
 
+  // A phone opening on #stack or #projects starts scrolled there; from then on the address
+  // follows the section in view (replaced, not added: scrolling is not a history step).
+  const startScrolled = useRef(false);
+  const startPending = useRef<Section | null>(null);
+  useEffect(() => {
+    if (!booted || !mobileScroll || startScrolled.current) return;
+    startScrolled.current = true;
+    const start = viewKey(sectionAt(window.location));
+    if (start === 'home') return;
+    startPending.current = start;
+    document.getElementById(`mobsec-${start}`)?.scrollIntoView({ block: 'start' });
+  }, [booted, mobileScroll]);
+  useEffect(() => {
+    if (!mobileScroll || !startScrolled.current) return;
+    if (startPending.current) {
+      if (viewKey(mobileActiveSection) !== startPending.current) return;
+      startPending.current = null;
+    }
+    showAddress(mobileActiveSection, true);
+  }, [mobileActiveSection, mobileScroll]);
+
   // Leaving the touch layout (widening past the phone breakpoint) hands the reader back to the section switcher,
   // which only knows `currentSection` - and the phone page leaves that on whatever it
   // started as while the reader scrolls. So resizing mid-page threw them back to the top
@@ -301,7 +381,7 @@ function App() {
     if (wasScrollLayout
       && PUBLIC_SCROLL_SECTIONS.includes(currentSection)
       && !sameView(currentSection, mobileActiveSection)) {
-      setCurrentSection(mobileActiveSection);
+      setChosen(mobileActiveSection);
       setNextSection(mobileActiveSection);
     }
   }
@@ -311,13 +391,15 @@ function App() {
   const currentSectionRef = useRef<Section>(currentSection);
   useEffect(() => {
     currentSectionRef.current = currentSection;
+    // Not while hydrating: that render is the prerendered home, not where the visit is.
+    if (!booted) return;
     // Remember the dashboard across refreshes; clear it for any public section so
     // leaving the dashboard doesn't strand the user there on next load.
     try {
       if (currentSection === 'dashboard') localStorage.setItem('revil_section', 'dashboard');
       else localStorage.removeItem('revil_section');
     } catch { /* ignore */ }
-  }, [currentSection]);
+  }, [currentSection, booted]);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [forceHideLoading, setForceHideLoading] = useState(false);
   const [isDataReady, setIsDataReady] = useState(false);
@@ -466,13 +548,15 @@ function App() {
   const pendingSection = useRef<Section | null>(null);
   const navigateTo = useCallback((section: Section) => {
     if (section !== currentSection && !isTransitioning) {
+      // A public section gets its own address (a Back or Forward has already moved it).
+      if (isPublic(section) && !sameView(section, currentSection)) showAddress(section);
       // The recorder switches 'view_link' -> 'home' once the server resolves the share
       // code. Same hero on screen either way, so that is a relabel, not a journey:
       // running the curtain for it replayed the whole entrance unprompted, as though
       // the visitor had scrolled. Swap the label and stop.
       if (sameView(section, currentSection)) {
         setNextSection(section);
-        setCurrentSection(section);
+        setChosen(section);
         return;
       }
 
@@ -505,6 +589,7 @@ function App() {
   const handleNavbarNav = useCallback((section: Section) => {
     if (scrollLayout && PUBLIC_SCROLL_SECTIONS.includes(section) && PUBLIC_SCROLL_SECTIONS.includes(currentSectionRef.current)) {
       const target = section === 'view_link' ? 'home' : section;
+      showAddress(target);
       document.getElementById(`mobsec-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setMobileActiveSection(target as Section);
     } else {
@@ -517,11 +602,39 @@ function App() {
   const handleCurtainMoving = useCallback(() => {
     const section = pendingSection.current;
     pendingSection.current = null;
-    if (section) setCurrentSection(section);
+    if (section) setChosen(section);
   }, []);
 
   const handleTransitionComplete = useCallback(() => {
     setIsTransitioning(false);
+  }, []);
+
+  // Back and Forward: the address changed to another section's, so move there. A switch
+  // already running finishes first, then the page catches up with the address.
+  const followAddress = useRef(() => { });
+  const addressWaiting = useRef(false);
+  useEffect(() => {
+    followAddress.current = () => {
+      if (isTransitioning) { addressWaiting.current = true; return; }
+      const want = sectionAt(window.location);
+      if (scrollLayout && isPublic(currentSection)) {
+        document.getElementById(`mobsec-${viewKey(want)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      // Only between public sections: the secret page and the dashboard have no address.
+      if (isPublic(currentSection) && !sameView(want, currentSection)) navigateTo(want);
+    };
+    if (!isTransitioning && addressWaiting.current) {
+      addressWaiting.current = false;
+      const run = followAddress.current;
+      const id = requestAnimationFrame(() => run());
+      return () => cancelAnimationFrame(id);
+    }
+  }, [isTransitioning, scrollLayout, currentSection, navigateTo]);
+  useEffect(() => {
+    const onPop = () => followAddress.current();
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   // A modal opened before its chunk is warm suspends, and outside a transition React holds
@@ -568,7 +681,7 @@ function App() {
   // hero has settled Stack and Projects are built off screen, one per idle period. (Not the
   // hero: built off screen, its entrance would play where nobody sees it.)
   const shownView = viewKey(currentSection);
-  const [viewAtLoad] = useState(shownView);
+  const viewAtLoad = viewKey(start);
   const [built, setBuilt] = useState<Set<KeptSection>>(() => new Set(isKept(shownView) ? [shownView] : []));
   if (isKept(shownView) && !built.has(shownView)) setBuilt(new Set(built).add(shownView));
   useEffect(() => {
@@ -584,6 +697,7 @@ function App() {
       shown={shownView === id}
       direction={direction}
       instant={viewAtLoad === id}
+      jump={jump}
     >
       {children}
     </KeptView>
@@ -600,6 +714,7 @@ function App() {
   };
 
   const hubRef = useRef<ProjectsHubHandle>(null);
+  const sectionMotion = useSectionMotion();
 
   // --- Touch Logic (Mobile) ---
   const touchStartX = useRef(0);
@@ -738,26 +853,13 @@ function App() {
       }
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isContactModalOpen || document.body.style.overflow === 'hidden') {
-        if (e.key === 'Escape') closeContactModal();
-        const activeTag = document.activeElement?.tagName;
-        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
-        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) {
-          e.preventDefault();
-        }
-        return;
-      }
-    };
+    // Keys inside a modal are the modal's own (dialog.ts): focus is in it, so arrows,
+    // Space and Page keys scroll it, and Escape closes it.
 
     // Passive: it only reads the wheel, never cancels it, so scrolling never waits on it.
     window.addEventListener('wheel', handleWheel, { passive: true });
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('wheel', handleWheel);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [currentSection, isTransitioning, navigateTo, isContactModalOpen, closeContactModal]);
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, [currentSection, isTransitioning, navigateTo, isContactModalOpen]);
 
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -782,6 +884,9 @@ function App() {
   }, [currentSection, isContactModalOpen]);
 
   return (
+    // reducedMotion="user": with the system's reduced-motion setting, motion drops every
+    // transform animation (opacity still plays), and the sections cross-fade (above).
+    <MotionConfig reducedMotion="user">
     <SettingsProvider>
     <main
       ref={mainRef}
@@ -792,11 +897,27 @@ function App() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <Loader isOpen={appLoading} isFullScreen={true} />
+      {/* The loader over the whole page. Drawn here rather than portaled to <body> by the
+          Loader itself, so it is in the prerendered HTML from the first paint. */}
+      <AnimatePresence>
+        {appLoading && (
+          <motion.div
+            key="loader"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4, ease: 'easeInOut' }}
+            className="fixed inset-0 flex items-center justify-center z-[999999]"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(60px)', WebkitBackdropFilter: 'blur(60px)' }}
+          >
+            <Loader isOpen isFullScreen={false} />
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* The phone page never changes the current section - it scrolls - so the recorder
           has to be told what the scroll-spy sees, or every phone visit reads as though
           the reader never left home no matter how far down they got. */}
-      <Algorithm currentSection={mobileScroll ? mobileActiveSection : currentSection} isContactOpen={isContactModalOpen} onNavigate={navigateTo} />
+      {booted && <Algorithm currentSection={mobileScroll ? mobileActiveSection : currentSection} isContactOpen={isContactModalOpen} onNavigate={navigateTo} />}
       <TailorNote />
 
       {(currentSection === 'home' || currentSection === 'view_link' || currentSection === 'dashboard' || currentSection === 'secret') && (
@@ -847,11 +968,11 @@ function App() {
           key={viewKey(currentSection)}
           id={`section-${currentSection}`}
           custom={direction}
-          variants={SECTION_VARIANTS}
-          initial="enter"
+          variants={sectionMotion.variants}
+          initial={jump ? false : 'enter'}
           animate="center"
           exit="exit"
-          transition={SECTION_TRANSITION}
+          transition={sectionMotion.transition}
           // No explicit z-index: the page content must sit BELOW the chrome
           // (navbar z-50, secret button z-40, PageTransition curtain z-50) and
           // below the body-portaled tooltips (z-60) + modals (z-1400+).
@@ -973,6 +1094,7 @@ function App() {
       />
     </main>
     </SettingsProvider>
+    </MotionConfig>
   );
 }
 

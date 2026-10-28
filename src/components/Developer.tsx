@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import anime from 'animejs';
+import { travel } from '../lib/device';
 import { Activity, Flame, FolderGit2 } from 'lucide-react';
 import GitHubCommitsGraph from './GitHubCommitsGraph';
 import StreakCircle from './StreakCircle';
@@ -75,12 +76,12 @@ const Developer = ({ active = true }: { active?: boolean }) => {
         if (!active) return;
         const base = { easing: 'easeOutExpo' as const };
         const instances = [
-            anime({ targets: handwritingRef.current, opacity: [0, 1], translateX: [-20, 0], duration: 600, ...base }),
-            anime({ targets: titleRef.current, opacity: [0, 1], translateX: [-30, 0], duration: 800, delay: 150, ...base }),
-            anime({ targets: taglineRef.current, opacity: [0, 1], translateY: [10, 0], duration: 700, delay: 280, ...base }),
-            anime({ targets: statsRef.current, opacity: [0, 1], translateY: [20, 0], duration: 700, delay: 400, ...base }),
-            anime({ targets: activityRef.current, opacity: [0, 1], translateY: [24, 0], duration: 750, delay: 540, ...base }),
-            anime({ targets: bottomRef.current, opacity: [0, 1], translateY: [24, 0], duration: 750, delay: 680, ...base }),
+            anime({ targets: handwritingRef.current, opacity: [0, 1], translateX: travel([-20, 0]), duration: 600, ...base }),
+            anime({ targets: titleRef.current, opacity: [0, 1], translateX: travel([-30, 0]), duration: 800, delay: 150, ...base }),
+            anime({ targets: taglineRef.current, opacity: [0, 1], translateY: travel([10, 0]), duration: 700, delay: 280, ...base }),
+            anime({ targets: statsRef.current, opacity: [0, 1], translateY: travel([20, 0]), duration: 700, delay: 400, ...base }),
+            anime({ targets: activityRef.current, opacity: [0, 1], translateY: travel([24, 0]), duration: 750, delay: 540, ...base }),
+            anime({ targets: bottomRef.current, opacity: [0, 1], translateY: travel([24, 0]), duration: 750, delay: 680, ...base }),
         ];
         return () => instances.forEach(inst => inst?.pause());
     }, [active]);

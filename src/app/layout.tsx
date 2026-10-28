@@ -1,8 +1,12 @@
 import type { Metadata, Viewport } from 'next'
-import Script from 'next/script'
 import './fonts.css'
 import './globals.css'
 import { LITE_SCRIPT } from '../lib/device'
+
+/** Saved (or system) theme on <html>, before anything paints. */
+const THEME_SCRIPT = "(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;if(d){c.add('dark');}else{c.remove('dark');}}catch(e){}})();"
+/** GitHub Pages visitors (temrevil.github.io/revil) go to temrevil.com, path, query and hash kept. */
+const CANONICAL_SCRIPT = "(function(){try{if(location.hostname==='temrevil.github.io'){var p=location.pathname;if(p==='/revil'){p='/';}else if(p.indexOf('/revil/')===0){p=p.slice(6);}location.replace('https://temrevil.com'+p+location.search+location.hash);}}catch(e){}})();"
 import { SITE_URL as siteUrl, SITE_NAME as siteName, SITE_TITLE as siteTitle, SITE_DESCRIPTION as siteDescription, SHARE_CARD } from '../utils/siteProfile'
 
 // The JSON-LD lives with each page (see src/utils/siteProfile.ts), not here: a layout
@@ -81,24 +85,15 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        {/* Theme - applied BEFORE first paint so the whole app (incl. the dashboard,
-            which doesn't mount the Navbar) reflects the saved/system preference on
-            every refresh with no flash. The Navbar's toggle keeps writing
-            localStorage('theme'); this just reads it (or the OS preference) early.
-            next/script beforeInteractive → injected into the initial HTML head
-            (no React "script won't execute on client" warning). */}
-        <Script id="theme-init" strategy="beforeInteractive">
-          {"(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;if(d){c.add('dark');}else{c.remove('dark');}}catch(e){}})();"}
-        </Script>
-        {/* Phones run lite (see lib/device.ts): marked before the first paint, so the CSS
-            drops the costly effects without waiting for React. */}
-        <Script id="lite-init" strategy="beforeInteractive">{LITE_SCRIPT}</Script>
-        {/* Canonical-domain redirect: forward GitHub Pages (temrevil.github.io/revil)
-            visitors to temrevil.com. Path after /revil (e.g. a link code) and query/hash
-            are kept. No-op on temrevil.com itself (hostname check fails). */}
-        <Script id="canonical-redirect" strategy="beforeInteractive">
-          {"(function(){try{if(location.hostname==='temrevil.github.io'){var p=location.pathname;if(p==='/revil'){p='/';}else if(p.indexOf('/revil/')===0){p=p.slice(6);}location.replace('https://temrevil.com'+p+location.search+location.hash);}}catch(e){}})();"}
-        </Script>
+        {/* Plain inline scripts, run by the parser before the first paint: the saved theme
+            (the whole app, the dashboard included, opens in it with no flash; the Navbar's
+            toggle writes localStorage 'theme'), lite mode on phones (lib/device.ts), and the
+            GitHub Pages to temrevil.com redirect. Not next/script beforeInteractive: that
+            only queues them for the Next runtime, which runs later and inserts them as new
+            scripts, which a hash-based CSP refuses. These are hashed per page instead. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: LITE_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: CANONICAL_SCRIPT }} />
         {/* Google Search Console verification */}
         <meta name="google-site-verification" content="uQR0p6nF_uFGSNYBtO-_tKpQ6W-Qu_LrwF77SLoEprc" />
         {/* The Content Security Policy is a real HTTP header, set per page with the

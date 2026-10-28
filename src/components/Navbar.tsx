@@ -1,10 +1,18 @@
 import { Home, Layers, FolderKanban, Mail, Moon, Sun, FileText, Zap, Rocket } from 'lucide-react';
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import DockIcon from './DockIcon';
 import useDockOpen from '../hooks/useDockOpen';
 import { PHONE_QUERY } from '../lib/device';
+import { useHydrated } from './useHydrated';
 import useMediaQuery from '../hooks/useMediaQuery';
+
+/** Follows the <html> class the theme lives in. */
+const onThemeChange = (change: () => void) => {
+    const observer = new MutationObserver(change);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+};
 
 type NavigateSection = 'home' | 'stack' | 'projects' | 'secret' | 'dashboard' | 'view_link';
 
@@ -40,6 +48,7 @@ const Tooltip = ({ text, icon, show, isDark }: TooltipProps) => {
     const tooltipRef = useRef<HTMLDivElement>(null);
     const [pos, setPos] = useState<{ centerX: number; topY: number } | null>(null);
     const [tooltipWidth, setTooltipWidth] = useState(0);
+    const hydrated = useHydrated();
 
     // Measure parent button position whenever shown / on scroll/resize
     useLayoutEffect(() => {
@@ -70,7 +79,8 @@ const Tooltip = ({ text, icon, show, isDark }: TooltipProps) => {
         if (w !== tooltipWidth) setTooltipWidth(w);
     }, [show, text, tooltipWidth]);
 
-    if (typeof document === 'undefined') return null;
+    // Portaled to <body>, so only once hydrated (the prerendered HTML has none).
+    if (!hydrated) return null;
 
     // Position using fixed + left + bottom (NO transform anywhere - backdrop-filter
     // would break on the inner element otherwise). Center horizontally by computing
@@ -129,15 +139,9 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
     const dock = useDockOpen();
     const isMobile = useMediaQuery(PHONE_QUERY);
 
-    // Initialize theme
-    const [isDark, setIsDark] = useState(() => {
-        if (typeof window === 'undefined') return true;
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme) {
-            return savedTheme === 'dark';
-        }
-        return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    });
+    // The theme is the <html> class the theme script set before the first paint (the
+    // prerendered page is dark, as <html> is until that script runs).
+    const isDark = useSyncExternalStore(onThemeChange, () => document.documentElement.classList.contains('dark'), () => true);
 
     const [hoveredTab, setHoveredTab] = useState<string | null>(null);
     const [autoTooltip, setAutoTooltip] = useState<string | null>(null);
@@ -149,24 +153,10 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
     // const cycleStepRef = useRef(0);
 
     const toggleTheme = () => {
-        const newTheme = !isDark;
-        setIsDark(newTheme);
-        if (newTheme) {
-            document.documentElement.classList.add('dark');
-            localStorage.setItem('theme', 'dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-            localStorage.setItem('theme', 'light');
-        }
+        const dark = !isDark;
+        document.documentElement.classList.toggle('dark', dark);
+        try { localStorage.setItem('theme', dark ? 'dark' : 'light'); } catch { /* storage blocked: this visit only */ }
     };
-
-    useEffect(() => {
-        if (isDark) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, [isDark]);
 
     // Suppress tooltips when sub-nav is hovered (custom event from ProjectsHub)
     useEffect(() => {
@@ -233,8 +223,11 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
     }, [currentSection, isContactOpen, isHoveringNav, isSubnavHovered, isMobile]);
 
     // Helper to get button class string based on state
+    const isTabActive = (tabName: string) => currentSection === tabName || (tabName === 'home' && currentSection === 'view_link');
+    /** Tells a screen reader which section is showing. */
+    const current = (tabName: string) => (isTabActive(tabName) ? 'page' as const : undefined);
     const getButtonClass = (tabName: string) => {
-        const isActive = currentSection === tabName || (tabName === 'home' && currentSection === 'view_link');
+        const isActive = isTabActive(tabName);
 
         let classes = "btn-icon flex items-center justify-center transition-all duration-200";
         classes += isMobile ? " p-2 rounded-xl" : " p-3 rounded-2xl";
@@ -250,6 +243,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
     const iconSize = isMobile ? 18 : 22;
 
     return (
+        <>
         <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[95%]">
             <div
                 className={`
@@ -257,10 +251,8 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                     ${isMobile ? 'gap-1.5 p-2.5 px-4 rounded-2xl' : 'gap-3 p-3 px-6 rounded-3xl'} 
                     backdrop-blur-xl transition-all duration-300
                     shadow-[0_8px_32px_rgba(0,0,0,0.1)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)]
+                    bg-[rgba(255,255,255,0.4)] dark:bg-[rgba(0,0,0,0.6)]
                 `}
-                style={{
-                    backgroundColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.4)',
-                }}
                 onMouseEnter={() => {
                     setIsHoveringNav(true);
                     setAutoTooltip(null);
@@ -272,6 +264,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                     <div className="relative">
                         <button
                             aria-label="Home"
+                            aria-current={current('home')}
                             className={getButtonClass('home')}
                             onClick={() => onNavigate?.('home')}
                             onMouseEnter={() => setHoveredTab('home')}
@@ -285,6 +278,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                     <div className="relative">
                         <button
                             aria-label="Tech stack"
+                            aria-current={current('stack')}
                             className={getButtonClass('stack')}
                             onClick={() => onNavigate?.('stack')}
                             onMouseEnter={() => setHoveredTab('stack')}
@@ -298,6 +292,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                     <div className="relative">
                         <button
                             aria-label="Projects"
+                            aria-current={current('projects')}
                             className={getButtonClass('projects')}
                             onClick={() => onNavigate?.('projects')}
                             onMouseEnter={() => setHoveredTab('projects')}
@@ -380,15 +375,21 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
                             hover:scale-110 transition-all duration-200
                         `}
                     >
-                        {isDark ? (
-                            <Sun size={iconSize} strokeWidth={2} />
-                        ) : (
-                            <Moon size={iconSize} strokeWidth={2} />
-                        )}
+                        {/* Both drawn, the theme's class shows one: right from the first paint. */}
+                        <Sun size={iconSize} strokeWidth={2} className="hidden dark:block" />
+                        <Moon size={iconSize} strokeWidth={2} className="block dark:hidden" />
                     </button>
                 </div>
             </div>
         </nav>
+        {/* One quiet line under the bar: what the site records, and the terms. */}
+        <a
+            href="/privacy"
+            className="privacy-line fixed left-1/2 -translate-x-1/2 z-50 text-[11px] leading-none whitespace-nowrap"
+        >
+            Privacy &amp; terms
+        </a>
+        </>
     );
 };
 

@@ -3,7 +3,7 @@
  * spans the entrance animates, the owner's live clock, and usePaint, which runs the
  * paint (brushes.ts) on a root element.
  */
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject, useLayoutEffect } from 'react';
 import { utcOffsetHours } from '../../utils/availability';
 import { PHONE_QUERY } from '../../lib/device';
 import { holdBoil, paintBook, startBoil } from './brushes';
@@ -27,9 +27,10 @@ export const Chars = ({ text, className }: { text: string; className: string }) 
 /** The owner's local time, from the zone set in Settings/Availability ("Current Time"). */
 export const useHostClock = (tz: string) => {
     const offset = utcOffsetHours(tz);
-    const fmt = () => new Date(Date.now() + offset * 3600000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
-    const [now, setNow] = useState(fmt);
-    useEffect(() => {
+    // Empty until the page is in the browser: a time read at build (or while hydrating
+    // the prerendered HTML) is not the visitor's. Set before the first paint.
+    const [now, setNow] = useState('');
+    useLayoutEffect(() => {
         const tick = () => setNow(new Date(Date.now() + offset * 3600000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }));
         tick();
         const id = window.setInterval(tick, 15000);

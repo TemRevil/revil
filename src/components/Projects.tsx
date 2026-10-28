@@ -11,7 +11,7 @@ import Reflow from './Reflow';
 import MContributorView, { Contributor } from './M-ContributorView';
 import { ProjectData as Project, TagData as Tag, ContributorData } from '../types';
 import { getStackIcon, getTechColor, isVideoFile, stillFrame } from '../utils/projectUtils';
-import { isLite } from '../lib/device';
+import { isLite, travel } from '../lib/device';
 import { useTailor } from '../lib/analytics/useTailor';
 import { projectSlugs } from '../utils/projectSlug';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../utils/fuzzy';
@@ -557,14 +557,14 @@ const Projects = ({ active = true }: { active?: boolean }) => {
         anime({
             targets: handwritingRef.current,
             opacity: [0, 1],
-            translateX: [-20, 0],
+            translateX: travel([-20, 0]),
             duration: 600,
             easing: 'easeOutExpo'
         });
         anime({
             targets: titleRef.current,
             opacity: [0, 1],
-            translateX: [-30, 0],
+            translateX: travel([-30, 0]),
             duration: 800,
             delay: 150,
             easing: 'easeOutExpo'
