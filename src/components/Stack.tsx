@@ -1,6 +1,5 @@
 import { createElement, useEffect, useRef, useState, useMemo } from 'react';
-import anime from 'animejs';
-import { travel } from '../lib/device';
+import { EASE_OUT_QUAD, enter } from './entrance';
 import { watchDoc } from '../lib/liveDoc';
 import { cachedDoc, type Data } from '../lib/dataCache';
 import { Github, Instagram, Linkedin, Twitter, Facebook, Mail, Link as LinkIcon, Twitch, Youtube, Code } from 'lucide-react';
@@ -22,14 +21,8 @@ const StackItem = ({ icon, name, iconSize, delay, active }: StackItemProps) => {
 
     useEffect(() => {
         if (!active) return;
-        anime({
-            targets: itemRef.current,
-            opacity: [0, 1],
-            filter: travel(['blur(20px)', 'blur(0px)']) || 'blur(0px)',
-            duration: 1200,
-            delay: delay,
-            easing: 'easeOutExpo'
-        });
+        const a = enter(itemRef.current, { blur: 20 }, { duration: 1200, delay });
+        return () => a?.stop();
     }, [active, delay]);
 
     const showFallback = !icon || imgError;
@@ -93,14 +86,8 @@ const SocialIcon = ({ name, url, delay, active }: { name: string; url: string; d
 
     useEffect(() => {
         if (!active) return;
-        anime({
-            targets: iconRef.current,
-            opacity: [0, 1],
-            translateY: travel([20, 0]),
-            duration: 800,
-            delay: delay,
-            easing: 'easeOutQuad'
-        });
+        const a = enter(iconRef.current, { y: 20 }, { duration: 800, delay, ease: EASE_OUT_QUAD });
+        return () => a?.stop();
     }, [active, delay]);
 
     const iconElement = createElement(getIcon(name), {
@@ -247,22 +234,11 @@ const Stack = ({ active = true }: { active?: boolean }) => {
 
     useEffect(() => {
         if (!active) return;
-        anime({
-            targets: handwritingRef.current,
-            opacity: [0, 1],
-            translateY: travel([20, 0]),
-            duration: 600,
-            easing: 'easeOutExpo'
-        });
-
-        anime({
-            targets: titleRef.current,
-            opacity: [0, 1],
-            translateY: travel([30, 0]),
-            duration: 800,
-            delay: 100,
-            easing: 'easeOutExpo'
-        });
+        const all = [
+            enter(handwritingRef.current, { y: 20 }, { duration: 600 }),
+            enter(titleRef.current, { y: 30 }, { duration: 800, delay: 100 }),
+        ];
+        return () => all.forEach(a => a?.stop());
     }, [active]);
 
     // Calculate which items are in the last row for border styling

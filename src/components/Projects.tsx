@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import anime from 'animejs';
 import { X, Search } from 'lucide-react';
 import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { cachedCollection, cachedDoc, type Data, type Row } from '../lib/dataCache';
@@ -11,7 +10,8 @@ import Reflow from './Reflow';
 import MContributorView, { Contributor } from './M-ContributorView';
 import { ProjectData as Project, TagData as Tag, ContributorData } from '../types';
 import { getStackIcon, getTechColor, isVideoFile, stillFrame } from '../utils/projectUtils';
-import { isLite, travel } from '../lib/device';
+import { isLite } from '../lib/device';
+import { enter } from './entrance';
 import { useTailor } from '../lib/analytics/useTailor';
 import { projectSlugs } from '../utils/projectSlug';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../utils/fuzzy';
@@ -554,21 +554,11 @@ const Projects = ({ active = true }: { active?: boolean }) => {
 
     useEffect(() => {
         if (!active) return;
-        anime({
-            targets: handwritingRef.current,
-            opacity: [0, 1],
-            translateX: travel([-20, 0]),
-            duration: 600,
-            easing: 'easeOutExpo'
-        });
-        anime({
-            targets: titleRef.current,
-            opacity: [0, 1],
-            translateX: travel([-30, 0]),
-            duration: 800,
-            delay: 150,
-            easing: 'easeOutExpo'
-        });
+        const all = [
+            enter(handwritingRef.current, { x: -20 }, { duration: 600 }),
+            enter(titleRef.current, { x: -30 }, { duration: 800, delay: 150 }),
+        ];
+        return () => all.forEach(a => a?.stop());
     }, [active]);
 
     useEffect(() => {

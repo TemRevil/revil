@@ -24,6 +24,3 @@ export const isLite = () => typeof document !== 'undefined' && document.document
 /** True when the visitor asked the system for less motion. */
 export const prefersReducedMotion = () =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-/** An entrance's travel (anime.js keyframes), or none at all with reduced motion: it just fades in. */
-export const travel = <T,>(keyframes: T): T | 0 => (prefersReducedMotion() ? 0 : keyframes);
