@@ -21,7 +21,7 @@ type Phase = 'loading' | 'idle' | 'working' | 'consent' | 'invalid';
 type State = { phase: Phase; s: string; cb: string };
 
 /** What the callback hands back once it has verified the admin: a pending approval. */
-type Consent = { approval: string; clientName: string; redirectUri: string; redirectHost: string };
+type Consent = { approval: string; clientName: string; redirectUri: string; redirectHost: string; canWrite: boolean };
 
 // The bridge POSTs the admin's Firebase ID token to `cb`, and that value arrives in
 // the URL - so it MUST be pinned to the portfolio's own MCP callback origin. Without
@@ -91,13 +91,15 @@ export default function McpLogin() {
                 body: new URLSearchParams({ s: state.s, id_token: token }),
             });
             const data = (await resp.json().catch(() => ({}))) as
-                { approval?: string; client_name?: string; redirect_uri?: string; redirect_host?: string; error?: string };
+                { approval?: string; client_name?: string; redirect_uri?: string; redirect_host?: string; can_write?: boolean; error?: string };
             if (resp.ok && data.approval && data.redirect_uri) {
                 setConsent({
                     approval: data.approval,
                     clientName: data.client_name || 'Unknown client',
                     redirectUri: data.redirect_uri,
                     redirectHost: data.redirect_host || data.redirect_uri,
+                    // Read-only unless the server says the client asked for write access.
+                    canWrite: data.can_write === true,
                 });
                 setState(prev => ({ ...prev, phase: 'consent' }));
                 return;
@@ -111,7 +113,8 @@ export default function McpLogin() {
     };
 
     // The owner said yes to THIS client and THIS destination. Only now is a code minted.
-    const approve = async () => {
+    // readOnly approves less than the client asked for: no tool that changes data or sends email.
+    const approve = async (readOnly: boolean) => {
         if (!consent || state.phase !== 'consent') return;
         setState(prev => ({ ...prev, phase: 'working' }));
         try {
@@ -120,7 +123,7 @@ export default function McpLogin() {
             const resp = await fetch(approveUrl.toString(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-                body: new URLSearchParams({ approval: consent.approval }),
+                body: new URLSearchParams(readOnly ? { approval: consent.approval, scope: 'mcp:read' } : { approval: consent.approval }),
             });
             const data = (await resp.json().catch(() => ({}))) as { redirect?: string; error?: string };
             if (resp.ok && data.redirect) {
@@ -164,8 +167,10 @@ export default function McpLogin() {
                         <header className="flex flex-col gap-2">
                             <h1 className="heading-md text-2xl sm:text-3xl m-0">Authorize this client?</h1>
                             <p className="text-muted text-sm leading-relaxed max-w-sm">
-                                It will get full admin access to your bookings, messages and treasury.
-                                Check the address below is one you recognize.
+                                {consent.canWrite
+                                    ? 'It asks for full admin access: to read and change your bookings, messages, projects and treasury, and to send receipts. You can allow read-only access instead.'
+                                    : 'It asks for read-only access to your bookings, messages, projects and treasury.'}
+                                {' '}Check the address below is one you recognize.
                             </p>
                         </header>
 
@@ -179,18 +184,32 @@ export default function McpLogin() {
                                 <dd className="m-0 text-sm font-semibold">{consent.redirectHost}</dd>
                                 <dd className="m-0 text-muted text-[11px] break-all font-mono">{consent.redirectUri}</dd>
                             </div>
+                            <div className="flex flex-col gap-0.5">
+                                <dt className="text-muted text-[11px] uppercase tracking-wide">Access requested</dt>
+                                <dd className="m-0 text-sm font-semibold">{consent.canWrite ? 'Read and change' : 'Read only'}</dd>
+                            </div>
                         </dl>
 
                         <div className="w-full flex flex-col gap-2">
                             <button
                                 type="button"
-                                onClick={approve}
+                                onClick={() => approve(false)}
                                 disabled={busy}
                                 className="btn-primary w-full inline-flex items-center justify-center gap-3 px-5 py-3 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {busy && <Loader2 size={18} className="animate-spin" />}
-                                {busy ? 'Authorizing…' : 'Approve'}
+                                {busy ? 'Authorizing…' : consent.canWrite ? 'Approve full access' : 'Approve'}
                             </button>
+                            {consent.canWrite && (
+                                <button
+                                    type="button"
+                                    onClick={() => approve(true)}
+                                    disabled={busy}
+                                    className="w-full px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer border border-black/10 dark:border-white/15 disabled:opacity-70 disabled:cursor-not-allowed"
+                                >
+                                    Approve read-only
+                                </button>
+                            )}
                             <button
                                 type="button"
                                 onClick={deny}
@@ -211,8 +230,8 @@ export default function McpLogin() {
                         <header className="flex flex-col gap-2">
                             <h1 className="heading-md text-2xl sm:text-3xl m-0">Connect your AI</h1>
                             <p className="text-muted text-sm leading-relaxed max-w-sm">
-                                Authorize an MCP client to act on your portfolio - read bookings, messages and
-                                treasury, and manage projects. Only the portfolio admin can connect.
+                                Authorize an MCP client to work with your portfolio. You choose next whether it
+                                may only read, or also make changes. Only the portfolio admin can connect.
                             </p>
                         </header>
 
