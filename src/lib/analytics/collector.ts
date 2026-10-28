@@ -69,31 +69,8 @@ interface Buffer {
     events: SessionEvent[];
 }
 
-/**
- * Fold a buffer whose flush was refused back into the live one, so the next flush
- * carries it. The server never applied it (it only applies a flush it answered OK),
- * so nothing is counted twice.
- */
-function mergeInto(into: Buffer, lost: Buffer): void {
-    into.openMs += lost.openMs;
-    into.activeMs += lost.activeMs;
-    into.idleMs += lost.idleMs;
-    for (const [k, v] of Object.entries(lost.sections)) into.sections[k] = (into.sections[k] || 0) + v;
-    for (const [k, v] of Object.entries(lost.projects)) {
-        const p = into.projects[k] || (into.projects[k] = { opens: 0, ms: 0, live: 0, github: 0, download: 0 });
-        p.opens += v.opens; p.ms += v.ms; p.live += v.live; p.github += v.github; p.download += v.download;
-    }
-    for (const [k, v] of Object.entries(lost.socials)) {
-        const s = into.socials[k] || (into.socials[k] = { clicks: 0, awayMs: 0 });
-        s.clicks += v.clicks; s.awayMs += v.awayMs;
-    }
-    into.cvOpens += lost.cvOpens;
-    into.contactOpens += lost.contactOpens;
-    into.copies += lost.copies;
-    into.rage += lost.rage;
-    into.prints += lost.prints;
-    into.events = [...lost.events, ...into.events].slice(0, MAX_EVENTS);
-}
+/** Flushes refused or lost in transit, kept to resend as they were. */
+const MAX_RETRY = 10;
 
 const emptyBuffer = (): Buffer => ({
     openMs: 0, activeMs: 0, idleMs: 0,
@@ -228,6 +205,13 @@ class Collector {
     private buf: Buffer = emptyBuffer();
     private seq = 0;
     private dirty = false;
+    /**
+     * Flushes that failed, resent verbatim - same seq, same flush id - with the next
+     * flush. A lost RESPONSE looks like a failure too, though the server applied it;
+     * the flush id is what lets the server drop the resend instead of counting it
+     * twice (folding the counts into the next flush, as before, could not be undone).
+     */
+    private retry: Array<Record<string, unknown>> = [];
     private sentFinal = false;
 
     private section = 'home';
@@ -332,8 +316,11 @@ class Collector {
         if (reason === 'owner') safeLocal.set(OPT_OUT_KEY, '1');
         if (!this.started || this.stopped) return;
         this.stopped = true;
-        this.flush(true, true, reason === 'owner');
         this.detach();
+        if (reason !== 'owner') { this.flush(true, true); return; }
+        // The server takes "this was the owner" only from a signed-in ID token with the
+        // admin claim, never from the request body, so fetch one before the last flush.
+        void ownerIdToken().then((idToken) => this.flush(true, true, idToken));
     }
 
     // ── what the app tells us ────────────────────────────────────────────
@@ -633,7 +620,7 @@ class Collector {
         } catch { /* offline - the next flush just goes without one and is rejected */ }
     }
 
-    private flush(final: boolean, force = false, owner = false): void {
+    private flush(final: boolean, force = false, idToken = ''): void {
         if (!this.started) return;
         if (final && this.sentFinal) return;     // pagehide and beforeunload both fire
         if (!force && !this.dirty) return;
@@ -653,6 +640,7 @@ class Collector {
             v: 2,
             id: this.sessionId,
             seq: this.seq,
+            fid: rand(12),
             visitor: this.visitorId,
             visit: this.visit,
             add: {
@@ -692,11 +680,16 @@ class Collector {
             };
         }
         if (final) body.end = true;
-        if (owner) body.owner = true;
 
-        const send = (token: string) => {
+        const keep = (failed: Record<string, unknown>) => {
+            if (final || this.retry.length >= MAX_RETRY) return;
+            this.retry.push(failed);
+            this.dirty = true;
+        };
+        const send = (token: string, body: Record<string, unknown>) => {
             const headers: Record<string, string> = { 'Content-Type': 'application/json' };
             if (token) headers['X-Firebase-AppCheck'] = token;
+            if (idToken) headers.Authorization = `Bearer ${idToken}`;
             return fetch(ENDPOINT, {
                 method: 'POST',
                 headers,
@@ -708,27 +701,43 @@ class Collector {
                         if (body.hello) { this.helloAcked = true; safeSession.set(HELLO_KEY, '1'); }
                         return r.json();
                     }
-                    // Refused (a 401 without a token, a 5xx): keep what it carried for
-                    // the next flush. A 409 means the session itself is gone; drop it.
-                    if (r.status !== 409 && !final) { mergeInto(this.buf, buf); this.dirty = true; }
+                    // Refused (a 401 without a token, a 5xx): resend it with the next
+                    // flush. A 409 means the session itself is gone; drop it.
+                    if (r.status !== 409) keep(body);
                     return null;
                 })
                 .then((data: { tailor?: LinkTailor; link?: { Name: string; For: string } } | null) => {
                     if (data?.tailor && this.onTailor) this.onTailor(data.tailor, data.link || null);
                 })
                 .catch(() => {
-                    // Offline: the same as a refusal, the next flush carries it.
-                    if (!final) { mergeInto(this.buf, buf); this.dirty = true; }
+                    // Offline, or the answer was lost: resend it as it was. If the
+                    // server did apply it, it recognises the flush id and drops it.
+                    keep(body);
                 });
         };
 
+        // Older failed flushes go first, unchanged; then this one.
+        const bodies = [...this.retry.splice(0), body];
+        const sendAll = (token: string) => { for (const b of bodies) void send(token, b); };
         // On the way out there is no time to await a token; use the warmed one.
         if (final || this.cachedToken) {
-            void send(this.cachedToken);
+            sendAll(this.cachedToken);
         } else {
-            void this.token().then(send);
+            void this.token().then(sendAll);
         }
     }
 }
 
 export const analytics = new Collector();
+
+/** A fresh ID token for the signed-in owner, or '' (the server then counts nothing as theirs). */
+async function ownerIdToken(): Promise<string> {
+    try {
+        const { appAuth } = await import('../appAuth');
+        const auth = appAuth();
+        await auth.authStateReady();
+        return auth.currentUser ? await auth.currentUser.getIdToken() : '';
+    } catch {
+        return '';
+    }
+}

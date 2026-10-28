@@ -1,0 +1,7 @@
+{
+  // The deployed build: everything in tsconfig.json except the Vitest specs, which run
+  // from the repo root (`npm test`) and must not ship in lib/. tsconfig.json keeps them
+  // so `tsc --noEmit` and ESLint still type-check the tests.
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "lib", "src/**/*.test.ts"]
+}

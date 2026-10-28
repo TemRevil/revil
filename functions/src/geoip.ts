@@ -180,7 +180,30 @@ export function clientIp(
   const raw = headers["x-forwarded-for"];
   const chain = Array.isArray(raw) ? raw.join(",") : (raw || "");
   const hops = chain.split(",").map((h) => h.trim()).filter(Boolean);
+  observeForwarding(hops, fallbackIp);
   return (hops.length >= 2 ? hops[hops.length - 2] : hops[0]) || (fallbackIp || "").trim();
+}
+
+/**
+ * Observation, not a fix. The hop rule above is only safe if the platform appends TWO
+ * entries (client, then its own front end). If it appends one, the second-from-last is
+ * whatever the caller sent. Each instance logs the shape of its first few requests -
+ * how many hops, and where the platform's own `req.ip` sits among them, never an
+ * address - so the rule can be pinned from real traffic. Compare a plain request with
+ * one sending `X-Forwarded-For: 203.0.113.9`: if the hop count rises by one and the
+ * chosen hop becomes that address, the rule must change to the last hop. Remove this
+ * once settled.
+ */
+let observed = 0;
+function observeForwarding(hops: string[], platformIp?: string): void {
+  if (observed >= 20) return;
+  observed++;
+  const ip = (platformIp || "").trim();
+  console.log("[xff-shape]", {
+    hops: hops.length,
+    platformIpAt: ip ? hops.indexOf(ip) : null,
+    chosenAt: hops.length >= 2 ? hops.length - 2 : hops.length ? 0 : null,
+  });
 }
 
 /**
