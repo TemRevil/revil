@@ -30,7 +30,7 @@ import { emailShell, SITE_URL } from "./emailShell.js";
 import { handledProjectsMirror, sameMirror, type HandledProject } from "./handledProjects.js";
 import { HOLD_MS, holdActive, holdIds, quota, readQuotas, refundQuotas, takeQuotas, RATE_LIMITS, type Quota } from "./limits.js";
 import { callCalendar, readCreateReply, replySucceeded, MEET_LINK_RE } from "./calendar.js";
-import { enqueueMail, jobId, MAIL_JOBS, type MailMessage } from "./outbox.js";
+import { enqueueMail, jobId, retryFailed, MAIL_JOBS, type MailMessage } from "./outbox.js";
 import {
   approxDocBytes, attachmentPath, futureSlots, greetingName, offsetLabel, replyPath,
   timeAtOffset, unrepliedCount, visitorOffset,
@@ -748,6 +748,25 @@ export const syncMeeting = onCall(
   },
 );
 
+// =====================================================================
+//  2c-ii. retryMailJob - admin-only: put a failed MailJobs entry back in the queue
+//          and try it at once. The job's recipient and content are never taken from
+//          the caller - only its id - so this can only resend what the functions
+//          queued. MailJobs is read-only to every client (firestore.rules).
+// =====================================================================
+export const retryMailJob = onCall(
+  { region: "us-central1", enforceAppCheck: true, secrets: [resendKey] },
+  async (request) => {
+    await requireAdmin(request.auth, "Admin only.");
+    const id = (request.data as { id?: unknown } | undefined)?.id;
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(id)) {
+      throw new HttpsError("invalid-argument", "A mail job id is required.");
+    }
+    const status = await retryFailed(id);
+    if (!status) throw new HttpsError("failed-precondition", "Only a failed mail job can be retried.");
+    return { status };
+  },
+);
 // =====================================================================
 //  2d. mirrorHandledProjects - keeps the PUBLIC Settings/HandledProjects (the
 //      homepage's "projects I handle") in step with the private Treasury/projects,

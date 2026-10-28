@@ -75,14 +75,6 @@ jobs:
           npm ci
           npx tsc --noEmit
 
-      # The `meeting` codebase, while it still exists as its own folder.
-      - name: Type-check functions-meeting
-        if: hashFiles('functions-meeting/package.json') != ''
-        working-directory: functions-meeting
-        run: |
-          npm ci
-          npx tsc --noEmit
-
   rules:
     runs-on: ubuntu-latest
     steps:

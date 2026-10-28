@@ -32,3 +32,14 @@ describe("resolveItemizedLines", () => {
     expect(html).toContain("600.00 EGP");
   });
 });
+
+describe("buildItemizedReceiptHtml", () => {
+  it("is framed by the shared email shell, with its number, date and customer inside", () => {
+    const html = buildItemizedReceiptHtml({ ...base, customerName: "Acme <Ltd>", lines: [{ label: "Fixes", amount: 150, currency: "USD" }] });
+    expect(html).toContain('class="body pad"');
+    expect(html).toContain("<title>Receipt REV-TEST</title>");
+    expect(html).toContain("REV-TEST");
+    expect(html).toContain("27 October 2026");
+    expect(html).toContain("Acme &lt;Ltd&gt;");
+  });
+});
