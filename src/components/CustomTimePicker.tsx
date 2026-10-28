@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, type CSSProperties } from 'react';
+import { useState, useRef, useId, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Clock, X, Plus } from 'lucide-react';
 import Select from './Select';
 import { blurFade } from '../lib/modalMotion';
+import { useDialog } from './dialog';
 
 interface Props {
     isDark: boolean;
@@ -63,16 +64,11 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
         setOpen(true);
     };
 
-    // Escape closes the picker and is swallowed (capture + stopPropagation) so a parent
-    // modal's own Escape-to-close doesn't also fire underneath it.
-    useEffect(() => {
-        if (!open) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); }
-        };
-        document.addEventListener('keydown', onKey, true);
-        return () => document.removeEventListener('keydown', onKey, true);
-    }, [open]);
+    // The picker is a dialog over the host modal (see dialog.ts): while it is open it is the
+    // top one, so Escape closes only the picker, and an open Hour/Minute/Period list handles
+    // Escape first and closes only itself. Focus goes back to the chip afterwards.
+    const titleId = useId();
+    const { dialogProps } = useDialog({ onClose: () => setOpen(false), labelledBy: titleId, active: open });
 
     // Grey out choices that can no longer produce a valid time. A choice is only disabled
     // when EVERY time reachable through it is unavailable - so "3" stays pickable while any
@@ -148,10 +144,8 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
                                 style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', zIndex }}
                             />
                             <motion.div
+                                {...dialogProps}
                                 {...blurFade}
-                                role="dialog"
-                                aria-modal="true"
-                                aria-label="Pick a custom time"
                                 onClick={(e) => e.stopPropagation()}
                                 className="glass-panel-deep"
                                 style={{
@@ -162,7 +156,7 @@ const CustomTimePicker = ({ isDark, active, value, onApply, validate, onError, i
                             >
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                                        <h3 id={titleId} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
                                             <Clock size={18} /> Custom Time
                                         </h3>
                                         <button

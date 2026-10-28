@@ -11,6 +11,7 @@ import { blurFade, dockRise } from '../lib/modalMotion';
 import useDockOpen from '../hooks/useDockOpen';
 import DockIcon from './DockIcon';
 import WarmHide from './WarmHide';
+import { useDialog } from './dialog';
 
 interface CVProject {
     id: string;
@@ -187,19 +188,13 @@ const MCV = ({ onClose, onProjectClick, warm = false }: Omit<MCVProps, 'isOpen'>
         if (!warm) window.dispatchEvent(new CustomEvent('revil:cv_open'));
     }, [warm]);
 
-    // Close on Escape
+    // Role, title, focus, Tab and Escape (see dialog.ts); the page behind doesn't scroll.
+    const { dialogProps } = useDialog({ onClose, labelledBy: 'cv-modal-title', active: !warm });
     useEffect(() => {
         if (warm) return;
-        const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        document.addEventListener('keydown', handleEscape);
         document.body.style.overflow = 'hidden';
-        return () => {
-            document.removeEventListener('keydown', handleEscape);
-            document.body.style.overflow = 'unset';
-        };
-    }, [onClose, warm]);
+        return () => { document.body.style.overflow = 'unset'; };
+    }, [warm]);
 
     const getSocialIcon = (name: string) => {
         const lower = name.toLowerCase();
@@ -223,6 +218,7 @@ const MCV = ({ onClose, onProjectClick, warm = false }: Omit<MCVProps, 'isOpen'>
             {/* Modal Container */}
             <div className="fixed inset-0 z-[1501] flex items-center justify-center p-4 md:p-12 pointer-events-none">
                 <motion.div
+                    {...dialogProps}
                     {...(dock ? dockRise : blurFade)}
                     style={dock ? { transformOrigin: 'bottom center' } : undefined}
                     onClick={(e) => e.stopPropagation()}
@@ -235,7 +231,7 @@ const MCV = ({ onClose, onProjectClick, warm = false }: Omit<MCVProps, 'isOpen'>
                                 <DockIcon id="cv-icon" fly={dock && !warm}>
                                     <FileText size={26} strokeWidth={2} className="text-blue-500" aria-hidden="true" />
                                 </DockIcon>
-                                <h2 className="text-2xl font-bold text-primary m-0 tracking-tight" style={{ fontSize: '1.5rem' }}>
+                                <h2 id="cv-modal-title" className="text-2xl font-bold text-primary m-0 tracking-tight" style={{ fontSize: '1.5rem' }}>
                                     Fast Report
                                 </h2>
                             </div>

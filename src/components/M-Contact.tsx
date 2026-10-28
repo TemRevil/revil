@@ -21,6 +21,7 @@ import useMediaQuery from '../hooks/useMediaQuery';
 import DockIcon from './DockIcon';
 import { useBoilHold } from './book/paintKit';
 import WarmHide from './WarmHide';
+import { useDialog } from './dialog';
 import { ALLOWED_TYPES, attachmentFolder, CONTACT_LIMITS, contactProblem, MAX_FILE_SIZE } from './contactRules';
 
 interface MContactProps {
@@ -234,23 +235,15 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
     }
   };
 
+  // Role, title, focus, Tab and Escape (see dialog.ts). The custom-time picker is its own
+  // dialog on top while it's open, so Escape only closes the whole modal when the picker
+  // isn't showing.
+  const { dialogProps } = useDialog({ onClose, labelledBy: 'contact-modal-title', active: !warm });
   useEffect(() => {
     if (warm) return;
-    const handleEscape = (e: KeyboardEvent) => {
-      // The custom-time picker swallows Escape (capture + stopPropagation) while it's
-      // open, so this only closes the whole modal when the picker isn't showing.
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
     document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
-    };
-  }, [onClose, warm]);
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [warm]);
 
 
 
@@ -277,9 +270,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
         style={{ overscrollBehavior: 'contain' }}
       >
         <motion.div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="contact-modal-title"
+          {...dialogProps}
           layout
           {...(dock ? dockRise : blurFade)}
           className={isMobile ? "glass-panel-deep" : ""}

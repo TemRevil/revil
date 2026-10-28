@@ -3,6 +3,7 @@ import { X, Github, Linkedin, Globe, Instagram, Facebook, User } from 'lucide-re
 import { ContributorData } from '../types';
 import useTheme from '../hooks/useTheme';
 import { useBoilHold } from './book/paintKit';
+import { useDialog } from './dialog';
 export interface Contributor extends Omit<ContributorData, 'image'> {
     name: string;
     role: string;
@@ -18,9 +19,11 @@ interface MContributorViewProps {
 const MContributorView = ({ contributor, onClose }: MContributorViewProps) => {
     useBoilHold();
     const isDark = useTheme();
+    // Role, title, focus, Tab and Escape (see dialog.ts).
+    const { dialogProps } = useDialog({ onClose, labelledBy: 'contributor-modal-title' });
 
     return createPortal(
-        <div style={{
+        <div {...dialogProps} style={{
             position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
             backgroundColor: 'rgba(0, 0, 0, 0.4)',
             backdropFilter: 'blur(8px)',
@@ -40,10 +43,10 @@ const MContributorView = ({ contributor, onClose }: MContributorViewProps) => {
                     borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                 }}>
-                    <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)' }}>
+                    <h2 id="contributor-modal-title" style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)' }}>
                         Contributor Details
                     </h2>
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    <button onClick={onClose} aria-label="Close contributor details" style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
                         <X size={24} />
                     </button>
                 </div>
