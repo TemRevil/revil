@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import anime from 'animejs';
+import { animate, type AnimationPlaybackControls } from 'motion/react';
 import { Sparkles, X, Send, Settings2, Loader2, MousePointer2, Check, Database, ArrowRight, Zap, HelpCircle, Mic, Volume2, VolumeX, Brain } from 'lucide-react';
 import { doc, collection, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -12,6 +12,8 @@ import {
 } from '../../lib/llm';
 import Select from '../Select';
 import Markdown from './Markdown';
+import { EASE } from './motion';
+import { mustConfirm, isRiskyClick, labelsMatch, trimHistory, memoryDiff, type SparkMemory } from './spark/guard';
 
 type Status = 'idle' | 'connecting' | 'thinking' | 'acting' | 'speaking' | 'error';
 
@@ -39,6 +41,10 @@ const MAX_MSGS_PER_MIN = 15;         // rolling rate cap
 const MAX_ROUNDS = 25;                // max LLM round-trips per turn (lets it self-drive multi-step tasks)
 const MAX_TOOLS_PER_ROUND = 8;        // cap tool fan-out per round
 const TURN_BUDGET_MS = 180_000;       // wall-clock safety budget for one turn (3 min)
+// History sent with each request: the newest turns only, so token cost stays flat and a
+// long session never runs into the provider's context limit.
+const HISTORY_TURNS = 12;
+const HISTORY_CHARS = 60_000;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type NativeMsg = any;
 
@@ -50,7 +56,6 @@ const PAGES = ['projects', 'tags', 'trails', 'developer', 'treasury', 'settings'
 // Spark's own persistent memory (separate admin-only collection): the user's
 // name, her editable standing instructions, and saved facts.
 const MEMORY_DOC = doc(db, 'Spark', 'Memory');
-interface SparkMemory { userName?: string; instructions?: string; facts?: string[]; }
 
 // Firestore paths backing each dashboard page - what read_screen pulls so Spark
 // can "see" whatever the user is currently looking at.
@@ -291,6 +296,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
 
     const iconRef = useRef<SVGSVGElement>(null);
     const cursorRef = useRef<HTMLDivElement>(null);
+    const cursorAnim = useRef<AnimationPlaybackControls | null>(null);
     const nativeRef = useRef<NativeMsg[]>([]);
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -316,20 +322,22 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
     useEffect(() => {
         const el = iconRef.current;
         if (!el) return;
-        anime.remove(el);
         const pal = PALETTES[status];
         const per = status === 'thinking' ? 320 : status === 'acting' ? 260 : status === 'connecting' ? 520 : status === 'error' ? 360 : 1100;
-        const anim = anime({
-            targets: el,
-            keyframes: [...pal, pal[0]].map(c => ({ color: c })),
-            duration: per * pal.length,
-            loop: true,
-            easing: 'easeInOutSine',
+        const anim = animate(el, { color: [...pal, pal[0]] }, {
+            duration: (per * pal.length) / 1000,
+            repeat: Infinity,
+            ease: EASE.inOutSine,
         });
         const scalePulse = (status === 'acting' || status === 'thinking')
-            ? anime({ targets: el, scale: [1, 1.18], direction: 'alternate', loop: true, duration: 600, easing: 'easeInOutQuad' })
+            ? animate(el, { scale: [1, 1.18] }, { duration: 0.6, repeat: Infinity, repeatType: 'reverse', ease: EASE.inOutQuad })
             : null;
-        return () => { anim.pause(); scalePulse?.pause(); anime.remove(el); };
+        return () => {
+            anim.stop();
+            scalePulse?.stop();
+            // Settle back to rest instead of freezing mid-pulse when the status changes.
+            if (scalePulse) animate(el, { scale: 1 }, { duration: 0.2, ease: EASE.inOutQuad });
+        };
     }, [status, open]);
 
     useEffect(() => {
@@ -343,39 +351,41 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
         const el = cursorRef.current;
         if (!el) { resolve(); return; }
         el.style.opacity = '1';
-        anime.remove(el);
-        anime({
-            targets: el, left: x, top: y,
-            duration: 700, easing: 'easeInOutCubic',
-            complete: () => {
-                anime({ targets: el.querySelector('.cursor-pulse'), scale: [0, 2.4], opacity: [0.5, 0], duration: 450, easing: 'easeOutQuad' });
-                setTimeout(resolve, 200);
-            },
+        cursorAnim.current?.stop();
+        const glide = animate(el, { left: x, top: y }, { duration: 0.7, ease: EASE.inOutCubic });
+        cursorAnim.current = glide;
+        glide.then(() => {
+            const pulse = el.querySelector<HTMLElement>('.cursor-pulse');
+            if (pulse) animate(pulse, { scale: [0, 2.4], opacity: [0.5, 0] }, { duration: 0.45, ease: EASE.outQuad });
+            setTimeout(resolve, 200);
         });
     });
 
-    const elLabel = (e: HTMLElement) => (e.textContent || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    const elLabel = (e: HTMLElement) => (e.textContent || e.getAttribute('aria-label') || e.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
     const isVisible = (e: HTMLElement) => !!(e.offsetParent || e.getClientRects().length);
+    // Spark's own panel (its confirm card above all) is never a click target.
+    const clickTargets = () => Array.from(document.querySelectorAll<HTMLElement>('button, a, [role="button"]'))
+        .filter(e => isVisible(e) && !e.closest('[data-spark-ui]'));
 
     // Every visible button/link label currently on screen - the ground truth for
     // what Spark can actually click (so it never invents a target).
     const visibleClickables = (): string[] => {
         const seen = new Set<string>();
-        Array.from(document.querySelectorAll<HTMLElement>('button, a, [role="button"]')).forEach(e => {
-            if (!isVisible(e)) return;
+        clickTargets().forEach(e => {
             const l = elLabel(e);
             if (l && l.length <= 40) seen.add(l);
         });
         return Array.from(seen);
     };
 
-    const findClickable = (text: string): HTMLElement | null => {
-        const t = text.toLowerCase().trim();
-        const els = Array.from(document.querySelectorAll<HTMLElement>('button, a, [role="button"]')).filter(isVisible);
-        // Prefer an exact label match, then a "starts/contains" match.
-        return els.find(e => elLabel(e).toLowerCase() === t)
-            || els.find(e => { const l = elLabel(e).toLowerCase(); return l && (l.includes(t) || t.includes(l)); })
-            || null;
+    // Exact labels only (see labelsMatch): a near miss returns the real labels instead.
+    const findClickable = (text: string): HTMLElement | null => clickTargets().find(e => labelsMatch(text, elLabel(e))) || null;
+
+    // Pops the confirm card and waits for the owner's answer.
+    const askOwner = async (desc: string, detail?: string): Promise<boolean> => {
+        const ok = await new Promise<boolean>(res => setPending({ desc, detail, resolve: res }));
+        setPending(null);
+        return ok;
     };
 
     // ── Firestore path helpers ──────────────────────────────────────────────
@@ -411,6 +421,19 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                     }
                     const r = el.getBoundingClientRect();
                     await moveCursor(r.left + r.width / 2, r.top + r.height / 2);
+                    const role = el.getAttribute('role') || '';
+                    const risky = isRiskyClick({
+                        label: elLabel(el),
+                        inDialog: !!el.closest('[role="dialog"], [role="alertdialog"], [aria-modal="true"]'),
+                        isSubmit: el instanceof HTMLButtonElement && el.type === 'submit' && !!el.form,
+                        stateful: el.hasAttribute('aria-pressed') || el.hasAttribute('aria-checked') || el.hasAttribute('aria-selected')
+                            || ['switch', 'checkbox', 'radio', 'option', 'menuitem', 'menuitemcheckbox', 'menuitemradio'].includes(role),
+                    });
+                    // A click that deletes, sends, confirms or flips a setting always asks,
+                    // auto mode included: it reaches the same data a write would.
+                    if (mustConfirm({ kind: 'click', risky }, autoRef.current) && !(await askOwner(`Click "${elLabel(el).slice(0, 40)}"`))) {
+                        return 'User declined the click.';
+                    }
                     el.click();
                     return `Clicked "${elLabel(el).slice(0, 40)}"`;
                 }
@@ -424,6 +447,11 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                     if (typeof a.instructions === 'string') patch.instructions = a.instructions.trim();
                     if (typeof a.addFact === 'string' && a.addFact.trim()) patch.facts = [...(memoryRef.current.facts || []), a.addFact.trim()].slice(-50);
                     if (!Object.keys(patch).length) return 'Nothing to remember.';
+                    // Memory goes into every later prompt, so a change always asks, with the
+                    // exact difference shown: one injected sentence must not become standing orders.
+                    if (mustConfirm({ kind: 'memory' }, autoRef.current) && !(await askOwner("Change Spark's memory", memoryDiff(memoryRef.current, patch)))) {
+                        return 'User declined the memory change.';
+                    }
                     try { await saveMemory(patch); return 'Memory updated.'; }
                     catch (e) { return `Couldn't save memory: ${(e as Error).message}`; }
                 }
@@ -450,17 +478,17 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                     if (refused) return refused;
                     const data = (a.data || {}) as Record<string, unknown>;
                     const merge = !!a.merge;
-                    let ok = true;
-                    if (!autoRef.current) {
+                    // Auto mode skips the confirm only for merge writes. merge:false replaces the
+                    // whole document, which with partial data is a delete in disguise, and
+                    // Spark/Memory feeds every later prompt: both always ask.
+                    if (mustConfirm({ kind: 'write', path, merge }, autoRef.current)) {
                         const json = JSON.stringify(data);
-                        ok = await new Promise<boolean>(res => setPending({
-                            desc: `Write to ${path}${merge ? ' (merge)' : ''}`,
-                            detail: json.length > 600 ? `${json.slice(0, 600)}… (${json.length} chars total)` : json,
-                            resolve: res,
-                        }));
-                        setPending(null);
+                        const ok = await askOwner(
+                            merge ? `Write to ${path} (merge)` : `Replace the whole document ${path}`,
+                            json.length > 600 ? `${json.slice(0, 600)}… (${json.length} chars total)` : json,
+                        );
+                        if (!ok) return 'User declined the write.';
                     }
-                    if (!ok) return 'User declined the write.';
                     await setDoc(doc(db, path), data, { merge });
                     return `Wrote ${path}`;
                 }
@@ -471,9 +499,9 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                     // A delete ALWAYS asks, auto mode or not. Auto mode is there to
                     // save clicks on routine edits; nothing it saves is worth losing
                     // a document to a sentence the model read somewhere.
-                    const ok = await new Promise<boolean>(res => setPending({ desc: `Delete ${path}`, resolve: res }));
-                    setPending(null);
-                    if (!ok) return 'User declined the delete.';
+                    if (mustConfirm({ kind: 'delete', path }, autoRef.current) && !(await askOwner(`Delete ${path}`))) {
+                        return 'User declined the delete.';
+                    }
                     await deleteDoc(doc(db, path));
                     return `Deleted ${path}`;
                 }
@@ -526,6 +554,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
         speakingRef.current = false;
         setStatus('connecting');
         nativeRef.current.push(userMessage(prov, text));
+        nativeRef.current = trimHistory(nativeRef.current, { maxTurns: HISTORY_TURNS, maxChars: HISTORY_CHARS });
 
         const turnStart = Date.now();
         let finalText = '';
@@ -628,6 +657,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
             {/* Floating orb */}
             <button
                 onClick={() => setOpen(o => !o)}
+                data-spark-ui
                 aria-label="AI assistant"
                 className={`fixed bottom-5 right-5 z-[1200] w-14 h-14 rounded-full flex items-center justify-center shadow-2xl border transition-transform active:scale-90 hover:scale-105 ${isDark ? 'bg-[#15151c]/90 border-white/10' : 'bg-white/90 border-black/10'} backdrop-blur-xl`}
                 style={{ boxShadow: '0 10px 40px rgba(0,0,0,0.25)' }}
@@ -637,7 +667,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
 
             {/* Human-like cursor */}
             {createPortal(
-                <div ref={cursorRef} className="fixed z-[2000] pointer-events-none" style={{ left: 0, top: 0, opacity: 0, transform: 'translate(-2px,-2px)' }}>
+                <div ref={cursorRef} data-spark-ui className="fixed z-[2000] pointer-events-none" style={{ left: 0, top: 0, opacity: 0, transform: 'translate(-2px,-2px)' }}>
                     <div className="cursor-pulse absolute -left-2 -top-2 w-8 h-8 rounded-full bg-blue-400/40" style={{ opacity: 0 }} />
                     <MousePointer2 size={24} className="text-blue-500 fill-blue-500/30" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }} />
                 </div>,
@@ -646,7 +676,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
 
             {/* Chat modal */}
             {open && createPortal(
-                <div className="fixed bottom-24 right-5 z-[1300] w-[min(420px,calc(100vw-2.5rem))] flex flex-col rounded-3xl border shadow-2xl overflow-hidden" style={{ maxHeight: 'min(640px, calc(100vh - 8rem))', background: isDark ? 'rgba(15,15,20,0.96)' : 'rgba(255,255,255,0.97)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)', backdropFilter: 'blur(20px)' }}>
+                <div data-spark-ui role="dialog" aria-label="Spark assistant" className="fixed bottom-24 right-5 z-[1300] w-[min(420px,calc(100vw-2.5rem))] flex flex-col rounded-3xl border shadow-2xl overflow-hidden" style={{ maxHeight: 'min(640px, calc(100vh - 8rem))', background: isDark ? 'rgba(15,15,20,0.96)' : 'rgba(255,255,255,0.97)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)', backdropFilter: 'blur(20px)' }}>
                     {/* Header */}
                     <div className="flex items-center justify-between gap-2 p-4 border-b border-[var(--section-border)]">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -660,10 +690,10 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                             </div>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                            <button onClick={toggleVoiceOut} title={voiceOut ? 'Voice replies ON - Spark speaks answers' : 'Voice replies OFF'} className={`p-2 rounded-lg transition-colors ${voiceOut ? 'text-emerald-500 bg-emerald-500/15' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}>{voiceOut ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
-                            <button onClick={toggleAuto} title={autoMode ? 'Auto mode ON - acts without asking' : 'Auto mode OFF - confirms writes & deletes'} className={`p-2 rounded-lg transition-colors ${autoMode ? 'text-amber-500 bg-amber-500/15' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Zap size={17} className={autoMode ? 'fill-amber-500/40' : ''} /></button>
-                            <button onClick={() => setShowSettings(s => !s)} className={`p-2 rounded-lg transition-colors ${showSettings ? 'text-blue-500 bg-blue-500/10' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Settings2 size={17} /></button>
-                            <button onClick={() => setOpen(false)} className="p-2 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-colors"><X size={17} /></button>
+                            <button onClick={toggleVoiceOut} aria-label={voiceOut ? 'Turn voice replies off' : 'Turn voice replies on'} aria-pressed={voiceOut} title={voiceOut ? 'Voice replies ON - Spark speaks answers' : 'Voice replies OFF'} className={`p-2 rounded-lg transition-colors ${voiceOut ? 'text-emerald-500 bg-emerald-500/15' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}>{voiceOut ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
+                            <button onClick={toggleAuto} aria-label={autoMode ? 'Turn auto mode off' : 'Turn auto mode on'} aria-pressed={autoMode} title={autoMode ? 'Auto mode ON - acts without asking' : 'Auto mode OFF - confirms writes & deletes'} className={`p-2 rounded-lg transition-colors ${autoMode ? 'text-amber-500 bg-amber-500/15' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Zap size={17} className={autoMode ? 'fill-amber-500/40' : ''} /></button>
+                            <button onClick={() => setShowSettings(s => !s)} aria-label="Spark settings" aria-expanded={showSettings} className={`p-2 rounded-lg transition-colors ${showSettings ? 'text-blue-500 bg-blue-500/10' : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Settings2 size={17} /></button>
+                            <button onClick={() => setOpen(false)} aria-label="Close Spark" className="p-2 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-colors"><X size={17} /></button>
                         </div>
                     </div>
 
@@ -672,7 +702,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                         <div className="p-4 flex flex-col gap-3 border-b border-[var(--section-border)] bg-black/[0.015] dark:bg-white/[0.02]">
                             <div>
                                 <label className="text-[11px] font-semibold text-sec uppercase tracking-wider mb-1.5 block">API key (this browser)</label>
-                                <input value={keyInput} onChange={e => setKeyInput(e.target.value)} type="password" placeholder={`active: ${maskedKey}`} className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/[0.03] border-black/10'} text-primary`} />
+                                <input value={keyInput} onChange={e => setKeyInput(e.target.value)} aria-label="API key override" type="password" placeholder={`active: ${maskedKey}`} className={`w-full px-3 py-2 rounded-xl border text-sm outline-none ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/[0.03] border-black/10'} text-primary`} />
                                 <p className="text-[10px] text-sec mt-1">The key is held server-side by the <code>llm</code> Cloud Function - nothing ships in the bundle. Paste one here only to override it in this browser for testing. {provider ? `Provider: ${PROVIDER_LABEL[provider]}.` : ''}</p>
                             </div>
                             <div className="flex items-end gap-2">
@@ -771,7 +801,7 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
                                         placeholder="Type your own answer…"
                                         className={`flex-1 px-3 py-2 rounded-xl border text-sm outline-none ${isDark ? 'bg-white/5 border-white/10' : 'bg-white border-black/10'} text-primary placeholder:text-sec`}
                                     />
-                                    <button onClick={() => quizCustom.trim() && answerQuiz(quizCustom.trim())} disabled={!quizCustom.trim()} className="p-2 rounded-xl bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40 transition-all active:scale-95"><Send size={16} /></button>
+                                    <button onClick={() => quizCustom.trim() && answerQuiz(quizCustom.trim())} disabled={!quizCustom.trim()} aria-label="Send your answer" className="p-2 rounded-xl bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40 transition-all active:scale-95"><Send size={16} /></button>
                                 </div>
                             </div>
                         )}
@@ -779,9 +809,9 @@ const Assistant = ({ onNavigate, currentPage }: { onNavigate: (page: string) => 
 
                     {/* Input */}
                     <div className="p-3 border-t border-[var(--section-border)] flex items-center gap-2">
-                        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} disabled={busy} placeholder={busy ? 'Working…' : listening ? 'Listening…' : 'Ask Spark…'} className={`flex-1 px-3.5 py-2.5 rounded-xl border text-sm outline-none ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/[0.03] border-black/10'} text-primary placeholder:text-sec disabled:opacity-60`} />
-                        <button onClick={toggleConvo} title={convoMode ? 'Stop voice chat' : 'Start hands-free voice chat'} className={`p-2.5 rounded-xl transition-all flex-shrink-0 active:scale-95 ${convoMode ? (listening ? 'bg-red-500 text-white animate-pulse' : 'bg-emerald-500 text-white') : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Mic size={18} /></button>
-                        <button onClick={() => send()} disabled={busy || !input.trim()} className="p-2.5 rounded-xl bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40 transition-all active:scale-95">
+                        <input value={input} onChange={e => setInput(e.target.value)} aria-label="Message Spark" onKeyDown={e => { if (e.key === 'Enter') send(); }} disabled={busy} placeholder={busy ? 'Working…' : listening ? 'Listening…' : 'Ask Spark…'} className={`flex-1 px-3.5 py-2.5 rounded-xl border text-sm outline-none ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/[0.03] border-black/10'} text-primary placeholder:text-sec disabled:opacity-60`} />
+                        <button onClick={toggleConvo} aria-label={convoMode ? 'Stop voice chat' : 'Start voice chat'} aria-pressed={convoMode} title={convoMode ? 'Stop voice chat' : 'Start hands-free voice chat'} className={`p-2.5 rounded-xl transition-all flex-shrink-0 active:scale-95 ${convoMode ? (listening ? 'bg-red-500 text-white animate-pulse' : 'bg-emerald-500 text-white') : 'text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10'}`}><Mic size={18} /></button>
+                        <button onClick={() => send()} disabled={busy || !input.trim()} aria-label="Send message" className="p-2.5 rounded-xl bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40 transition-all active:scale-95">
                             {busy ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
                         </button>
                     </div>

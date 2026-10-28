@@ -78,6 +78,9 @@ const MConfirmModal = ({
                         animate={{ scale: 1, opacity: 1, y: 0 }}
                         exit={{ scale: 0.95, opacity: 0, y: 10 }}
                         transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-label={title}
                         className={`w-full max-w-md overflow-hidden rounded-2xl shadow-2xl border relative ${isDark ? 'bg-[#0f0f0f] border-white/10' : 'bg-white border-gray-200'}`}
                         style={{ transformOrigin: 'center' }}
                     >
@@ -122,6 +125,7 @@ const MConfirmModal = ({
                         {/* Close Button Top Right */}
                         <button
                             onClick={onClose}
+                            aria-label="Close"
                             className={`absolute top-4 right-4 p-2 rounded-lg transition-all ${isDark ? 'hover:bg-white/10 text-gray-500 hover:text-gray-300' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'}`}
                         >
                             <X size={18} />
