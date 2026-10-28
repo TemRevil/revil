@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Firestore } from "firebase-admin/firestore";
 import {
-  GRANT_MAX_MS, REFRESH_TTL_MS, adminChecker, consumeSecret, expiresAt, isActiveAdmin, lookupAccessToken,
-  redeemAuthCode, redeemRefreshToken, sha256url, storeCode, storeSecret, sweepMcp,
+  GRANT_MAX_MS, REFRESH_TTL_MS, adminChecker, consumeSecret, expiresAt, isActiveAdmin, isConnectedClient, knownClient,
+  lookupAccessToken, redeemAuthCode, redeemRefreshToken, sha256url, storeCode, storeSecret, sweepMcp, takeRateSlot,
   type AdminSubject, type CodeRec, type GrantDeps, type TokenResponse,
 } from "./mcpGrants";
 import { incomeEntryId, recordIncome, saveMeeting } from "./mcpWrites";
@@ -155,7 +155,7 @@ beforeEach(async () => {
   db = fake as unknown as Firestore;
   clock = T0;
   admins = new Set(["owner"]);
-  await fake.doc(`MCP/clients_${CLIENT}`).set({ client_id: CLIENT, redirect_uris: [REDIRECT] });
+  await fake.doc(`MCP/clients_${CLIENT}`).set({ client_id: CLIENT, redirect_uris: [REDIRECT], client_name: "Test client" });
   await fake.doc("Settings/MCP").set({ enabled: true, writesEnabled: true });
 });
 
@@ -252,6 +252,39 @@ describe("revocation boundary", () => {
     await fake.doc("Settings/MCP").set({ enabled: false }, { merge: true });
     const r = await redeemAuthCode(db, { code, clientId: CLIENT, redirectUri: REDIRECT, codeVerifier: VERIFIER }, deps());
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("open endpoints under anonymous load", () => {
+  const LIMITS = { perIp: 10, windowMs: 3_600_000 };
+
+  it("limits each caller on its own, so other callers can never use up the owner's slots", async () => {
+    // A flood from a thousand addresses, each up to its own limit.
+    for (let i = 0; i < 1000; i++) {
+      for (let j = 0; j < LIMITS.perIp; j++) expect((await takeRateSlot(db, "register", `attacker${i}`, LIMITS, clock)).ok).toBe(true);
+    }
+    expect((await takeRateSlot(db, "register", "attacker0", LIMITS, clock)).ok).toBe(false);
+    expect((await takeRateSlot(db, "register", "owner-ip", LIMITS, clock)).ok).toBe(true);
+    // A caller's slots come back when its window has passed, and its record expires with it.
+    clock += LIMITS.windowMs;
+    expect((await takeRateSlot(db, "register", "attacker0", LIMITS, clock)).ok).toBe(true);
+  });
+
+  it("marks a client as known once the owner has connected it, and hands it back on re-registration", async () => {
+    expect(await knownClient(db, [REDIRECT], "Test client", clock)).toBeNull();
+    expect(isConnectedClient(fake.read(`MCP/clients_${CLIENT}`), clock)).toBe(false);
+    await connect();
+    expect(isConnectedClient(fake.read(`MCP/clients_${CLIENT}`), clock)).toBe(true);
+    expect((await knownClient(db, [REDIRECT], "Test client", clock))?.client_id).toBe(CLIENT);
+    // Different metadata is a different client, and goes through the normal limits.
+    expect(await knownClient(db, [REDIRECT], "Another client", clock)).toBeNull();
+    expect(await knownClient(db, ["https://evil.example/cb"], "Test client", clock)).toBeNull();
+  });
+
+  it("stops treating a client as known once its registration has expired", async () => {
+    await connect();
+    clock += 181 * 24 * 60 * 60 * 1000;
+    expect(await knownClient(db, [REDIRECT], "Test client", clock)).toBeNull();
   });
 });
 

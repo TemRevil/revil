@@ -17,6 +17,7 @@
  */
 import { createHash, randomBytes } from "crypto";
 import { Timestamp, type DocumentReference, type Firestore, type Transaction } from "firebase-admin/firestore";
+import { takeSlot, type SlotLimits } from "./mcpRules";
 
 export const ACCESS_TTL_MS = 60 * 60 * 1000;               // 1 hour
 export const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;    // 30 days, renewed by each refresh...
@@ -40,6 +41,54 @@ export function secretPath(kind: SecretKind, secret: string): string {
 }
 
 export const clientPath = (clientId: string): string => `MCP/clients_${clientId}`;
+
+/** The index entry naming the connected client registered with exactly this metadata. */
+export function knownPath(redirectUris: string[], clientName: string): string {
+  return `MCP/known_${sha256url(JSON.stringify([[...redirectUris].sort(), clientName]))}`;
+}
+
+const millisOf = (v: unknown): number | null =>
+  v && typeof (v as { toMillis?: unknown }).toMillis === "function" ? (v as Timestamp).toMillis() : null;
+
+/** A client registration the owner has approved before, and that has not expired. */
+export function isConnectedClient(c: Record<string, unknown> | undefined, now: number): boolean {
+  if (!c || typeof c.connectedAt !== "number") return false;
+  const exp = millisOf(c.expiresAt);
+  return exp === null || exp > now;
+}
+
+/**
+ * A client the owner already connected with this exact metadata, or null. MCP clients
+ * register again on every fresh connect; handing back the approved registration means
+ * the owner's reconnect never depends on the anonymous registration limit. That is
+ * safe to give anyone: a public client id only ever sends codes to its own redirect
+ * URIs, behind PKCE and the owner's consent.
+ */
+export async function knownClient(db: Firestore, redirectUris: string[], clientName: string, now: number): Promise<Record<string, unknown> | null> {
+  const idx = await db.doc(knownPath(redirectUris, clientName)).get();
+  const clientId = idx.exists ? idx.data()?.clientId : null;
+  if (typeof clientId !== "string") return null;
+  const snap = await db.doc(clientPath(clientId)).get();
+  const c = snap.data();
+  return isConnectedClient(c, now) ? (c as Record<string, unknown>) : null;
+}
+
+/**
+ * Take a request slot for one caller (a hashed IP) on one open endpoint. Each caller
+ * has its own small document, so no amount of traffic from other addresses can use
+ * up the owner's slots, and the document expires (and is swept) with its window.
+ */
+export async function takeRateSlot(
+  db: Firestore, kind: "register" | "authorize", callerKey: string, limits: SlotLimits, now: number,
+): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
+  const ref = db.doc(`MCP/rl_${kind}_${callerKey}`);
+  return db.runTransaction(async (tx) => {
+    const r = takeSlot((await tx.get(ref)).data()?.hits, now, limits);
+    if ("retryAfterMs" in r) return { ok: false, retryAfterMs: r.retryAfterMs };
+    tx.set(ref, { hits: r.hits, expiresAt: expiresAt(now + limits.windowMs) });
+    return { ok: true };
+  });
+}
 
 // ── Settings/MCP ──────────────────────────────────────────────────────
 export interface McpCfg {
@@ -122,7 +171,9 @@ const refuse = (description: string): TokenResult => ({ ok: false, error: "inval
  * Write a fresh access + refresh pair for a grant (inside the caller's transaction)
  * and keep the client registered while it is in use. Neither token outlives the grant.
  */
-function writeTokenPair(db: Firestore, tx: Transaction, g: GrantBase, grantExp: number, now: number): TokenResponse {
+function writeTokenPair(
+  db: Firestore, tx: Transaction, g: GrantBase, grantExp: number, now: number, client: Record<string, unknown> | undefined,
+): TokenResponse {
   const access = rand(32);
   const refresh = rand(32);
   const accessExp = Math.min(now + ACCESS_TTL_MS, grantExp);
@@ -132,7 +183,15 @@ function writeTokenPair(db: Firestore, tx: Transaction, g: GrantBase, grantExp: 
   const refreshRec: RefreshRec = { ...base, exp: refreshExp, iat: now, grantExp, accessKey: sha256url(access) };
   tx.set(db.doc(secretPath("tokens", access)), { ...tokenRec, expiresAt: expiresAt(accessExp) });
   tx.set(db.doc(secretPath("refresh", refresh)), { ...refreshRec, expiresAt: expiresAt(refreshExp) });
-  tx.set(db.doc(clientPath(g.clientId)), { expiresAt: expiresAt(now + CLIENT_TTL_MS) }, { merge: true });
+  // Tokens are only ever issued after the owner approved this client, so from here on
+  // it is a known client: its own requests skip the anonymous rate limits, and a fresh
+  // registration with the same metadata gets this client back (see knownClient).
+  const clientExp = now + CLIENT_TTL_MS;
+  tx.set(db.doc(clientPath(g.clientId)), { expiresAt: expiresAt(clientExp), connectedAt: now }, { merge: true });
+  const uris = client?.redirect_uris;
+  if (Array.isArray(uris) && uris.every((u) => typeof u === "string")) {
+    tx.set(db.doc(knownPath(uris as string[], String(client?.client_name ?? ""))), { clientId: g.clientId, expiresAt: expiresAt(clientExp) });
+  }
   return {
     access_token: access,
     token_type: "Bearer",
@@ -173,7 +232,7 @@ export async function redeemAuthCode(
     })();
     tx.delete(codeRef);
     if (verdict) return refuse(verdict);
-    return { ok: true, body: writeTokenPair(db, tx, c, c.authTime + GRANT_MAX_MS, now) };
+    return { ok: true, body: writeTokenPair(db, tx, c, c.authTime + GRANT_MAX_MS, now, clientSnap.data()) };
   });
 }
 
@@ -208,7 +267,7 @@ export async function redeemRefreshToken(
     tx.delete(refreshRef);
     if (typeof r.accessKey === "string" && r.accessKey) tx.delete(db.doc(`MCP/tokens_${r.accessKey}`));
     if (verdict) return refuse(verdict);
-    return { ok: true, body: writeTokenPair(db, tx, r, grantExp, now) };
+    return { ok: true, body: writeTokenPair(db, tx, r, grantExp, now, clientSnap.data()) };
   });
 }
 
@@ -268,9 +327,6 @@ export function adminChecker(getUser: (uid: string) => Promise<AdminSubject | nu
 
 /** How long a client registered before documents carried an expiry keeps working unused. */
 const LEGACY_CLIENT_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
-
-const millisOf = (v: unknown): number | null =>
-  v && typeof (v as { toMillis?: unknown }).toMillis === "function" ? (v as Timestamp).toMillis() : null;
 
 /**
  * Delete every MCP document whose `expiresAt` has passed. Documents written before

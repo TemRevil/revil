@@ -161,30 +161,20 @@ export function bookingClash(
 
 // ── rate limits ───────────────────────────────────────────────────────
 
-export interface SlotLimits { perIp: number; total: number; windowMs: number }
-/** RateLimits/<kind>: recent request times, per hashed IP and overall. */
-export interface SlotDoc { all?: number[]; ips?: Record<string, number[]> }
+/** How many requests one caller (hashed IP) may make per window. */
+export interface SlotLimits { perIp: number; windowMs: number }
 
 /**
- * Take one request slot, or say how long to wait. The per-IP cap stops one caller;
- * the overall cap bounds how many documents the open endpoints can create per window
- * even when requests come from many addresses. Old entries are pruned on every write,
- * so the doc stays small (at most `total` timestamps).
+ * Take one request slot from a caller's recent request times, or say how long to wait.
+ * There is deliberately no overall cap: one shared counter is something strangers could
+ * fill up to lock the owner out of reconnecting. Growth is bounded instead by the short
+ * expiry and the sweep of everything these requests create.
  */
-export function takeSlot(prev: SlotDoc, key: string, now: number, l: SlotLimits): { next: SlotDoc } | { retryAfterMs: number } {
-  const fresh = (arr: unknown): number[] =>
-    (Array.isArray(arr) ? arr : []).filter((t): t is number => typeof t === "number" && now - t < l.windowMs);
-  const all = fresh(prev.all);
-  const ips: Record<string, number[]> = {};
-  for (const [k, v] of Object.entries(prev.ips || {})) {
-    const kept = fresh(v);
-    if (kept.length) ips[k] = kept;
-  }
-  const mine = ips[key] || [];
-  if (mine.length >= l.perIp) return { retryAfterMs: Math.max(1000, mine[0] + l.windowMs - now) };
-  if (all.length >= l.total) return { retryAfterMs: Math.max(1000, Math.min(...all) + l.windowMs - now) };
-  ips[key] = [...mine, now];
-  return { next: { all: [...all, now], ips } };
+export function takeSlot(prevHits: unknown, now: number, l: SlotLimits): { hits: number[] } | { retryAfterMs: number } {
+  const hits = (Array.isArray(prevHits) ? prevHits : [])
+    .filter((t): t is number => typeof t === "number" && now - t < l.windowMs);
+  if (hits.length >= l.perIp) return { retryAfterMs: Math.max(1000, Math.min(...hits) + l.windowMs - now) };
+  return { hits: [...hits, now] };
 }
 
 // ── untrusted text ────────────────────────────────────────────────────
