@@ -29,6 +29,7 @@ const FILES = [
 ];
 
 const check = process.argv.includes('--check');
+const lf = (s) => s.replace(/\r\n/g, '\n');
 let stale = 0;
 
 for (const [from, to] of FILES) {
@@ -36,7 +37,8 @@ for (const [from, to] of FILES) {
   const want = `// GENERATED from ${from} by scripts/sync-shared.mjs - edit that file.\n\n`
     + readFileSync(resolve(ROOT, from), 'utf8');
   const have = existsSync(out) ? readFileSync(out, 'utf8') : '';
-  if (have === want) continue;
+  // Compare text, not bytes: a Windows checkout (core.autocrlf) has CRLF on one side.
+  if (lf(have) === lf(want)) continue;
   if (check) {
     console.error(`functions/src/${to} is out of date with ${from}`);
     stale++;
