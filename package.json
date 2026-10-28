@@ -24,7 +24,7 @@
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "country-flag-emoji-polyfill": "^0.1.10",
-    "firebase": "^12.17.0",
+    "firebase": "^13.1.0",
     "lucide-react": "^1.63.0",
     "motion": "^14.7.1",
     "next": "^16.4.3",
@@ -46,7 +46,7 @@
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@firebase/rules-unit-testing": "^5.0.2",
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "eslint": "^10.13.0",

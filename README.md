@@ -41,7 +41,8 @@ firestore.rules, storage.rules, firebase.json
 
 ## Running it locally
 
-Requirements: Node.js 22 or newer. For the rules tests, the Firebase CLI
+Requirements: Node.js 24.12 or newer for the site (the Firebase SDK needs it); the
+functions build on Node 22. For the rules tests, the Firebase CLI
 (`npm install -g firebase-tools`) and Java 21.
 
 ```bash
