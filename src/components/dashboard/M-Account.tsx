@@ -8,6 +8,7 @@ import {
     TreasuryAccount, TreasuryConfig, uid,
 } from '../../lib/treasury';
 import useTheme from '../../hooks/useTheme';
+import { decimalInput } from './digits';
 
 interface Props {
     config: TreasuryConfig;
@@ -135,7 +136,7 @@ const MAccount = ({ config, account, nextOrder, onSave, onDelete, onClose }: Pro
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className={labelCls}>Opening balance ({CURRENCY_SYMBOL[currency]} {currency})</label>
-                            <input className={inputCls} type="number" inputMode="decimal" value={opening} onChange={e => setOpening(e.target.value)} placeholder="0" />
+                            <input className={inputCls} type="text" inputMode="decimal" value={opening} onChange={e => setOpening(decimalInput(e.target.value))} placeholder="0" />
                         </div>
                         <div>
                             <label className={labelCls}>Currency</label>
