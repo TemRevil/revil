@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Firestore } from "firebase-admin/firestore";
 import {
-  GRANT_MAX_MS, REFRESH_TTL_MS, adminChecker, consumeSecret, expiresAt, isActiveAdmin, isConnectedClient, knownClient,
+  AUTHORIZE_LIMITS, GRANT_MAX_MS, REFRESH_TTL_MS, REGISTER_LIMITS, adminChecker, authorizeSlot, registerClient, consumeSecret, expiresAt, isActiveAdmin, isConnectedClient, knownClient,
   lookupAccessToken, redeemAuthCode, redeemRefreshToken, sha256url, storeCode, storeSecret, sweepMcp, takeRateSlot,
   type AdminSubject, type CodeRec, type GrantDeps, type TokenResponse,
 } from "./mcpGrants";
@@ -279,6 +279,32 @@ describe("open endpoints under anonymous load", () => {
     // Different metadata is a different client, and goes through the normal limits.
     expect(await knownClient(db, [REDIRECT], "Another client", clock)).toBeNull();
     expect(await knownClient(db, ["https://evil.example/cb"], "Test client", clock)).toBeNull();
+  });
+
+  it("limits /authorize per caller even for a connected client, whose id anyone can see", async () => {
+    await connect();
+    const client = fake.read(`MCP/clients_${CLIENT}`) as Record<string, unknown>;
+    let allowed = 0;
+    for (let i = 0; i < 1000; i++) if ((await authorizeSlot(db, client, "stranger", clock)).ok) allowed++;
+    expect(allowed).toBeGreaterThan(AUTHORIZE_LIMITS.perIp); // a connected client gets a roomier bucket...
+    expect(allowed).toBeLessThan(1000);                      // ...but never an unlimited one
+    // That caller's flood leaves every other caller, the owner included, untouched.
+    expect((await authorizeSlot(db, client, "owner-ip", clock)).ok).toBe(true);
+  });
+
+  it("sends a re-registration with a connected client's metadata through the per-caller limit", async () => {
+    await connect();
+    const reg = () => registerClient(db, { redirectUris: [REDIRECT], clientName: "Test client", callerKey: "stranger", now: clock });
+    const results = [];
+    for (let i = 0; i < REGISTER_LIMITS.perIp + 5; i++) results.push(await reg());
+    expect(results.filter((r) => r.ok)).toHaveLength(REGISTER_LIMITS.perIp);
+    expect(results.at(-1)?.ok).toBe(false);
+    // The ones let through got the approved client back rather than a new document.
+    const first = results[0];
+    expect(first.ok && "record" in first ? first.record.client_id : null).toBe(CLIENT);
+    expect(fake.paths().filter((p) => p.startsWith("MCP/clients_"))).toHaveLength(1);
+    // Another caller still registers.
+    expect((await registerClient(db, { redirectUris: [REDIRECT], clientName: "Test client", callerKey: "owner-ip", now: clock })).ok).toBe(true);
   });
 
   it("stops treating a client as known once its registration has expired", async () => {
