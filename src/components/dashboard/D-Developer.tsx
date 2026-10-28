@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Trash2, GripVertical, Github, Save, X, Search, Star, GitFork, Loader2, ListChecks, Check, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
+import { Trash2, GripVertical, Save, X, Search, Star, GitFork, Loader2, ListChecks, Check, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
+import { Github } from '../BrandIcons';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { Reorder, motion, useReducedMotion } from 'motion/react';
 import { db } from '../../lib/firebase';

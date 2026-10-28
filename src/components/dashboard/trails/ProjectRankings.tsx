@@ -1,6 +1,7 @@
 /** Trails' project leaderboard, ranked by weighted views, live, GitHub and download clicks. */
 import { useMemo } from 'react';
-import { Eye, Trophy, Github, ExternalLink, Download } from 'lucide-react';
+import { Eye, Trophy, ExternalLink, Download } from 'lucide-react';
+import { Github } from '../../BrandIcons';
 import FileImage from '../../FileImage';
 
 // --- Project ranking ------------------------------------------------------

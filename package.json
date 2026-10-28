@@ -25,7 +25,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "country-flag-emoji-polyfill": "^0.1.10",
     "firebase": "^12.17.0",
-    "lucide-react": "^0.555.0",
+    "lucide-react": "^1.63.0",
     "motion": "^12.43.0",
     "next": "^16.4.3",
     "react": "^19.3.1",

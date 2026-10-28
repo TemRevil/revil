@@ -2,7 +2,8 @@ import { createElement, useEffect, useRef, useState, useMemo } from 'react';
 import { EASE_OUT_QUAD, enter } from './entrance';
 import { watchDoc } from '../lib/liveDoc';
 import { cachedDoc, type Data } from '../lib/dataCache';
-import { Github, Instagram, Linkedin, Twitter, Facebook, Mail, Link as LinkIcon, Twitch, Youtube, Code } from 'lucide-react';
+import { Mail, Link as LinkIcon, Code } from 'lucide-react';
+import { Github, Instagram, Linkedin, Twitter, Facebook, Twitch, Youtube } from './BrandIcons';
 import { useSocialTracker } from '../hooks/useSocialTracker';
 import { useSettings } from '../contexts/SettingsContext';
 
