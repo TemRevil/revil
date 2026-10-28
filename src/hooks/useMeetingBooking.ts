@@ -8,9 +8,9 @@ import type { AlertType } from '../components/Alert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../utils/availability';
 import { cachedDoc, type Data } from '../lib/dataCache';
 import {
-  BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type PresetSlot,
-  bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, isDayOpen, meetingInstant,
-  presetSlotsForDay, utcOffsetHours, visitorTimeToInstant, wallClock,
+  BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type HostZone, type PresetSlot,
+  bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, hostZone, isDayOpen, meetingInstant,
+  presetSlotsForDay, visitorTimeToInstant, wallClock,
 } from '../utils/bookingRules';
 import { timezoneOptions, localOffset } from '../utils/timezones';
 
@@ -95,6 +95,10 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   // The cached copy (lib/dataCache) until Firestore answers.
   const [hostSeed] = useState(() => cachedDoc(['Settings', 'Availability']) ?? {});
   const [hostTimezoneString, setHostTimezoneString] = useState(hostSeed['Current Time'] || DEFAULT_HOST_TZ);
+  // The owner's zone as bookMeeting reads it (hostZone): the named IANA zone when set, so
+  // the picker and the server agree on either side of a daylight-saving change; else the
+  // fixed offset in 'Current Time'.
+  const [hostOffset, setHostOffset] = useState<HostZone>(() => hostZone(hostSeed));
   // The owner's "Current Availability" percent, for pages that show the status pill.
   const [hostAvailability, setHostAvailability] = useState<unknown>(hostSeed['Current Availability']);
   const [userTimezone, setUserTimezone] = useState<number>(localOffset);
@@ -165,6 +169,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   useEffect(() => {
     if (!reads) return;
     const unsubscribeAvailability = watchDoc(['Settings', 'Availability'], (data) => {
+      setHostOffset(hostZone(data));
       if (data) {
         if (typeof data['Current Time'] === 'string' && data['Current Time']) {
           setHostTimezoneString(data['Current Time']);
@@ -206,8 +211,6 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
     const year = date.getFullYear();
     return `${day}/${month}/${year}`;
   }, []);
-
-  const hostOffset = utcOffsetHours(hostTimezoneString);
 
   // Everything the booking rules need, read fresh on each call so "passed" and "today"
   // follow the clock while the page stays open.
