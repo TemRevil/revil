@@ -1,11 +1,14 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import admin from "firebase-admin";
+import { initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { defineSecret } from "firebase-functions/params";
 
-admin.initializeApp();
-const db = admin.firestore();
+initializeApp();
+const db = getFirestore();
 
 // ── Secrets (set via: firebase functions:secrets:set NAME) ────────────
 // The email ones (SMTP_USER, RESEND_API_KEY) live in ./mail with the sender, and the
@@ -85,7 +88,7 @@ const upcomingMeetings = (nowMs: number) => meetings().where("start", ">", upcom
 
 /** The project's default Storage bucket: the only one any stored link may point into. */
 function ourBucket(): string {
-  return admin.storage().bucket().name;
+  return getStorage().bucket().name;
 }
 
 /**
@@ -210,7 +213,7 @@ async function refreshBookedSlots(): Promise<void> {
     const slots = futureSlots(snap.docs.map((d) => d.data() as MeetingDoc), now);
     if (cur.exists && JSON.stringify(cur.data()?.Slots) === JSON.stringify(slots)) return;
     // Replaces the whole doc, so a slot list in an older shape is dropped with it.
-    tx.set(slotsRef, { Slots: slots, lastWrite: admin.firestore.FieldValue.serverTimestamp() });
+    tx.set(slotsRef, { Slots: slots, lastWrite: FieldValue.serverTimestamp() });
   });
 }
 
@@ -257,7 +260,7 @@ export const notifyCanaryMessage = onDocumentWritten(
           continue;
         }
         try {
-          await admin.storage().bucket().file(path).delete({ ignoreNotFound: true });
+          await getStorage().bucket().file(path).delete({ ignoreNotFound: true });
         } catch (err) {
           console.error(`Failed to delete an attachment of message ${key}:`, (err as Error)?.message);
         }
@@ -472,7 +475,7 @@ async function attachmentsField(v: unknown): Promise<Array<{ name: string; url: 
     const name = textField(file.name, "Attachment name", 200, true);
     const path = attachmentPath(file.url, bucket);
     if (!path) throw new HttpsError("invalid-argument", "An attachment link is not valid.");
-    const [exists] = await admin.storage().bucket().file(path).exists();
+    const [exists] = await getStorage().bucket().file(path).exists();
     if (!exists) throw new HttpsError("invalid-argument", "An attachment is missing - please attach it again.");
     out.push({ name, url: String(file.url) });
   }
@@ -808,7 +811,7 @@ export const mirrorTreasuryProjects = onDocumentWritten(
         && Object.values(prev).every((p) => !!p && typeof p === "object" && Object.keys(p).length === 3);
       if (clean && sameMirror(prev!, next)) return;
       // Replaces the whole doc, so any field an older build published is dropped.
-      tx.set(outRef, { projects: next, lastWrite: admin.firestore.FieldValue.serverTimestamp() });
+      tx.set(outRef, { projects: next, lastWrite: FieldValue.serverTimestamp() });
     });
   },
 );
@@ -825,7 +828,7 @@ export const mirrorTreasuryProjects = onDocumentWritten(
 //      - the public busy-slot list, so meetings that ended drop off it.
 // =====================================================================
 async function deleteOldUploads(prefix: string, keep: Set<string>, cutoff: number): Promise<number> {
-  const [files] = await admin.storage().bucket().getFiles({ prefix });
+  const [files] = await getStorage().bucket().getFiles({ prefix });
   let deleted = 0;
   for (const file of files) {
     if (keep.has(file.name)) continue;
@@ -903,7 +906,7 @@ const BLOCKED_ALERT_EVERY_MS = 10 * 60 * 1000;
 async function blockSignIn(auth: { uid: string; token?: Record<string, unknown> }, userAgent: unknown, ip: string): Promise<void> {
   const email = String(auth.token?.email || "Unknown");
   try {
-    await admin.auth().deleteUser(auth.uid);
+    await getAuth().deleteUser(auth.uid);
   } catch (err) {
     console.error("[notifyLogin] could not delete blocked account:", (err as Error)?.message);
   }
@@ -913,7 +916,7 @@ async function blockSignIn(auth: { uid: string; token?: Record<string, unknown> 
     const last = Number((await tx.get(ref)).data()?.lastAlertAt || 0);
     const alert = now - last >= BLOCKED_ALERT_EVERY_MS;
     tx.set(ref, {
-      count: admin.firestore.FieldValue.increment(1),
+      count: FieldValue.increment(1),
       lastAttemptAt: now,
       lastEmail: email,
       ...(alert ? { lastAlertAt: now } : {}),
@@ -1114,7 +1117,7 @@ export const sendReply = onCall(
       if (attachments.length > MAX_FILES) {
         throw new HttpsError("invalid-argument", `At most ${MAX_FILES} attachments per reply.`);
       }
-      const bucket = admin.storage().bucket();
+      const bucket = getStorage().bucket();
       let total = 0;
       for (const a of attachments) {
         const path = replyPath(a?.url, bucket.name);
@@ -1156,7 +1159,7 @@ export const sendReply = onCall(
       console.log(`Reply emailed (${mailAttachments.length} attachment(s))`);
       // The uploads were only the way into this one mail: they go once it is sent.
       // (The daily cleanup removes any left by a reply that never went out.)
-      await Promise.all(uploaded.map((p) => admin.storage().bucket().file(p).delete({ ignoreNotFound: true })
+      await Promise.all(uploaded.map((p) => getStorage().bucket().file(p).delete({ ignoreNotFound: true })
         .catch((e) => console.error("Failed to remove a sent reply's upload:", (e as Error)?.message))));
       return { status: "sent" };
     } catch (err) {

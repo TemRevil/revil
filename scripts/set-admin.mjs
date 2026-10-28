@@ -46,21 +46,23 @@ if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
 
 // Resolved as if required from functions/, where firebase-admin is installed.
 const requireFromFunctions = createRequire(new URL('../functions/package.json', import.meta.url));
-let admin;
+let app, auth;
 try {
-  admin = requireFromFunctions('firebase-admin');
+  app = requireFromFunctions('firebase-admin/app');
+  auth = requireFromFunctions('firebase-admin/auth');
 } catch {
   console.error('firebase-admin is not installed in functions/. Run `npm --prefix functions ci` first.');
   process.exit(1);
 }
 
-admin.initializeApp({ credential: admin.credential.applicationDefault() });
+app.initializeApp({ credential: app.applicationDefault() });
+const users = auth.getAuth();
 
 let user;
 try {
   user = ident.includes('@')
-    ? await admin.auth().getUserByEmail(ident)
-    : await admin.auth().getUser(ident);
+    ? await users.getUserByEmail(ident)
+    : await users.getUser(ident);
 } catch (e) {
   console.error(`Could not find user "${ident}":`, e.message);
   process.exit(1);
@@ -71,7 +73,7 @@ if (checkOnly) {
   process.exit(0);
 }
 
-await admin.auth().setCustomUserClaims(user.uid, { admin: true });
+await users.setCustomUserClaims(user.uid, { admin: true });
 console.log(`Set { admin: true } for ${user.email || user.uid} (uid: ${user.uid}).`);
 console.log('Sign out and back in on the site for it to take effect.');
 process.exit(0);

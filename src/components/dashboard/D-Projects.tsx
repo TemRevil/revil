@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { sanitizeSvg } from '../../lib/sanitize';
 import { createPortal } from 'react-dom';
-import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, Github, GripVertical } from 'lucide-react';
+import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, GripVertical } from 'lucide-react';
+import { Github } from '../BrandIcons';
 import { collection, doc, onSnapshot, getDoc, deleteDoc, writeBatch, runTransaction, type DocumentReference } from 'firebase/firestore';
 import { Reorder, useDragControls } from 'motion/react';
 import { ref, uploadBytes, getDownloadURL, listAll, deleteObject, getStorage, type StorageReference } from 'firebase/storage';

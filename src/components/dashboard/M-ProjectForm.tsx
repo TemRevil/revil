@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { sanitizeSvg } from '../../lib/sanitize';
 import { createPortal } from 'react-dom';
-import { X, Upload, Plus, Image as ImageIcon, Github, ExternalLink, Trash2, Eye, Edit } from 'lucide-react';
+import { X, Upload, Plus, Image as ImageIcon, ExternalLink, Trash2, Eye, Edit } from 'lucide-react';
+import { Github } from '../BrandIcons';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';

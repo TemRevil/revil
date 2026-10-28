@@ -1,7 +1,8 @@
 /** The project form live preview card, drawn from the draft as it is typed. */
 import { useState, useEffect } from 'react';
 import { sanitizeSvg } from '../../../lib/sanitize';
-import { Image as ImageIcon, Github, ExternalLink } from 'lucide-react';
+import { Image as ImageIcon, ExternalLink } from 'lucide-react';
+import { Github } from '../../BrandIcons';
 import type { ProjectFormData } from '../../../types';
 import { useObjectURL } from '../../../hooks/useObjectURL';
 

@@ -14,25 +14,21 @@
     "sync:data": "node scripts/sync-data.mjs",
     "og:card": "node scripts/og-card.mjs"
   },
-  "_overrides_note": "Targeted security pins. Only keep an entry while its KEY version still appears in the tree - once the dependency naturally resolves higher, a stale pin makes `npm ci` fail (lock resolves X, override demands Y). Removed as obsolete: ajv@6.12.6, brace-expansion@2.0.2, minimatch@3.1.2, minimatch@9.0.5, picomatch@4.0.3 - all now resolve at or above their patched targets on their own.",
-  "overrides": {
-    "brace-expansion@1.1.12": "1.1.13",
-    "flatted@3.3.3": "3.4.2",
-    "lodash@4.17.23": "4.18.1",
-    "protobufjs": "^7.5.8"
-  },
+  "_overrides_note": "Targeted security pins. Only keep an entry while its KEY version still appears in the tree - once the dependency naturally resolves higher, a stale pin makes `npm ci` fail (lock resolves X, override demands Y). Removed as obsolete: ajv@6.12.6, brace-expansion@2.0.2, minimatch@3.1.2, minimatch@9.0.5, picomatch@4.0.3, and (with the 2026-10 major updates) brace-expansion@1.1.12, flatted@3.3.3, lodash@4.17.23 and protobufjs ^7.5.8 - all now resolve at or above their patched targets on their own, or leave the tree.",
+  "overrides": {},
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "country-flag-emoji-polyfill": "^0.1.10",
-    "firebase": "^12.17.0",
-    "lucide-react": "^0.555.0",
-    "motion": "^12.43.0",
-    "next": "^16.2.12",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-easy-crop": "^6.2.3",
+    "firebase": "^13.1.0",
+    "lucide-react": "^1.63.0",
+    "motion": "^14.7.1",
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-easy-crop": "^6.2.4",
+    "react-is": "^19.3.1",
     "react-markdown": "^10.1.0",
-    "recharts": "^2.15.4",
+    "recharts": "^3.10.1",
     "remark-gfm": "^4.0.1"
   },
   "browserslist": [
@@ -44,18 +40,19 @@
     "not dead"
   ],
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
-    "@firebase/rules-unit-testing": "^5.0.2",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "eslint": "^9.39.5",
+    "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.8.0",
+    "globals": "^17.13.0",
     "jsdom": "^30.1.3",
-    "postcss": "^8.5.25",
+    "postcss": "^8.5.32",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.65.0",
-    "vitest": "^3.2.7"
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   }
 }

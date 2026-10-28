@@ -55,16 +55,17 @@ if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     process.exit(1);
 }
 const requireFromFunctions = createRequire(new URL('../functions/package.json', import.meta.url));
-let admin;
+let app, firestore;
 try {
-    admin = requireFromFunctions('firebase-admin');
+    app = requireFromFunctions('firebase-admin/app');
+    firestore = requireFromFunctions('firebase-admin/firestore');
 } catch {
     console.error('firebase-admin is not installed in functions/. Run `npm --prefix functions ci` first.');
     process.exit(1);
 }
-admin.initializeApp({ credential: admin.credential.applicationDefault() });
-const db = admin.firestore();
-const { FieldValue } = admin.firestore;
+app.initializeApp({ credential: app.applicationDefault() });
+const db = firestore.getFirestore();
+const { FieldValue } = firestore;
 
 // ── read everything, back it up ──────────────────────────────────────
 const old = {};

@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, type TooltipContentProps } from 'recharts';
 import { Currency, formatMoney } from '../../../lib/treasury';
 import RollingNumber from '../../RollingNumber';
 
@@ -11,7 +11,7 @@ export type ChartFilter = 'daily' | 'weekly' | 'monthly';
 export interface ChartPoint { label: string; fullDate: string; earned: number; spent: number; type: ChartFilter; }
 
 // ── D-Views-style frosted tooltip ──────────────────────────────────────────
-export const ChartTooltip = ({ active, payload, isDark, cur }: TooltipProps<number, string> & { isDark?: boolean; cur: Currency }) => {
+export const ChartTooltip = ({ active, payload, isDark, cur }: TooltipContentProps & { isDark?: boolean; cur: Currency }) => {
     if (!active || !payload || !payload.length) return null;
     const p = payload[0].payload as ChartPoint;
     const d = new Date(p.fullDate);
@@ -207,7 +207,7 @@ export const TreasuryChart = ({ data, filter, setFilter, isDark, cur }: {
                                     tick={{ fontSize: cw < 480 ? 10 : 11, fontWeight: 700, fill: isDark ? '#6b7280' : '#94a3b8' }}
                                 />
                                 <YAxis hide domain={[0, 'auto']} />
-                                <Tooltip content={<ChartTooltip isDark={isDark} cur={cur} />} cursor={{ stroke: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.12)', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                                <Tooltip content={(props) => <ChartTooltip {...props} isDark={isDark} cur={cur} />} cursor={{ stroke: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.12)', strokeWidth: 1, strokeDasharray: '4 4' }} />
                                 <Area type="monotone" dataKey="spent" stroke="#F43F5E" fill="url(#spentFill)" fillOpacity={1} strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#F43F5E', strokeWidth: 2, stroke: isDark ? '#0C0C0C' : '#fff' }} animationDuration={500} />
                                 <Area type="monotone" dataKey="earned" stroke="#10B981" fill="url(#earnedFill)" fillOpacity={1} strokeWidth={3} filter="url(#treasuryGlow)" dot={{ r: 2.5, fill: isDark ? '#0C0C0C' : '#fff', strokeWidth: 2, stroke: '#10B981' }} activeDot={{ r: 6, fill: '#10B981', strokeWidth: 2, stroke: isDark ? '#0C0C0C' : '#fff' }} animationDuration={400} />
                             </AreaChart>

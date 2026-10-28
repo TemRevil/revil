@@ -21,7 +21,9 @@
  */
 
 import { onRequest } from "firebase-functions/v2/https";
-import admin from "firebase-admin";
+import { getAppCheck } from "firebase-admin/app-check";
+import { getAuth } from "firebase-admin/auth";
+import { FieldValue, getFirestore, type DocumentSnapshot } from "firebase-admin/firestore";
 import { clientIp, lookupCountry } from "./geoip.js";
 import { HELLO_EMAIL, smtpUser } from "./mail.js";
 import { escapeHtml as escHtml } from "./html.js";
@@ -29,8 +31,8 @@ import { emailShell, SITE_URL } from "./emailShell.js";
 import { enqueueMail, jobId, type MailMessage } from "./outbox.js";
 import { quota, readQuotas, takeQuotas } from "./limits.js";
 
-const db = () => admin.firestore();
-const FV = admin.firestore.FieldValue;
+const db = () => getFirestore();
+const FV = FieldValue;
 
 
 const SESSIONS = "Analytics/Sessions/Items";
@@ -328,7 +330,7 @@ async function isOwnerRequest(authorization: string | undefined): Promise<boolea
   const m = /^Bearer\s+(\S+)$/.exec(authorization || "");
   if (!m) return false;
   try {
-    return (await admin.auth().verifyIdToken(m[1])).admin === true;
+    return (await getAuth().verifyIdToken(m[1])).admin === true;
   } catch {
     return false;
   }
@@ -354,7 +356,7 @@ export const trackSession = onRequest(
       return;
     }
     try {
-      await admin.appCheck().verifyToken(appCheckToken);
+      await getAppCheck().verifyToken(appCheckToken);
     } catch {
       res.status(401).json({ error: "Invalid App Check token" });
       return;
@@ -530,7 +532,7 @@ async function applyFlush(ctx: {
     const late = decision === "late";
 
     // Reads that depend on the session.
-    let quotaSnaps: admin.firestore.DocumentSnapshot[] = [];
+    let quotaSnaps: DocumentSnapshot[] = [];
     if (isNew) quotaSnaps = await readQuotas(tx, db(), [visitQuota]);
     let linkRow: { id: string; data: Record<string, unknown> } | null = null;
     if (CODE_RE.test(code)) {

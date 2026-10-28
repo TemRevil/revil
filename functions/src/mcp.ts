@@ -31,11 +31,11 @@
 import { onRequest, type Request } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineSecret } from "firebase-functions/params";
-import admin from "firebase-admin";
+import { getAuth } from "firebase-admin/auth";
 import { createHash } from "crypto";
 import { z } from "zod";
 import type { Response } from "express";
-import { FieldPath, type QuerySnapshot } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore, type QuerySnapshot } from "firebase-admin/firestore";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   buildReceiptHtml, receiptNumber, projectReceiptLine, receiptPaymentRows, LEGACY_PAYMENT_LABEL, type ReceiptLine,
@@ -160,7 +160,7 @@ function baseUrl(): string {
   return configured.replace(/\/+$/, "");
 }
 
-const db = () => admin.firestore();
+const db = () => getFirestore();
 
 async function mcpConfig(): Promise<McpCfg> {
   const snap = await db().doc("Settings/MCP").get();
@@ -170,7 +170,7 @@ async function mcpConfig(): Promise<McpCfg> {
 /** A Firebase Auth user for the admin checks, or null when the account is gone. */
 async function getAuthUser(uid: string): Promise<AdminSubject | null> {
   try {
-    return await admin.auth().getUser(uid);
+    return await getAuth().getUser(uid);
   } catch (err) {
     if ((err as { code?: string })?.code === "auth/user-not-found") return null;
     throw err;
@@ -427,7 +427,7 @@ async function firebaseCallback(req: Request, res: Response): Promise<void> {
   let decoded;
   try {
     // checkRevoked: a disabled account or one whose sessions were revoked is refused here too.
-    decoded = await admin.auth().verifyIdToken(idToken, true);
+    decoded = await getAuth().verifyIdToken(idToken, true);
   } catch {
     return callbackError(req, res, 401, "Invalid sign-in token.");
   }
@@ -1230,7 +1230,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       if (a.category) {
         const r = await resolveCategory(a.category);
         if (r.error) return fail(r.error);
-        patch.Category = r.id ?? admin.firestore.FieldValue.delete();
+        patch.Category = r.id ?? FieldValue.delete();
         categoryLabel = r.name || PERSONAL_CATEGORY_NAME;
       }
       if (a.name) patch.Name = a.name;

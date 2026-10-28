@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Briefcase, MousePointer2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, type TooltipContentProps, type XAxisTickContentProps } from 'recharts';
 
 export interface ChartDataPoint {
     label: string;
@@ -15,12 +15,12 @@ export interface ChartDataPoint {
     type?: 'daily' | 'weekly' | 'monthly';
 }
 
-export const CustomTooltip = ({ active, payload, isDark }: TooltipProps<number, string> & { isDark?: boolean }) => {
+export const CustomTooltip = ({ active, payload, isDark }: TooltipContentProps & { isDark?: boolean }) => {
     if (active && payload && payload.length) {
         const item = payload[0].payload as ChartDataPoint;
         const d = new Date(item.fullDate);
 
-        let headerText = '';
+        let headerText: string;
         let subLabel = 'Views';
 
         if (item.type === 'weekly') {
@@ -77,15 +77,7 @@ export const CustomTooltip = ({ active, payload, isDark }: TooltipProps<number, 
     return null;
 };
 
-export interface CustomTickProps {
-    x: number;
-    y: number;
-    payload: { value: string };
-    index: number;
-    data: ChartDataPoint[];
-}
-
-export const CustomTick = ({ x, y, payload, index, data, isDark }: CustomTickProps & { isDark?: boolean }) => {
+export const CustomTick = ({ x, y, payload, index, data, isDark }: XAxisTickContentProps & { data: ChartDataPoint[]; isDark?: boolean }) => {
     const item = data[index];
     if (!item) return null;
     return (
@@ -412,12 +404,11 @@ export const AnalyticsChart = ({ data, filter, setFilter, isDark, windowWidth }:
                                     tickLine={false}
                                     dy={8}
                                     interval={0}
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    tick={(props: any) => <CustomTick {...props} data={currentPageData} isDark={isDark} />}
+                                    tick={(props) => <CustomTick {...props} data={currentPageData} isDark={isDark} />}
                                 />
                                 <YAxis hide domain={['auto', 'auto']} />
                                 <Tooltip
-                                    content={<CustomTooltip isDark={isDark} />}
+                                    content={(props) => <CustomTooltip {...props} isDark={isDark} />}
                                     cursor={{ stroke: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)', strokeWidth: 1, strokeDasharray: '4 4' }}
                                 />
                                 <Area

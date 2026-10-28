@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
-import { X, Github, Linkedin, Globe, Instagram, Facebook, User } from 'lucide-react';
+import { X, Globe, User } from 'lucide-react';
+import { Github, Linkedin, Instagram, Facebook } from './BrandIcons';
 import { ContributorData } from '../types';
 import useTheme from '../hooks/useTheme';
 import { useBoilHold } from './book/paintKit';

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
-import { X, Mail, Phone, MapPin, Globe, Github, Linkedin, Instagram, ExternalLink, FileText } from 'lucide-react';
+import { X, Mail, Phone, MapPin, Globe, ExternalLink, FileText } from 'lucide-react';
+import { Github, Linkedin, Instagram } from './BrandIcons';
 import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { cachedCollection, cachedDoc } from '../lib/dataCache';
 import { ProjectData as FullProject } from '../types';
