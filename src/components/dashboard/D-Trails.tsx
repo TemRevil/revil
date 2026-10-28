@@ -248,7 +248,7 @@ const DTrails = () => {
 
     const chartData = useMemo(() => {
         if (!dailySeries.length) return [] as ChartDataPoint[];
-        let aggregated: ChartDataPoint[] = [];
+        let aggregated: ChartDataPoint[];
 
         if (chartFilter === 'daily') {
             const sliceCount = windowWidth < 450 ? -30 : windowWidth < 768 ? -60 : -180;

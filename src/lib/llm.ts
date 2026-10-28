@@ -103,7 +103,7 @@ async function fetchWithTimeout(url: string, opts: RequestInit, ms: number): Pro
     try {
         return await fetch(url, { ...opts, signal: ctrl.signal });
     } catch (e) {
-        if ((e as Error).name === 'AbortError') throw new Error(`Timed out after ${Math.round(ms / 1000)}s - try again or pick a faster model.`);
+        if ((e as Error).name === 'AbortError') throw new Error(`Timed out after ${Math.round(ms / 1000)}s - try again or pick a faster model.`, { cause: e });
         throw e;
     } finally {
         clearTimeout(t);

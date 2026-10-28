@@ -20,7 +20,7 @@ export const CustomTooltip = ({ active, payload, isDark }: TooltipProps<number, 
         const item = payload[0].payload as ChartDataPoint;
         const d = new Date(item.fullDate);
 
-        let headerText = '';
+        let headerText: string;
         let subLabel = 'Views';
 
         if (item.type === 'weekly') {
