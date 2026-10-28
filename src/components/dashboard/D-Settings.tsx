@@ -11,7 +11,8 @@ import app, { db } from '../../lib/firebase';
 // Local Storage handle (lazy Dashboard chunk) - keeps firebase/storage out of eager.
 const storage = getStorage(app);
 import Alert, { AlertType } from '../Alert';
-import { timezoneOptions } from '../../utils/timezones';
+import { timeZoneOptions } from '../../utils/timezones';
+import { offsetAt } from '../../utils/bookingRules';
 import MStackItem, { StackItemData } from './M-StackItem';
 import DMcpPanel from './D-MCP';
 import Select from '../Select';
@@ -21,14 +22,13 @@ import MConfirmModal from './M-ConfirmModal';
 import { createImage, getCroppedImg, readFileAsDataUrl, type CropArea } from '../../utils/cropImage';
 import useTheme from '../../hooks/useTheme';
 import { summarizeApply, staleHeroPath, type SaveOutcome } from './settings/apply';
+import { initialZone, zoneLabel } from './settings/zone';
 // Replaced failing ui-avatars.com with a local icon-based placeholder logic
 
 
-/** Hours east of UTC from a "UTC+05:30 (IST)" style "Current Time", or null. Half-hour zones keep their minutes. */
-const offsetFromCurrentTime = (value: unknown): number | null => {
-    const m = /UTC([+-])(\d{2}):(\d{2})/.exec(typeof value === 'string' ? value : '');
-    if (!m) return null;
-    return (m[1] === '-' ? -1 : 1) * (parseInt(m[2], 10) + parseInt(m[3], 10) / 60);
+/** The browser's own zone, "UTC" when it can't say. */
+const browserZone = (): string => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
 };
 
 const isValidContactEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s.trim());
@@ -48,7 +48,8 @@ export default function DSettings() {
 
     const [activeTab, setActiveTab] = useState<'availability' | 'stack' | 'account' | 'mcp'>('availability');
     const [availability, setAvailability] = useState(75);
-    const [selectedTimezone, setSelectedTimezone] = useState(2);
+    // The owner's clock as an IANA zone name (see settings/zone.ts).
+    const [selectedZone, setSelectedZone] = useState(browserZone);
     const [currentTime, setCurrentTime] = useState('');
 
     // Stack state
@@ -431,30 +432,28 @@ export default function DSettings() {
     // Track unsaved changes
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-    // Your own offset is named after your city; the rest keep their abbreviation.
-    // The saved "Current Time" string still starts "UTC+HH:MM", which is the only
-    // part anything parses.
-    const tzOptions = useMemo(() => timezoneOptions(), []);
+    // Every named zone, labelled with today's offset. A saved zone this browser doesn't
+    // list (an alias) is still shown, so the picker never opens blank.
+    const zoneOptions = useMemo(() => timeZoneOptions(), []);
+    const zoneNames = useMemo(() => zoneOptions.map(o => o.value), [zoneOptions]);
+    const zonePickerOptions = zoneOptions.some(o => o.value === selectedZone)
+        ? zoneOptions
+        : [{ value: selectedZone, label: zoneLabel(selectedZone, Date.now()) }, ...zoneOptions];
 
     // Every save below reports how it went ('saved' / 'skipped' / 'failed') rather than
     // swallowing a failure, so Apply can tell the owner exactly what was stored. With
     // `silent` (Apply) they leave the alert to Apply's summary.
     const handleSaveAvailability = async (silent = false): Promise<SaveOutcome> => {
         try {
-            const selectedTz = tzOptions.find(tz => tz.value === selectedTimezone);
-
-            // Calculate timezone offset string correctly (handling .5 offsets)
-            const absOffset = Math.abs(selectedTimezone);
-            const hours = Math.floor(absOffset);
-            const minutes = Math.round((absOffset % 1) * 60);
-            const fallbackTzStr = `UTC${selectedTimezone >= 0 ? '+' : '-'}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-
             const payload = {
                 'Current Availability': `${availability}%`,
-                'Current Time': selectedTz ? selectedTz.label : fallbackTzStr,
+                // The zone name is what booking, Canary and the MCP follow (it keeps up
+                // with daylight saving); "Current Time" keeps today's offset for anything
+                // that still reads the label.
+                'timeZone': selectedZone,
+                'Current Time': zoneLabel(selectedZone, Date.now()),
                 'availabilityPercent': availability,
-                // The offset lives in "Current Time" alone, which booking and the MCP
-                // both read; the old numeric copy is removed so it can't disagree.
+                // Nothing reads the old numeric offset any more; removed so it can't disagree.
                 'timezoneOffset': deleteField()
             };
 
@@ -652,8 +651,7 @@ export default function DSettings() {
                     if (!isNaN(percentage)) setAvailability(percentage);
                 }
 
-                const offset = offsetFromCurrentTime(availData['Current Time']);
-                if (offset !== null) setSelectedTimezone(offset);
+                setSelectedZone(initialZone(availData, browserZone(), zoneNames, Date.now()));
             }
 
             setHasUnsavedChanges(false);
@@ -684,13 +682,13 @@ export default function DSettings() {
         const updateTime = () => {
             const now = new Date();
             const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
-            const localTime = new Date(utcTime + selectedTimezone * 3600000);
+            const localTime = new Date(utcTime + offsetAt(selectedZone, now.getTime()) * 3600000);
             setCurrentTime(localTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
         };
         updateTime();
         const interval = setInterval(updateTime, 1000);
         return () => clearInterval(interval);
-    }, [selectedTimezone]);
+    }, [selectedZone]);
 
     useEffect(() => {
         const unsubscribe = onSnapshot(doc(db, 'Settings', 'Availability'), (docSnapshot) => {
@@ -711,15 +709,14 @@ export default function DSettings() {
                 }
 
                 // Parse and set timezone
-                const offset = offsetFromCurrentTime(data['Current Time']);
-                if (offset !== null) setSelectedTimezone(offset);
+                setSelectedZone(initialZone(data, browserZone(), zoneNames, Date.now()));
             }
         }, (err) => {
             const status = navigator.onLine ? "Service Blocked (ISP/Firewall)" : "Offline";
             console.warn(`[Connection] Settings sync: ${status}. Check diagnostic in lib/firebase.ts`, err);
         });
         return () => unsubscribe();
-    }, []);
+    }, [zoneNames]);
 
     // Fetch Stack Data
     useEffect(() => {
@@ -1227,9 +1224,9 @@ export default function DSettings() {
                                         {/* Timezone (reusable blurry Select) */}
                                         <div className="flex-1 min-w-[140px]">
                                             <Select
-                                                value={String(selectedTimezone)}
-                                                options={tzOptions.map(tz => ({ value: String(tz.value), label: tz.label }))}
-                                                onChange={(v) => { setSelectedTimezone(Number(v)); setHasUnsavedChanges(true); }}
+                                                value={selectedZone}
+                                                options={zonePickerOptions}
+                                                onChange={(v) => { setSelectedZone(v); setHasUnsavedChanges(true); }}
                                                 isDark={isDark}
                                                 searchable
                                                 aria-label="Timezone"
