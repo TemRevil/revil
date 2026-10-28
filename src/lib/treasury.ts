@@ -5,9 +5,10 @@
  * parser that powers the dictate/type "agent" box, the insight generator that
  * surfaces money suggestions, and the standalone-HTML report builder.
  *
- * Storage: a single Firestore doc `Treasury/Main` (admin-only via the catch-all
- * rule, so prices/earnings are never public). The public Hero "Projects Being
- * Handled" list is mirrored a sanitized subset of these projects.
+ * Storage: one admin-only Firestore doc per concern under `Treasury/` (projects,
+ * income, spendings, accounts, receipts, settings), so prices and earnings are never
+ * public. The homepage's "projects I handle" list is a sanitized mirror a backend
+ * trigger keeps (see ./handledProjects).
  */
 
 import {
@@ -17,6 +18,7 @@ import {
     projectPaymentStatus, ymd, accountBalance,
 } from './money';
 import { levenshtein } from '../utils/fuzzy';
+import { STATUS_FLAGS, storedStatus, type ProjectStatus } from './handledProjects';
 
 // The money math lives in ./money (shared with the Cloud Functions); everything that
 // imported it from here keeps doing so.
@@ -27,7 +29,7 @@ export * from './money';
  * `done` boolean beside this one and the two could disagree, so `done` is gone
  * and everything that read it now asks isFinished()/isOngoing().
  */
-export type ProjectStatus = 'pending' | 'active' | 'paused' | 'live' | 'completed' | 'closed';
+export type { ProjectStatus };
 
 export interface ProjectStatusMeta {
     id: ProjectStatus;
@@ -46,14 +48,18 @@ export interface ProjectStatusMeta {
     finished: boolean;
 }
 
-/** Every status, in the order the picker offers them. */
+/**
+ * Every status, in the order the picker offers them. Whether a status is public and
+ * whether it means the work ended come from STATUS_FLAGS, the one definition the
+ * homepage mirror trigger also uses.
+ */
 export const PROJECT_STATUSES: ProjectStatusMeta[] = [
-    { id: 'pending', label: 'Pending', hint: 'Agreed, not started yet', color: '#f59e0b', publicly: true, finished: false },
-    { id: 'active', label: 'Active', hint: 'Being worked on right now', color: '#3b82f6', publicly: true, finished: false },
-    { id: 'paused', label: 'Paused', hint: 'Development stopped for now - records the date', color: '#a855f7', publicly: false, finished: false },
-    { id: 'live', label: 'Live', hint: 'Delivered and still maintained', color: '#14b8a6', publicly: true, finished: false },
-    { id: 'completed', label: 'Completed', hint: 'Finished and handed over', color: '#22c55e', publicly: false, finished: true },
-    { id: 'closed', label: 'Closed', hint: 'Ended without finishing - records the date and why', color: '#ef4444', publicly: false, finished: true },
+    { id: 'pending', label: 'Pending', hint: 'Agreed, not started yet', color: '#f59e0b', ...STATUS_FLAGS.pending },
+    { id: 'active', label: 'Active', hint: 'Being worked on right now', color: '#3b82f6', ...STATUS_FLAGS.active },
+    { id: 'paused', label: 'Paused', hint: 'Development stopped for now - records the date', color: '#a855f7', ...STATUS_FLAGS.paused },
+    { id: 'live', label: 'Live', hint: 'Delivered and still maintained', color: '#14b8a6', ...STATUS_FLAGS.live },
+    { id: 'completed', label: 'Completed', hint: 'Finished and handed over', color: '#22c55e', ...STATUS_FLAGS.completed },
+    { id: 'closed', label: 'Closed', hint: 'Ended without finishing - records the date and why', color: '#ef4444', ...STATUS_FLAGS.closed },
 ];
 
 const STATUS_META = new Map<string, ProjectStatusMeta>(PROJECT_STATUSES.map(m => [m.id, m]));
@@ -78,10 +84,7 @@ export const isOngoing = (p: { status: ProjectStatus }): boolean => !statusMeta(
  * the active board. The field itself is dropped here and never written again.
  */
 export function normalizeProject(id: string, raw: Record<string, unknown>, index: number): TreasuryProject {
-    const stored = typeof raw.status === 'string' && STATUS_META.has(raw.status) ? raw.status as ProjectStatus : null;
-    const status: ProjectStatus = raw.done === true && (!stored || !statusMeta(stored).finished)
-        ? 'completed'
-        : stored ?? 'active';
+    const status = storedStatus(raw);
     const { done: _legacy, status: _stored, order: _order, ...rest } = raw as Record<string, unknown>;
     return {
         ...(rest as unknown as Omit<TreasuryProject, 'id' | 'status' | 'order'>),
