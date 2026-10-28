@@ -37,10 +37,42 @@ export interface ItemizedLine {
  * present so the printed "3 x $50.00" can never disagree with the printed total (or with
  * a stale `amount` passed by a caller); falls back to `amount` otherwise.
  */
-function lineTotal(l: Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>): number {
+export function lineTotal(l: Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>): number {
     return l.qty != null && l.unitPrice != null
-        ? Math.round((l.qty * l.unitPrice + Number.EPSILON) * 100) / 100
-        : (l.amount || 0);
+        ? round2(l.qty * l.unitPrice)
+        : round2(l.amount || 0);
+}
+
+const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/** A line as a caller describes it: an amount, or qty x unitPrice (qty defaults to 1). */
+export type ItemizedLineInput = Omit<ItemizedLine, 'amount'> & { amount?: number };
+
+/**
+ * Settle every line's money ONCE, by the same rule the renderer prints with
+ * (lineTotal), so the lines, the per-currency totals, a converted grand total and the
+ * receipt-history figure all agree. A line that gives an amount AND a qty x unitPrice
+ * that disagree is refused rather than guessed at, and a line with no price at all is
+ * refused rather than billed at 0.
+ */
+export function resolveItemizedLines<T extends ItemizedLineInput>(lines: T[]): { lines: Array<T & { amount: number }> } | { error: string } {
+    const out: Array<T & { amount: number }> = [];
+    for (const l of lines) {
+        if (l.amount === undefined && l.unitPrice === undefined) {
+            return { error: `Line "${l.label}" needs either an amount, or a unitPrice (qty defaults to 1).` };
+        }
+        if (l.amount !== undefined && l.unitPrice !== undefined) {
+            const product = round2((l.qty ?? 1) * l.unitPrice);
+            if (Math.abs(round2(l.amount) - product) > 0.005) {
+                return { error: `Line "${l.label}": amount ${l.amount} does not equal qty x unitPrice (${product}). Pass one or the other.` };
+            }
+        }
+        const amount = l.qty != null && l.unitPrice != null
+            ? lineTotal(l as Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>)
+            : round2(l.amount ?? (l.unitPrice as number));
+        out.push({ ...l, amount });
+    }
+    return { lines: out };
 }
 
 export interface WorkLogEntry {

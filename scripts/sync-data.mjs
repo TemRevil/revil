@@ -23,34 +23,15 @@ import { execSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The same decoder lib/liveDoc reads with, fields in name order: the daily run compares
+// this snapshot with the live one to decide whether to deploy.
+import { decodeFields } from '../src/lib/firestoreRest.mjs';
 
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'temrevil1';
 const DATA = resolve(dirname(fileURLToPath(import.meta.url)), '../src/data');
 const OUT = resolve(DATA, 'public.snapshot.json');
 const PATHS = JSON.parse(readFileSync(resolve(DATA, 'publicPaths.json'), 'utf8'));
 const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/`;
-
-/** Firestore REST tags every value with its type; unwrap to what lib/liveDoc reads. */
-function decode(v) {
-    if (!v || typeof v !== 'object') return null;
-    if ('stringValue' in v) return v.stringValue;
-    if ('integerValue' in v) return Number(v.integerValue);
-    if ('doubleValue' in v) return Number(v.doubleValue);
-    if ('booleanValue' in v) return v.booleanValue;
-    if ('nullValue' in v) return null;
-    if ('timestampValue' in v) return v.timestampValue;
-    if ('mapValue' in v) return decodeFields(v.mapValue?.fields || {});
-    if ('arrayValue' in v) return (v.arrayValue?.values || []).map(decode);
-    return null;
-}
-
-// Fields in name order: REST answers a map in a different order each time, and the daily
-// run compares this snapshot with the live one to decide whether to deploy.
-function decodeFields(fields) {
-    const out = {};
-    for (const k of Object.keys(fields).sort()) out[k] = decode(fields[k]);
-    return out;
-}
 
 function getToken() {
     if (process.env.FIRESTORE_ACCESS_TOKEN) return process.env.FIRESTORE_ACCESS_TOKEN.trim();

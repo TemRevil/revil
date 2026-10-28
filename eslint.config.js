@@ -6,13 +6,15 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
   globalIgnores(['dist', '.next', 'functions/lib', 'functions-meeting/lib']),
-  // Maintenance scripts are CommonJS and run in Node, not the browser. Lint with Node
-  // globals so require/exports/process/console resolve.
+  // Build and maintenance scripts and config files (.mjs) are ES modules run by Node:
+  // the recommended rules, with Node globals. src/lib/firestoreRest.mjs is shared with the
+  // browser but uses no globals of either.
   {
-    files: ['scripts/**/*.js'],
+    files: ['**/*.mjs'],
+    extends: [js.configs.recommended],
     languageOptions: {
       globals: globals.node,
-      sourceType: 'commonjs',
+      sourceType: 'module',
       ecmaVersion: 'latest',
     },
   },
