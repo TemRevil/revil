@@ -23,8 +23,9 @@ import useTheme from '../../hooks/useTheme';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { BELOW_LG_QUERY } from './breakpoints';
 import { EASE } from './motion';
-import { utcOffsetHours } from '../../utils/bookingRules';
-import { meetingStart, slotOccupied, cancelRequest } from './canary/meetings';
+import { hostZone, type HostZone } from '../../utils/bookingRules';
+import { meetingStart, slotOccupied, cancelRequest, calendarErrorText } from './canary/meetings';
+import MailFailures from './canary/MailFailures';
 import { ViaBadge, ColorSwatches, CategoryBadge } from './canary/Badges';
 
 type OptionsTab = 'hours' | 'categories' | 'book';
@@ -152,7 +153,9 @@ const DCanary = () => {
     const narrow = useMediaQuery('(max-width: 419px)');
     const wideModal = useMediaQuery('(min-width: 820px)');
     const [meetings, setMeetings] = useState<Meeting[]>([]);
-    const [hostTimezoneString, setHostTimezoneString] = useState('');
+    // The owner's clock (an IANA zone, or a fixed offset for an older Availability doc).
+    // Until Availability loads, this machine's own offset stands in.
+    const [hostClock, setHostClock] = useState<HostZone>(() => -(new Date().getTimezoneOffset() / 60));
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
     // Owner-defined meeting categories (Options tab) + the filter over the bookings
@@ -245,20 +248,12 @@ const DCanary = () => {
     useEffect(() => {
         const unsub = onSnapshot(doc(db, 'Settings', 'Availability'), (snap) => {
             const data = snap.exists() ? snap.data() : undefined;
-            const ct = data ? data['Current Time'] : undefined;
-            if (ct) setHostTimezoneString(ct);
+            if (data) setHostClock(hostZone(data));
             // Load the working-days/hours config, but don't clobber unsaved edits.
             if (!availDirtyRef.current) setAvailDraft(parseAvailabilityConfig(data));
         });
         return () => unsub();
     }, []);
-
-    // Meeting Time fields are stored in the HOST's wall clock, so the UTC instant is
-    // (host wall clock − host offset). Falls back to the dashboard machine's own
-    // offset if Availability hasn't loaded yet.
-    const hostOffset = hostTimezoneString
-        ? utcOffsetHours(hostTimezoneString)
-        : -(new Date().getTimezoneOffset() / 60);
 
     const handleTabChange = (newTab: 'bookings' | 'mails' | 'hours') => {
         if (newTab === activeSection) return;
@@ -332,7 +327,7 @@ const DCanary = () => {
     const handleDelete = async (id: string, meeting?: Meeting) => {
         setIsLoading(true);
         // What happened to the calendar event, reported once the app delete is stored.
-        const done: { calendar: 'cancelled' | 'failed' | 'no-id' | 'none' } = { calendar: 'none' };
+        const done: { calendar: 'cancelled' | 'failed' | 'no-id' | 'none'; why?: string } = { calendar: 'none' };
         try {
             const cancel = meeting ? cancelRequest(meeting) : null;
             if (cancel) {
@@ -342,6 +337,7 @@ const DCanary = () => {
                 } catch (syncErr) {
                     console.error("Google Sync Delete Error:", syncErr);
                     done.calendar = 'failed';
+                    done.why = calendarErrorText(syncErr);
                 }
             } else if (meeting?.email) {
                 done.calendar = 'no-id';
@@ -352,7 +348,7 @@ const DCanary = () => {
             });
 
             if (done.calendar === 'failed') {
-                showAlert({ type: 'warning', message: 'Session cancelled in the app, but its calendar event could not be removed. Remove it in Google Calendar.' });
+                showAlert({ type: 'warning', message: `Session cancelled in the app, but its calendar event was not removed: ${done.why} Remove it in Google Calendar.` });
             } else if (done.calendar === 'no-id') {
                 showAlert({ type: 'warning', message: 'Session cancelled in the app. It had no linked calendar event, so remove any event for it in Google Calendar.' });
             } else {
@@ -388,7 +384,7 @@ const DCanary = () => {
         }
 
         if (isTimeChanged || isDateChanged) {
-            if (slotOccupied(editingMeeting, meetings, hostOffset)) {
+            if (slotOccupied(editingMeeting, meetings, hostClock)) {
                 showAlert({ type: 'warning', message: 'This time slot is already occupied.' });
                 return;
             }
@@ -406,7 +402,7 @@ const DCanary = () => {
         try {
             // editingMeeting.time is the HOST's wall clock; meetingStart turns it into the
             // UTC instant the same way the public booking rules do.
-            const startMs = meetingStart(editingMeeting, hostOffset);
+            const startMs = meetingStart(editingMeeting, hostClock);
             if (startMs === null) {
                 showAlert({ type: 'error', message: `"${editingMeeting.time}" is not a time this can read.` });
                 return;
@@ -420,15 +416,22 @@ const DCanary = () => {
             const calendarChanged = isTimeChanged || isDateChanged || isTitleChanged;
             const unlinked = !!editingMeeting.email && !editingMeeting.googleEventId && calendarChanged;
             if (editingMeeting.email && editingMeeting.googleEventId && calendarChanged) {
-                await httpsCallable(functions, 'syncMeeting')({
-                    action: 'update',
-                    eventId: editingMeeting.googleEventId,
-                    name: editingMeeting.title,
-                    email: editingMeeting.email,
-                    reason: editingMeeting.reason || '',
-                    startTime: start.toISOString(),
-                    endTime: end.toISOString()
-                });
+                try {
+                    await httpsCallable(functions, 'syncMeeting')({
+                        action: 'update',
+                        eventId: editingMeeting.googleEventId,
+                        name: editingMeeting.title,
+                        email: editingMeeting.email,
+                        reason: editingMeeting.reason || '',
+                        startTime: start.toISOString(),
+                        endTime: end.toISOString()
+                    });
+                } catch (syncErr) {
+                    // Nothing was changed yet, so the session simply stays where it was.
+                    console.error('Google Sync Update Error:', syncErr);
+                    showAlert({ type: 'error', message: `Session not moved: ${calendarErrorText(syncErr)}` });
+                    return;
+                }
             }
 
             const docRef = doc(db, 'Settings', 'Canary');
@@ -1037,6 +1040,9 @@ const DCanary = () => {
                     <span className="hidden sm:inline">Options</span>
                 </button>
             </div>
+
+            {/* Mail the functions gave up on; renders nothing while all of it went out. */}
+            <MailFailures isDark={isDark} showAlert={showAlert} />
 
             {/* A section enters only when the owner switches to it. On the tab's first
                 paint it is already in place: the dashboard fades the whole tab in once, and
