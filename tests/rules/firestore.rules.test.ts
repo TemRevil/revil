@@ -24,7 +24,7 @@ const PUBLIC_DOCS = [
 
 const PRIVATE_DOCS = [
     'Settings/Canary', 'Settings/MCP', 'Settings/Hero/sub/x', 'Treasury/projects', 'Spark/memory',
-    'Analytics/Totals', 'Analytics/Links/Items/l1', 'Analytics/Sessions/Items/s1', 'McpAudit/e1', 'Anything/else',
+    'Analytics/Totals', 'Analytics/Links/Items/l1', 'Analytics/Sessions/Items/s1', 'McpAudit/e1', 'MailJobs/j1', 'Anything/else',
 ];
 
 describe('public portfolio documents', () => {
@@ -33,7 +33,7 @@ describe('public portfolio documents', () => {
         await assertSucceeds(anon().doc(path).get());
     });
 
-    it.each(PUBLIC_DOCS)('only the admin can write %s', async (path) => {
+    it.each(PUBLIC_DOCS.filter((p) => p !== 'Settings/HandledProjects'))('only the admin can write %s', async (path) => {
         await assertFails(anon().doc(path).set({ v: 2 }));
         await assertFails(user().doc(path).set({ v: 2 }));
         await assertSucceeds(admin().doc(path).set({ v: 2 }));
@@ -85,6 +85,25 @@ describe('function-only collections', () => {
     it('share links are the admin\'s to create and edit', async () => {
         await assertSucceeds(admin().doc('Analytics/Links/Items/l1').set({ Name: 'x' }));
         await assertSucceeds(admin().doc('Analytics/Links/Items/l1').update({ Name: 'y' }));
+    });
+
+    it('the mail outbox can be read and cleared by the admin, never written', async () => {
+        await seed('MailJobs/contact-owner_1', { status: 'failed', to: 'owner@example.com' });
+        await assertSucceeds(admin().doc('MailJobs/contact-owner_1').get());
+        await assertSucceeds(admin().collection('MailJobs').get());
+        await assertFails(admin().doc('MailJobs/contact-owner_1').update({ status: 'pending' }));
+        await assertFails(admin().doc('MailJobs/forged').set({ to: 'someone@example.com' }));
+        await assertFails(admin().doc('MailJobs/x/sub/y').set({ v: 1 }));
+        await assertSucceeds(admin().doc('MailJobs/contact-owner_1').delete());
+    });
+
+    it('the public handled-projects list is written only by its function', async () => {
+        await seed('Settings/HandledProjects', { projects: {} });
+        await assertSucceeds(anon().doc('Settings/HandledProjects').get());
+        await assertFails(admin().doc('Settings/HandledProjects').set({ projects: { p: { name: 'x', status: 'active', order: 0 } } }));
+        await assertFails(admin().doc('Settings/HandledProjects').update({ lastWrite: 1 }));
+        await assertFails(admin().doc('Settings/HandledProjects').delete());
+        await assertFails(user().doc('Settings/HandledProjects').set({ projects: {} }));
     });
 
     it('the MCP audit log can be read and cleared by the admin, never written', async () => {

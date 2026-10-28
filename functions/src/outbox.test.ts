@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backoffMs, claimable, jobId, safeError } from "./outbox.js";
+import { backoffMs, claimable, jobId, retryReset, safeError } from "./outbox.js";
 
 describe("mail outbox", () => {
   it("lets a due pending job, or an expired claim, be taken - nothing else", () => {
@@ -26,5 +26,14 @@ describe("mail outbox", () => {
 
   it("builds ids that are safe as document ids and Message-IDs", () => {
     expect(jobId("contact-owner", "1700_ab/c")).toBe("contact-owner_1700_ab-c");
+  });
+
+  it("puts only a failed job, with its message still kept, back in the queue", () => {
+    expect(retryReset({ status: "failed", attempts: 6, html: "<p>x</p>" }, 50)).toEqual({ status: "pending", attempts: 0, nextAttemptAt: 50 });
+    expect(retryReset({ status: "failed", attempts: 6 }, 50)).toBeNull();
+    for (const status of ["pending", "sending", "sent"] as const) {
+      expect(retryReset({ status, html: "<p>x</p>" }, 50)).toBeNull();
+    }
+    expect(retryReset(undefined, 50)).toBeNull();
   });
 });
