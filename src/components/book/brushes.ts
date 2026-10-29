@@ -4,8 +4,10 @@
  * visit picks a different composition (a "mood", never the same one twice in a row) and
  * rolls the count, height, width and colour of each stroke. Strokes around the owner come
  * in from past the page edges, ring the body (far half behind, near half in front) and
- * are rejected if they would cross the face or the name on the shirt. Phones get a lighter set (fewer strokes and
- * bristles). Filters referenced here (#bp-rag, #bp-fabric, #bp-soft) are in PaintDefs.
+ * are rejected if they would cross the face or the name on the shirt. Phones get thinner strokes
+ * (fewer bristles, no rough edge) but still a full composition that follows the visit's mood,
+ * with the page strokes coming from the corners. Filters referenced here (#bp-rag, #bp-fabric,
+ * #bp-soft) are in PaintDefs.
  */
 
 import { isLite } from '../../lib/device';
@@ -194,7 +196,9 @@ function drawStage(root: HTMLElement, t0: number, animate: boolean, mood: Mood) 
 
     // Behind: long sweeps from the page edges that pass behind the body. Heights come from
     // shuffled bands, so two sweeps rarely land on the same line.
-    const sweeps = lite ? int(1, 2) : { sweep: int(3, 4), orbit: int(1, 2), slash: int(2, 3), bold: int(1, 2) }[mood];
+    const sweeps = lite
+        ? { sweep: int(2, 3), orbit: 2, slash: int(2, 3), bold: 2 }[mood]
+        : { sweep: int(3, 4), orbit: int(1, 2), slash: int(2, 3), bold: int(1, 2) }[mood];
     const bands = shuffle([[.22, .36], [.34, .5], [.48, .64], [.6, .78], [.74, .92]]);
     for (let i = 0; i < sweeps; i++) {
         const [a, b] = bands[i % bands.length], y = R(a, b);
@@ -211,7 +215,9 @@ function drawStage(root: HTMLElement, t0: number, animate: boolean, mood: Mood) 
         t += 170;
     }
     // Rings around the body: far half behind, near half across the front, never over the face or the shirt's name.
-    const rings = lite ? int(0, 1) : { sweep: int(1, 2), orbit: int(2, 3), slash: int(0, 1), bold: int(1, 2) }[mood];
+    const rings = lite
+        ? { sweep: 1, orbit: 2, slash: 1, bold: 1 }[mood]
+        : { sweep: int(1, 2), orbit: int(2, 3), slash: int(0, 1), bold: int(1, 2) }[mood];
     shuffle([[.44, .52], [.54, .64], [.68, .78], [.82, .92]]).slice(0, rings).forEach(([a, b]) => {
         const cx = W * R(.48, .57), cy = H * R(a, b), rx = W * R(.56, .8), ry = H * R(.045, .1), tilt = R(-.25, .25), w = R(22, 50) * k, col = colour();
         const near = safe(() => ring(cx, cy, rx, ry, tilt, -.05, Math.PI - R(.02, .1) * Math.PI), f, w);
@@ -220,7 +226,7 @@ function drawStage(root: HTMLElement, t0: number, animate: boolean, mood: Mood) 
         t += 420;
     });
     // Flicks in front, from either side of the body, checked against the face and the shirt's name.
-    const flicks = lite ? int(0, 1) : int(mood === 'slash' ? 2 : 0, 3);
+    const flicks = lite ? int(1, mood === 'slash' ? 3 : 2) : int(mood === 'slash' ? 2 : 0, 3);
     for (let i = 0; i < flicks; i++) {
         const left = rand() < .5, w = R(8, 16) * k;
         const p = safe(() => left
@@ -249,8 +255,13 @@ function drawBg(root: HTMLElement, t0: number, animate: boolean, mood: Mood) {
     const layer = el('g', { mask: `url(#${m.getAttribute('id')})` });
     svg.appendChild(layer);
     const big = W >= 1000 ? 1 : .55, frame: [number, number, number, number] = [0, 0, W, H];
-    const n = lite ? 2 : int(mood === 'bold' ? 2 : 3, 4);
-    const sides = shuffle<('l' | 'r' | 't' | 'b')[]>([['r', 't'], ['r', 'b'], ['l', 't'], ['l', 'b'], ['t', 'b']]);
+    const n = lite ? int(3, 4) : int(mood === 'bold' ? 2 : 3, 4);
+    // A phone screen is tall and narrow: its strokes come in from the corners, where the
+    // empty space is. Never the top-left corner (the handwritten "This is") and never top to
+    // bottom (it would cross the links under the nav).
+    const sides = lite
+        ? shuffle<('l' | 'r' | 't' | 'b')[]>([['r', 't'], ['l', 'b'], ['r', 'b']])
+        : shuffle<('l' | 'r' | 't' | 'b')[]>([['r', 't'], ['r', 'b'], ['l', 't'], ['l', 'b'], ['t', 'b']]);
     for (let i = 0; i < n; i++) {
         const w = (i === 0 ? R(55, mood === 'bold' ? 110 : 85) : R(18, 48)) * big;
         const col = i === 0 ? 'var(--accent)' : pick(['var(--accent)', 'var(--paint-ink)', '#1668d8']);
