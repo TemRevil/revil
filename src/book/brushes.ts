@@ -12,6 +12,7 @@
 
 import { isLite } from '../lib/device';
 import { handwrite } from '../lib/handwrite';
+import { BASELINE, STROKE, UNITS, penLine } from '../lib/pen/pen';
 import { onIdle } from '../lib/idle';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -302,38 +303,30 @@ function drawAround(layer: SVGElement, centre: HTMLElement, rb: DOMRect, s: numb
     }
 }
 
-/** "Tem Revil" on the shirt, letter by letter like the homepage's HandwritingText. */
+/** "Tem Revil" written on the shirt in the pen's handwriting (lib/pen), stroke by stroke. */
 function drawShirt(root: HTMLElement, t0: number, animate: boolean) {
     const stage = root.querySelector<HTMLElement>('.stage:not(.stage-back)'), svg = root.querySelector<SVGSVGElement>('.shirt');
     if (!stage || !svg) return;
     const W = stage.clientWidth, H = stage.clientHeight;
     svg.replaceChildren();
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    const fs = W * .15, text = 'Tem Revil', cx = W * .545, cy = H * .7;
+    const fs = W * .17, cx = W * .545, cy = H * .7;
+    const line = penLine('Tem Revil'), k = fs / UNITS;
     const g = el('g', { transform: `rotate(-7 ${cx} ${cy})`, filter: 'url(#bp-fabric)' });
+    const ink = el('g', {
+        transform: `translate(${cx - line.width * k / 2} ${cy + fs * .3 - BASELINE * k}) scale(${k})`,
+        fill: 'none', stroke: '#1f6fe0', 'stroke-width': STROKE * UNITS * 1.1, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    });
+    for (const letter of line.letters) {
+        if (letter.kind === 'space') { ink.appendChild(el('g', { 'data-pen-space': '' })); continue; }
+        if (letter.kind !== 'ink') continue;
+        for (const s of letter.strokes) {
+            ink.appendChild(el('path', { d: s.d, transform: `translate(${s.x} ${s.y})`, pathLength: 1, 'data-pen': s.length.toFixed(3) }));
+        }
+    }
+    g.appendChild(ink);
     svg.appendChild(g);
-    const letters = [...text].map(ch => {
-        const t = el('text', { 'font-size': fs, y: cy + fs * .35 }) as SVGTextElement;
-        t.style.fontFamily = 'var(--font-caveat), Caveat, cursive';
-        t.style.fontWeight = '700';
-        t.textContent = ch === ' ' ? ' ' : ch;
-        g.appendChild(t);
-        return t;
-    });
-    // Measured once all are in: one layout pass, not one per letter.
-    const widths = letters.map((t, i) => text[i] === ' ' ? fs * .3 : t.getComputedTextLength());
-    let x = cx - widths.reduce((a, b) => a + b, 0) / 2;
-    letters.forEach((t, i) => {
-        t.setAttribute('x', String(x));
-        x += widths[i];
-        t.style.fill = '#1f6fe0'; t.style.stroke = '#1f6fe0'; t.style.strokeWidth = '1.5'; t.style.paintOrder = 'stroke fill';
-        if (!animate) { t.style.fillOpacity = '1'; t.style.strokeOpacity = '.55'; return; }
-        const Ls = fs * 5, start = t0 + i * 80;
-        t.style.strokeDasharray = String(Ls); t.style.strokeDashoffset = String(Ls); t.style.fillOpacity = '0';
-        t.animate([{ strokeDashoffset: Ls }, { strokeDashoffset: 0 }], { duration: 240, delay: start, easing: 'ease-in-out', fill: 'forwards' });
-        t.animate([{ fillOpacity: 0 }, { fillOpacity: 1 }], { duration: 200, delay: start + 90, easing: 'ease-out', fill: 'forwards' });
-        t.animate([{ strokeOpacity: 1 }, { strokeOpacity: .55 }], { duration: 180, delay: start + 110, fill: 'forwards' });
-    });
+    if (animate) handwrite(ink, { delay: t0 });
 }
 
 /** Lite pages bring the text in without the blur, which re-rasters every letter on each frame. */

@@ -8,6 +8,7 @@ import { useSettings } from './SettingsContext';
 import useTheme from '../hooks/useTheme';
 import { PaintDefs, splitSlogan, useHostClock, usePaint } from '../book/paintKit';
 import { Chars } from '../ui/Chars';
+import Handwriting from '../ui/Handwriting';
 import { onIdle } from '../lib/idle';
 import { useHydrated } from '../hooks/useHydrated';
 import '../book/book.css';
@@ -361,7 +362,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
             <svg className="paint-bg" aria-hidden="true" />
             <div className="layout">
                 <section className="hero">
-                    <div className="this-is" aria-hidden="true" data-write><Chars text="THIS IS" className="ch" /></div>
+                    <div className="this-is" aria-hidden="true" data-write><Handwriting text="THIS IS" /></div>
                     <h1 className="name">
                         <span className="sr-only">{profileName}{profileTitle ? `, ${profileTitle}` : ''}</span>
                         {nameLines.map(line => <span key={line} aria-hidden="true"><Chars text={line} className="name-char" /></span>)}
@@ -373,7 +374,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
                         <svg className="ring-front" aria-hidden="true" />
                     </div>
                     <div className="slogan" aria-hidden="true" data-write>
-                        {sloganLines.map((line, i) => <span key={i}>{i > 0 && <br />}<Chars text={line} className="ch" /></span>)}
+                        {sloganLines.map((line, i) => <span key={i}>{i > 0 && <br />}<Handwriting text={line} /></span>)}
                     </div>
                     <div className="pills">
                         <StatusPill isDark={isDark} label={status.label} color={status.color} projects={projects} />

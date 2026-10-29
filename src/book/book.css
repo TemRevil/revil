@@ -35,14 +35,17 @@ html[data-lite].dark .bp { --glass-bg-deep: rgba(14,14,16,.9); --pill-bg: rgba(0
 
 /* ---- hero: name behind, the cutout in front, paint around it ---- */
 .bp .hero { position: relative; height: 600px; }
-.bp .this-is { position: absolute; left: 16px; top: 22px; z-index: 3; font-family: var(--font-caveat), cursive; font-weight: 700; font-size-adjust: ex-height 0.44; font-size: 30px; color: var(--accent); transform: rotate(-6deg); transform-origin: left center; }
+.bp .this-is { position: absolute; left: 16px; top: 22px; z-index: 3; font-size: 30px; color: var(--accent); transform: rotate(-6deg); transform-origin: left center; }
 .bp h1.name { position: absolute; left: 12px; right: 12px; top: 52px; z-index: 1; margin: 0; font-family: var(--font-archivo-black), sans-serif; font-weight: 900; text-transform: uppercase; line-height: .8; display: flex; flex-direction: column; }
 .bp h1.name > span { display: flex; font-size: 84px; letter-spacing: -.05em; }
 .bp h1.name > span:nth-child(2) { align-self: flex-start; margin-left: -4px; }
 .bp h1.name > span:nth-child(3) { align-self: flex-end; margin-top: -8px; }
-.bp .name-char, .bp .ch { display: inline-block; }
-.bp .slogan { position: absolute; right: 10px; top: 60px; z-index: 6; font-family: var(--font-caveat), cursive; font-weight: 700; font-size-adjust: ex-height 0.44; font-size: 17px; line-height: 1; text-align: right; color: var(--accent); transform: rotate(-3deg); transform-origin: right center;
-  text-shadow: 0 0 16px var(--bg-primary), 0 0 5px var(--bg-primary); }
+.bp .name-char { display: inline-block; }
+.bp .slogan { position: absolute; right: 10px; top: 60px; z-index: 6; font-size: 17px; line-height: 1; text-align: right; color: var(--accent); transform: rotate(-3deg); transform-origin: right center; }
+/* The pen's handwriting (ui/Handwriting) a little larger than these sizes, which were set for a fuller font. */
+.bp :is(.this-is, .slogan) .pen { font-size: 1.16em; }
+/* A halo of the page's colour keeps the slogan clear of the paint behind it. */
+.bp .slogan .pen { filter: drop-shadow(0 0 5px var(--bg-primary)) drop-shadow(0 0 12px var(--bg-primary)); }
 .bp .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .bp .stage { position: absolute; left: 50%; bottom: 0; width: 318px; height: 444px; transform: translateX(-50%); z-index: 2; }
 .bp .stage > * { position: absolute; inset: 0; width: 100%; height: 100%; }

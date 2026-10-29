@@ -224,7 +224,6 @@
 .pj-list-head { margin: 40px 0 32px; }
 .pj-kicker {
   margin: 0 0 -6px 10px;
-  font-family: var(--font-caveat), cursive;
   font-size: 3rem;
   line-height: 1;
   color: var(--accent);

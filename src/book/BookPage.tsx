@@ -8,6 +8,7 @@ import { parseBookPage, introRuns, linksFromAccount, type BookLink } from '../li
 import { availabilityStatus } from '../lib/availability';
 import { PaintDefs, splitSlogan, useHostClock, usePaint } from './paintKit';
 import { Chars } from '../ui/Chars';
+import Handwriting from '../ui/Handwriting';
 import useBookTrail from './useBookTrail';
 import { analytics } from '../lib/analytics/collector';
 import { cachedDoc } from '../lib/dataCache';
@@ -150,7 +151,7 @@ export default function BookPage() {
 
             <main className="layout">
                 <section className="hero">
-                    <div className="this-is" aria-hidden="true" data-write><Chars text="THIS IS" className="ch" /></div>
+                    <div className="this-is" aria-hidden="true" data-write><Handwriting text="THIS IS" /></div>
                     <h1 className="name">
                         <span className="sr-only">Tem Revil, {content.slogan}</span>
                         {NAME_LINES.map(line => <span key={line} aria-hidden="true"><Chars text={line} className="name-char" /></span>)}
@@ -162,7 +163,7 @@ export default function BookPage() {
                         <svg className="ring-front" aria-hidden="true" />
                     </div>
                     <div className="slogan" aria-hidden="true" data-write>
-                        {sloganLines.map((line, i) => <span key={i}>{i > 0 && <br />}<Chars text={line} className="ch" /></span>)}
+                        {sloganLines.map((line, i) => <span key={i}>{i > 0 && <br />}<Handwriting text={line} /></span>)}
                     </div>
                     <div className="pills">
                         <span className="pill"><span className="dot" aria-hidden="true" style={{ '--dot': status.color } as React.CSSProperties}><i /><i /></span>{status.label}</span>

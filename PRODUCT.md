@@ -32,7 +32,7 @@ A frontend and AI engineer who builds motion-rich web apps and puts AI to work i
 ## Brand Commitments
 
 - Name: Mohammed Ahmed, known as Tem Revil. Title on the live site: "Frontend & AI Engineer".
-- Fonts in use: Archivo Black (name), Caveat (handwriting, animated), Inter (body and section titles). Accent #3395ff.
+- Fonts in use: Archivo Black (name) and Inter (body and section titles). The handwriting is Shadows Into Light as pen strokes (src/lib/pen), written in stroke by stroke. Accent #3395ff.
 - /book has a light, paint-and-collage look: dry-brush strokes, stacked cropped name type, photo panels.
 
 ## Evidence on Hand

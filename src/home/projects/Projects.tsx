@@ -11,7 +11,7 @@ import MContributorView, { Contributor } from './ContributorView';
 import { ContributorData } from '../../types';
 import { enter } from '../entrance';
 import { handwrite } from '../../lib/handwrite';
-import { Chars } from '../../ui/Chars';
+import Handwriting from '../../ui/Handwriting';
 import { useTailor } from '../../lib/analytics/useTailor';
 import { projectSlugs } from '../../lib/projectSlug';
 import {
@@ -113,12 +113,11 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                         aria-hidden="true"
                         data-write
                         style={{
-                            fontFamily: "var(--font-caveat), cursive",
                             color: 'var(--accent)',
                             marginBottom: -20
                         }}
                     >
-                        <Chars text="Selected" />
+                        <Handwriting text="Selected" />
                     </div>
                     <h2
                         ref={titleRef}

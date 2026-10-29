@@ -4,6 +4,8 @@ import { useBoilHold } from '../book/paintKit';
 import { whenFramesFlow } from '../lib/idle';
 import { prefersReducedMotion } from '../lib/device';
 import { useHydrated } from '../hooks/useHydrated';
+import { handwrite } from '../lib/handwrite';
+import Handwriting from '../ui/Handwriting';
 
 interface PageTransitionProps {
     isTransitioning: boolean;
@@ -17,8 +19,8 @@ interface PageTransitionProps {
 const EASE_IN_OUT = 'cubic-bezier(.76, 0, .24, 1)';
 /** The curtain's sweep across the page, in and out. */
 const SWEEP = 150;
-/** Each letter's stroke, the gap between letters, and the fill that follows. */
-const WRITE = 100, STAGGER = 30, FILL = 60;
+/** The name is written this many times faster than the labels on the page: it holds up the switch. */
+const PACE = 3;
 /** How long the written name stays before the curtain lifts. */
 const HOLD = 150;
 /** With reduced motion: the curtain fades in and out over the page instead of sweeping. */
@@ -40,7 +42,7 @@ const past = (side: Side) =>
 const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete, nextSectionName = '', direction = 0 }: PageTransitionProps) => {
     useBoilHold(isTransitioning);
     const curtainRef = useRef<HTMLDivElement>(null);
-    const svgRef = useRef<SVGSVGElement>(null);
+    const nameRef = useRef<HTMLDivElement>(null);
     const hydrated = useHydrated();
     const [fontSize, setFontSize] = useState(100);
     const currentDirection: Side =
@@ -62,12 +64,10 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
     // Read from refs, so a parent re-render mid-switch can't restart the sequence.
     const moving = useRef(onCurtainMoving);
     const completed = useRef(onTransitionComplete);
-    const size = useRef(fontSize);
     const dir = useRef(currentDirection);
     useEffect(() => {
         moving.current = onCurtainMoving;
         completed.current = onTransitionComplete;
-        size.current = fontSize;
         dir.current = currentDirection;
     });
 
@@ -88,7 +88,7 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
         if (still) s.opacity = '0'; else s.transform = past(d);
         s.display = 'block';
 
-        const letters = [...(svgRef.current?.querySelectorAll<SVGTSpanElement>('.letter-path') ?? [])];
+        const name = nameRef.current;
         const anims: Animation[] = [];
         let live = true, stopWaiting = () => { };
         const run = (el: Element, frames: Keyframe[], o: KeyframeAnimationOptions) => {
@@ -97,30 +97,20 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
             return a.finished;
         };
 
+        // The name is written stroke by stroke (with reduced motion it is simply there).
         const write = (): Promise<unknown> => {
-            const L = size.current * 3;
-            if (still) {
-                letters.forEach(t => { t.style.visibility = 'visible'; t.style.fillOpacity = '1'; t.style.strokeOpacity = '.3'; });
-                return Promise.resolve();
-            }
-            return Promise.all(letters.map((t, i) => {
-                const ts = t.style;
-                ts.strokeDasharray = `${L}`;
-                ts.visibility = 'visible';
-                // The stroke draws, then the fill comes in under it and the stroke fades back.
-                const delay = i * STAGGER;
-                return Promise.all([
-                    run(t, [{ strokeDashoffset: L }, { strokeDashoffset: 0 }], { duration: WRITE, delay, easing: 'cubic-bezier(.5, 1, .89, 1)', fill: 'both' }),
-                    run(t, [{ fillOpacity: 0, strokeOpacity: 1 }, { fillOpacity: 1, strokeOpacity: .3 }], { duration: FILL, delay: delay + WRITE, easing: 'cubic-bezier(.5, 1, .89, 1)', fill: 'both' }),
-                ]);
-            }));
+            if (!name) return Promise.resolve();
+            const ink = handwrite(name, { pace: PACE });
+            name.style.visibility = 'visible';
+            anims.push(...ink);
+            return Promise.all(ink.map(a => a.finished));
         };
 
         const finish = () => {
             s.display = 'none';
             s.transform = '';
             s.opacity = '';
-            letters.forEach(t => { t.style.visibility = 'hidden'; t.style.fillOpacity = ''; t.style.strokeOpacity = ''; });
+            if (name) name.style.visibility = 'hidden';
             anims.forEach(a => a.cancel());
             anims.length = 0;
             completed.current();
@@ -165,39 +155,9 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
             style={{ backgroundColor: 'transparent', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', display: 'none' }}
         >
             <div className="absolute flex items-center justify-center" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', height: '100%' }}>
-                <svg
-                    ref={svgRef}
-                    width="100%"
-                    height="100%"
-                    style={{ overflow: 'visible' }}
-                >
-                    <text
-                        x="50%"
-                        y="50%"
-                        dominantBaseline="central"
-                        textAnchor="middle"
-                        fontFamily="var(--font-caveat), cursive"
-                        fontSize={fontSize}
-                        strokeWidth="1.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{ paintOrder: 'stroke fill', fill: 'var(--text-primary)', fillOpacity: 0, stroke: 'var(--text-primary)', strokeOpacity: 1 }}
-                    >
-                        {displayName.split('').map((char: string, index: number) => {
-                            if (char === ' ') return <tspan key={index}> </tspan>;
-
-                            return (
-                                <tspan
-                                    key={index}
-                                    className="letter-path"
-                                    style={{ visibility: 'hidden' }}
-                                >
-                                    {char}
-                                </tspan>
-                            );
-                        })}
-                    </text>
-                </svg>
+                <div ref={nameRef} style={{ visibility: 'hidden', fontSize, lineHeight: 1, color: 'var(--text-primary)' }}>
+                    <Handwriting text={displayName} />
+                </div>
             </div>
         </div>,
         document.body,

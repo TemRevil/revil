@@ -7,7 +7,6 @@
 <style>
   @font-face { font-family: Inter; font-weight: 100 900; src: url(../public/fonts/inter-latin.woff2) format("woff2"); }
   @font-face { font-family: "Archivo Black"; src: url(../public/fonts/archivo-black-latin.woff2) format("woff2"); }
-  @font-face { font-family: Caveat; font-weight: 400 700; src: url(../public/fonts/caveat-latin.woff2) format("woff2"); }
   * { margin: 0; box-sizing: border-box; }
   html, body { width: 1200px; height: 630px; overflow: hidden; }
   body {
@@ -22,7 +21,7 @@
     background: radial-gradient(circle, rgba(51,149,255,.22), rgba(51,149,255,0) 62%); }
   .portrait { position: absolute; right: 40px; bottom: 0; height: 600px; }
   .copy { position: absolute; left: 72px; top: 92px; width: 640px; }
-  .this-is { font-family: Caveat, cursive; font-weight: 700; color: #3395ff; font-size: 46px; transform: rotate(-5deg); transform-origin: left center; margin-bottom: 6px; }
+  .this-is { color: #3395ff; font-size: 54px; line-height: 1; transform: rotate(-5deg); transform-origin: left center; margin-bottom: 6px; }
   h1 { font-family: "Archivo Black", sans-serif; font-weight: 400; font-size: 132px; line-height: .86; letter-spacing: -.045em; text-transform: uppercase; }
   .role { margin-top: 34px; font-size: 40px; font-weight: 600; letter-spacing: -.01em; }
   .meta { margin-top: 12px; font-size: 26px; color: #9aa3b2; }
@@ -34,7 +33,8 @@
   <div class="glow"></div>
   <img class="portrait" src="../public/book/tem-cutout.webp" alt="">
   <div class="copy">
-    <div class="this-is">This is</div>
+    <!-- The pen's handwriting (src/ui/Handwriting), rendered once. -->
+    <div class="this-is"><svg class="pen" viewBox="0 -50.2 129.54627685546873 44" width="2.944233564897017em" height="1em" aria-hidden="true" focusable="false" style="display:inline-block;overflow:visible;vertical-align:-0.2em"><g fill="none" stroke="currentColor" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"><path d="m 0,0 c 11.85,-2.54,23.29,-3.54,33.94,-4.81" transform="translate(0 -44.6)" pathLength="1" data-pen="0.779"></path><path d="m 0,0 c 1.08,11.78,1.87,23.7,3.61,35.15" transform="translate(16.17 -50.08)" pathLength="1" data-pen="0.803"></path><path d="m 0,0 c 1.15,12.16,0.58,24.08,0,36,0.07,0.27,4.44,-11.09,7.86,-18,2.04,-4.12,8.49,-6.05,10.28,-2.6,2.47,4.76,-0.18,20.55,0.28,20.51" transform="translate(39.239999999999995 -51.69)" pathLength="1" data-pen="2.021"></path><path d="m 0,0 c -0.31,9.39,-0.72,18.77,0.19,28.16" transform="translate(65.55115966796875 -43.18)" pathLength="1" data-pen="0.641"></path><path d="m 0,0 c -0.71,-0.06,-1.46,1.43,-0.85,1.8,1.02,0.61,1.54,0.59,1.83,-0.25,0.26,-0.76,-0.58,-1.51,-0.98,-1.54 z" transform="translate(64.82115966796874 -51.29)" pathLength="1" data-pen="0.152"></path><path d="m 0,0 c -2.69,-3.79,-14.98,4.21,-10.68,11.91,2.33,4.18,9.84,-4.15,12.66,-0.28,3.45,4.73,-7.86,13.29,-9.07,13.13" transform="translate(82.71610107421874 -38.27)" pathLength="1" data-pen="1.178"></path><g data-pen-space="true"></g><path d="m 0,0 c -0.31,9.39,-0.72,18.77,0.19,28.16" transform="translate(109.75090576171873 -43.18)" pathLength="1" data-pen="0.641"></path><path d="m 0,0 c -0.71,-0.06,-1.46,1.43,-0.85,1.8,1.02,0.61,1.54,0.59,1.83,-0.25,0.26,-0.76,-0.58,-1.51,-0.98,-1.54 z" transform="translate(109.02090576171872 -51.29)" pathLength="1" data-pen="0.152"></path><path d="m 0,0 c -2.69,-3.79,-14.98,4.21,-10.68,11.91,2.33,4.18,9.84,-4.15,12.66,-0.28,3.45,4.73,-7.86,13.29,-9.07,13.13" transform="translate(126.91584716796874 -38.27)" pathLength="1" data-pen="1.178"></path></g></svg></div>
     <h1>Tem<br>Revil</h1>
     <div class="role">Frontend &amp; AI Engineer</div>
     <div class="meta">Mohammed Ahmed, El Mansoura, Egypt</div>

@@ -99,10 +99,9 @@ export default function RootLayout({
         {/* The Content Security Policy is a real HTTP header, set per page with the
             hashes of that page's inline scripts (deploy/hostinger/.htaccess, filled in by
             scripts/csp-headers.mjs at deploy). */}
-        {/* The three faces the first screen draws with (fonts.css). */}
+        {/* The two faces the first screen draws with (fonts.css). */}
         <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/archivo-black-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
-        <link rel="preload" href="/fonts/caveat-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>

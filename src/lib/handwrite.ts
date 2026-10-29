@@ -1,52 +1,58 @@
 import { prefersReducedMotion } from './device';
 
-/** How long the pen takes to cross one em of ink (ms): calm, a little slower than a quick hand. */
-export const MS_PER_EM = 300;
-/** The pen lifted between two words (ms). */
-export const LIFT = 110;
-/** Even the thinnest letter takes this long (ms). */
-const MIN_STROKE = 70;
+/** How long the pen takes to travel one em of ink (ms). */
+export const MS_PER_EM = 55;
+/** The pen lifted and set down again between two strokes (ms). */
+export const LIFT = 35;
+/** The pause between two words (ms). */
+export const WORD = 150;
+/** Even a dot takes this long (ms). */
+const MIN_STROKE = 60;
+/** A character the pen can't write (see lib/pen) fades in for this long (ms). */
+const TEXT = 180;
+
+export type PenStep = { kind: 'stroke'; length: number } | { kind: 'text' } | { kind: 'space' };
 
 /**
- * When each letter starts and how long its ink takes: one after another at a steady pen
- * speed, so a wide letter takes longer than a narrow one, and a space is the pen lifting.
+ * When each step starts and how long it takes: strokes one after another at a steady pen
+ * speed, so a long stroke takes longer than a short one, with the pen lifting between
+ * strokes and pausing between words. `pace` 2 writes twice as fast.
  */
-export function penTimes(widths: number[], spaces: boolean[], em: number, start = 0) {
+export function penTimes(steps: PenStep[], start = 0, pace = 1) {
     let at = start;
-    return widths.map((w, i) => {
-        const duration = spaces[i] ? LIFT : Math.max(MIN_STROKE, (w / em) * MS_PER_EM);
+    return steps.map((step, i) => {
+        if (step.kind === 'space') { at += WORD / pace; return { delay: at, duration: 0 }; }
+        if (i > 0 && steps[i - 1].kind !== 'space') at += LIFT / pace;
+        const duration = (step.kind === 'text' ? TEXT : Math.max(MIN_STROKE, step.length * MS_PER_EM)) / pace;
         const time = { delay: at, duration };
         at += duration;
         return time;
     });
 }
 
-// The ink: solid behind the pen, a soft edge where it is still wet, nothing ahead of it.
-const INK = 'linear-gradient(90deg, #000 45%, transparent 55%)';
-const frame = (position: string): Keyframe => ({
-    maskImage: INK, WebkitMaskImage: INK,
-    maskSize: '250% 100%', WebkitMaskSize: '250% 100%',
-    maskRepeat: 'no-repeat', WebkitMaskRepeat: 'no-repeat',
-    maskPosition: position, WebkitMaskPosition: position,
-} as Keyframe);
-
 /**
- * Writes the handwritten text in `root` (its letters are `.ch` spans, see Chars) as a pen
- * would: each letter's ink appears left to right, letter after letter. With reduced
- * motion the text is just there. `show` lifts an `opacity: 0` the label waited behind.
- * Returns the animations, to cancel on cleanup.
+ * Writes the handwriting in `root` (ui/Handwriting) in by pen, stroke after stroke, in
+ * the order a hand makes them. With reduced motion the words are just there. `show`
+ * lifts an `opacity: 0` the label waited behind; `pace` 2 writes twice as fast. Returns
+ * the animations, to cancel on cleanup.
  */
-export function handwrite(root: HTMLElement | null | undefined, { delay = 0, show = false } = {}): Animation[] {
+export function handwrite(root: Element | null | undefined, { delay = 0, show = false, pace = 1 } = {}): Animation[] {
     if (!root) return [];
-    if (show) root.style.opacity = '1';
+    if (show) (root as HTMLElement).style.opacity = '1';
     if (prefersReducedMotion()) return [];
-    const letters = [...root.querySelectorAll<HTMLElement>('.ch')];
-    // Measured together, untouched by the rotation the labels carry. The padding that keeps
-    // a letter's tails inside its mask is not ink.
-    const pad = letters.length ? parseFloat(getComputedStyle(letters[0]).paddingLeft) * 2 : 0;
-    const widths = letters.map(l => l.offsetWidth - pad);
-    const em = parseFloat(getComputedStyle(root).fontSize) || 16;
-    const times = penTimes(widths, letters.map(l => !l.textContent?.trim()), em, delay);
-    return letters.map((l, i) => l.animate([frame('100% 0'), frame('0 0')],
-        { duration: times[i].duration, delay: times[i].delay, easing: 'linear', fill: 'backwards' }));
+    const nodes = [...root.querySelectorAll<SVGElement>('[data-pen], [data-pen-text], [data-pen-space]')];
+    const steps: PenStep[] = nodes.map(n => n.hasAttribute('data-pen')
+        ? { kind: 'stroke', length: Number(n.getAttribute('data-pen')) }
+        : n.hasAttribute('data-pen-text') ? { kind: 'text' } : { kind: 'space' });
+    const times = penTimes(steps, delay, pace);
+    return nodes.flatMap((n, i) => {
+        const { delay: at, duration } = times[i];
+        if (steps[i].kind === 'space') return [];
+        if (steps[i].kind === 'text') return [n.animate([{ opacity: 0 }, { opacity: 1 }], { duration, delay: at, fill: 'backwards' })];
+        // pathLength is 1: the dash is the whole stroke, pulled out from where the pen starts.
+        return [n.animate(
+            [{ strokeDasharray: '1 2', strokeDashoffset: 1.02 }, { strokeDasharray: '1 2', strokeDashoffset: 0 }],
+            { duration, delay: at, easing: 'cubic-bezier(.4,0,.4,1)', fill: 'backwards' },
+        )];
+    });
 }

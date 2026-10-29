@@ -301,7 +301,7 @@ function App() {
     if (!root) return;
     const MOUNT_AHEAD = 600;
     // `scrolled` is false for the first pass: Stack sits one screen down, inside MOUNT_AHEAD,
-    // so it would mount (and pull in Firebase + the Caveat font) during the hero's entrance.
+    // so it would mount (and pull in Firebase) during the hero's entrance.
     // Until the reader scrolls, heroSettled mounts the rest instead.
     const compute = (scrolled: boolean) => {
       const vh = window.innerHeight;

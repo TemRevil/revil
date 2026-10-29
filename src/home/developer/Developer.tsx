@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { enter } from '../entrance';
 import { handwrite } from '../../lib/handwrite';
-import { Chars } from '../../ui/Chars';
+import Handwriting from '../../ui/Handwriting';
 import { Activity, Flame, FolderGit2 } from 'lucide-react';
 import GitHubCommitsGraph from './GitHubCommitsGraph';
 import StreakCircle from './StreakCircle';
@@ -98,12 +98,11 @@ const Developer = ({ active = true }: { active?: boolean }) => {
                         aria-hidden="true"
                         data-write
                         style={{
-                            fontFamily: 'var(--font-caveat), cursive',
                             color: 'var(--accent)',
                             marginBottom: -20,
                         }}
                     >
-                        <Chars text="Open Source" />
+                        <Handwriting text="Open Source" />
                     </div>
                     <h2
                         ref={titleRef}

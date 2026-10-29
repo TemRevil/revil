@@ -1,7 +1,7 @@
 import { createElement, useEffect, useRef, useState, useMemo } from 'react';
 import { EASE_OUT_QUAD, enter } from './entrance';
 import { handwrite } from '../lib/handwrite';
-import { Chars } from '../ui/Chars';
+import Handwriting from '../ui/Handwriting';
 import { watchDoc } from '../lib/liveDoc';
 import { cachedDoc, type Data } from '../lib/dataCache';
 import { Mail, Link as LinkIcon, Code } from 'lucide-react';
@@ -266,11 +266,10 @@ const Stack = ({ active = true }: { active?: boolean }) => {
                         aria-hidden="true"
                         data-write
                         style={{
-                            fontFamily: "var(--font-caveat), cursive",
                             color: 'var(--accent)'
                         }}
                     >
-                        <Chars text="My Tech" />
+                        <Handwriting text="My Tech" />
                     </div>
                     <h2
                         ref={titleRef}
