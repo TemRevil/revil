@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Search } from 'lucide-react';
 import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { cachedCollection, cachedDoc, type Data, type Row } from '../lib/dataCache';
-import { sanitizeSvg } from '../lib/sanitize';
 
 import MProjectView from './M-ProjectView';
 import Reflow from './Reflow';
@@ -15,6 +14,7 @@ import { enter } from './entrance';
 import { useTailor } from '../lib/analytics/useTailor';
 import { projectSlugs } from '../utils/projectSlug';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../utils/fuzzy';
+import ProjectFilters from './ProjectFilters';
 
 interface RawContributorData {
     Name?: string;
@@ -397,13 +397,6 @@ const Projects = ({ active = true }: { active?: boolean }) => {
         const timer = setTimeout(() => setDebouncedSearch(searchQuery), 250);
         return () => clearTimeout(timer);
     }, [searchQuery]);
-    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
-
-    useEffect(() => {
-        const handleResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
     // windowWidth is still used by filter tags responsive layout below
 
     const [rawProjects, setRawProjects] = useState<FirestoreProject[]>(() => (cachedCollection(['Projects']) ?? []) as FirestoreProject[]);
@@ -624,65 +617,14 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                     </div>
                 </div>
 
-                {/* Filter Tags - Reduced MB */}
-                <div className={`mb-8 flex flex-wrap items-center ${windowWidth < 460 ? 'gap-2' : 'gap-2.5'}`}>
-                    <span className="text-xs font-black text-sec mr-2.5 uppercase tracking-widest opacity-60">
-                        Filter View:
-                    </span>
-
-                    {/* Tags Container */}
-                    <div className="flex flex-wrap gap-2 items-center">
-                        {availableTags.map(tag => {
-                            const isActive = selectedTags.includes(tag.name);
-                            const isDead = deadTags.has(tag.name);
-                            const isUrl = tag.iconSvg && (tag.iconSvg.startsWith('http') || tag.iconSvg.includes('/o/'));
-
-                            return (
-                                <button
-                                    key={tag.id}
-                                    onClick={() => toggleTag(tag.name)}
-                                    disabled={isDead}
-                                    title={isDead ? 'No project has this with the tags picked' : undefined}
-                                    className={`
-                                        flex items-center gap-2 rounded-xl border font-bold transition-all duration-300
-                                        backdrop-blur-xl shadow-sm whitespace-nowrap
-                                        ${windowWidth < 460 ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'}
-                                        ${isDead ? 'cursor-not-allowed opacity-30' : 'cursor-pointer'}
-                                        ${isActive
-                                            ? 'border-accent bg-[rgba(59,130,246,0.12)] text-accent scale-105 z-10 shadow-[0_8px_16px_-4px_rgba(59,130,246,0.25)]'
-                                            : 'border-[var(--section-border)] bg-[var(--card-bg)] text-sec'}
-                                    `}
-                                >
-                                    {tag.iconSvg && (
-                                        isUrl ? (
-                                            <img
-                                                src={tag.iconSvg}
-                                                alt={tag.name}
-                                                className={`w-8 h-8 object-contain ${isActive ? '' : 'grayscale opacity-60'}`}
-                                            />
-                                        ) : (
-                                            <div
-                                                dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.iconSvg) }}
-                                                className="w-8 h-8 fill-current"
-                                                style={{ opacity: isActive ? 1 : 0.6 }}
-                                            />
-                                        )
-                                    )}
-                                    {tag.name}
-                                </button>
-                            );
-                        })}
-
-                        {selectedTags.length > 0 && (
-                            <button
-                                onClick={() => setSelectedTags([])}
-                                className="px-3 py-2 bg-transparent border-none text-accent text-xs font-black cursor-pointer transition-all duration-200 uppercase tracking-widest ml-1 hover:opacity-70"
-                            >
-                                [ Reset ]
-                            </button>
-                        )}
-                    </div>
-                </div>
+                <ProjectFilters
+                    tags={availableTags}
+                    selected={selectedTags}
+                    disabled={deadTags}
+                    resultCount={filteredProjects.length}
+                    onToggle={toggleTag}
+                    onClear={() => setSelectedTags([])}
+                />
 
                 {/* Projects Grid */}
                 <Reflow
