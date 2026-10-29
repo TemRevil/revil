@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { watchCollection, watchDoc } from '../lib/liveDoc';
@@ -686,7 +686,9 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                         data-more-after={rail.after || undefined}
                         className="phone-rail gap-2 max-md:grid max-md:grid-rows-2 max-md:grid-flow-col max-md:auto-cols-max max-md:overflow-x-auto max-md:overscroll-x-contain max-md:py-1 hide-scrollbar md:flex md:flex-wrap md:items-center">
                         {availableTags.map(tag => {
-                            const isActive = selectedTags.includes(tag.name);
+                            // On a phone the picked tags lead the rail in the order they were picked.
+                            const pick = selectedTags.indexOf(tag.name);
+                            const isActive = pick >= 0;
                             const isDead = deadTags.has(tag.name);
                             const isUrl = tag.iconSvg && (tag.iconSvg.startsWith('http') || tag.iconSvg.includes('/o/'));
 
@@ -696,12 +698,13 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                                     onClick={() => toggleTag(tag.name)}
                                     disabled={isDead}
                                     aria-pressed={isActive}
+                                    style={isActive ? { '--pick': pick - selectedTags.length } as CSSProperties : undefined}
                                     title={isDead ? 'No project has this with the tags picked' : undefined}
                                     className={`
                                         flex items-center gap-2 border font-bold transition-all duration-300 shadow-sm whitespace-nowrap
                                         max-md:h-10 max-md:px-3 max-md:rounded-lg max-md:text-[13px]
                                         md:px-4 md:py-2 md:rounded-xl md:text-sm md:backdrop-blur-xl
-                                        ${isActive ? 'max-md:-order-1' : isDead ? 'max-md:order-1' : ''}
+                                        ${isActive ? 'max-md:order-(--pick)' : ''}
                                         ${isDead ? 'cursor-not-allowed opacity-30' : 'cursor-pointer'}
                                         ${isActive
                                             ? 'border-accent bg-[rgba(59,130,246,0.12)] text-accent md:scale-105 z-10 shadow-[0_8px_16px_-4px_rgba(59,130,246,0.25)]'
