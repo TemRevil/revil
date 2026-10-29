@@ -1,36 +1,103 @@
-/* The privacy page: one readable column on the project pages' frame (standalone.css). */
+/* The privacy page on the project pages' frame (standalone.css): a heading, then the
+   text beside an "On this page" list that stays in view and marks the section being
+   read (Contents.tsx). On a phone the list sits above the text. */
 .pv {
-  max-width: 680px;
   padding-top: 40px;
-  line-height: 1.65;
-  font-size: 15.5px;
   color: var(--text-secondary);
 }
+.pv-hero { max-width: 680px; }
 .pv h1 {
   margin: 0 0 14px;
   color: var(--text-primary);
 }
-.pv h2 {
-  margin: 36px 0 10px;
-  font-size: 17px;
-  color: var(--text-primary);
-}
 .pv-lead {
-  font-size: 16.5px;
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.65;
   color: var(--text-primary);
 }
-.pv ul {
+
+.pv-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 4em;
+  margin-top: 48px;
+}
+.pv-side {
+  flex-shrink: 0;
+  width: 13.75em;
+  position: sticky;
+  top: 2.5em;
+}
+.pv-article {
+  flex: 1;
+  min-width: 0;
+  max-width: 40em;
+  font-size: 15.5px;
+  line-height: 1.65;
+}
+@media (max-width: 767px) {
+  .pv-layout { flex-direction: column; gap: 2em; margin-top: 32px; }
+  .pv-side { width: 100%; position: static; }
+}
+
+/* "On this page" */
+.toc-label {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.toc-list { margin: 0; padding: 0; list-style: none; }
+.toc-link {
+  display: block;
+  padding: 0.4rem 0.5em 0.4rem 1em;
+  border-left: 1px solid var(--section-border);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.25s, box-shadow 0.25s;
+}
+.toc-link:hover { color: var(--text-primary); }
+.toc-link[aria-current] {
+  color: var(--text-primary);
+  box-shadow: inset 2px 0 0 #C46532;
+}
+.toc-link:focus-visible {
+  outline: 2px solid #C46532;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* The text */
+.pv-article h2 {
+  margin: 2.2em 0 0.6em;
+  font-size: 1.45em;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  scroll-margin-top: 32px;
+}
+.pv-article section:first-child h2 { margin-top: 0; }
+.pv-article h2:focus { outline: none; }
+.pv-article ul {
   margin: 0;
   padding-left: 20px;
   display: grid;
   gap: 8px;
+  list-style: disc;
 }
-.pv p { margin: 0 0 10px; }
-.pv a {
+.pv-article li::marker { color: var(--text-muted); }
+.pv-article p { margin: 0 0 10px; }
+.pv-article ul + p { margin-top: 12px; }
+.pv-article strong { color: var(--text-primary); font-weight: 650; }
+.pv-article a {
   color: var(--text-primary);
   text-underline-offset: 3px;
 }
-.pv a:focus-visible {
+.pv-article a:focus-visible {
   outline: 2px solid #C46532;
   outline-offset: 2px;
   border-radius: 4px;
@@ -39,4 +106,8 @@
   margin-top: 36px !important;
   font-size: 13px;
   color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toc-link { transition: none; }
 }

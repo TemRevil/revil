@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
 import { Github } from '../../ui/BrandIcons';
 import { watchDoc } from '../../lib/liveDoc';
-import { cachedDoc, type Data } from '../../lib/dataCache';
+import { cachedDoc } from '../../lib/dataCache';
+import { tagsOf } from './shape';
 import { sanitizeSvg } from '../../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor, stillFrame } from '../../lib/projectUtils';
 import { isLite } from '../../lib/device';
@@ -463,15 +464,6 @@ const ProjectMediaImage = ({ src }: { src: string }) => {
         </div>
     );
 };
-
-/** Tags/Tags' entries, for the icons and colours of a project's tags. */
-const tagsOf = (doc: Data | null | undefined): TagItem[] =>
-    Object.entries((doc || {}) as Record<string, { Name?: string; Color?: string; Icon?: string }>).map(([id, val]): TagItem => ({
-        id,
-        name: val.Name || 'Untitled',
-        color: val.Color || '#60a5fa',
-        iconSvg: val.Icon || ''
-    }));
 
 const MProjectView = ({ project: initialProject, onClose, onContributorClick }: MProjectViewProps) => {
     useBoilHold();

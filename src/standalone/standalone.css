@@ -1,5 +1,6 @@
-/* The public project pages. Static HTML built from the projects snapshot: no client
-   JavaScript of their own, so they read the same for people, crawlers and AI agents.
+/* The public project pages and the privacy page. Prerendered from the projects snapshot,
+   so the whole page is in the HTML for people, crawlers and AI agents alike; the script
+   only adds the filtering, the slideshow and the "On this page" marker on top.
    Colours come from the site tokens in globals.css, so light and dark both work. */
 
 .pj {
@@ -127,74 +128,7 @@
   white-space: pre-line;
 }
 
-.pj-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 20px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.pj-tags li {
-  padding: 4px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--pj-chip);
-}
-
-.pj-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 28px;
-}
-.pj-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 18px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: none;
-  color: var(--text-primary);
-  border: 1px solid var(--pj-line);
-  transition: background-color .15s, border-color .15s;
-}
-.pj-btn:hover { background: var(--pj-chip); }
-.pj-btn.primary { color: #fff; background: var(--pj-blue); border-color: transparent; }
-.pj-btn.primary:hover { filter: brightness(1.1); background: var(--pj-blue); }
-
-/* ── gallery ─────────────────────────────────────────────── */
-.pj-gallery {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 44px;
-}
-.pj-shot {
-  margin: 0;
-  overflow: hidden;
-  border-radius: 16px;
-  border: 1px solid var(--pj-line);
-  background: var(--pj-chip);
-  aspect-ratio: 16 / 10;
-}
-.pj-shot:first-child { grid-column: 1 / -1; }
-.pj-shot img, .pj-shot video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-@media (max-width: 560px) {
-  .pj-gallery { grid-template-columns: minmax(0, 1fr); }
-}
-
-/* ── sections below the gallery ──────────────────────────── */
+/* ── sections ────────────────────────────────────────────── */
 .pj-section { margin-top: 56px; }
 .pj h2 {
   margin: 0 0 16px;
@@ -248,11 +182,6 @@
   .pj-story summary::after { transition: none; }
 }
 
-.pj-people { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
-.pj-people li { display: flex; gap: 10px; align-items: baseline; font-size: 15px; }
-.pj-people b { font-weight: 700; }
-.pj-people span { color: var(--text-muted); font-size: 14px; }
-
 .pj-more {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -291,34 +220,232 @@
 .pj-end p { margin: 0; font-size: 17px; font-weight: 600; max-width: 46ch; }
 .pj-end p span { display: block; margin-top: 4px; font-size: 14px; font-weight: 400; color: var(--text-muted); }
 
-/* ── /projects list ──────────────────────────────────────── */
-.pj-intro { margin: 16px 0 0; max-width: 60ch; font-size: 17px; line-height: 1.7; color: var(--text-secondary); }
-.pj-grid {
+/* ── /projects list: the homepage section's heading; the search, filter and cards are its own ── */
+.pj-list-head { margin: 40px 0 32px; }
+.pj-kicker {
+  margin: 0 0 -6px 10px;
+  font-family: var(--font-caveat), cursive;
+  font-size: 3rem;
+  line-height: 1;
+  color: var(--accent);
+}
+.pj .pj-list-title {
+  font-family: var(--font-inter), sans-serif;
+  font-weight: 900;
+  font-size: clamp(3rem, 9vw, 6rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.pj-intro { margin: 20px 0 0; max-width: 60ch; font-size: 17px; line-height: 1.7; color: var(--text-secondary); }
+
+/* ── a project page, laid out like the project's window on the homepage ── */
+
+/* The pictures, one at a time, over a soft glow of the one shown and the project's name. */
+.pj-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin-top: 20px;
+  padding: clamp(12px, 4vw, 48px) clamp(12px, 4vw, 48px) 20px;
+  border-radius: 32px;
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+.pj-hero-glow {
+  position: absolute;
+  inset: -80px;
+  z-index: -2;
+  background-size: cover;
+  background-position: center;
+  filter: blur(80px) saturate(1.2);
+  opacity: 0.3;
+}
+.pj-hero-name {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-  gap: 16px;
-  margin: 40px 0 0;
+  place-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--font-inter), sans-serif;
+  font-size: clamp(4rem, 12vw, 9rem);
+  font-weight: 900;
+  letter-spacing: -0.07em;
+  opacity: 0.05;
+  pointer-events: none;
+  user-select: none;
+}
+.pj-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 24px;
+  background: #000;
+  box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.5);
+}
+.pj-slide {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  transform: scale(1.04);
+  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1), transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pj-slide[data-shown] { opacity: 1; transform: none; }
+.pj-slide img, .pj-slide video { display: block; width: 100%; height: 100%; }
+.pj-slide img { object-fit: cover; }
+.pj-slide video { object-fit: contain; }
+.pj-step {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  translate: 0 -50%;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+.pj-step:hover { background: rgba(255, 255, 255, 0.24); }
+.pj-step:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.pj-step.prev { left: 16px; }
+.pj-step.next { right: 16px; }
+.pj-dots { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; }
+.pj-dots button {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--text-primary);
+  opacity: 0.25;
+  cursor: pointer;
+  transition: width 0.4s, opacity 0.4s;
+}
+/* A finger-sized target around each small dot. */
+.pj-dots button::after { content: ""; position: absolute; inset: -8px -4px; }
+.pj-dots button[aria-current] { width: 32px; opacity: 1; }
+.pj-dots button:focus-visible { outline: 2px solid var(--pj-blue); outline-offset: 3px; }
+@media (max-width: 560px) {
+  .pj-hero { border-radius: 20px; }
+  .pj-stage { border-radius: 14px; }
+  .pj-step { width: 36px; height: 36px; }
+  .pj-step.prev { left: 6px; }
+  .pj-step.next { right: 6px; }
+}
+
+/* The project and its stack on the left, the ways to open it and its people on the right. */
+.pj-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  margin-top: 40px;
+}
+.pj-main { display: flex; flex-direction: column; gap: 24px; }
+.pj-panel,
+.pj-main .pj-story {
+  margin: 0;
+  padding: clamp(20px, 3vw, 32px);
+  border-radius: 28px;
+  border: 1px solid var(--pj-line);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+.pj-panel .pj-head { margin-top: 0; }
+.pj-panel .pj-lede {
+  margin-top: 24px;
+  padding-left: 20px;
+  border-left: 3px solid var(--pj-blue);
+}
+.pj-side { display: flex; flex-direction: column; gap: 28px; }
+@media (min-width: 901px) {
+  .pj-side { position: sticky; top: 24px; }
+}
+@media (max-width: 900px) {
+  .pj-detail { grid-template-columns: minmax(0, 1fr); }
+}
+
+.pj-stack {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-.pj-card {
+.pj-stack li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  font-size: 14px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--tag) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tag) 25%, transparent);
+}
+.pj-stack-icon { width: 26px; height: 26px; flex-shrink: 0; color: var(--tag); }
+.pj-stack-dot { width: 10px; height: 10px; flex-shrink: 0; border-radius: 50%; background: var(--tag); }
+
+.pj-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pj-action {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 92px;
+  padding: 12px;
+  border-radius: 22px;
+  border: 1px solid var(--pj-line);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: background-color 0.3s, transform 0.3s;
+}
+/* One button, or the third of three, takes the whole row. */
+.pj-action:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.pj-action:hover { background: var(--pj-chip); transform: translateY(-3px); }
+.pj-action.primary { color: var(--bg-primary); background: var(--text-primary); border-color: transparent; }
+.pj-action.primary:hover { background: var(--text-primary); opacity: 0.9; }
+.pj-action:focus-visible { outline: 2px solid var(--pj-blue); outline-offset: 3px; }
+
+.pj-people { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.pj-people li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
   border-radius: 20px;
   border: 1px solid var(--pj-line);
-  color: var(--text-primary);
-  text-decoration: none;
-  transition: transform .2s, background-color .2s;
 }
-.pj-card:hover { transform: translateY(-3px); background: var(--pj-chip); }
-.pj-card figure { margin: 0; aspect-ratio: 16 / 10; background: var(--pj-chip); overflow: hidden; }
-.pj-card figure img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.pj-card div { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 8px; }
-.pj-card h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-primary); }
-.pj-card p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-muted); }
+.pj-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--pj-chip);
+  color: var(--text-muted);
+}
+.pj-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.pj-people b { display: block; font-size: 15px; font-weight: 700; }
+.pj-people small { display: block; margin-top: 2px; font-size: 13px; color: var(--text-muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  .pj-card, .pj-card:hover { transition: none; transform: none; }
+  .pj-slide, .pj-dots button, .pj-action { transition: none; }
+  .pj-slide { transform: none; }
+  .pj-action:hover { transform: none; }
 }

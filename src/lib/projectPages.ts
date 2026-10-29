@@ -15,7 +15,7 @@ import { cleanName, nameNote, projectSlugs } from './projectSlug';
 export type SnapshotProject = {
     id: string;
     Description?: string;
-    /** The long write-up, only on the project's own page (see app/projects/CaseStudy). */
+    /** The long write-up, only on the project's own page (see standalone/CaseStudy). */
     'Case Study'?: string;
     Listing?: number;
     'Live Link'?: string;
@@ -91,3 +91,8 @@ export const projectPages: ProjectPage[] = (() => {
 })();
 
 export const projectPageUrl = (slug: string) => `${SITE_URL}/projects/${slug}`;
+
+/** The tags (Tags/Tags) and people (Tags/Contributors and its Profiles) the projects name, for their icons, colours and pictures. */
+export const tagsDoc = publicSnapshot.docs['Tags/Tags'] ?? null;
+export const contributorsDoc = publicSnapshot.docs['Tags/Contributors'] ?? null;
+export const profileRows = publicSnapshot.collections['Tags/Contributors/Profiles'] ?? [];
