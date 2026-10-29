@@ -5,7 +5,7 @@
   padding-top: 40px;
   color: var(--text-secondary);
 }
-.pv-hero { max-width: 680px; }
+.pv-hero .pv-lead { max-width: 680px; }
 .pv h1 {
   margin: 0 0 14px;
   color: var(--text-primary);

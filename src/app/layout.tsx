@@ -102,7 +102,7 @@ export default function RootLayout({
         {/* The three faces the first screen draws with (fonts.css). */}
         <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/archivo-black-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
-        <link rel="preload" href="/fonts/permanent-marker-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/caveat-latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>

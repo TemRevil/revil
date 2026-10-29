@@ -63,7 +63,7 @@ export default function ProjectsIndex() {
                 <main>
                     <div className="pj-list-head">
                         <div className="pj-kicker" aria-hidden="true">Selected</div>
-                        <h1 className="pj-list-title">Projects</h1>
+                        <h1 className="pj-display">Projects</h1>
                         <p className="pj-intro">Things I designed and built: web apps, AI tools, a desktop system and UI designs. Each one has its live site and source code.</p>
                     </div>
                     <ProjectsList projects={gridProjects} tagsDoc={tagsDoc} contributorsDoc={contributorsDoc} profiles={profileRows} />

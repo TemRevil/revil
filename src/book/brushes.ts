@@ -308,12 +308,13 @@ function drawShirt(root: HTMLElement, t0: number, animate: boolean) {
     const W = stage.clientWidth, H = stage.clientHeight;
     svg.replaceChildren();
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    const fs = W * .125, text = 'Tem Revil', cx = W * .545, cy = H * .7;
+    const fs = W * .15, text = 'Tem Revil', cx = W * .545, cy = H * .7;
     const g = el('g', { transform: `rotate(-7 ${cx} ${cy})`, filter: 'url(#bp-fabric)' });
     svg.appendChild(g);
     const letters = [...text].map(ch => {
         const t = el('text', { 'font-size': fs, y: cy + fs * .35 }) as SVGTextElement;
-        t.style.fontFamily = 'var(--font-permanent-marker), "Permanent Marker", cursive';
+        t.style.fontFamily = 'var(--font-caveat), Caveat, cursive';
+        t.style.fontWeight = '700';
         t.textContent = ch === ' ' ? ' ' : ch;
         g.appendChild(t);
         return t;

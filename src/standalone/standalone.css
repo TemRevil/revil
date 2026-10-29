@@ -220,7 +220,7 @@
 .pj-end p { margin: 0; font-size: 17px; font-weight: 600; max-width: 46ch; }
 .pj-end p span { display: block; margin-top: 4px; font-size: 14px; font-weight: 400; color: var(--text-muted); }
 
-/* ── /projects list: the homepage section's heading; the search, filter and cards are its own ── */
+/* ── a page heading like the homepage sections': a handwritten word over a heavy title ── */
 .pj-list-head { margin: 40px 0 32px; }
 .pj-kicker {
   margin: 0 0 -6px 10px;
@@ -229,7 +229,7 @@
   line-height: 1;
   color: var(--accent);
 }
-.pj .pj-list-title {
+.pj .pj-display {
   font-family: var(--font-inter), sans-serif;
   font-weight: 900;
   font-size: clamp(3rem, 9vw, 6rem);
