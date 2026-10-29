@@ -238,6 +238,14 @@ textarea,
   display: none;                /* Chrome/Safari */
 }
 
+/* The projects' filter tags on a phone: the rail lines up with the page text and fades out
+   at its right edge, so the tags past it read as "swipe for more". */
+@media (max-width: 767px) {
+  .phone-rail {
+    mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  }
+}
+
 /* ========================================
    3. ANIMATED BACKGROUND BLOBS
    ======================================== */
