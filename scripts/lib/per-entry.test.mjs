@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     convertMeeting, hostZoneOf, idProblem, legacyDay, legacyMinutes, legacyStart, planMigration, sameData,
-    backupStamp, toJson, OLD_DOCS,
+    backupStamp, cleanupProblems, toJson, OLD_DOCS,
 } from './per-entry.mjs';
 import { dayIndex, hostTimeToInstant, hostZone } from '../../src/utils/bookingRules';
 
@@ -156,5 +156,30 @@ describe('sameData and the backup format', () => {
 
     it('names a backup folder by the time, safely for any filesystem', () => {
         expect(backupStamp(Date.UTC(2026, 9, 28, 14, 5, 9, 123))).toBe('2026-10-28T14-05-09Z');
+    });
+});
+
+describe('migration cleanup gate', () => {
+    const writes = [{ collection: 'TreasuryIncome', id: 'i1', data: { amount: 500 } }];
+    const report = { unconverted: [], badIds: [], notObjects: [] };
+
+    it('allows cleanup only when the full copied record agrees', () => {
+        const current = { TreasuryIncome: new Map([['i1', { amount: 500 }]]) };
+        expect(cleanupProblems(writes, current, report)).toEqual({ missing: [], differs: [], unconverted: [], invalid: [] });
+    });
+
+    it('blocks a changed payment even when the copied id exists', () => {
+        const current = { TreasuryIncome: new Map([['i1', { amount: 100 }]]) };
+        expect(cleanupProblems(writes, current, report).differs).toEqual(['TreasuryIncome/i1']);
+    });
+
+    it('blocks missing copies and meetings that would disappear from the new calendar', () => {
+        const result = cleanupProblems(writes, {}, { ...report, unconverted: ['meeting-1'] });
+        expect(result.missing).toEqual(['TreasuryIncome/i1']);
+        expect(result.unconverted).toEqual(['meeting-1']);
+    });
+
+    it('blocks skipped invalid source records', () => {
+        expect(cleanupProblems([], {}, { ...report, badIds: ['bad/id'], notObjects: ['invalid'] }).invalid).toEqual(['bad/id', 'invalid']);
     });
 });

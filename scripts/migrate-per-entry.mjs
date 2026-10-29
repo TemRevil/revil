@@ -34,7 +34,7 @@ import { createRequire } from 'node:module';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { OLD_DOCS, SOURCES, backupStamp, planMigration, sameData, toJson } from './lib/per-entry.mjs';
+import { OLD_DOCS, SOURCES, backupStamp, cleanupProblems, planMigration, sameData, toJson } from './lib/per-entry.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BATCH = 400;
@@ -69,9 +69,11 @@ const { FieldValue } = firestore;
 
 // ── read everything, back it up ──────────────────────────────────────
 const old = {};
+const oldVersions = {};
 for (const path of OLD_DOCS) {
     const snap = await db.doc(path).get();
     old[path] = snap.exists ? snap.data() : undefined;
+    if (snap.exists) oldVersions[path] = snap.updateTime;
 }
 const availability = (await db.doc('Settings/Availability').get()).data();
 const current = {};
@@ -185,13 +187,13 @@ if (mode === 'apply') {
 }
 
 // ── remove-old ───────────────────────────────────────────────────────
-const missing = await missingAfter();
-if (missing.length) {
-    list('Not removing anything: these planned documents do not exist yet (run --apply)', missing);
-    process.exit(1);
-}
-if (report.badIds.length || report.notObjects.length) {
-    console.error('\nNot removing anything: some entries could not be migrated (listed above). Move or delete them by hand first; the backup holds them.');
+const problems = cleanupProblems(writes, current, report);
+if (Object.values(problems).some((items) => items.length)) {
+    list('Missing copies (run --apply)', problems.missing);
+    list('Conflicting copies: reconcile the old and new values before cleanup', problems.differs);
+    list('Meetings without a usable start: resolve their original date/time before cleanup', problems.unconverted);
+    list('Entries that could not be migrated', problems.invalid);
+    console.error('\nNot removing anything. Pause legacy writers, resolve the entries above, and rerun the dry run. The backup holds the original records.');
     process.exit(1);
 }
 console.log(`\nAll ${writes.length} planned documents exist. Removing the old maps...`);
@@ -199,10 +201,10 @@ const batch = db.batch();
 if (old['Settings/Canary']) {
     batch.update(db.doc('Settings/Canary'), {
         Emails: FieldValue.delete(), Meetings: FieldValue.delete(), lastMeetingWrite: FieldValue.delete(),
-    });
+    }, { lastUpdateTime: oldVersions['Settings/Canary'] });
 }
 for (const path of OLD_DOCS.filter((p) => p.startsWith('Treasury/'))) {
-    if (old[path]) batch.delete(db.doc(path));
+    if (old[path]) batch.delete(db.doc(path), { lastUpdateTime: oldVersions[path] });
 }
 await batch.commit();
 console.log('Removed Settings/Canary Emails and Meetings (Categories kept) and the old Treasury documents. Treasury/settings is untouched.');

@@ -209,6 +209,22 @@ export function sameData(a, b) {
     return JSON.stringify(toJson(a)) === JSON.stringify(toJson(b));
 }
 
+/** Refuse cleanup until every copied record matches and every meeting is usable. */
+export function cleanupProblems(writes, current, report) {
+    const missing = [];
+    const differs = [];
+    for (const w of writes) {
+        const collection = current[w.collection];
+        if (!collection?.has(w.id)) missing.push(`${w.collection}/${w.id}`);
+        else if (!sameData(collection.get(w.id), w.data)) differs.push(`${w.collection}/${w.id}`);
+    }
+    return {
+        missing, differs,
+        unconverted: report.unconverted,
+        invalid: [...report.badIds, ...report.notObjects],
+    };
+}
+
 /** A run's backup folder name: "2026-10-28T14-05-09Z". */
 export function backupStamp(nowMs) {
     return new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/:/g, '-');
