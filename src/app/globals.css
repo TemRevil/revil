@@ -245,6 +245,10 @@ textarea,
     mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
   }
 }
+/* With a mouse the rail is dragged (hooks/useDragScroll.ts): the cursor says so. */
+@media (max-width: 767px) and (hover: hover) and (pointer: fine) {
+  .phone-rail { cursor: grab; }
+}
 
 /* ========================================
    3. ANIMATED BACKGROUND BLOBS

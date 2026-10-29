@@ -15,6 +15,7 @@ import { enter } from './entrance';
 import { useTailor } from '../lib/analytics/useTailor';
 import { projectSlugs } from '../utils/projectSlug';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../utils/fuzzy';
+import { useDragScroll } from '../hooks/useDragScroll';
 
 interface RawContributorData {
     Name?: string;
@@ -391,6 +392,8 @@ const Projects = ({ active = true }: { active?: boolean }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const tagRail = useRef<HTMLDivElement>(null);
+    useDragScroll(tagRail);
 
     // Debounce search input - waits 250ms after user stops typing before filtering
     useEffect(() => {
@@ -643,7 +646,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                     </span>
 
                     {/* Tags Container */}
-                    <div className="phone-rail gap-2 max-md:grid max-md:grid-rows-2 max-md:grid-flow-col max-md:auto-cols-max max-md:overflow-x-auto max-md:overscroll-x-contain max-md:snap-x max-md:py-1 hide-scrollbar md:flex md:flex-wrap md:items-center">
+                    <div ref={tagRail} className="phone-rail gap-2 max-md:grid max-md:grid-rows-2 max-md:grid-flow-col max-md:auto-cols-max max-md:overflow-x-auto max-md:overscroll-x-contain max-md:snap-x max-md:py-1 hide-scrollbar md:flex md:flex-wrap md:items-center">
                         {availableTags.map(tag => {
                             const isActive = selectedTags.includes(tag.name);
                             const isDead = deadTags.has(tag.name);
