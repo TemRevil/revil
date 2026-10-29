@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { watchCollection, watchDoc } from '../lib/liveDoc';
@@ -539,20 +539,19 @@ const Projects = ({ active = true }: { active?: boolean }) => {
             && !projectsData.some(p => hasTags(p, [...selectedTags, tag.name])))
         .map(tag => tag.name)), [availableTags, projectsData, selectedTags]);
 
-    // On a phone the picked tags move to the front of the rail, so it goes back there too
-    // rather than staying on the tags that slid into view.
     const toggleTag = (tagName: string) => {
         setSelectedTags(prev =>
             prev.includes(tagName)
                 ? prev.filter(t => t !== tagName)
                 : [...prev, tagName]
         );
-        rail.toStart();
     };
-    const clearTags = () => {
-        setSelectedTags([]);
-        rail.toStart();
-    };
+
+    // On a phone the picked tags move to the front of the rail, so it goes back there. Only
+    // once the tags have moved: scroll snapping keeps the rail on the tag it rested on, and
+    // that tag may have just moved to the back with the ones that can't be picked.
+    const { toStart } = rail;
+    useLayoutEffect(() => { toStart(); }, [selectedTags, toStart]);
 
     useEffect(() => {
         if (!active) return;
@@ -642,7 +641,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                         <div className="flex items-center gap-1.5">
                             {selectedTags.length > 0 && (
                                 <button
-                                    onClick={clearTags}
+                                    onClick={() => setSelectedTags([])}
                                     className="text-xs font-bold text-accent cursor-pointer min-h-10 -my-2 px-1.5"
                                 >
                                     Clear {selectedTags.length}
@@ -732,7 +731,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
 
                         {selectedTags.length > 0 && (
                             <button
-                                onClick={clearTags}
+                                onClick={() => setSelectedTags([])}
                                 className="hidden md:inline-block px-3 py-2 bg-transparent border-none text-accent text-xs font-black cursor-pointer transition-all duration-200 uppercase tracking-widest ml-1 hover:opacity-70"
                             >
                                 [ Reset ]
