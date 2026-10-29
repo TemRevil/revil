@@ -32,8 +32,7 @@ export function dragScroll(el: HTMLElement): () => void {
             if (Math.abs(dx) < DRAG_PX) return;
             dragging = true;
             el.setPointerCapture?.(e.pointerId);
-            // Snapping fights the drag, and smooth scrolling makes it lag behind the cursor.
-            el.style.scrollSnapType = 'none';
+            // Smooth scrolling would make the rail lag behind the cursor.
             el.style.scrollBehavior = 'auto';
             el.style.cursor = 'grabbing';
         }
@@ -46,7 +45,6 @@ export function dragScroll(el: HTMLElement): () => void {
         dragging = false;
         swallowClick = true;
         el.releasePointerCapture?.(e.pointerId);
-        el.style.scrollSnapType = '';
         el.style.scrollBehavior = '';
         el.style.cursor = '';
     };
@@ -140,12 +138,9 @@ export function nudgeOnce(el: HTMLElement): () => void {
     const tryNudge = () => {
         if (done || !visible || el.scrollLeft > 0 || el.scrollWidth <= el.clientWidth + 1) return;
         stop();
-        // Snapping would hold the rail on the first tag instead of letting it slide.
-        el.style.scrollSnapType = 'none';
         el.scrollTo({ left: NUDGE_PX, behavior: 'smooth' });
         timers.push(window.setTimeout(() => {
             if (!touched) el.scrollTo({ left: 0, behavior: 'smooth' });
-            timers.push(window.setTimeout(() => { el.style.scrollSnapType = ''; }, NUDGE_MS));
         }, NUDGE_MS));
     };
     const seen = new IntersectionObserver(([entry]) => {

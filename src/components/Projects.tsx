@@ -547,9 +547,8 @@ const Projects = ({ active = true }: { active?: boolean }) => {
         );
     };
 
-    // On a phone the picked tags move to the front of the rail, so it goes back there. Only
-    // once the tags have moved: scroll snapping keeps the rail on the tag it rested on, and
-    // that tag may have just moved to the back with the ones that can't be picked.
+    // On a phone the picked tags move to the front of the rail, so it goes back there once
+    // they have moved.
     const { toStart } = rail;
     useLayoutEffect(() => { toStart(); }, [selectedTags, toStart]);
 
@@ -685,7 +684,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                         ref={tagRail}
                         data-more-before={rail.before || undefined}
                         data-more-after={rail.after || undefined}
-                        className="phone-rail gap-2 max-md:grid max-md:grid-rows-2 max-md:grid-flow-col max-md:auto-cols-max max-md:overflow-x-auto max-md:overscroll-x-contain max-md:snap-x max-md:py-1 hide-scrollbar md:flex md:flex-wrap md:items-center">
+                        className="phone-rail gap-2 max-md:grid max-md:grid-rows-2 max-md:grid-flow-col max-md:auto-cols-max max-md:overflow-x-auto max-md:overscroll-x-contain max-md:py-1 hide-scrollbar md:flex md:flex-wrap md:items-center">
                         {availableTags.map(tag => {
                             const isActive = selectedTags.includes(tag.name);
                             const isDead = deadTags.has(tag.name);
@@ -700,7 +699,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                                     title={isDead ? 'No project has this with the tags picked' : undefined}
                                     className={`
                                         flex items-center gap-2 border font-bold transition-all duration-300 shadow-sm whitespace-nowrap
-                                        max-md:h-10 max-md:px-3 max-md:rounded-lg max-md:text-[13px] max-md:snap-start
+                                        max-md:h-10 max-md:px-3 max-md:rounded-lg max-md:text-[13px]
                                         md:px-4 md:py-2 md:rounded-xl md:text-sm md:backdrop-blur-xl
                                         ${isActive ? 'max-md:-order-1' : isDead ? 'max-md:order-1' : ''}
                                         ${isDead ? 'cursor-not-allowed opacity-30' : 'cursor-pointer'}
