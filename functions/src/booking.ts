@@ -20,6 +20,10 @@
  *  - On an open day a visitor may also propose a custom time - outside the preset hours
  *    is the point of it - on the picker's 15-minute grid, as long as it is on one of the
  *    owner's working days (their date), 30+ minutes away and not already taken.
+ *  - Every meeting lasts an hour, so a time is taken when it would overlap a stored
+ *    meeting, not only when it starts at the same minute.
+ *  - The owner's clock is a HostZone: an IANA zone name follows daylight saving, so its
+ *    offset is worked out for each instant; a bare number is a fixed UTC offset.
  */
 
 export interface AvailabilityConfig {
@@ -29,10 +33,13 @@ export interface AvailabilityConfig {
     hours: number[];
 }
 
-/** Every stored meeting carries the owner's wall-clock "DD/MM/YYYY" + "hh:mm AM/PM". */
+/**
+ * A stored meeting as these rules read it: when it starts, as a UTC ISO instant
+ * ("2026-10-28T14:00:00.000Z"). Dates and times on anyone's clock are worked out from
+ * it for display, never stored.
+ */
 export interface BookedSlot {
-    Date?: string;
-    Time?: string;
+    start?: unknown;
 }
 
 // Preserves the historic hardcoded schedule until the owner edits it: every day on,
@@ -42,7 +49,7 @@ export const DEFAULT_AVAILABILITY: AvailabilityConfig = {
     hours: [9, 10, 11, 12, 14, 15, 16, 17],
 };
 
-/** The owner's timezone until Settings/Availability "Current Time" says otherwise. */
+/** The owner's timezone until Settings/Availability says otherwise. */
 export const DEFAULT_HOST_TZ = 'UTC+02:00 (EET)';
 /** How many days ahead of the visitor's today the calendar offers. */
 export const BOOKING_WINDOW_DAYS = 45;
@@ -53,6 +60,70 @@ const CUSTOM_GRID_MINUTES = 15;
 
 export const DAY_MS = 86400000;
 const HOUR_MS = 3600000;
+/** How long every meeting lasts. */
+export const MEETING_MS = HOUR_MS;
+
+/**
+ * The owner's clock. An IANA zone name ("Africa/Cairo") follows daylight saving, so the
+ * offset is looked up for each instant; a number is a fixed offset in hours east of UTC,
+ * which is all a "Current Time" string such as "UTC+03:00 (Cairo)" can say.
+ */
+export type HostZone = string | number;
+
+const zoneFormats = new Map<string, Intl.DateTimeFormat>();
+
+function zoneFormat(zone: string): Intl.DateTimeFormat | null {
+    const hit = zoneFormats.get(zone);
+    if (hit) return hit;
+    try {
+        const f = new Intl.DateTimeFormat('en-US', {
+            timeZone: zone, hourCycle: 'h23',
+            year: 'numeric', month: 'numeric', day: 'numeric',
+            hour: 'numeric', minute: 'numeric', second: 'numeric',
+        });
+        zoneFormats.set(zone, f);
+        return f;
+    } catch {
+        return null;
+    }
+}
+
+/** Whether a value names a timezone this runtime knows ("Africa/Cairo", "UTC"). */
+export function isTimeZone(name: unknown): name is string {
+    return typeof name === 'string' && name.length > 0 && name.length <= 64 && zoneFormat(name) !== null;
+}
+
+/** Hours east of UTC the zone is at an instant (3 for Cairo in summer, 2 in winter). */
+export function offsetAt(zone: HostZone, instantMs: number): number {
+    if (typeof zone === 'number') return Number.isFinite(zone) ? zone : 0;
+    const f = zoneFormat(zone);
+    if (!f || !Number.isFinite(instantMs)) return 0;
+    const parts: Record<string, number> = {};
+    for (const p of f.formatToParts(new Date(instantMs))) parts[p.type] = Number(p.value);
+    const wall = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour % 24, parts.minute, parts.second);
+    return Math.round((wall - Math.floor(instantMs / 1000) * 1000) / 60000) / 60;
+}
+
+/**
+ * The instant a wall-clock time happens in the zone: `minutes` after midnight on the
+ * calendar day `day` (see dayIndex). Inside a daylight-saving jump the nearest real
+ * instant wins.
+ */
+export function zonedInstant(day: number, minutes: number, zone: HostZone): number {
+    const naive = day * DAY_MS + minutes * 60000;
+    const guess = naive - offsetAt(zone, naive) * HOUR_MS;
+    return naive - offsetAt(zone, guess) * HOUR_MS;
+}
+
+/**
+ * The owner's zone from a Settings/Availability doc: its IANA `timeZone` when that names
+ * a real zone, else the fixed offset in its "Current Time" string, else the default.
+ */
+export function hostZone(data: Record<string, unknown> | undefined | null): HostZone {
+    const named = data?.timeZone;
+    if (isTimeZone(named)) return named;
+    return utcOffsetHours(data?.['Current Time'] ?? DEFAULT_HOST_TZ);
+}
 
 function sanitizeHours(arr: unknown[]): number[] {
     return [...new Set(arr.filter((h): h is number => typeof h === 'number' && Number.isInteger(h) && h >= 0 && h <= 23))]
@@ -101,7 +172,7 @@ export function utcOffsetHours(tz: unknown): number {
 
 const pad2 = (n: number) => n.toString().padStart(2, '0');
 
-/** "hh:mm AM/PM" - the label every slot and stored meeting Time uses. */
+/** "hh:mm AM/PM" - the label every slot and displayed meeting time uses. */
 function timeLabel(h24: number, min: number): string {
     return `${pad2(h24 % 12 || 12)}:${pad2(min)} ${h24 >= 12 ? 'PM' : 'AM'}`;
 }
@@ -129,7 +200,7 @@ export function dayIndexAt(instantMs: number, offsetHours: number): number {
     return Math.floor((instantMs + offsetHours * HOUR_MS) / DAY_MS);
 }
 
-/** The owner's wall clock for an instant: the Date/Time a meeting is stored under. */
+/** The wall clock at a fixed offset for an instant, as "DD/MM/YYYY" and "hh:mm AM/PM". */
 export function wallClock(instantMs: number, offsetHours: number): { date: string; time: string; weekday: number } {
     const w = new Date(instantMs + offsetHours * HOUR_MS);
     return {
@@ -139,6 +210,11 @@ export function wallClock(instantMs: number, offsetHours: number): { date: strin
     };
 }
 
+/** The owner's wall clock for an instant: the date and time a meeting is shown at. */
+export function hostWallClock(instantMs: number, zone: HostZone): { date: string; time: string; weekday: number } {
+    return wallClock(instantMs, offsetAt(zone, instantMs));
+}
+
 /** The instant of a visitor's "hh:mm AM/PM" on a visitor day, or null for a bad label. */
 export function visitorTimeToInstant(visitorDay: number, label: string, userTimezone: number): number | null {
     const min = parseTimeLabel(label);
@@ -146,18 +222,54 @@ export function visitorTimeToInstant(visitorDay: number, label: string, userTime
     return visitorDay * DAY_MS + min * 60000 - userTimezone * HOUR_MS;
 }
 
-/** The instant a stored meeting starts at, or null when its Date/Time don't parse. */
-export function meetingInstant(m: BookedSlot, hostOffset: number): number | null {
-    const d = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(m?.Date || ''));
-    const min = parseTimeLabel(String(m?.Time || ''));
-    if (!d || min === null) return null;
-    return dayIndex(+d[3], +d[2] - 1, +d[1]) * DAY_MS + min * 60000 - hostOffset * HOUR_MS;
+/** The instant an owner's "hh:mm AM/PM" on a calendar day (dayIndex) happens in their zone. */
+export function hostTimeToInstant(day: number, label: string, zone: HostZone): number | null {
+    const min = parseTimeLabel(label);
+    return min === null ? null : zonedInstant(day, min, zone);
 }
 
-/** Whether a meeting is already stored at exactly this start (compared as the owner's Date + Time). */
-export function isTaken(startMs: number, hostOffset: number, meetings: BookedSlot[]): boolean {
-    const host = wallClock(startMs, hostOffset);
-    return meetings.some((m) => m && m.Date === host.date && m.Time === host.time);
+// Exactly what Date#toISOString writes: always UTC, always milliseconds.
+const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/** An instant as a meeting stores it: "2026-10-28T14:00:00.000Z". */
+export function isoInstant(instantMs: number): string {
+    return new Date(instantMs).toISOString();
+}
+
+/** When a stored meeting starts, or null when its `start` is not an ISO instant. */
+export function slotStart(m: BookedSlot | null | undefined): number | null {
+    const s = m?.start;
+    if (typeof s !== 'string' || !ISO_INSTANT_RE.test(s)) return null;
+    const ms = Date.parse(s);
+    return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * The owner's clock as a meeting records it beside its instant: the zone name, or the
+ * fixed offset an Availability doc without a named zone gives. Both fields are always
+ * written, so moving between the two never leaves a stale one behind.
+ */
+export function zoneRecord(zone: HostZone): { timeZone: string | null; utcOffset: number | null } {
+    return typeof zone === 'string' ? { timeZone: zone, utcOffset: null } : { timeZone: null, utcOffset: zone };
+}
+
+/** Whether a one-hour meeting starting at startMs would overlap a stored one. */
+function overlapsStored(startMs: number, meetings: BookedSlot[]): boolean {
+    return meetings.some((m) => {
+        const at = slotStart(m);
+        return at !== null && Math.abs(at - startMs) < MEETING_MS;
+    });
+}
+
+/** Whether a one-hour meeting starting at startMs would overlap one already stored. */
+export function isTaken(startMs: number, meetings: BookedSlot[]): boolean {
+    return overlapsStored(startMs, meetings);
+}
+
+/** A stored meeting that has not ended yet. One that can't be read never counts. */
+export function isUpcoming(m: BookedSlot, nowMs: number): boolean {
+    const at = slotStart(m);
+    return at !== null && at + MEETING_MS > nowMs;
 }
 
 export interface PresetSlot {
@@ -171,7 +283,8 @@ export interface PresetSlot {
 export interface DayContext {
     nowMs: number;
     userTimezone: number;
-    hostOffset: number;
+    /** The owner's clock: a zone name, or a fixed offset in hours. */
+    hostOffset: HostZone;
     cfg: AvailabilityConfig;
     meetings: BookedSlot[];
 }
@@ -185,13 +298,13 @@ export function presetSlotsForDay(visitorDay: number, { nowMs, userTimezone, hos
     for (let hostDay = visitorDay - 1; hostDay <= visitorDay + 1; hostDay++) {
         if (!cfg.workingDays.includes(new Date(hostDay * DAY_MS).getUTCDay())) continue;
         for (const h of cfg.hours) {
-            const startMs = hostDay * DAY_MS + h * HOUR_MS - hostOffset * HOUR_MS;
+            const startMs = zonedInstant(hostDay, h * 60, hostOffset);
             if (startMs < dayStart || startMs >= dayStart + DAY_MS) continue;
             const v = new Date(startMs + userTimezone * HOUR_MS);
             out.push({
                 startMs,
                 label: timeLabel(v.getUTCHours(), v.getUTCMinutes()),
-                taken: isTaken(startMs, hostOffset, meetings),
+                taken: overlapsStored(startMs, meetings),
                 passed: startMs < nowMs + BOOKING_BUFFER_MS,
             });
         }
@@ -217,10 +330,10 @@ export function isDayOpen(visitorDay: number, ctx: DayContext): boolean {
  */
 export function customTimeRefusal(startMs: number, { nowMs, hostOffset, cfg, meetings }: DayContext): string | null {
     if (startMs < nowMs + BOOKING_BUFFER_MS) return 'That time has already passed, pick a later one.';
-    if (!cfg.workingDays.includes(wallClock(startMs, hostOffset).weekday)) {
+    if (!cfg.workingDays.includes(hostWallClock(startMs, hostOffset).weekday)) {
         return "That time falls on a day I'm not working, pick another.";
     }
-    if (isTaken(startMs, hostOffset, meetings)) return 'That time overlaps an existing booking, pick another.';
+    if (overlapsStored(startMs, meetings)) return 'That time overlaps an existing booking, pick another.';
     return null;
 }
 

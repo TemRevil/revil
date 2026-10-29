@@ -11,6 +11,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { inlineJson } from './lib/inline-json.mjs';
 
 const root = process.cwd();
 const dist = resolve(root, process.env.NEXT_DIST_DIR || 'dist');
@@ -22,12 +23,22 @@ const PAGES = {
   'book.html': ['Settings/BookPage', 'Settings/Account', 'Settings/Availability', 'Settings/BookedSlots'],
 };
 
+// The long write-ups are read only by each project's own static page, built from the
+// snapshot directly; the homepage never shows them.
+const homeData = {
+  ...snapshot,
+  collections: {
+    ...snapshot.collections,
+    Projects: (snapshot.collections.Projects || []).map(({ 'Case Study': _caseStudy, ...row }) => row),
+  },
+};
+
 for (const [file, docs] of Object.entries(PAGES)) {
   const data = docs
     ? { at: snapshot.at, docs: Object.fromEntries(docs.map((p) => [p, snapshot.docs[p] ?? null])), collections: {} }
-    : snapshot;
-  // `<` escaped, so no text in the data can close the script tag.
-  const json = JSON.stringify(data).replace(/</g, '\u003c');
+    : homeData;
+  // Escaped by scripts/lib/inline-json.mjs, so no text in the data can close the script tag.
+  const json = inlineJson(data);
   const path = resolve(dist, file);
   const html = readFileSync(path, 'utf8');
   if (html.includes('id="public-data"') || !html.includes('</head>')) {

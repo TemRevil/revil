@@ -7,6 +7,7 @@
  */
 
 import { escapeHtml as esc } from "./html";
+import { emailShell } from "./emailShell";
 
 const ACCENT = "#3395ff";
 
@@ -37,10 +38,42 @@ export interface ItemizedLine {
  * present so the printed "3 x $50.00" can never disagree with the printed total (or with
  * a stale `amount` passed by a caller); falls back to `amount` otherwise.
  */
-function lineTotal(l: Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>): number {
+export function lineTotal(l: Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>): number {
     return l.qty != null && l.unitPrice != null
-        ? Math.round((l.qty * l.unitPrice + Number.EPSILON) * 100) / 100
-        : (l.amount || 0);
+        ? round2(l.qty * l.unitPrice)
+        : round2(l.amount || 0);
+}
+
+const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/** A line as a caller describes it: an amount, or qty x unitPrice (qty defaults to 1). */
+export type ItemizedLineInput = Omit<ItemizedLine, 'amount'> & { amount?: number };
+
+/**
+ * Settle every line's money ONCE, by the same rule the renderer prints with
+ * (lineTotal), so the lines, the per-currency totals, a converted grand total and the
+ * receipt-history figure all agree. A line that gives an amount AND a qty x unitPrice
+ * that disagree is refused rather than guessed at, and a line with no price at all is
+ * refused rather than billed at 0.
+ */
+export function resolveItemizedLines<T extends ItemizedLineInput>(lines: T[]): { lines: Array<T & { amount: number }> } | { error: string } {
+    const out: Array<T & { amount: number }> = [];
+    for (const l of lines) {
+        if (l.amount === undefined && l.unitPrice === undefined) {
+            return { error: `Line "${l.label}" needs either an amount, or a unitPrice (qty defaults to 1).` };
+        }
+        if (l.amount !== undefined && l.unitPrice !== undefined) {
+            const product = round2((l.qty ?? 1) * l.unitPrice);
+            if (Math.abs(round2(l.amount) - product) > 0.005) {
+                return { error: `Line "${l.label}": amount ${l.amount} does not equal qty x unitPrice (${product}). Pass one or the other.` };
+            }
+        }
+        const amount = l.qty != null && l.unitPrice != null
+            ? lineTotal(l as Pick<ItemizedLine, 'qty' | 'unitPrice' | 'amount'>)
+            : round2(l.amount ?? (l.unitPrice as number));
+        out.push({ ...l, amount });
+    }
+    return { lines: out };
 }
 
 export interface WorkLogEntry {
@@ -88,7 +121,6 @@ export function revReceiptNumber(d = new Date()): string {
 // on (card #141414 / chip #1a1a1a) and clears WCAG AA 4.5:1, because this gets emailed and
 // printed - the old ad-hoc greys (#555 at 2.47:1, #666 at 3.21:1, #777 at 4.11:1) rendered
 // washed out. Four named tones replace the nine one-off hexes that were here before.
-const D_CARD = '#141414';
 // Surfaces were nearly invisible against the card (chip #1a1a1a was 1.06:1, hairlines
 // #1e1e1e/#222 about 1.13:1), so the total pills read as floating text. Lifted just enough
 // to separate without turning into boxes; one token now draws every hairline.
@@ -130,7 +162,7 @@ export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
 
     const workLog = (d.workLog || []).filter(w => w.date.trim() || w.text.trim());
     const workLogHtml = workLog.length ? `
-      <tr><td style="padding:24px 32px;border-bottom:1px solid ${D_BORDER}">
+      <tr><td style="padding:24px 0;border-bottom:1px solid ${D_BORDER}">
         ${d.workLogTitle ? `<div style="font-size:11px;color:${D_FAINT};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:14px">${esc(d.workLogTitle)}</div>` : ''}
         <div style="font-size:14px;line-height:1.7;color:${D_SOFT}">
           ${workLog.map((w, i) => `<div style="${i < workLog.length - 1 ? 'margin-bottom:10px' : ''}"><span style="color:${ACCENT};font-weight:700">${esc(w.date)}</span> &nbsp;${esc(w.text)}</div>`).join('')}
@@ -170,39 +202,31 @@ export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
         ? `<div style="font-size:11px;color:${D_FAINT};margin-top:14px;text-align:center">${esc(g.note || `Grand total converts all amounts to ${g.currency} at current rates.`)}</div>`
         : (order.length > 1 ? `<div style="font-size:11px;color:${D_FAINT};margin-top:14px;text-align:center">Amounts are itemized per currency and not converted.</div>` : '');
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="color-scheme" content="dark"/>
-<title>Receipt from Revil</title>
-</head>
-<body style="margin:0;padding:0;background:#0a0a0a;color:${D_TEXT};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
-  <div style="max-width:640px;margin:0 auto;padding:40px 20px">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${D_CARD};border:1px solid ${D_BORDER};border-radius:16px;border-collapse:separate;overflow:hidden">
+    // Framed by the one shared email shell (./emailShell); this is only the receipt's
+    // own content.
+    return emailShell({
+        title: `Receipt ${d.receiptNo}`,
+        preheader: `Receipt ${d.receiptNo} from Revil`,
+        kicker: 'Receipt',
+        footerHtml: `<div style="color:${D_FAINT}">Thank you - Revil</div>
+        <div style="color:${ACCENT};margin-top:4px">Mohammed Ahmed &middot; hello@temrevil.com &middot; temrevil.com</div>`,
+        bodyHtml: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate">
 
-      <tr><td style="padding:32px 32px 24px;border-bottom:1px solid ${D_BORDER}">
+      <tr><td style="padding:0 0 24px;border-bottom:1px solid ${D_BORDER}">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
           <td style="vertical-align:top">
-            <div style="font-size:24px;font-weight:800;color:#fff;letter-spacing:-0.5px">Revil<span style="color:${ACCENT}">.</span></div>
-            <div style="font-size:12px;color:${D_FAINT};margin-top:4px">Mohammed Ahmed &middot; temrevil.com</div>
+            <div style="font-size:11px;color:${D_FAINT};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Bill to</div>
+            <div style="font-size:16px;font-weight:700;color:#fff">${d.customerName ? esc(d.customerName) : '&ndash;'}</div>
+            ${d.customerSubtitle ? `<div style="font-size:13px;color:${D_MUTED};margin-top:2px">${esc(d.customerSubtitle)}</div>` : ''}
           </td>
           <td style="vertical-align:top;text-align:right">
-            <div style="font-size:13px;font-weight:700;color:${ACCENT};text-transform:uppercase;letter-spacing:1px">Receipt</div>
-            <div style="font-size:12px;color:${D_MUTED};margin-top:6px">${esc(d.receiptNo)}</div>
+            <div style="font-size:12px;color:${D_MUTED}">${esc(d.receiptNo)}</div>
             <div style="font-size:12px;color:${D_MUTED}">${esc(d.dateLabel)}</div>
           </td>
         </tr></table>
       </td></tr>
-
-      <tr><td style="padding:24px 32px;border-bottom:1px solid ${D_BORDER}">
-        <div style="font-size:11px;color:${D_FAINT};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Bill to</div>
-        <div style="font-size:16px;font-weight:700;color:#fff">${d.customerName ? esc(d.customerName) : '&ndash;'}</div>
-        ${d.customerSubtitle ? `<div style="font-size:13px;color:${D_MUTED};margin-top:2px">${esc(d.customerSubtitle)}</div>` : ''}
-      </td></tr>
 ${workLogHtml}
-      <tr><td style="padding:24px 32px">
+      <tr><td style="padding:24px 0">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
           <tr style="font-size:11px;color:${D_FAINT};text-transform:uppercase;letter-spacing:0.5px">
             <td style="padding:0 0 12px;text-align:left">Item</td>
@@ -212,7 +236,7 @@ ${itemRows}
         </table>
       </td></tr>
 
-      <tr><td style="padding:8px 32px 28px">
+      <tr><td style="padding:8px 0 0">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
 ${totalRows}${grandRow}
         </table>
@@ -220,13 +244,6 @@ ${totalRows}${grandRow}
         ${d.note ? `<div style="font-size:12px;color:${D_MUTED};margin-top:16px;background:${D_CHIP};border:1px solid ${D_BORDER};border-radius:10px;padding:12px 14px;line-height:1.6">${esc(d.note)}</div>` : ''}
       </td></tr>
 
-      <tr><td style="padding:22px 32px;border-top:1px solid ${D_BORDER};text-align:center">
-        <div style="font-size:12px;color:${D_FAINT}">Thank you - Revil</div>
-        <div style="font-size:12px;color:${ACCENT};margin-top:4px">hello@temrevil.com &middot; temrevil.com</div>
-      </td></tr>
-
-    </table>
-  </div>
-</body>
-</html>`;
+    </table>`,
+    });
 }

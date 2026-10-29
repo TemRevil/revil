@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, useId, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, Check, Search } from 'lucide-react';
 import { selectTriggerClass } from './selectTrigger';
+import { firstEnabled, keyAction, typeahead } from './selectKeys';
 
 export interface SelectOption {
     value: string;
@@ -64,6 +65,11 @@ function useAutoDark(forced?: boolean): boolean {
  * centered in the list (measured in a layout effect, before the browser paints) so
  * there's no first-frame flash from (0,0) or from the top of the list. The entry
  * itself springs up from the trigger, iOS-menu style.
+ *
+ * Keyboard: an ARIA select-only combobox (rules in selectKeys.ts). Focus stays on the
+ * trigger, or the filter box when there is one; arrows, Home/End, PageUp/PageDown and
+ * typing move the active option, Enter/Space choose it, Escape closes the list and is
+ * marked handled so the dialog around it stays open.
  */
 const Select = ({
     value, options, onChange, placeholder = 'Select…', searchable, isDark: forcedDark,
@@ -75,10 +81,15 @@ const Select = ({
 
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
+    /** The option the keyboard is on, as an index into the shown (filtered) list. */
+    const [active, setActive] = useState(-1);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const popRef = useRef<HTMLDivElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
-    const selectedRef = useRef<HTMLButtonElement>(null);
+    const selectedRef = useRef<HTMLDivElement>(null);
+    const typed = useRef({ text: '', at: 0 });
+    const baseId = useId();
+    const listId = `${baseId}-list`;
     const [pos, setPos] = useState({ top: 0, left: 0, width: 280, flipUp: false, triggerH: 40, menuH: 0 });
 
     const updatePos = useCallback(() => {
@@ -138,15 +149,12 @@ const Select = ({
             if (popRef.current?.contains(e.target as Node) || triggerRef.current?.contains(e.target as Node)) return;
             setOpen(false);
         };
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
         const onScroll = () => updatePos();
         document.addEventListener('mousedown', onDown, true);
-        document.addEventListener('keydown', onKey, true);
         window.addEventListener('scroll', onScroll, true);
         window.addEventListener('resize', onScroll);
         return () => {
             document.removeEventListener('mousedown', onDown, true);
-            document.removeEventListener('keydown', onKey, true);
             window.removeEventListener('scroll', onScroll, true);
             window.removeEventListener('resize', onScroll);
         };
@@ -156,6 +164,70 @@ const Select = ({
     const filtered = query
         ? opts.filter(o => o.label.toLowerCase().includes(query.toLowerCase()))
         : opts;
+    const selectedIndex = filtered.findIndex(o => o.value === value);
+    const optionId = (i: number) => `${baseId}-opt-${i}`;
+
+    // Keep the active option in view as the keyboard moves it (instant: the app scrolls
+    // smoothly by default, and a smooth scroll here would lag behind fast key repeats).
+    useEffect(() => {
+        if (!open || active < 0) return;
+        document.getElementById(`${baseId}-opt-${active}`)?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
+    }, [open, active, baseId]);
+
+    const openAt = (index: number) => {
+        if (disabled) return;
+        setQuery('');
+        // Compute position synchronously so the very first render of the popover is
+        // already placed (belt-and-braces with the layout effect).
+        updatePos();
+        setActive(index);
+        setOpen(true);
+    };
+    const close = () => {
+        setOpen(false);
+        setActive(-1);
+    };
+    const choose = (index: number) => {
+        const o = filtered[index];
+        if (o && !o.disabled) onChange(o.value);
+        close();
+        triggerRef.current?.focus({ preventScroll: true });
+    };
+
+    const onKeyDown = (e: ReactKeyboardEvent, typing: boolean) => {
+        const action = keyAction(e, { open, active, selected: selectedIndex, typing }, filtered);
+        if (!action) return;
+        if (action.kind === 'tab' && !typing) {
+            // Choose what the keyboard is on and let Tab carry on to the next control.
+            const o = filtered[action.index];
+            if (o && !o.disabled) onChange(o.value);
+            close();
+            return;
+        }
+        // Handled here: the browser and any dialog around this (it checks defaultPrevented)
+        // leave the key alone, so Escape closes only this list.
+        e.preventDefault();
+        e.stopPropagation();
+        switch (action.kind) {
+            case 'open': openAt(action.active); break;
+            case 'move': if (action.active >= 0) setActive(action.active); break;
+            // From the filter box (portaled outside the page), Tab chooses and returns focus to
+            // the trigger, so the next Tab carries on from where the control sits.
+            case 'tab':
+            case 'choose': choose(action.index); break;
+            case 'close': close(); triggerRef.current?.focus({ preventScroll: true }); break;
+            case 'find': {
+                const now = Date.now();
+                const t = typed.current;
+                t.text = now - t.at > 600 ? action.char : t.text + action.char;
+                t.at = now;
+                const hit = typeahead(filtered, open ? active : selectedIndex, t.text);
+                if (!open) openAt(hit >= 0 ? hit : (selectedIndex >= 0 ? selectedIndex : firstEnabled(filtered)));
+                else if (hit >= 0) setActive(hit);
+                break;
+            }
+        }
+    };
 
     const triggerCls = selectTriggerClass(isDark, { open, selected: !!selected, disabled, className });
 
@@ -164,17 +236,21 @@ const Select = ({
             <button
                 ref={triggerRef}
                 type="button"
+                role="combobox"
                 disabled={disabled}
                 aria-label={ariaLabel}
                 aria-haspopup="listbox"
                 aria-expanded={open}
+                aria-controls={listId}
+                aria-activedescendant={open && active >= 0 && !showSearch ? optionId(active) : undefined}
+                onKeyDown={e => onKeyDown(e, false)}
+                // A button "clicks" when Space comes back up; Space was already handled on
+                // the way down, so that click would undo it.
+                onKeyUp={e => { if (e.key === ' ') e.preventDefault(); }}
                 onClick={() => {
                     if (disabled) return;
-                    setQuery('');
-                    // Compute position synchronously so the very first render of the
-                    // popover is already placed (belt-and-braces with the layout effect).
-                    if (!open) updatePos();
-                    setOpen(o => !o);
+                    if (open) close();
+                    else openAt(selectedIndex >= 0 ? selectedIndex : firstEnabled(filtered));
                 }}
                 className={triggerCls}
                 title={selected?.label || placeholder}
@@ -188,7 +264,6 @@ const Select = ({
                         <motion.div
                             key="select-pop"
                             ref={popRef}
-                            role="listbox"
                             initial={entry.initial}
                             animate={entry.animate}
                             exit={entry.exit}
@@ -208,37 +283,57 @@ const Select = ({
                             {showSearch && (
                                 <div className={`flex items-center gap-2 px-3 py-2 border-b ${isDark ? 'border-white/10' : 'border-black/10'}`}>
                                     <Search size={14} className="text-sec" />
-                                    <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter…" className="flex-1 bg-transparent outline-none text-sm text-primary placeholder:text-sec" />
+                                    <input
+                                        autoFocus
+                                        value={query}
+                                        onChange={e => {
+                                            const q = e.target.value;
+                                            setQuery(q);
+                                            const shown = q ? opts.filter(o => o.label.toLowerCase().includes(q.toLowerCase())) : opts;
+                                            setActive(firstEnabled(shown));
+                                        }}
+                                        onKeyDown={e => onKeyDown(e, true)}
+                                        role="combobox"
+                                        aria-label={`Filter ${ariaLabel ?? 'options'}`}
+                                        aria-expanded
+                                        aria-controls={listId}
+                                        aria-autocomplete="list"
+                                        aria-activedescendant={active >= 0 ? optionId(active) : undefined}
+                                        placeholder="Filter…"
+                                        className="flex-1 bg-transparent outline-none text-sm text-primary placeholder:text-sec"
+                                    />
                                 </div>
                             )}
-                            <div ref={listRef} className="relative max-h-[260px] overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
+                            <div ref={listRef} id={listId} role="listbox" aria-label={ariaLabel} className="relative max-h-[260px] overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
                                 {filtered.length === 0 ? (
                                     <div className="px-3 py-4 text-center text-sec text-sm">No matches</div>
-                                ) : filtered.map(o => (
-                                    <button
+                                ) : filtered.map((o, i) => (
+                                    <div
                                         key={o.value}
+                                        id={optionId(i)}
                                         ref={o.value === value ? selectedRef : undefined}
-                                        type="button"
                                         role="option"
                                         aria-selected={o.value === value}
                                         aria-disabled={o.disabled || undefined}
-                                        disabled={o.disabled}
+                                        // Keep focus on the trigger (or the filter box) while clicking.
+                                        onMouseDown={e => e.preventDefault()}
+                                        onMouseMove={() => { if (!o.disabled && i !== active) setActive(i); }}
                                         // A disabled option stays visible (so the list doesn't jump around as
                                         // time passes) but is inert: no click, no hover, and it never closes
                                         // the menu.
-                                        onClick={() => { if (o.disabled) return; onChange(o.value); setOpen(false); }}
+                                        onClick={() => { if (!o.disabled) choose(i); }}
                                         className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
                                             o.disabled
                                                 ? 'text-sec opacity-40 cursor-not-allowed line-through'
                                                 : o.value === value
-                                                    ? 'bg-blue-500/15 text-blue-500 font-semibold'
-                                                    : 'text-primary hover:bg-black/5 dark:hover:bg-white/10'
+                                                    ? `bg-blue-500/15 text-blue-500 font-semibold cursor-pointer ${i === active ? 'ring-1 ring-inset ring-blue-500/50' : ''}`
+                                                    : `text-primary cursor-pointer ${i === active ? 'bg-black/5 dark:bg-white/10' : ''}`
                                         }`}
                                     >
                                         <span className="truncate">{o.label}</span>
                                         {o.hint && <span className="text-sec text-xs flex-shrink-0">{o.hint}</span>}
                                         {!o.disabled && o.value === value && <Check size={15} className="flex-shrink-0" />}
-                                    </button>
+                                    </div>
                                 ))}
                             </div>
                         </motion.div>

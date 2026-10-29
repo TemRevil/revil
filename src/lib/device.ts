@@ -21,3 +21,6 @@ export const LITE_SCRIPT = `(function(){try{if(matchMedia('${PHONE_QUERY}').matc
 /** True when this page load runs lite (see above). */
 export const isLite = () => typeof document !== 'undefined' && document.documentElement.hasAttribute('data-lite');
 
+/** True when the visitor asked the system for less motion. */
+export const prefersReducedMotion = () =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

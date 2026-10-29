@@ -9,7 +9,7 @@ import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, 
 import { loadFirebase } from '../lib/liveDoc';
 import Alert from './Alert'; // Import Custom Alert
 import useSafeAlert from '../hooks/useSafeAlert';
-import useMeetingBooking, { getDaysInMonth, isValidEmail, type Meeting } from '../hooks/useMeetingBooking';
+import useMeetingBooking, { getDaysInMonth, type Meeting } from '../hooks/useMeetingBooking';
 import Select from './Select';
 import CustomTimePicker from './CustomTimePicker';
 import HintTooltip from './HintTooltip';
@@ -21,6 +21,8 @@ import useMediaQuery from '../hooks/useMediaQuery';
 import DockIcon from './DockIcon';
 import { useBoilHold } from './book/paintKit';
 import WarmHide from './WarmHide';
+import { useDialog } from './dialog';
+import { ALLOWED_TYPES, attachmentFolder, CONTACT_LIMITS, contactProblem, MAX_FILE_SIZE } from './contactRules';
 
 interface MContactProps {
   isOpen: boolean;
@@ -113,22 +115,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // File upload constraints
-  const MAX_FILES = 5;
-  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-  // Must stay an exact subset of the storage.rules contentType allowlist for
-  // emails/** - SVG is deliberately excluded there (executes JS as image/svg+xml),
-  // so accepting it here only to have the upload hard-rejected would silently fail
-  // the whole message with a generic error.
-  const ALLOWED_TYPES = [
-    'image/png', 'image/jpeg', 'image/gif', 'image/webp',
-    'application/pdf',
-    'text/plain',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-  ];
+  // File upload constraints (contactRules: the same limits submitContact holds to)
+  const MAX_FILES = CONTACT_LIMITS.files;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -175,13 +163,11 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate
-    if (!formData.name || !formData.email || !formData.message) {
-      showAlert({ type: 'warning', message: "Please fill in all required fields (Name, Email, Message)." });
-      return;
-    }
-    if (!isValidEmail(formData.email)) {
-      showAlert({ type: 'warning', message: "Please enter a valid email address." });
+    // Everything submitContact would refuse is caught here, before any attachment is
+    // uploaded for a message that was never going to be accepted.
+    const problem = contactProblem(formData);
+    if (problem) {
+      showAlert({ type: 'warning', message: problem });
       return;
     }
 
@@ -195,7 +181,8 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
         // firebase/storage loaded on demand (kept out of the eager bundle)
         const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
         const storage = getStorage(app);
-        const uniqueFolderId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        // Unguessable: storage.rules lets anyone who knows a path read the file.
+        const uniqueFolderId = attachmentFolder();
         // Index-prefixed so two attachments with the SAME filename get two paths.
         // They used to collide, and the second upload quietly overwrote the first -
         // leaving two entries in the email pointing at one file. It also matters now
@@ -211,15 +198,15 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
         }
       }
 
-      // 2. Send the message. Visitors cannot write Settings/Canary; the
+      // 2. Send the message. Visitors cannot write CanaryMessages; the
       // submitContact function validates the message, rate-limits it and stores it.
       const { httpsCallable, getFunctions } = await import('firebase/functions');
       const submitContact = httpsCallable(getFunctions(app), 'submitContact');
       await submitContact({
-        name: formData.name,
+        name: formData.name.trim(),
         email: formData.email.trim(),
-        message: formData.message,
-        number: formData.number,
+        message: formData.message.trim(),
+        number: formData.number.trim(),
         whatsapp: formData.hasWhatsapp,
         files: uploadedFiles,
       });
@@ -248,23 +235,15 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
     }
   };
 
+  // Role, title, focus, Tab and Escape (see dialog.ts). The custom-time picker is its own
+  // dialog on top while it's open, so Escape only closes the whole modal when the picker
+  // isn't showing.
+  const { dialogProps } = useDialog({ onClose, labelledBy: 'contact-modal-title', active: !warm });
   useEffect(() => {
     if (warm) return;
-    const handleEscape = (e: KeyboardEvent) => {
-      // The custom-time picker swallows Escape (capture + stopPropagation) while it's
-      // open, so this only closes the whole modal when the picker isn't showing.
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
     document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
-    };
-  }, [onClose, warm]);
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [warm]);
 
 
 
@@ -291,9 +270,7 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
         style={{ overscrollBehavior: 'contain' }}
       >
         <motion.div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="contact-modal-title"
+          {...dialogProps}
           layout
           {...(dock ? dockRise : blurFade)}
           className={isMobile ? "glass-panel-deep" : ""}
@@ -898,10 +875,10 @@ const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = fa
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div>
-                          <label className="input-label font-semibold">Phone Number *</label>
+                          <label className="input-label font-semibold">Phone Number <span className="font-normal" style={{ color: 'var(--text-muted)' }}>(optional)</span></label>
                           <div className="input-container">
                             <Phone size={18} className="input-icon" />
-                            <input type="tel" name="number" aria-label="Phone number" value={formData.number} onChange={handleInputChange} required className="input-with-icon" placeholder="+1 (555) 123-4567" />
+                            <input type="tel" inputMode="tel" name="number" aria-label="Phone number (optional)" value={formData.number} onChange={handleInputChange} maxLength={CONTACT_LIMITS.number} className="input-with-icon" placeholder="+1 (555) 123-4567" />
                           </div>
                         </div>
 

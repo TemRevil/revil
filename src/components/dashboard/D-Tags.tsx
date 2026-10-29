@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { sanitizeSvg } from '../../lib/sanitize';
 import { Search, Plus, Tag, Edit2, Trash2, Users, UserPlus } from 'lucide-react';
 import { doc, collection, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
@@ -6,7 +6,10 @@ import { ref, uploadBytes, getDownloadURL, deleteObject, getStorage } from 'fire
 import app, { db } from '../../lib/firebase';
 // Local Storage handle (lazy Dashboard chunk) - keeps firebase/storage out of eager.
 const storage = getStorage(app);
-import anime from 'animejs';
+import { motion, AnimatePresence, useReducedMotion, type Variants } from 'motion/react';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { XS_QUERY, SM_QUERY } from './breakpoints';
+import { EASE } from './motion';
 import { TagData, ContributorData, TagFormData } from '../../types';
 import MTagForm from './M-TagForm';
 import MContributorForm from './M-ContributorForm';
@@ -34,10 +37,21 @@ interface RawFirestoreContributor {
     };
 }
 
+// Section switch: the section slides in the way the owner moved (custom = direction),
+// its cards follow a beat apart with a slight turn. Calm, as the old anime timeline was.
+const SECTION_VARIANTS: Variants = {
+    hidden: (d: number) => ({ opacity: 0, x: d * 40 }),
+    shown: { opacity: 1, x: 0, transition: { duration: 0.3, ease: EASE.outExpo, delayChildren: 0.03, staggerChildren: 0.02 } },
+    gone: (d: number) => ({ opacity: 0, x: -d * 30, transition: { duration: 0.15, ease: EASE.inQuad } }),
+};
+const CARD_VARIANTS: Variants = {
+    hidden: (d: number) => ({ opacity: 0, y: 10, scale: 0.99, rotateY: d * 3 }),
+    shown: { opacity: 1, y: 0, scale: 1, rotateY: 0, transition: { duration: 0.45, ease: EASE.outExpo } },
+};
+
 const DTags = () => {
     const [isLoading, setIsLoading] = useState(false);
     const isDark = useTheme();
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [activeSection, setActiveSection] = useState<'tags' | 'contributors'>('tags');
     const [tags, setTags] = useState<TagData[]>([]);
     const [contributors, setContributors] = useState<ContributorData[]>([]);
@@ -62,42 +76,19 @@ const DTags = () => {
         onConfirm: () => { }
     });
 
-    const directionRef = useRef<number>(1);
-    const [isTransitioning, setIsTransitioning] = useState(false);
-    const hasAnimatedRef = useRef<string | null>(null);
-    const [revealedSections, setRevealedSections] = useState<Record<string, boolean>>({
-        tags: false,
-        contributors: false
-    });
+    // Section switch direction: 1 slides the next section in from the right.
+    const [sectionDir, setSectionDir] = useState(1);
+    const reduceMotion = useReducedMotion();
+    const sectionCustom = reduceMotion ? 0 : sectionDir;
 
     const handleSectionChange = (newSection: 'tags' | 'contributors') => {
-        if (newSection === activeSection || isTransitioning) return;
-
-        hasAnimatedRef.current = null;
-        setRevealedSections(prev => ({ ...prev, [newSection]: false }));
-
+        if (newSection === activeSection) return;
         const indices: Record<string, number> = { tags: 0, contributors: 1 };
-        const direction = indices[newSection] > indices[activeSection] ? 1 : -1;
-        directionRef.current = direction;
-        setIsTransitioning(true);
-
-        // Instant Exit
-        anime({
-            targets: '.tags-section',
-            translateX: [0, -direction * 30],
-            opacity: [1, 0],
-            duration: 150,
-            easing: 'easeInQuad',
-            complete: () => {
-                setActiveSection(newSection);
-            }
-        });
+        setSectionDir(indices[newSection] > indices[activeSection] ? 1 : -1);
+        setActiveSection(newSection);
     };
 
     useEffect(() => {
-        const handleResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', handleResize);
-
         // Real-time data from central documents
         const unsubTags = onSnapshot(doc(db, 'Tags', 'Tags'),
             (snapshot) => {
@@ -173,63 +164,11 @@ const DTags = () => {
         });
 
         return () => {
-            window.removeEventListener('resize', handleResize);
             unsubTags();
             unsubContributorsDoc();
             unsubContributorsCol();
         };
     }, []);
-
-    useEffect(() => {
-        const runAnimation = () => {
-            const targets = document.querySelectorAll('.tags-section');
-            if (targets.length === 0) return;
-            if (hasAnimatedRef.current === activeSection) return;
-
-            hasAnimatedRef.current = activeSection;
-
-            const timeline = anime.timeline({
-                easing: 'easeOutExpo',
-                complete: () => {
-                    setRevealedSections(prev => ({ ...prev, [activeSection]: true }));
-                    setIsTransitioning(false);
-                }
-            });
-
-            // Ultra-Fast Entrance
-            timeline.add({
-                targets: '.tags-section',
-                opacity: [0, 1],
-                translateX: [directionRef.current * 40, 0],
-                duration: 300
-            }, 0);
-
-            timeline.add({
-                targets: '.tags-card',
-                opacity: [0, 1],
-                translateY: [10, 0],
-                scale: [0.99, 1],
-                rotateY: [directionRef.current * 3, 0],
-                delay: anime.stagger(20, { start: 30 }),
-                duration: 450
-            }, 0);
-        };
-
-        runAnimation();
-        // Safety revealed state
-        const safetyId = setTimeout(() => {
-            if (hasAnimatedRef.current !== activeSection) {
-                setRevealedSections(prev => ({ ...prev, [activeSection]: true }));
-                setIsTransitioning(false);
-            }
-        }, 150);
-
-        const tid = setTimeout(runAnimation, 30);
-        return () => {
-            clearTimeout(tid);
-            clearTimeout(safetyId);
-        };
-    }, [activeSection, tags.length, contributors.length]);
 
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -397,21 +336,10 @@ const DTags = () => {
 
         setOptionsPos({ x, y });
         setOptionsOpen(true);
-
-        setTimeout(() => {
-            anime({
-                targets: '.tags-menu',
-                scale: [0.85, 1],
-                opacity: [0, 1],
-                translateY: [-15, 0],
-                duration: 450,
-                easing: 'easeOutElastic(1, 0.8)'
-            });
-        }, 0);
     };
 
-    const isExtraSmall = windowWidth < 400;
-    const isSmall = windowWidth < 640;
+    const isExtraSmall = useMediaQuery(XS_QUERY);
+    const isSmall = useMediaQuery(SM_QUERY);
 
     const containerPadding = isExtraSmall ? '12px' : (isSmall ? '16px' : '24px');
     const containerRadius = isExtraSmall ? '24px' : '32px';
@@ -517,9 +445,17 @@ const DTags = () => {
                 maxHeight: '80vh'
             }}>
                 <div className="flex-1 min-h-0 relative h-full">
-                    <div
-                        className="tags-section py-2 flex flex-col h-full overflow-y-auto custom-scrollbar"
-                        style={{ opacity: revealedSections[activeSection] ? 1 : 0 }}
+                    {/* A section enters only on a switch: on the tab's first paint it is already
+                        in place, since the dashboard fades the whole tab in once. */}
+                    <AnimatePresence mode="wait" initial={false} custom={sectionCustom}>
+                    <motion.div
+                        key={activeSection}
+                        custom={sectionCustom}
+                        variants={SECTION_VARIANTS}
+                        initial="hidden"
+                        animate="shown"
+                        exit="gone"
+                        className="py-2 flex flex-col h-full overflow-y-auto custom-scrollbar"
                     >
                         {activeSection === 'tags' ? (
                             <>
@@ -530,16 +466,17 @@ const DTags = () => {
                                 ) : (
                                     <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 pb-12 overflow-visible">
                                         {filteredTags.map((tag: TagData) => (
-                                            <div
+                                            <motion.div
                                                 key={tag.id}
-                                                className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group cursor-pointer hover:shadow-lg hover:-translate-y-1"
+                                                variants={CARD_VARIANTS}
+                                                custom={sectionCustom}
+                                                className="flex flex-col p-4 sm:p-6 rounded-3xl transition-[box-shadow,translate] duration-300 relative group cursor-pointer hover:shadow-lg hover:-translate-y-1"
                                                 onClick={() => { setEditingTag(tag); setTagModalOpen(true); }}
                                                 style={{
                                                     backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255, 255, 255, 0.4)',
                                                     backdropFilter: 'blur(16px)',
                                                     WebkitBackdropFilter: 'blur(16px)',
                                                     border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(255,255,255,0.3)',
-                                                    opacity: revealedSections.tags ? 1 : 0,
                                                     boxShadow: isDark ? '0 10px 30px -10px rgba(0,0,0,0.3)' : '0 10px 30px -10px rgba(0,0,0,0.05)'
                                                 }}
                                             >
@@ -580,7 +517,7 @@ const DTags = () => {
                                                     <div className="font-bold text-primary text-lg sm:text-xl lg:text-2xl truncate mb-0.5 sm:mb-1">{tag.name}</div>
                                                     <div className="text-[10px] sm:text-xs font-mono uppercase tracking-widest opacity-40 truncate">{tag.color}</div>
                                                 </div>
-                                            </div>
+                                            </motion.div>
                                         ))}
                                     </div>
                                 )}
@@ -594,12 +531,13 @@ const DTags = () => {
                                 ) : (
                                     <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 pb-12 overflow-visible">
                                         {filteredContributors.map((contributor) => (
-                                            <div
+                                            <motion.div
                                                 key={contributor.id}
-                                                className="tags-card flex flex-col p-4 sm:p-6 rounded-3xl transition-all duration-300 relative group cursor-pointer hover:shadow-lg hover:-translate-y-1"
+                                                variants={CARD_VARIANTS}
+                                                custom={sectionCustom}
+                                                className="flex flex-col p-4 sm:p-6 rounded-3xl transition-[box-shadow,translate] duration-300 relative group cursor-pointer hover:shadow-lg hover:-translate-y-1"
                                                 onClick={() => { setEditingContributor(contributor); setContribModalOpen(true); }}
                                                 style={{
-                                                    opacity: revealedSections.contributors ? 1 : 0,
                                                     backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255, 255, 255, 0.4)',
                                                     backdropFilter: 'blur(16px)',
                                                     WebkitBackdropFilter: 'blur(16px)',
@@ -646,13 +584,14 @@ const DTags = () => {
                                                         {contributor.role}
                                                     </div>
                                                 </div>
-                                            </div>
+                                            </motion.div>
                                         ))}
                                     </div>
                                 )}
                             </>
                         )}
-                    </div>
+                    </motion.div>
+                    </AnimatePresence>
                 </div>
             </div>
 
@@ -660,14 +599,16 @@ const DTags = () => {
             {optionsOpen && createPortal(
                 <>
                     <div className="fixed inset-0 z-[1000]" onClick={() => setOptionsOpen(false)} />
-                    <div
-                        className="fixed z-[1001] p-2 min-w-[200px] tags-menu border border-white dark:border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_60px_rgba(0,0,0,0.45)] ring-4 ring-black/[0.02] dark:ring-white/[0.02]"
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.85, y: -15 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                        className="fixed z-[1001] p-2 min-w-[200px] border border-white dark:border-white/20 shadow-[0_25px_60px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_60px_rgba(0,0,0,0.45)] ring-4 ring-black/[0.02] dark:ring-white/[0.02]"
                         style={{
                             top: optionsPos.y,
                             left: optionsPos.x,
                             borderRadius: '20px',
                             transformOrigin: 'top center',
-                            opacity: 0,
                             backgroundColor: isDark ? 'rgba(20, 20, 20, 0.85)' : 'rgba(255, 255, 255, 0.92)',
                             backdropFilter: 'blur(24px)',
                             WebkitBackdropFilter: 'blur(24px)'
@@ -687,7 +628,7 @@ const DTags = () => {
                             <UserPlus size={18} style={{ color: 'rgb(168, 85, 247)' }} />
                             Add Contributor
                         </button>
-                    </div>
+                    </motion.div>
                 </>,
                 document.body
             )}

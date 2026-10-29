@@ -1,10 +1,9 @@
 'use client'
-import dynamic from 'next/dynamic'
+import App from '../App'
 
-// Disable SSR for the entire React SPA application since it relies heavily
-// on browser APIs (window, document, animations) synchronously
-const App = dynamic(() => import('../App'), { ssr: false })
-
+// Prerendered: the build writes the hero and the section frame into index.html, and the
+// browser hydrates it. Anything that needs the browser (its storage, the screen size,
+// the address) is read just after hydration, before the first paint (see App's start).
 export default function HomeApp() {
   return <App />
 }

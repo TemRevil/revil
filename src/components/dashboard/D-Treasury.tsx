@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { doc, onSnapshot, setDoc, serverTimestamp, deleteField } from 'firebase/firestore';
+import { collection, deleteDoc, doc, onSnapshot, setDoc, serverTimestamp, runTransaction, type QuerySnapshot } from 'firebase/firestore';
 import { Reorder, motion, AnimatePresence } from 'motion/react';
-import anime from 'animejs';
 import {
     Plus, Download, CheckCircle2, Pencil, Receipt, Briefcase, LayoutDashboard,
     TrendingUp, TrendingDown, Wallet, Sparkles, Clock, Lightbulb, SlidersHorizontal,
@@ -9,9 +8,6 @@ import {
     GripVertical, Landmark, Wallet2, Paperclip, CalendarClock,
     AlertTriangle, PauseCircle, XCircle, Rocket, Gauge, Users, Unlink, Mail, ChevronDown,
 } from 'lucide-react';
-import {
-    ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, TooltipProps,
-} from 'recharts';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ref, listAll, deleteObject, getStorage } from 'firebase/storage';
 import app, { db } from '../../lib/firebase';
@@ -19,11 +15,11 @@ import { appAuth } from '../../lib/appAuth';
 // Lazy Dashboard chunk - keeps firebase/storage out of the eager bundle.
 const storage = getStorage(app);
 import {
-    Currency, CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense, TreasuryReceipt,
+    CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense, TreasuryReceipt,
     DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
     projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, TreasuryIncome, convert,
     Insight, InsightAction, InsightIcon, InsightTone, actionableCount,
-    nextMonthlyPaymentDate, projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
+    projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
     hasInstallments, installmentMonthlyAmount, installmentsPaidCount, projectContractTotal,
     ProjectStatus, PROJECT_STATUSES, statusMeta, isFinished, isOngoing, normalizeProject,
 } from '../../lib/treasury';
@@ -37,24 +33,32 @@ import SaveBar from './SaveBar';
 import Alert, { AlertType } from '../Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 import useTheme from '../../hooks/useTheme';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { XS_QUERY } from './breakpoints';
+import { EASE } from './motion';
+import { entryDoc, orderUpdates, planIncomeSave } from './treasury/writes';
+import { COLLECTIONS } from '../../lib/collections';
+import { ChartFilter, ChartPoint, TreasuryChart } from './treasury/TreasuryChart';
 
-// Treasury is its own admin-only collection, sorted into one document per
-// concern: the projects I handle, spendings (expenses), and settings (currency
-// + FX). The homepage's sanitized name/status list is mirrored to the PUBLIC
-// Settings/HandledProjects doc (prices/earnings never leave Treasury).
-const PROJECTS_DOC = doc(db, 'Treasury', 'projects');
-const SPENDINGS_DOC = doc(db, 'Treasury', 'spendings');
-const INCOME_DOC = doc(db, 'Treasury', 'income');
-const ACCOUNTS_DOC = doc(db, 'Treasury', 'accounts');
+// Treasury is admin-only: one document per project, payment, expense, account and
+// sent receipt (lib/collections), plus Treasury/settings for currency + FX. The
+// homepage's public name/status list (Settings/HandledProjects) is kept by a backend
+// trigger on TreasuryProjects, not written from here.
+const PROJECTS = collection(db, COLLECTIONS.treasuryProjects);
+const SPENDINGS = collection(db, COLLECTIONS.treasurySpendings);
+const INCOME = collection(db, COLLECTIONS.treasuryIncome);
+const ACCOUNTS = collection(db, COLLECTIONS.treasuryAccounts);
+const RECEIPTS = collection(db, COLLECTIONS.treasuryReceipts);
 const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
-const RECEIPTS_DOC = doc(db, 'Treasury', 'receipts');
+
+/** A collection snapshot as rows, each with its document id. */
+const rowsOf = <T,>(snap: QuerySnapshot) => snap.docs.map(d => ({ ...(d.data() as Omit<T, 'id'>), id: d.id }) as T);
 
 /** Local 'YYYY-MM-DD' day key for a ms-epoch timestamp (receipts store sentAt in ms). */
-const receiptDayKey = (ms: number): string => {
+const localDayKey = (ms: number): string => {
     const d = new Date(ms);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const HANDLED_PUBLIC_DOC = doc(db, 'Settings', 'HandledProjects');
 
 type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
 
@@ -71,224 +75,8 @@ const TONE_COLOR: Record<InsightTone, string> = { urgent: '#f43f5e', warn: '#f59
 // How many suggestions show before the rest fold away - two rows of the two-column
 // grid. Enough to act on, short enough that the chart stays on screen.
 const INSIGHT_PREVIEW = 4;
-type ChartFilter = 'daily' | 'weekly' | 'monthly';
-interface ChartPoint { label: string; fullDate: string; earned: number; spent: number; type: ChartFilter; }
-
-// ── D-Views-style frosted tooltip ──────────────────────────────────────────
-const ChartTooltip = ({ active, payload, isDark, cur }: TooltipProps<number, string> & { isDark?: boolean; cur: Currency }) => {
-    if (!active || !payload || !payload.length) return null;
-    const p = payload[0].payload as ChartPoint;
-    const d = new Date(p.fullDate);
-    let header = p.label;
-    if (p.type === 'weekly' && !isNaN(d.getTime())) { const e = new Date(d); e.setDate(e.getDate() + 6); header = `${d.getDate()}/${d.getMonth() + 1} - ${e.getDate()}/${e.getMonth() + 1}`; }
-    else if (p.type === 'monthly' && !isNaN(d.getTime())) header = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    else if (!isNaN(d.getTime())) header = `${d.toLocaleDateString('en-US', { weekday: 'short' })}, ${d.getDate()}/${d.getMonth() + 1}`;
-    const net = (p.earned || 0) - (p.spent || 0);
-    const rows = [
-        { c: '#10B981', label: 'Earned', v: p.earned || 0 },
-        { c: '#F43F5E', label: 'Spent', v: p.spent || 0 },
-        { c: '#3B82F6', label: 'Net', v: net },
-    ];
-    return (
-        <div className={`p-4 rounded-3xl border shadow-2xl backdrop-blur-3xl ${isDark ? 'bg-black/80 border-white/10' : 'bg-white/70 border-black/5 shadow-[0_20px_40px_rgba(0,0,0,0.1)]'}`}>
-            <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${isDark ? 'text-white/40' : 'text-slate-500'}`}>{header}</div>
-            <div className="flex flex-col gap-2">
-                {rows.map(r => (
-                    <div key={r.label} className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ background: r.c, boxShadow: `0 0 10px ${r.c}` }} />
-                        <span className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                            {formatMoney(r.v, cur)}
-                            <span className={`font-normal text-[10px] uppercase tracking-tight ml-1.5 ${isDark ? 'text-white/40' : 'text-slate-400'}`}>{r.label}</span>
-                        </span>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-// ── Paginated day/week/month chart (mirrors D-Views/D-Links) ───────────────
-const TreasuryChart = ({ data, filter, setFilter, isDark, cur }: {
-    data: ChartPoint[]; filter: ChartFilter; setFilter: (f: ChartFilter) => void; isDark: boolean; cur: Currency;
-}) => {
-    const [pageIndex, setPageIndex] = useState(0);
-    const [direction, setDirection] = useState(0);
-    const chartRef = useRef<HTMLDivElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
-    const isSwipingRef = useRef(false);
-    const wheelCooldownRef = useRef(false);
-    const [cw, setCw] = useState(800);
-
-    useEffect(() => {
-        const el = containerRef.current;
-        if (!el) return;
-        const ro = new ResizeObserver(entries => { const w = entries[0]?.contentRect.width; if (w) setCw(w); });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-
-    const pointsPerPage = useMemo(() => {
-        if (filter === 'daily') { if (cw < 380) return 7; if (cw < 560) return 10; if (cw < 760) return 14; if (cw < 1000) return 18; return 24; }
-        if (filter === 'weekly') return cw < 480 ? 5 : cw < 800 ? 8 : 12;
-        return 999;
-    }, [filter, cw]);
-
-    const pages = useMemo(() => {
-        if (data.length === 0) return [[]];
-        if (filter === 'monthly') return [data];
-        const chunks: ChartPoint[][] = [];
-        for (let i = 0; i < data.length; i += pointsPerPage) chunks.push(data.slice(i, i + pointsPerPage));
-        return chunks.length ? chunks : [[]];
-    }, [data, filter, pointsPerPage]);
-
-    const totalPages = pages.length;
-    const safePageIndex = Math.min(pageIndex, totalPages - 1);
-    const currentPageData = useMemo(() => pages[safePageIndex] || [], [pages, safePageIndex]);
-
-    const pageEarned = useMemo(() => currentPageData.reduce((s, d) => s + (d.earned || 0), 0), [currentPageData]);
-    const pageSpent = useMemo(() => currentPageData.reduce((s, d) => s + (d.spent || 0), 0), [currentPageData]);
-
-    // Land on the latest page whenever the filter (and thus paging) changes.
-    useEffect(() => {
-        const target = Math.max(0, totalPages - 1);
-        if (pageIndex !== target) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setPageIndex(target);
-            setDirection(0);
-        }
-    }, [totalPages, filter]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    const changePage = useCallback((next: number) => {
-        if (next >= 0 && next < totalPages && next !== safePageIndex) { setDirection(next > safePageIndex ? 1 : -1); setPageIndex(next); }
-    }, [totalPages, safePageIndex]);
-
-    // Touch + trackpad paging (native listeners for passive:false)
-    useEffect(() => {
-        const el = chartRef.current;
-        if (!el || totalPages <= 1) return;
-        const onStart = (e: TouchEvent) => { const t = e.touches[0]; touchStartRef.current = { x: t.clientX, y: t.clientY, time: Date.now() }; isSwipingRef.current = false; };
-        const onMove = (e: TouchEvent) => { if (!touchStartRef.current) return; const t = e.touches[0]; const dx = t.clientX - touchStartRef.current.x, dy = t.clientY - touchStartRef.current.y; if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) { isSwipingRef.current = true; e.preventDefault(); } };
-        const onEnd = (e: TouchEvent) => { if (!touchStartRef.current || !isSwipingRef.current) { touchStartRef.current = null; return; } const dx = e.changedTouches[0].clientX - touchStartRef.current.x; if (Math.abs(dx) > 30) changePage(dx < 0 ? safePageIndex + 1 : safePageIndex - 1); touchStartRef.current = null; isSwipingRef.current = false; };
-        const onWheel = (e: WheelEvent) => { if (wheelCooldownRef.current) return; const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0; if (Math.abs(d) < 20) return; e.preventDefault(); wheelCooldownRef.current = true; changePage(d > 0 ? safePageIndex + 1 : safePageIndex - 1); setTimeout(() => { wheelCooldownRef.current = false; }, 300); };
-        el.addEventListener('touchstart', onStart, { passive: true });
-        el.addEventListener('touchmove', onMove, { passive: false });
-        el.addEventListener('touchend', onEnd, { passive: true });
-        el.addEventListener('wheel', onWheel, { passive: false });
-        return () => { el.removeEventListener('touchstart', onStart); el.removeEventListener('touchmove', onMove); el.removeEventListener('touchend', onEnd); el.removeEventListener('wheel', onWheel); };
-    }, [totalPages, safePageIndex, changePage]);
-
-    const pageTitle = useMemo(() => {
-        if (!currentPageData.length) return '';
-        const first = new Date(currentPageData[0].fullDate), last = new Date(currentPageData[currentPageData.length - 1].fullDate);
-        if (filter === 'monthly') return 'All time';
-        if (first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear()) return first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        return `${first.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${last.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-    }, [currentPageData, filter]);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pageVariants: any = {
-        enter: (dir: number) => ({ x: dir > 0 ? '80%' : '-80%', opacity: 0 }),
-        center: { x: 0, opacity: 1, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } },
-        exit: (dir: number) => ({ x: dir > 0 ? '-30%' : '30%', opacity: 0, transition: { duration: 0.2 } }),
-    };
-
-    return (
-        <div ref={containerRef} className="glass-panel p-5 sm:p-6 relative overflow-hidden">
-            {/* Row 1: stats + filter */}
-            <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
-                <div className="flex items-end gap-6 sm:gap-10">
-                    <div>
-                        <p className="text-sec text-[9px] font-bold uppercase tracking-[0.25em] mb-1.5">Earned · {cur}</p>
-                        <h3 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] leading-none tnum" style={{ color: '#10B981' }}>
-                            {/* keyed on the value so paging the chart re-rolls the figure */}
-                            <RollingNumber key={pageEarned} text={formatMoney(pageEarned, cur)} />
-                        </h3>
-                    </div>
-                    <div>
-                        <p className="text-sec text-[9px] font-bold uppercase tracking-[0.25em] mb-1.5">Spent</p>
-                        <h3 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] leading-none tnum" style={{ color: '#F43F5E' }}>{formatMoney(pageSpent, cur)}</h3>
-                    </div>
-                </div>
-                <div className={`flex p-0.5 rounded-xl border ${isDark ? 'bg-white/[0.03] border-white/[0.06]' : 'bg-slate-100 border-black/5'}`}>
-                    {(['daily', 'weekly', 'monthly'] as ChartFilter[]).map(f => (
-                        <button key={f} onClick={() => setFilter(f)}
-                            className={`px-4 sm:px-5 py-2 rounded-[10px] text-[10px] font-bold uppercase tracking-[0.15em] transition-all ${filter === f ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25' : isDark ? 'text-[#666] hover:text-[#999]' : 'text-slate-400 hover:text-slate-700'}`}>
-                            {f === 'daily' ? 'Day' : f === 'weekly' ? 'Week' : 'Month'}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Row 2: period label (always shown) + pager (only when multiple pages) */}
-            <div className="flex items-center gap-2 mb-4">
-                {totalPages > 1 && (
-                    <button onClick={() => changePage(safePageIndex - 1)} disabled={safePageIndex === 0} className={`p-1 rounded-md transition-colors ${isDark ? 'text-white/30 hover:text-white disabled:opacity-15' : 'text-slate-300 hover:text-slate-800 disabled:opacity-15'} disabled:cursor-not-allowed`}><ChevronLeft size={16} /></button>
-                )}
-                <span className={`text-sm font-bold tracking-tight select-none ${isDark ? 'text-white/80' : 'text-slate-700'}`}>{pageTitle || '-'}</span>
-                {totalPages > 1 && (
-                    <>
-                        <button onClick={() => changePage(safePageIndex + 1)} disabled={safePageIndex === totalPages - 1} className={`p-1 rounded-md transition-colors ${isDark ? 'text-white/30 hover:text-white disabled:opacity-15' : 'text-slate-300 hover:text-slate-800 disabled:opacity-15'} disabled:cursor-not-allowed`}><ChevronRight size={16} /></button>
-                        <div className="flex items-center gap-1 ml-1">
-                            {pages.map((_, i) => (
-                                <button key={i} onClick={() => changePage(i)} className={`rounded-full transition-all duration-300 ${i === safePageIndex ? 'w-4 h-1.5 bg-blue-500' : `w-1.5 h-1.5 ${isDark ? 'bg-white/15 hover:bg-white/30' : 'bg-black/10 hover:bg-black/20'}`}`} />
-                            ))}
-                        </div>
-                    </>
-                )}
-            </div>
-
-            {/* Chart */}
-            <div ref={chartRef} className="relative h-[240px] sm:h-[300px]" style={{ touchAction: totalPages > 1 ? 'pan-y' : 'auto' }}>
-                <AnimatePresence initial={false} custom={direction}>
-                    <motion.div key={`${filter}-${safePageIndex}`} custom={direction} variants={pageVariants} initial={direction === 0 ? false : 'enter'} animate="center" exit="exit" className="absolute inset-0 w-full h-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={currentPageData} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}>
-                                <defs>
-                                    <filter id="treasuryGlow" x="-20%" y="-20%" width="140%" height="140%">
-                                        <feGaussianBlur stdDeviation="4" result="blur" />
-                                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                    </filter>
-                                    <linearGradient id="earnedFill" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor="#10B981" stopOpacity={isDark ? 0.25 : 0.35} />
-                                        <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
-                                    </linearGradient>
-                                    <linearGradient id="spentFill" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor="#F43F5E" stopOpacity={isDark ? 0.18 : 0.25} />
-                                        <stop offset="100%" stopColor="#F43F5E" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="0 0" vertical={false} stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)'} />
-                                <XAxis
-                                    dataKey="label"
-                                    axisLine={false}
-                                    tickLine={false}
-                                    interval="preserveStartEnd"
-                                    minTickGap={cw < 480 ? 22 : 30}
-                                    padding={{ left: 16, right: 16 }}
-                                    tickMargin={10}
-                                    height={26}
-                                    tick={{ fontSize: cw < 480 ? 10 : 11, fontWeight: 700, fill: isDark ? '#6b7280' : '#94a3b8' }}
-                                />
-                                <YAxis hide domain={[0, 'auto']} />
-                                <Tooltip content={<ChartTooltip isDark={isDark} cur={cur} />} cursor={{ stroke: isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.12)', strokeWidth: 1, strokeDasharray: '4 4' }} />
-                                <Area type="monotone" dataKey="spent" stroke="#F43F5E" fill="url(#spentFill)" fillOpacity={1} strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#F43F5E', strokeWidth: 2, stroke: isDark ? '#0C0C0C' : '#fff' }} animationDuration={500} />
-                                <Area type="monotone" dataKey="earned" stroke="#10B981" fill="url(#earnedFill)" fillOpacity={1} strokeWidth={3} filter="url(#treasuryGlow)" dot={{ r: 2.5, fill: isDark ? '#0C0C0C' : '#fff', strokeWidth: 2, stroke: '#10B981' }} activeDot={{ r: 6, fill: '#10B981', strokeWidth: 2, stroke: isDark ? '#0C0C0C' : '#fff' }} animationDuration={400} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </motion.div>
-                </AnimatePresence>
-            </div>
-            <div className="flex items-center gap-5 mt-3 pl-1">
-                <span className="flex items-center gap-2 text-xs text-sec font-semibold"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Earned</span>
-                <span className="flex items-center gap-2 text-xs text-sec font-semibold"><span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Spent</span>
-            </div>
-        </div>
-    );
-};
 
 const DTreasury = () => {
-    const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
     const isDark = useTheme();
     const [loading, setLoading] = useState(true);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -320,17 +108,7 @@ const DTreasury = () => {
     const [draft, setDraft] = useState<TreasuryData['config']>({ ...DEFAULT_CONFIG });
     const [settingsDirty, setSettingsDirty] = useState(false);
 
-    const isExtraSmall = windowWidth < 400;
-
-    useEffect(() => {
-        const onResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-    }, []);
-
-    useEffect(() => {
-        anime({ targets: '.treasury-section', opacity: [0, 1], translateY: [14, 0], duration: 450, easing: 'easeOutQuint' });
-    }, [tab]);
+    const isExtraSmall = useMediaQuery(XS_QUERY);
 
     useEffect(() => {
         // Treasury docs are admin-only - attach the listeners ONLY once a user is
@@ -343,39 +121,31 @@ const DTreasury = () => {
         const onErr = (e: { code?: string }) => { if (e?.code !== 'permission-denied') console.warn('[Treasury] listener error', e); setLoading(false); };
 
         const attach = () => {
-            unsubs.push(onSnapshot(PROJECTS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Record<string, unknown>>;
-                const projects = Object.entries(entries)
-                    .map(([id, p], i) => normalizeProject(id, p, i))
+            unsubs.push(onSnapshot(PROJECTS, snap => {
+                const projects = snap.docs
+                    .map((d, i) => normalizeProject(d.id, d.data(), i))
                     .sort((a, b) => a.order - b.order);
                 setData(prev => ({ ...prev, projects }));
                 setLoading(false);
             }, onErr));
-            unsubs.push(onSnapshot(SPENDINGS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryExpense, 'id'>>;
-                const expenses = Object.entries(entries)
-                    .map(([id, e]) => ({ id, ...e } as TreasuryExpense))
+            unsubs.push(onSnapshot(SPENDINGS, snap => {
+                const expenses = rowsOf<TreasuryExpense>(snap)
                     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                 setData(prev => ({ ...prev, expenses }));
             }, onErr));
-            unsubs.push(onSnapshot(INCOME_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryIncome, 'id'>>;
-                const income = Object.entries(entries)
-                    .map(([id, i]) => ({ id, ...i } as TreasuryIncome))
+            unsubs.push(onSnapshot(INCOME, snap => {
+                const income = rowsOf<TreasuryIncome>(snap)
                     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                 setData(prev => ({ ...prev, income }));
             }, onErr));
-            unsubs.push(onSnapshot(ACCOUNTS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryAccount, 'id'>>;
-                const accounts = Object.entries(entries)
-                    .map(([id, a], i) => ({ id, ...a, order: a.order ?? i } as TreasuryAccount))
+            unsubs.push(onSnapshot(ACCOUNTS, snap => {
+                const accounts = rowsOf<TreasuryAccount>(snap)
+                    .map((a, i) => ({ ...a, order: a.order ?? i }))
                     .sort((a, b) => a.order - b.order);
                 setData(prev => ({ ...prev, accounts }));
             }, onErr));
-            unsubs.push(onSnapshot(RECEIPTS_DOC, snap => {
-                const entries = (snap.data()?.entries || {}) as Record<string, Omit<TreasuryReceipt, 'id'>>;
-                const receipts = Object.entries(entries)
-                    .map(([id, r]) => ({ id, ...r }))
+            unsubs.push(onSnapshot(RECEIPTS, snap => {
+                const receipts = rowsOf<TreasuryReceipt>(snap)
                     .sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0)); // newest first
                 setData(prev => ({ ...prev, receipts }));
             }, onErr));
@@ -404,41 +174,21 @@ const DTreasury = () => {
         showAlert({ type, message: text });
     }, [showAlert]);
 
-    // Mirror only the public subset (name/status/order) of the still-handled
-    // projects to the PUBLIC Settings/HandledProjects doc the homepage Hero reads.
-    // Prices/earnings stay in the admin-only Treasury collection, and so does work
-    // that stopped: paused and closed are marked private in PROJECT_STATUSES, so a
-    // client never reads either word beside their own project name.
-    //
-    // Notes are NOT mirrored. They used to ride along as the homepage's project
-    // description while the editor labelled the box plainly "Notes", so anything
-    // written there - a client's budget, why a job went sideways - was published
-    // without anyone being told. A project note is now private, full stop.
-    const mirrorPublic = useCallback((projects: TreasuryProject[]) => {
-        const handled = projects.filter(p => statusMeta(p.status).publicly).sort((a, b) => a.order - b.order);
-        const map: Record<string, { name: string; status: string; order: number }> = {};
-        handled.forEach((p, i) => { map[p.id] = { name: p.name, status: p.status, order: i }; });
-        // Replaces the whole doc rather than merging, so a description written by an
-        // older build is dropped on the next save instead of lingering in public.
-        setDoc(HANDLED_PUBLIC_DOC, { projects: map, lastWrite: serverTimestamp() }).catch(() => { });
-    }, []);
-
-    const writeProjects = useCallback((projects: TreasuryProject[]) => {
-        setData(prev => ({ ...prev, projects }));
-        const entries: Record<string, Omit<TreasuryProject, 'id'>> = {};
-        projects.forEach(p => { const { id, ...rest } = p; entries[id] = rest; });
-        setDoc(PROJECTS_DOC, { entries, lastWrite: serverTimestamp() })
-            .catch(err => { console.warn('[Treasury] projects save failed', err); showToast('Save failed - check connection', 'warn'); });
-        mirrorPublic(projects);
-    }, [mirrorPublic, showToast]);
-
-    const writeExpenses = useCallback((expenses: TreasuryExpense[]) => {
-        setData(prev => ({ ...prev, expenses }));
-        const entries: Record<string, Omit<TreasuryExpense, 'id'>> = {};
-        expenses.forEach(e => { const { id, ...rest } = e; entries[id] = rest; });
-        setDoc(SPENDINGS_DOC, { entries, lastWrite: serverTimestamp() })
-            .catch(err => { console.warn('[Treasury] spendings save failed', err); showToast('Save failed - check connection', 'warn'); });
+    // Every entry is its own document (see treasury/writes.ts): a save replaces that one
+    // document whole and a delete removes it, so no other row is ever rewritten. The
+    // listeners above get Firestore's local echo straight away, so the screen updates
+    // without a hand-kept copy.
+    const failed = useCallback((what: string) => (err: unknown) => {
+        console.warn(`[Treasury] ${what} save failed`, err);
+        showToast('Save failed - check connection', 'warn');
     }, [showToast]);
+    const putRow = useCallback((col: typeof PROJECTS, entry: { id: string }, what: string) => {
+        const { id, data: row } = entryDoc(entry);
+        setDoc(doc(col, id), row).catch(failed(what));
+    }, [failed]);
+    const removeRow = useCallback((col: typeof PROJECTS, id: string, what: string) => {
+        deleteDoc(doc(col, id)).catch(failed(what));
+    }, [failed]);
 
     const writeConfig = useCallback((config: TreasuryData['config']) => {
         setData(prev => ({ ...prev, config }));
@@ -451,15 +201,9 @@ const DTreasury = () => {
     const configRef = useRef(data.config);
     useEffect(() => { configRef.current = data.config; }, [data.config]);
 
-    const saveProject = (p: TreasuryProject) => {
-        const exists = data.projects.some(x => x.id === p.id);
-        writeProjects(exists ? data.projects.map(x => x.id === p.id ? p : x) : [...data.projects, p]);
-    };
-    const deleteProject = (id: string) => writeProjects(data.projects.filter(p => p.id !== id));
-    const saveExpense = (e: TreasuryExpense) => {
-        const exists = data.expenses.some(x => x.id === e.id);
-        writeExpenses(exists ? data.expenses.map(x => x.id === e.id ? e : x) : [...data.expenses, e]);
-    };
+    const saveProject = (p: TreasuryProject) => putRow(PROJECTS, p, 'project');
+    const deleteProject = (id: string) => removeRow(PROJECTS, id, 'project');
+    const saveExpense = (e: TreasuryExpense) => putRow(SPENDINGS, e, 'spending');
     // Best-effort: drop any uploaded receipt images for an entry when it's deleted.
     const purgeAttachments = (id: string) => {
         listAll(ref(storage, `treasury/${id}`))
@@ -467,64 +211,40 @@ const DTreasury = () => {
             .catch(() => { /* nothing to clean / offline */ });
     };
 
-    const deleteExpense = (id: string) => { purgeAttachments(id); writeExpenses(data.expenses.filter(e => e.id !== id)); };
+    const deleteExpense = (id: string) => { purgeAttachments(id); removeRow(SPENDINGS, id, 'spending'); };
 
-    const writeIncome = useCallback((income: TreasuryIncome[]) => {
-        setData(prev => ({ ...prev, income }));
-        const entries: Record<string, Omit<TreasuryIncome, 'id'>> = {};
-        income.forEach(i => { const { id, ...rest } = i; entries[id] = rest; });
-        setDoc(INCOME_DOC, { entries, lastWrite: serverTimestamp() })
-            .catch(err => { console.warn('[Treasury] income save failed', err); showToast('Save failed - check connection', 'warn'); });
-    }, [showToast]);
-
+    // A newly-logged monthly retainer payment advances that project's schedule to the
+    // next due date (even if the money arrived early or late). The payment and the
+    // advance commit in one transaction against the project as stored, so neither can
+    // land without the other.
     const saveIncome = (i: TreasuryIncome) => {
-        const exists = data.income.some(x => x.id === i.id);
-        writeIncome(exists ? data.income.map(x => x.id === i.id ? i : x) : [...data.income, i]);
-        // A newly-logged monthly retainer payment advances that project's schedule
-        // to the next due date (even if the money arrived early or late).
-        if (!exists && i.monthlyPayment && i.projectId) {
-            const proj = data.projects.find(p => p.id === i.projectId);
-            if (proj?.monthly) {
-                const next = nextMonthlyPaymentDate(proj, i.date);
-                saveProject({ ...proj, nextPaymentDate: next });
-                const pretty = new Date(`${next}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                showToast(`Logged ${proj.name}'s monthly payment - next due ${pretty}`, 'good');
-            }
+        const isNew = !data.income.some(x => x.id === i.id);
+        const advances = isNew && i.monthlyPayment && i.projectId && data.projects.find(p => p.id === i.projectId)?.monthly;
+        if (!advances) {
+            putRow(INCOME, i, 'income');
+            return;
         }
+        runTransaction(db, async tx => {
+            const projectRef = doc(PROJECTS, i.projectId!);
+            const snap = await tx.get(projectRef);
+            const stored = snap.exists() ? snap.data() as Partial<TreasuryProject> : undefined;
+            const plan = planIncomeSave(i, true, stored);
+            tx.set(doc(INCOME, plan.income.id), plan.income.data);
+            if (plan.project) tx.update(projectRef, plan.project.data);
+            return { nextDate: plan.nextDate, name: stored?.name };
+        }).then(({ nextDate, name }) => {
+            if (!nextDate) { showToast('Payment logged', 'good'); return; }
+            const pretty = new Date(`${nextDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            showToast(`Logged ${name ?? 'the project'}'s monthly payment - next due ${pretty}`, 'good');
+        }).catch(err => { console.warn('[Treasury] income save failed', err); showToast('Save failed - check connection', 'warn'); });
     };
-    const deleteIncome = (id: string) => { purgeAttachments(id); writeIncome(data.income.filter(i => i.id !== id)); };
+    const deleteIncome = (id: string) => { purgeAttachments(id); removeRow(INCOME, id, 'income'); };
 
-    const writeAccounts = useCallback((accounts: TreasuryAccount[]) => {
-        setData(prev => ({ ...prev, accounts }));
-        const entries: Record<string, Omit<TreasuryAccount, 'id'>> = {};
-        accounts.forEach(a => { const { id, ...rest } = a; entries[id] = rest; });
-        setDoc(ACCOUNTS_DOC, { entries, lastWrite: serverTimestamp() })
-            .catch(err => { console.warn('[Treasury] accounts save failed', err); showToast('Save failed - check connection', 'warn'); });
-    }, [showToast]);
-
-    // Add/edit a single account. Persist ONLY that account's entry (merge) instead
-    // of rewriting the whole doc, so saving one account never clobbers concurrent
-    // changes to another (e.g. an opening-balance edit made via the MCP). Cleared
-    // optional fields are explicitly removed so merge doesn't keep stale values.
-    const saveAccount = (a: TreasuryAccount) => {
-        setData(prev => ({
-            ...prev,
-            accounts: prev.accounts.some(x => x.id === a.id)
-                ? prev.accounts.map(x => x.id === a.id ? a : x)
-                : [...prev.accounts, a],
-        }));
-        const { id, ...rest } = a;
-        const entry: Record<string, unknown> = {
-            ...rest,
-            notes: rest.notes ?? deleteField(),
-            archived: rest.archived ?? deleteField(),
-            excludeFromNetProfit: rest.excludeFromNetProfit ?? deleteField(),
-        };
-        setDoc(ACCOUNTS_DOC, { entries: { [id]: entry }, lastWrite: serverTimestamp() }, { merge: true })
-            .catch(err => { console.warn('[Treasury] account save failed', err); showToast('Save failed - check connection', 'warn'); });
-    };
-    // Delete needs the full-doc rewrite (merge can't remove a map key on its own).
-    const deleteAccount = (id: string) => writeAccounts(data.accounts.filter(a => a.id !== id));
+    // Add/edit a single account: its entry is replaced whole, so an optional field the
+    // edit cleared (notes, archived, excludeFromNetProfit) really goes, and no other
+    // account is touched (e.g. an opening-balance edit made via the MCP).
+    const saveAccount = (a: TreasuryAccount) => putRow(ACCOUNTS, a, 'account');
+    const deleteAccount = (id: string) => removeRow(ACCOUNTS, id, 'account');
 
     /**
      * Move a project to a status, stamping the date that status is about.
@@ -537,7 +257,7 @@ const DTreasury = () => {
      */
     const setProjectStatus = (p: TreasuryProject, status: ProjectStatus) => {
         if (status === p.status) return;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = localDayKey(Date.now());
         const meta = statusMeta(status);
         const next: TreasuryProject = { ...p, status };
 
@@ -630,14 +350,24 @@ const DTreasury = () => {
         const merged = [...newActive, ...completed].map((p, idx) => ({ ...p, order: idx }));
         setData(d => ({ ...d, projects: merged }));
     };
-    const persistOrder = () => writeProjects(data.projects.map((p, i) => ({ ...p, order: i })));
+    // Only the rows whose position changed get a new `order`, checked against each
+    // project as stored so one removed elsewhere meanwhile isn't brought back as a stub.
+    const persistOrder = () => {
+        const ids = data.projects.map(p => p.id);
+        runTransaction(db, async tx => {
+            const snaps = await Promise.all(ids.map(id => tx.get(doc(PROJECTS, id))));
+            const stored: Record<string, { order?: unknown }> = {};
+            snaps.forEach(s => { if (s.exists()) stored[s.id] = s.data(); });
+            for (const u of orderUpdates(stored, ids)) tx.update(doc(PROJECTS, u.id), { order: u.order });
+        }).catch(err => { console.warn('[Treasury] order save failed', err); showToast('Save failed - check connection', 'warn'); });
+    };
 
     const exportHtml = () => {
         const html = buildHtmlReport(data, new Date());
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `treasury-${new Date().toISOString().slice(0, 10)}.html`;
+        a.href = url; a.download = `treasury-${localDayKey(Date.now())}.html`;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         showToast('Report downloaded', 'good');
@@ -700,12 +430,12 @@ const DTreasury = () => {
         [data.receipts, receiptCustomer],
     );
     const receiptDayRows = useMemo(
-        () => (receiptDay ? filteredReceipts.filter(r => receiptDayKey(r.sentAt) === receiptDay) : []),
+        () => (receiptDay ? filteredReceipts.filter(r => localDayKey(r.sentAt) === receiptDay) : []),
         [filteredReceipts, receiptDay],
     );
     const receiptsByDay = useMemo(() => {
         const map = new Map<string, TreasuryReceipt[]>();
-        for (const r of filteredReceipts) { const k = receiptDayKey(r.sentAt); (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
+        for (const r of filteredReceipts) { const k = localDayKey(r.sentAt); (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
         return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0])); // newest day first
     }, [filteredReceipts]);
 
@@ -883,7 +613,7 @@ const DTreasury = () => {
     const stepReceiptDay = (delta: number) => {
         const base = receiptDay ? new Date(`${receiptDay}T00:00:00`) : new Date();
         base.setDate(base.getDate() + delta);
-        setReceiptDay(receiptDayKey(base.getTime()));
+        setReceiptDay(localDayKey(base.getTime()));
     };
 
     const renderReceiptRow = (r: TreasuryReceipt) => {
@@ -897,7 +627,7 @@ const DTreasury = () => {
                         {r.via === 'mcp' && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">via AI</span>}
                     </div>
                     <div className="text-[11px] text-sec truncate">
-                        {r.projectNames && r.projectNames.length ? r.projectNames.join(', ') : '—'} · {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        {r.projectNames && r.projectNames.length ? r.projectNames.join(', ') : '-'} · {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     {r.receiptNo && <div className="text-[10px] text-sec/60 font-mono mt-0.5">{r.receiptNo}</div>}
                 </div>
@@ -949,7 +679,12 @@ const DTreasury = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pr-1 pb-6">
-                <div key={tab} className="treasury-section flex flex-col gap-5">
+                {/* Plays on a tab switch only: the dashboard already fades this whole page in
+                    once when it opens, and a second entrance on mount read as a stutter. */}
+                <AnimatePresence mode="wait" initial={false}>
+                <motion.div key={tab} className="flex flex-col gap-5"
+                    initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.45, ease: EASE.outQuint }}>
 
                     {tab === 'overview' && (
                         <>
@@ -1186,8 +921,8 @@ const DTreasury = () => {
                                             {/* Quick Actions Panel */}
                                             <div className="flex flex-col gap-2 mt-auto pt-4 border-t border-[var(--section-border)]">
                                                 <div className="grid grid-cols-2 gap-2">
-                                                    <button onClick={() => setModal({ mode: 'income', income: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-all"><Plus size={14} /> Log income</button>
-                                                    <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: new Date().toISOString().slice(0, 10), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
+                                                    <button onClick={() => setModal({ mode: 'income', income: { projectId: focusedProject.id, date: localDayKey(Date.now()), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-all"><Plus size={14} /> Log income</button>
+                                                    <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: localDayKey(Date.now()), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
                                                 </div>
                                                 <div className="flex flex-col gap-1.5">
                                                     <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sec"><CheckCircle2 size={12} /> Status</div>
@@ -1590,7 +1325,8 @@ const DTreasury = () => {
                             </div>
                         </>
                     )}
-                </div>
+                </motion.div>
+                </AnimatePresence>
             </div>
 
             {/* Staged-settings bar (shared component) */}

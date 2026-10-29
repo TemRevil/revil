@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { sanitizeSvg } from '../../lib/sanitize';
 import { createPortal } from 'react-dom';
-import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, Github, GripVertical } from 'lucide-react';
-import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { Plus, Search, MoreVertical, ExternalLink, Eye, Edit2, Trash2, GripVertical } from 'lucide-react';
+import { Github } from '../BrandIcons';
+import { collection, doc, onSnapshot, getDoc, deleteDoc, writeBatch, runTransaction, type DocumentReference } from 'firebase/firestore';
 import { Reorder, useDragControls } from 'motion/react';
-import { ref, uploadBytes, getDownloadURL, listAll, deleteObject, getStorage } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, listAll, deleteObject, getStorage, type StorageReference } from 'firebase/storage';
 import app, { db } from '../../lib/firebase';
 // Local Storage handle: this module is in the lazy Dashboard chunk, so calling
 // getStorage here keeps firebase/storage out of the eager bundle while leaving
@@ -26,6 +27,10 @@ import MConfirmModal, { ConfirmType } from './M-ConfirmModal';
 import FileImage from '../FileImage';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../../utils/fuzzy';
 import useTheme from '../../hooks/useTheme';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { XS_QUERY, SM_QUERY } from './breakpoints';
+import { storagePathFromUrl } from './storagePath';
+import { writeProject, placeReordered, changedListings, type ProjectFields, type SaveMode } from './projects/save';
 
 interface RawFirestoreTag {
     Name?: string;
@@ -254,7 +259,6 @@ const DProjects = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<ProjectFormData | null>(null);
     const isDark = useTheme();
-    const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [activeMenu, setActiveMenu] = useState<string | number | null>(null);
     const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
     const [searchQuery, setSearchQuery] = useState('');
@@ -294,18 +298,18 @@ const DProjects = () => {
     // Alert Toast State
     const { alert, showAlert, hideAlert } = useSafeAlert(4000);
 
-    const filteredProjects = useMemo(() => {
-        const sorted = [...projects].sort((a, b) => {
-            const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
-            const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
-            if (aVal !== bVal) return aVal - bVal;
-            const aName = (a.name || '').toLowerCase();
-            const bName = (b.name || '').toLowerCase();
-            return aName.localeCompare(bName);
-        });
+    const sortedProjects = useMemo(() => [...projects].sort((a, b) => {
+        const aVal = a.listing && a.listing > 0 ? a.listing : 999999;
+        const bVal = b.listing && b.listing > 0 ? b.listing : 999999;
+        if (aVal !== bVal) return aVal - bVal;
+        const aName = (a.name || '').toLowerCase();
+        const bName = (b.name || '').toLowerCase();
+        return aName.localeCompare(bName);
+    }), [projects]);
 
+    const filteredProjects = useMemo(() => {
         if (searchQuery.length < 2) {
-            return sorted;
+            return sortedProjects;
         }
 
         const query = searchQuery.toLowerCase();
@@ -318,17 +322,11 @@ const DProjects = () => {
             .filter(item => item.minDistance <= SEARCH_MAX_DISTANCE)
             .sort((a, b) => a.minDistance - b.minDistance)
             .map(item => item.project);
-    }, [projects, searchQuery]);
+    }, [projects, sortedProjects, searchQuery]);
 
     // Responsive breakpoints
-    const isExtraSmall = windowWidth < 400;
-    const isSmall = windowWidth < 640;
-
-    useEffect(() => {
-        const handleResize = () => setWindowWidth(window.innerWidth);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    const isExtraSmall = useMediaQuery(XS_QUERY);
+    const isSmall = useMediaQuery(SM_QUERY);
 
     const handleAddProject = () => {
         setEditingProject(null);
@@ -391,6 +389,9 @@ const DProjects = () => {
             unsubContrib();
         };
     }, [showAlert]);
+
+    // Listing as last stored, so a reorder writes only the projects that moved.
+    const storedListing = useRef(new Map<string, number>());
 
     // Fetch Projects from Firestore
     useEffect(() => {
@@ -462,6 +463,7 @@ const DProjects = () => {
                     listing: Number(data.Listing ?? data.listing ?? 0) || 0
                 } as ProjectData;
             });
+            storedListing.current = new Map(loaded.map(p => [String(p.id), p.listing || 0]));
             setProjects(loaded);
         });
         return () => unsub();
@@ -505,125 +507,84 @@ const DProjects = () => {
         setActiveMenu(null);
     };
 
-    const handleSaveProject = async (data: ProjectFormData) => {
+    /**
+     * Save the form. Resolves true only once the project is really stored, so the form
+     * stays open with its draft on any failure.
+     *
+     * Order matters, so a failure part-way never leaves the stored project pointing at
+     * files that are gone: files are copied or uploaded first, then the document is
+     * written in one transaction (writeProject refuses a name already taken), and only
+     * after that are the old folder's copies and removed images deleted.
+     */
+    const handleSaveProject = async (data: ProjectFormData): Promise<boolean> => {
+        const projectName = data.name;
+        const oldName = editingProject?.name;
+        const mode: SaveMode = !editingProject ? 'create' : oldName !== projectName ? 'rename' : 'edit';
+        const folder = `src/projects-imgs/${projectName}`;
+        if (!projectName.trim()) {
+            showAlert({ type: 'error', message: 'Give the project a name first.' });
+            return false;
+        }
+
+        setIsLoading(true);
+        // Files written for this save, removed again if the save fails (a create or rename
+        // writes into a folder no stored project uses yet).
+        const written: StorageReference[] = [];
+        // Old-folder files copied by a rename, by old path, deleted once the move is stored.
+        const moved = new Map<string, { old: StorageReference; url: string }>();
         try {
-            setIsLoading(true);
-            const projectName = data.name;
-            const oldName = editingProject?.name;
-            const isNameChanged = oldName && oldName !== projectName;
-
-            let iconUrl = typeof data.icon === 'string' ? data.icon : '';
-            const imageUrls: string[] = [];
-
-            // 1. Handle Rename in Storage if name changed
-            if (isNameChanged) {
-
-                const oldFolderRef = ref(storage, `src/projects-imgs/${oldName}`);
-                try {
-                    const listResult = await listAll(oldFolderRef);
-
-                    for (const item of listResult.items) {
-                        try {
-                            // Use getDownloadURL + fetch instead of getBlob to avoid CORS issues
-                            const downloadUrl = await getDownloadURL(item);
-                            const response = await fetch(downloadUrl);
-                            const blob = await response.blob();
-                            const newRef = ref(storage, `src/projects-imgs/${projectName}/${item.name}`);
-
-                            await uploadBytes(newRef, blob, IMAGE_META);
-                            const newFileUrl = await getDownloadURL(newRef);
-
-                            // Update iconUrl if this was the icon
-                            if (item.name === 'icon' && typeof data.icon === 'string' && data.icon.includes(item.name)) {
-                                iconUrl = newFileUrl;
-                            }
-
-                            // Delete old one after successful copy
-                            await deleteObject(item);
-                        } catch (itemErr) {
-                            console.error(`Failed to move item ${item.name}:`, itemErr);
-                        }
-                    }
-                } catch (e) {
-                    console.error("Storage listAll or folder access failed:", e);
-                }
+            // Checked up front so nothing is uploaded into another project's folder; the
+            // transaction below checks again in case the name is taken meanwhile.
+            if (mode !== 'edit' && (await getDoc(doc(db, 'Projects', projectName))).exists()) {
+                showAlert({ type: 'error', message: `A project named "${projectName}" already exists. Pick another name.` });
+                return false;
             }
 
-            // 2. Upload Project Icon (if new file provided)
+            // 1. A rename copies the old folder into the new one (the originals stay until the move is stored).
+            if (mode === 'rename') {
+                const listResult = await listAll(ref(storage, `src/projects-imgs/${oldName}`));
+                for (const item of listResult.items) {
+                    // getDownloadURL + fetch rather than getBlob, which hits CORS here.
+                    const blob = await (await fetch(await getDownloadURL(item))).blob();
+                    const newRef = ref(storage, `${folder}/${item.name}`);
+                    await uploadBytes(newRef, blob, IMAGE_META);
+                    written.push(newRef);
+                    moved.set(item.fullPath, { old: item, url: await getDownloadURL(newRef) });
+                }
+            }
+            // A stored URL that pointed into the old folder now points at its copy.
+            const relocated = (url: string) => {
+                const path = storagePathFromUrl(url);
+                return (path && moved.get(path)?.url) || url;
+            };
+
+            // 2. Project icon: a new file is uploaded, a kept one follows a rename.
+            let iconUrl = typeof data.icon === 'string' ? relocated(data.icon) : '';
             if (data.icon && typeof data.icon !== 'string') {
-                const iconFile = data.icon as File;
-                const iconRef = ref(storage, `src/projects-imgs/${projectName}/icon`);
-                await uploadBytes(iconRef, iconFile, IMAGE_META);
+                const iconRef = ref(storage, `${folder}/icon`);
+                await uploadBytes(iconRef, data.icon as File, IMAGE_META);
+                if (mode !== 'edit') written.push(iconRef);
                 iconUrl = await getDownloadURL(iconRef);
             }
 
-            // 3. Upload Project Images
+            // 3. Project images, in the form's order.
+            const imageUrls: string[] = [];
             for (const file of data.images) {
                 if (typeof file === 'string') {
-                    // If it was an old URL and we renamed, we need to point to the new one
-                    const encodedOldName = encodeURIComponent(oldName || '');
-                    const oldPathChunk = `projects-imgs%2F${encodedOldName}%2F`;
-
-                    if (isNameChanged && file.includes(oldPathChunk)) {
-                        const fileName = file.split('/').pop()?.split('?')[0].split('%2F').pop();
-                        if (fileName) {
-                            try {
-                                const newRef = ref(storage, `src/projects-imgs/${projectName}/${decodeURIComponent(fileName)}`);
-                                const newUrl = await getDownloadURL(newRef);
-                                imageUrls.push(newUrl);
-                            } catch (err) {
-                                console.warn(`Could not get new URL for ${fileName}, keeping old:`, err);
-                                imageUrls.push(file);
-                            }
-                        } else {
-                            imageUrls.push(file);
-                        }
-                    } else {
-                        imageUrls.push(file);
-                    }
+                    imageUrls.push(relocated(file));
                 } else if (file instanceof File) {
-                    const imgRef = ref(storage, `src/projects-imgs/${projectName}/${file.name}`);
+                    const imgRef = ref(storage, `${folder}/${file.name}`);
                     await uploadBytes(imgRef, file, IMAGE_META);
-                    const url = await getDownloadURL(imgRef);
-                    imageUrls.push(url);
+                    if (mode !== 'edit') written.push(imgRef);
+                    imageUrls.push(await getDownloadURL(imgRef));
                 }
             }
 
-            // 3b. Clean up removed images from Storage
-            if (editingProject) {
-                try {
-                    const folderRef = ref(storage, `src/projects-imgs/${projectName}`);
-                    const listResult = await listAll(folderRef);
-
-                    // Collect all final URLs (images + icon) for comparison
-                    const keptUrls = new Set([...imageUrls, iconUrl].filter(Boolean));
-
-                    for (const item of listResult.items) {
-                        // Skip the icon file - it's managed separately
-                        if (item.name === 'icon') continue;
-
-                        try {
-                            const fileUrl = await getDownloadURL(item);
-                            // If this storage file's URL is not in the kept set, delete it
-                            if (!keptUrls.has(fileUrl)) {
-                                await deleteObject(item);
-                            }
-                        } catch {
-                            // File might already be deleted or inaccessible, skip
-                        }
-                    }
-                } catch (e) {
-                    console.warn('Could not clean up removed images:', e);
-                }
-            }
-
-            // 4. Prepare Tags Map
+            // 4. Tags and contributors as Firestore's numbered maps.
             const tagsMap: Record<string, string> = {};
             data.tags.forEach((tag: TagData, idx: number) => {
                 tagsMap[(idx + 1).toString()] = tag.name;
             });
-
-            // 5. Prepare Contributors Map
             const contributorsMap: Record<string, { "Contributor Name": string; "Role at Project": string }> = {};
             data.contributors.forEach((contrib: ContributorData, idx: number) => {
                 contributorsMap[(idx + 1).toString()] = {
@@ -632,8 +593,7 @@ const DProjects = () => {
                 };
             });
 
-            // 6. Construct Document Data
-            const projectDoc = {
+            const fields: ProjectFields = {
                 "Description": data.description,
                 "Case Study": data.caseStudy || '',
                 "Live Link": data.liveLink,
@@ -643,45 +603,61 @@ const DProjects = () => {
                 "Contributors": contributorsMap,
                 "Tags": tagsMap,
                 "Project Images": imageUrls,
-                "Views": {
-                    "Github": Number(data.githubViews) || 0,
-                    "Live": Number(data.liveViews) || 0,
-                    "Download": Number(data.downloadViews) || 0,
-                    "Project": Number(data.views) || 0
-                },
-                "Listing": data.listing || 0
             };
 
-            // 7. Save to Firestore
-            if (isNameChanged) {
-                await deleteDoc(doc(db, 'Projects', oldName));
+            // 5. The document, in one transaction.
+            await runTransaction(db, tx => writeProject<DocumentReference>(tx, {
+                mode,
+                target: doc(db, 'Projects', projectName),
+                source: mode === 'rename' ? doc(db, 'Projects', oldName!) : undefined,
+                name: projectName,
+                oldName,
+                fields,
+                listing: data.listing,
+            }));
+            written.length = 0;
+
+            // 6. Stored: drop the old folder's originals and any image the form removed.
+            // Compared by storage path, not URL - a regenerated download token would make
+            // a kept image look unused.
+            for (const { old } of moved.values()) await deleteObject(old).catch(e => console.warn('Could not delete old file', old.fullPath, e));
+            if (mode !== 'create') {
+                const kept = new Set([...imageUrls, iconUrl].map(storagePathFromUrl).filter(Boolean));
+                try {
+                    const listResult = await listAll(ref(storage, folder));
+                    for (const item of listResult.items) {
+                        if (item.name === 'icon' || kept.has(item.fullPath)) continue;
+                        await deleteObject(item).catch(e => console.warn('Could not delete removed image', item.fullPath, e));
+                    }
+                } catch (e) {
+                    console.warn('Could not clean up removed images:', e);
+                }
             }
 
-            await setDoc(doc(db, 'Projects', projectName), projectDoc);
-
             setIsModalOpen(false);
-        } catch {
-            showAlert({ type: 'error', message: 'Failed to save project. Please check your data and try again.' });
+            return true;
+        } catch (e) {
+            console.error('Project save failed:', e);
+            for (const r of written) await deleteObject(r).catch(() => { });
+            const reason = e instanceof Error && /already exists|no longer exists/.test(e.message) ? e.message : 'Please check your connection and try again.';
+            showAlert({ type: 'error', message: `Project not saved. ${reason}` });
+            return false;
         } finally {
             setIsLoading(false);
         }
     };
 
+    // The table's rows in their new order. Every project gets an index from the full
+    // list, so a drag never leaves two projects sharing one.
     const handleReorder = (reordered: ProjectData[]) => {
-        const withNewListing = reordered.map((p, idx) => ({ ...p, listing: idx + 1 }));
-        setProjects(withNewListing);
+        setProjects(placeReordered(sortedProjects, reordered));
     };
 
     const persistOrder = async () => {
-        // Update indices in Firestore
+        const changes = changedListings(projects, storedListing.current);
+        if (!changes.length) return;
         const batch = writeBatch(db);
-        filteredProjects.forEach((p, idx) => {
-            if (p.id) {
-                const pRef = doc(db, 'Projects', p.id.toString());
-                batch.update(pRef, { Listing: idx + 1 });
-            }
-        });
-
+        changes.forEach(({ id, listing }) => batch.update(doc(db, 'Projects', id), { Listing: listing }));
         try {
             await batch.commit();
         } catch (error) {

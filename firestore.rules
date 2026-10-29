@@ -3,6 +3,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Function to check if the user is the admin (uses Firebase Custom Claims)
+    // Collections only Cloud Functions write (Admin SDK); each has its own block below.
+    function functionCollections() {
+      return ['MCP', 'Analytics', 'RateLimits', 'McpAudit', 'MailJobs'];
+    }
+
+    // Single documents only a Cloud Function writes, inside otherwise admin-writable
+    // collections.
+    function functionOwned(coll, doc) {
+      return coll == 'Settings' && doc == 'HandledProjects';
+    }
+
     function isAdmin() {
       return request.auth != null && request.auth.token.admin == true;
     }
@@ -29,28 +40,49 @@ service cloud.firestore {
     }
 
     match /Settings/Canary {
-      // PII-bearing doc: holds visitor names, emails, phone numbers, messages,
-      // attachment URLs and live Meet links. Admin ONLY, for reads and writes.
-      // Public booking availability is exposed via the sanitized Settings/BookedSlots
-      // doc (Date + Time only), which a Cloud Function mirrors from Meetings here.
-      //
-      // Visitors used to update this doc directly under a rules-level rate limit.
-      // Rules cannot check the one new entry inside a map, so any field, type or
-      // length got through, and the cooldown timestamps were publicly writable (one
-      // request could jam both forms). The contact form and bookings now go through
-      // the submitContact / bookMeeting Cloud Functions, which validate and
-      // rate-limit every submission and write here with the Admin SDK.
+      // Holds only the owner's meeting categories now (company and client names).
+      // Admin ONLY, for reads and writes.
       allow read, write: if isAdmin();
     }
 
-    // Treasury — private finances, split into documents:
-    //   Treasury/projects   the projects I handle (with prices/earnings)
-    //   Treasury/spendings  expenses
-    //   Treasury/income     payments received
-    //   Treasury/accounts   where money lives (bank/cash/wallet balances)
-    //   Treasury/settings   currency + FX config
-    // Admin read+write ONLY; never public. The homepage's sanitized list lives
-    // separately in the public Settings/HandledProjects doc.
+    // Contact messages and booked meetings, one document each: visitor names, emails,
+    // phone numbers, messages, attachment URLs and live Meet links. Admin ONLY, for
+    // reads and writes. Visitors never write here: the contact form and bookings go
+    // through the submitContact / bookMeeting Cloud Functions, which validate and
+    // rate-limit every submission and write with the Admin SDK. The public calendar
+    // reads the sanitized Settings/BookedSlots doc (start instants only), which a
+    // Cloud Function rebuilds from CanaryMeetings.
+    match /CanaryMessages/{messageId} {
+      allow read, write: if isAdmin();
+    }
+    match /CanaryMeetings/{meetingId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Treasury - private finances, one document per entry:
+    //   TreasuryProjects   the projects I handle (with prices/earnings)
+    //   TreasuryIncome     payments received
+    //   TreasurySpendings  expenses
+    //   TreasuryAccounts   where money lives (bank/cash/wallet balances)
+    //   TreasuryReceipts   the log of receipts sent
+    // plus Treasury/settings (currency + FX config). Admin read+write ONLY; never
+    // public. The homepage's sanitized list lives separately in the public
+    // Settings/HandledProjects doc.
+    match /TreasuryProjects/{entryId} {
+      allow read, write: if isAdmin();
+    }
+    match /TreasuryIncome/{entryId} {
+      allow read, write: if isAdmin();
+    }
+    match /TreasurySpendings/{entryId} {
+      allow read, write: if isAdmin();
+    }
+    match /TreasuryAccounts/{entryId} {
+      allow read, write: if isAdmin();
+    }
+    match /TreasuryReceipts/{entryId} {
+      allow read, write: if isAdmin();
+    }
     match /Treasury/{docId} {
       allow read, write: if isAdmin();
     }
@@ -75,15 +107,21 @@ service cloud.firestore {
     //
     // Listed by name rather than "everything but Canary", so a doc added later (or
     // Settings/MCP, whose switches are nobody else's business) is private by default.
+    //
+    // HandledProjects is written only by the mirrorTreasuryProjects Cloud Function
+    // (from TreasuryProjects), so no client - the owner's included - may write it:
+    // the projection of what is public lives in one place, server-side.
     match /Settings/{settingsDoc} {
       allow read: if settingsDoc in ['Account', 'Availability', 'BookedSlots', 'BookPage',
                                      'Developer', 'HandledProjects', 'Tech Stack'];
-      allow write: if isAdmin();
+      allow write: if isAdmin() && !functionOwned('Settings', settingsDoc);
     }
 
     // Any deeper Settings subcollection docs default to admin-only. Nothing public
     // lives under Settings any more - visit analytics moved to /Analytics below.
-    match /Settings/{document=**} {
+    // (Subcollections only: a recursive match here would also re-grant writes to the
+    // function-owned docs above.)
+    match /Settings/{settingsDoc}/{subcollection}/{nestedDoc}/{rest=**} {
       allow read, write: if isAdmin();
     }
 
@@ -122,6 +160,14 @@ service cloud.firestore {
       allow read, delete: if isAdmin();
     }
 
+    // The mail outbox: every notification the functions send, with its delivery
+    // state. Written only by the functions (Admin SDK). The dashboard may read it
+    // and clear jobs; a retry goes through the retryMailJob callable, never a
+    // client write, so a job's recipient or content can't be changed from a browser.
+    match /MailJobs/{jobId} {
+      allow read, delete: if isAdmin();
+    }
+
     // Secure everything else (require admin access).
     //
     // This CANNOT be a bare `match /{document=**}`. Firestore rules are additive -
@@ -130,18 +176,20 @@ service cloud.firestore {
     // above: `/MCP/{docId}` (live OAuth access and refresh tokens, which must never
     // reach any client) and `/Analytics/Sessions/Items/{id}` (a visit story may be
     // deleted, never forged or edited). The same reasoning already excluded
-    // Settings/Canary from the public Settings read.
+    // Settings/Canary from the public Settings read. The Canary and Treasury
+    // collections have their own admin-only blocks above, so they never depend on it.
     //
     // So the catch-all names the top-level collection in a single-segment variable
-    // and subtracts those two, plus RateLimits and McpAudit (only functions write
-    // them). Everything under them is governed only by their own
+    // and subtracts those two, plus RateLimits, McpAudit and MailJobs (only
+    // functions write them), and the single function-owned Settings doc. Everything under them is governed only by their own
     // blocks above; the dashboard's real needs there (share links read/write, visit
     // stories read/delete) are granted explicitly and still work.
     match /{coll}/{doc} {
-      allow read, write: if isAdmin() && !(coll in ['MCP', 'Analytics', 'RateLimits', 'McpAudit']);
+      allow read: if isAdmin() && !(coll in functionCollections());
+      allow write: if isAdmin() && !(coll in functionCollections()) && !functionOwned(coll, doc);
     }
-    match /{coll}/{doc}/{rest=**} {
-      allow read, write: if isAdmin() && !(coll in ['MCP', 'Analytics', 'RateLimits', 'McpAudit']);
+    match /{coll}/{doc}/{subcollection}/{nestedDoc}/{rest=**} {
+      allow read, write: if isAdmin() && !(coll in functionCollections());
     }
   }
 }

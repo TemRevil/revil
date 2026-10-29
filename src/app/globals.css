@@ -517,6 +517,30 @@ html[data-lite] .blob-container { display: none; }
  * (measured against the button's rect). Animation is pure `opacity` +
  * `margin-bottom` (margin offsets the anchor without any transform).
  */
+/* A modal panel takes focus itself when it opens (dialog.ts) so a screen reader starts
+   at its title; the panel is not a control, so it draws no focus ring. */
+[role="dialog"]:focus {
+  outline: none;
+}
+
+/* The privacy line under the navbar: quiet, but still readable (--text-muted meets
+   contrast on both themes) and a real link with a visible focus ring. */
+.privacy-line {
+  bottom: 7px;
+  color: var(--text-muted);
+  opacity: 0.8;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  /* It can sit over the hero photo: a soft halo of the page colour keeps it legible
+     there without a visible box. */
+  text-shadow: 0 0 6px var(--bg-primary), 0 0 2px var(--bg-primary);
+  transition: opacity 0.3s ease, color 0.3s ease;
+}
+.privacy-line:hover { opacity: 1; color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
+.privacy-line:focus-visible { opacity: 1; outline: 2px solid #C46532; outline-offset: 2px; }
+
 .nav-tooltip {
   /* position is set inline via portal (fixed + left/bottom) */
   opacity: 0;

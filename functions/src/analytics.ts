@@ -21,15 +21,19 @@
  */
 
 import { onRequest } from "firebase-functions/v2/https";
-import admin from "firebase-admin";
-import { lookupCountry } from "./geoip.js";
-import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail.js";
+import { getAppCheck } from "firebase-admin/app-check";
+import { getAuth } from "firebase-admin/auth";
+import { FieldValue, getFirestore, type DocumentSnapshot } from "firebase-admin/firestore";
+import { clientIp, lookupCountry } from "./geoip.js";
+import { HELLO_EMAIL, smtpUser } from "./mail.js";
 import { escapeHtml as escHtml } from "./html.js";
+import { emailShell, SITE_URL } from "./emailShell.js";
+import { enqueueMail, jobId, type MailMessage } from "./outbox.js";
+import { quota, readQuotas, takeQuotas } from "./limits.js";
 
-const db = () => admin.firestore();
-const FV = admin.firestore.FieldValue;
+const db = () => getFirestore();
+const FV = FieldValue;
 
-const SITE = "https://temrevil.com";
 
 const SESSIONS = "Analytics/Sessions/Items";
 const DAYS = "Analytics/Days/Items";
@@ -94,11 +98,10 @@ const SOCIAL_NAMES: Record<string, string> = {
   email: "Email", mail: "Email",
 };
 
-function canonicalSocial(name: string): string {
-  const known = SOCIAL_NAMES[name.trim().toLowerCase()];
-  if (known) return known;
-  // Unknown network: Title Case it so at least one casing wins consistently.
-  return name.trim().toLowerCase().replace(/(^|[\s-])([a-z])/g, (_m, sep, ch) => sep + ch.toUpperCase());
+export function canonicalSocial(name: string): string {
+  // An unknown name is one "Other" row: the name arrives in the request, and each
+  // new spelling would otherwise open its own counter document.
+  return SOCIAL_NAMES[name.trim().toLowerCase()] || "Other";
 }
 
 /**
@@ -189,7 +192,7 @@ function matchSourceHost(host: string): [string, SourceKind] | null {
   return null;
 }
 
-function classifySource(entry: Record<string, unknown>): { Name: string; Kind: SourceKind } {
+export function classifySource(entry: Record<string, unknown>): { Name: string; Kind: SourceKind } {
   const utm = isObj(entry.Utm) ? (entry.Utm as Record<string, string>) : {};
   const medium = String(utm.medium || "").trim().toLowerCase();
 
@@ -209,13 +212,13 @@ function classifySource(entry: Record<string, unknown>): { Name: string; Kind: S
   const hit = matchSourceHost(host);
   if (hit) return { Name: hit[0], Kind: hit[1] };
 
-  // Nothing we have a name for: keep the host as it is, so it is still one row per
-  // origin, and Title Case a bare word so casing cannot split it in two.
-  const name = host.includes(".")
-    ? host.slice(0, 60)
-    : host.replace(/(^|[\s-])([a-z])/g, (_m, sep, ch) => sep + ch.toUpperCase()).slice(0, 60);
-  return name ? { Name: name, Kind: "referral" } : { Name: "Direct", Kind: "direct" };
+  // Nothing we have a name for: a real host stays as it is, one row per origin. Any
+  // other word (it comes straight from the URL, so it can be anything) is "Other",
+  // so made-up names can't each open a counter document.
+  return HOSTNAME_RE.test(host) ? { Name: host, Kind: "referral" } : { Name: "Other", Kind: "referral" };
 }
+
+const HOSTNAME_RE = /^(?=.{4,60}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,24}$/;
 
 /** A non-negative integer, clamped. Anything else becomes 0. */
 function num(v: unknown, max: number): number {
@@ -249,7 +252,8 @@ function todayKey(): string {
 }
 
 // ── email ────────────────────────────────────────────────────────────
-interface OpenedRow { label: string; value: string }
+/** At most one "link opened" email per link per hour, however many visits it gets. */
+const LINK_MAIL_EVERY_MS = HOUR_MS;
 
 /**
  * "Someone just opened the link you made for X."
@@ -258,85 +262,7 @@ interface OpenedRow { label: string; value: string }
  * owner through the normal Google login, and reopens on that story. Nothing in the
  * URL is sensitive on its own - it is a session id, useless without admin auth.
  */
-function openedEmailHtml(args: {
-  linkName: string;
-  linkFor: string;
-  rows: OpenedRow[];
-  storyUrl: string;
-}): string {
-  const rows = args.rows
-    .map((r) => `
-            <div class="info-row">
-              <div class="info-label">${escHtml(r.label)}</div>
-              <div class="info-value">${escHtml(r.value)}</div>
-            </div>`)
-    .join("");
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="color-scheme" content="dark"/>
-<meta name="supported-color-schemes" content="dark"/>
-<title>Your link was opened</title>
-<!--[if mso]><style>body,table,td{font-family:Arial,sans-serif!important}</style><![endif]-->
-<style>
-  body{margin:0;padding:0;background:#0a0a0a;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
-  .wrapper{max-width:600px;margin:0 auto;padding:40px 20px}
-  .card{background:#141414;border:1px solid #222;border-radius:16px;overflow:hidden}
-  .header{padding:32px 32px 24px;border-bottom:1px solid #222;text-align:center}
-  .logo{font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px}
-  .logo span{color:#3395ff}
-  .body{padding:32px}
-  .body h2{margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff}
-  .body p{margin:0 0 12px;font-size:15px;line-height:1.6;color:#b0b0b0}
-  .info-row{display:flex;padding:12px 0;border-bottom:1px solid #1a1a1a}
-  .info-label{font-size:13px;font-weight:600;color:#666;width:130px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.5px}
-  .info-value{font-size:15px;color:#e0e0e0;word-break:break-word}
-  .btn{display:inline-block;padding:14px 30px;background:#3395ff;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px}
-  .footer{padding:24px 32px;border-top:1px solid #222;text-align:center}
-  .footer p{margin:0;font-size:12px;color:#555}
-  .footer a{color:#3395ff;text-decoration:none}
-  .divider{height:1px;background:#222;margin:20px 0}
-  .preheader{display:none;font-size:1px;color:#0a0a0a;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden}
-  @media(max-width:600px){
-    .wrapper{padding:16px 8px}
-    .header,.body,.footer{padding-left:20px;padding-right:20px}
-    .info-row{flex-direction:column;gap:4px}
-    .info-label{width:auto}
-  }
-</style>
-</head>
-<body>
-<div class="preheader">${escHtml(args.linkName)} just opened the link you sent.</div>
-<div class="wrapper">
-  <div class="card">
-    <div class="header">
-      <div class="logo">Revil<span>.</span></div>
-    </div>
-    <div class="body">
-      <h2>${escHtml(args.linkName)} opened your link</h2>
-      <p>The link you made for <strong style="color:#e0e0e0">${escHtml(args.linkFor)}</strong> is being read right now.</p>
-      <div class="divider"></div>
-      <div>${rows}</div>
-      <div style="margin-top:28px;text-align:center">
-        <a href="${escHtml(args.storyUrl)}" class="btn">Watch this visit</a>
-      </div>
-      <p style="margin-top:20px;font-size:13px;color:#666;text-align:center">
-        Opens the dashboard on this exact visit after you sign in.
-      </p>
-    </div>
-    <div class="footer">
-      <p>Sent from <a href="${SITE}">temrevil.com</a></p>
-    </div>
-  </div>
-</div>
-</body>
-</html>`;
-}
-
-async function sendOpenedEmail(args: {
+function openedEmail(args: {
   linkName: string;
   linkFor: string;
   sessionId: string;
@@ -344,35 +270,42 @@ async function sendOpenedEmail(args: {
   device: Record<string, unknown>;
   visit: number;
   ref: string;
-}): Promise<void> {
-  const rows: OpenedRow[] = [
-    { label: "Link", value: `${args.linkName} - ${args.linkFor}` },
-    { label: "Where", value: args.geo ? `${args.geo.Country} (${args.geo.Code})` : "Unknown" },
-    {
-      label: "On",
-      value: [args.device.Type, args.device.OS, args.device.Browser]
-        .filter(Boolean).join(" - ") || "Unknown",
-    },
-    { label: "Their time", value: String(args.device.LocalTime || "-") },
-    { label: "Came from", value: args.ref || "Direct" },
-    { label: "Visit", value: args.visit > 1 ? `#${args.visit} - they have been here before` : "First time" },
+}): MailMessage {
+  const rows: Array<[string, string]> = [
+    ["Link", `${args.linkName} - ${args.linkFor}`],
+    ["Where", args.geo ? `${args.geo.Country} (${args.geo.Code})` : "Unknown"],
+    ["On", [args.device.Type, args.device.OS, args.device.Browser].filter(Boolean).join(" - ") || "Unknown"],
+    ["Their time", String(args.device.LocalTime || "-")],
+    ["Came from", args.ref || "Direct"],
+    ["Visit", args.visit > 1 ? `#${args.visit} - they have been here before` : "First time"],
   ];
-
-  const html = openedEmailHtml({
-    linkName: args.linkName,
-    linkFor: args.linkFor,
-    rows,
-    storyUrl: `${SITE}/?s=${encodeURIComponent(args.sessionId)}`,
-  });
-
-  const transporter = createTransporter();
-  await transporter.sendMail({
-    from: `"Revil" <${HELLO_EMAIL}>`,
+  const storyUrl = `${SITE_URL}/?s=${encodeURIComponent(args.sessionId)}`;
+  return {
     to: smtpUser.value(),
+    fromName: "Revil",
     replyTo: HELLO_EMAIL,
     subject: `${args.linkName} opened your link`.replace(/[\r\n]+/g, " ").slice(0, 200),
-    html,
-  });
+    label: "Link opened",
+    html: emailShell({
+      title: "Your link was opened",
+      preheader: `${args.linkName} just opened the link you sent.`,
+      bodyHtml: `
+      <h2>${escHtml(args.linkName)} opened your link</h2>
+      <p>The link you made for <strong>${escHtml(args.linkFor)}</strong> is being read right now.</p>
+      <div class="divider"></div>
+      <div>${rows.map(([label, value], i) => `
+            <div class="info-row"${i === rows.length - 1 ? ' style="border:none"' : ""}>
+              <div class="info-label">${escHtml(label)}</div>
+              <div class="info-value">${escHtml(value)}</div>
+            </div>`).join("")}</div>
+      <div style="margin-top:28px;text-align:center">
+        <a href="${escHtml(storyUrl)}" class="btn">Watch this visit</a>
+      </div>
+      <p style="margin-top:20px;font-size:13px;text-align:center">
+        Opens the dashboard on this exact visit after you sign in.
+      </p>`,
+    }),
+  };
 }
 
 // ── the endpoint ─────────────────────────────────────────────────────
@@ -382,12 +315,33 @@ interface Applied {
   link?: { Name: string; For: string };
 }
 
+/** New visits one IP may open per hour. A real reader opens a handful. */
+const NEW_SESSIONS_PER_IP_HOUR = 30;
+
+/** Exact origins only: the old /localhost/ also matched https://localhost.evil.example. */
+export const LOCAL_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+/**
+ * Whether the caller is the owner: a Firebase ID token carrying the `admin` claim in
+ * the Authorization header. The body's word for it is not taken any more - anyone
+ * could send `owner: true` and hide their visits, or not send it and inflate counts.
+ */
+async function isOwnerRequest(authorization: string | undefined): Promise<boolean> {
+  const m = /^Bearer\s+(\S+)$/.exec(authorization || "");
+  if (!m) return false;
+  try {
+    return (await getAuth().verifyIdToken(m[1])).admin === true;
+  } catch {
+    return false;
+  }
+}
+
 export const trackSession = onRequest(
   {
     region: "us-central1",
-    cors: ["https://temrevil.com", "https://www.temrevil.com", /localhost/],
+    cors: ["https://temrevil.com", "https://www.temrevil.com", LOCAL_ORIGIN_RE],
     maxInstances: 20,
-    secrets: [smtpUser, resendKey],
+    secrets: [smtpUser],
   },
   async (req, res) => {
     if (req.method !== "POST") {
@@ -402,7 +356,7 @@ export const trackSession = onRequest(
       return;
     }
     try {
-      await admin.appCheck().verifyToken(appCheckToken);
+      await getAppCheck().verifyToken(appCheckToken);
     } catch {
       res.status(401).json({ error: "Invalid App Check token" });
       return;
@@ -418,8 +372,9 @@ export const trackSession = onRequest(
     const seq = num(body.seq, MAX_SEQ + 1);
     const visitor = str(body.visitor, 40);
     const visit = Math.max(1, num(body.visit, 100000));
+    const fid = str(body.fid, 40);
 
-    if (!ID_RE.test(id) || !VISITOR_RE.test(visitor)) {
+    if (!ID_RE.test(id) || !VISITOR_RE.test(visitor) || (fid && !FID_RE.test(fid))) {
       res.status(400).json({ error: "Bad session identity" });
       return;
     }
@@ -429,7 +384,8 @@ export const trackSession = onRequest(
     }
 
     try {
-      const result = await applyFlush({ id, seq, visitor, visit, body, req });
+      const owner = await isOwnerRequest(req.header("Authorization"));
+      const result = await applyFlush({ id, seq, fid, visitor, visit, owner, body, req });
       res.status(200).json({
         ok: true,
         ...(result.tailor ? { tailor: result.tailor } : {}),
@@ -441,44 +397,53 @@ export const trackSession = onRequest(
         res.status(409).json({ error: message.slice(7) });
         return;
       }
-      console.error("trackSession error:", err);
+      if (message.startsWith("limit:")) {
+        res.status(429).json({ error: message.slice(6) });
+        return;
+      }
+      console.error("trackSession error:", message);
       res.status(500).json({ error: "Internal error" });
     }
   },
 );
 
+/** A flush id: the client's name for one POST, the same on every resend of it. */
+const FID_RE = /^[a-z0-9]{6,32}$/;
+/** How many recent flush ids a session remembers, to drop a resent one. */
+const MAX_FIDS = 50;
+
+/**
+ * What to do with a flush, given the session as stored.
+ *   apply     - new: count it, and take its absolute state (exit section, scroll...)
+ *   late      - an older flush that never landed, resent after a newer one did:
+ *               count it, but don't let its state overwrite the newer state
+ *   duplicate - already applied (its id is on the session, or it carries no id and
+ *               its seq is not newer): drop it
+ */
+export function flushDecision(existing: Record<string, unknown> | null, seq: number, fid: string): "apply" | "late" | "duplicate" {
+  if (!existing) return "apply";
+  const fids = Array.isArray(existing.Fids) ? existing.Fids : [];
+  if (fid && fids.includes(fid)) return "duplicate";
+  if (num(existing.Seq, MAX_SEQ) >= seq) return fid ? "late" : "duplicate";
+  return "apply";
+}
+
 async function applyFlush(ctx: {
   id: string;
   seq: number;
+  fid: string;
   visitor: string;
   visit: number;
+  owner: boolean;
   body: Record<string, unknown>;
   req: { headers: Record<string, string | string[] | undefined>; ip?: string };
 }): Promise<Applied> {
-  const { id, seq, visitor, visit, body, req } = ctx;
-  const now = Date.now();
+  const { id, seq, fid, visitor, visit, owner, body, req } = ctx;
   const sessionRef = db().doc(`${SESSIONS}/${id}`);
-  const snap = await sessionRef.get();
-  const existing = snap.exists ? (snap.data() as Record<string, unknown>) : null;
-
-  // Idempotent: a retried or out-of-order flush is dropped rather than double-counted.
-  if (existing && num(existing.Seq, MAX_SEQ) >= seq) {
-    return { isNew: false };
-  }
-  if (existing && now - num(existing.StartedAt, Number.MAX_SAFE_INTEGER) > MAX_SESSION_AGE_MS) {
-    throw new Error("reject:Session expired");
-  }
-  if (!existing && seq !== 1) {
-    // The opening flush never arrived (blocked, offline). Start the story here
-    // rather than dropping the visit entirely.
-    if (seq > 10) throw new Error("reject:Unknown session");
-  }
 
   const add = isObj(body.add) ? body.add : {};
   const set = isObj(body.set) ? body.set : {};
   const hello = isObj(body.hello) ? body.hello : null;
-  const isNew = !existing;
-  const owner = body.owner === true;
 
   // ── deltas ─────────────────────────────────────────────────────────
   const openMs = num(add.openMs, 6 * HOUR_MS);
@@ -539,120 +504,73 @@ async function applyFlush(ctx: {
     ? { LoadMs: num(set.perf.LoadMs, 10 * 60_000), LcpMs: num(set.perf.LcpMs, 10 * 60_000) }
     : null;
 
-  // ── timeline ───────────────────────────────────────────────────────
-  const priorEvents = Array.isArray(existing?.Events) ? (existing!.Events as unknown[]).length : 0;
-  const room = Math.max(0, MAX_EVENTS_TOTAL - priorEvents);
   const incoming = Array.isArray(body.events) ? body.events.slice(0, MAX_EVENTS_PER_FLUSH) : [];
-  const events: Array<{ t: number; k: string; v?: string }> = [];
-  for (const raw of incoming) {
-    if (events.length >= room) break;
-    if (!isObj(raw)) continue;
-    const k = str(raw.k, 20);
-    if (!EVENT_KINDS.has(k)) continue;
-    const v = str(raw.v, 120);
-    events.push({ t: num(raw.t, 24 * HOUR_MS), k, ...(v ? { v } : {}) });
-  }
-  const eventsCut = incoming.length > events.length;
+  const code = hello ? str(hello.code, 40) : "";
+  const ip = clientIp(req.headers, req.ip) || "unknown";
+  const visitQuota = quota("visit-ip", ip, NEW_SESSIONS_PER_IP_HOUR, HOUR_MS, "Too many visits from this address");
 
-  // ── link resolution + geo, first flush only ────────────────────────
-  let linkRow: { id: string; data: Record<string, unknown> } | null = null;
-  let geo: { Country: string; Code: string } | null = null;
-  let device: Record<string, unknown> = {};
-  let entry: Record<string, unknown> = {};
-  let source: { Name: string; Kind: SourceKind } | null = null;
+  // ── one transaction: read everything, then write everything ───────
+  // Two flushes of one session (the timer and the unload one, or a resend) used to
+  // both read the session, both see it as new, and both count it. Now the second
+  // transaction to commit retries and reads what the first wrote.
+  const outcome = await db().runTransaction(async (tx) => {
+    const now = Date.now();
+    const snap = await tx.get(sessionRef);
+    const existing = snap.exists ? (snap.data() as Record<string, unknown>) : null;
 
-  if (isNew) {
-    // A flush can arrive without its opening one (the first POST was blocked or the
-    // tab was offline). Everything below tolerates a missing `hello`.
-    geo = lookupCountry(req.headers, req.ip);
-    device = readDevice(hello?.device);
-    entry = readEntry(hello?.entry);
-    source = classifySource(entry);
-  }
-  if (hello) {
-    const code = str(hello.code, 40);
-    if (CODE_RE.test(code)) {
-      const found = await db().collection(LINKS).where("Code", "==", code).limit(1).get();
-      if (!found.empty) {
-        linkRow = { id: found.docs[0].id, data: found.docs[0].data() as Record<string, unknown> };
-      }
+    const decision = flushDecision(existing, seq, fid);
+    if (decision === "duplicate") return { applied: { isNew: false } as Applied, mail: null };
+    if (existing && now - num(existing.FirstSeenAt ?? existing.StartedAt, Number.MAX_SAFE_INTEGER) > MAX_SESSION_AGE_MS) {
+      throw new Error("reject:Session expired");
     }
-  }
+    if (!existing && seq > 10) {
+      // The opening flush never arrived (blocked, offline): start the story here
+      // rather than dropping the visit - but not from deep inside one.
+      throw new Error("reject:Unknown session");
+    }
+    const isNew = !existing;
+    const late = decision === "late";
 
-  // ── the writes ─────────────────────────────────────────────────────
-  const batch = db().batch();
-  const day = todayKey();
+    // Reads that depend on the session.
+    let quotaSnaps: DocumentSnapshot[] = [];
+    if (isNew) quotaSnaps = await readQuotas(tx, db(), [visitQuota]);
+    let linkRow: { id: string; data: Record<string, unknown> } | null = null;
+    if (CODE_RE.test(code)) {
+      const found = await tx.get(db().collection(LINKS).where("Code", "==", code).limit(1));
+      if (!found.empty) linkRow = { id: found.docs[0].id, data: found.docs[0].data() as Record<string, unknown> };
+    }
 
-  const sessionPatch: Record<string, unknown> = {
-    Id: id,
-    Visitor: visitor,
-    Visit: visit,
-    Seq: seq,
-    Flushes: FV.increment(1),
-    LastSeenAt: now,
-    OpenMs: FV.increment(openMs),
-    ActiveMs: FV.increment(activeMs),
-    IdleMs: FV.increment(idleMs),
-    Copies: FV.increment(copies),
-    Rage: FV.increment(rage),
-    Prints: FV.increment(prints),
-    Cv: { Opens: FV.increment(cvOpens) },
-    Contact: {
-      Opens: FV.increment(contactOpens),
-      ...(contactTab ? { Tab: contactTab } : {}),
-      ...(contactSent ? { Sent: contactSent } : {}),
-    },
-  };
+    // ── timeline ───────────────────────────────────────────────────
+    const priorEvents = Array.isArray(existing?.Events) ? (existing!.Events as unknown[]).length : 0;
+    const room = Math.max(0, MAX_EVENTS_TOTAL - priorEvents);
+    const events: Array<{ t: number; k: string; v?: string }> = [];
+    for (const raw of incoming) {
+      if (events.length >= room) break;
+      if (!isObj(raw)) continue;
+      const k = str(raw.k, 20);
+      if (!EVENT_KINDS.has(k)) continue;
+      const v = str(raw.v, 120);
+      events.push({ t: num(raw.t, 24 * HOUR_MS), k, ...(v ? { v } : {}) });
+    }
+    const eventsCut = incoming.length > events.length;
 
-  if (Object.keys(sections).length) {
-    sessionPatch.Sections = mapIncrements(sections);
-  }
-  if (Object.keys(scroll).length) sessionPatch.Scroll = scroll;
-  if (Object.keys(projects).length) {
-    sessionPatch.Projects = Object.fromEntries(
-      Object.entries(projects).map(([k, v]) => [k, mapIncrements(v)]),
-    );
-  }
-  if (Object.keys(socials).length) {
-    sessionPatch.Socials = Object.fromEntries(
-      Object.entries(socials).map(([k, v]) => [k, mapIncrements(v)]),
-    );
-  }
-  if (exitSection) sessionPatch.Exit = { Section: exitSection };
-  if (perf) sessionPatch.Perf = perf;
-  if (events.length) sessionPatch.Events = FV.arrayUnion(...events);
-  if (eventsCut) sessionPatch.EventsCut = true;
-  if (owner) sessionPatch.Owner = true;
+    // ── link resolution + geo, first flush only ────────────────────
+    let geo: { Country: string; Code: string } | null = null;
+    let device: Record<string, unknown> = {};
+    let entry: Record<string, unknown> = {};
+    let source: { Name: string; Kind: SourceKind } | null = null;
+    if (isNew) {
+      // A flush can arrive without its opening one (the first POST was blocked or
+      // the tab was offline). Everything below tolerates a missing `hello`.
+      geo = lookupCountry(req.headers, req.ip);
+      device = readDevice(hello?.device);
+      entry = readEntry(hello?.entry);
+      source = classifySource(entry);
+    }
 
-  if (isNew) {
-    sessionPatch.StartedAt = num(hello?.startedAt, now) || now;
-    sessionPatch.Ended = false;
-    sessionPatch.EndedAt = null;
-    sessionPatch.Entry = entry;
-    if (source) sessionPatch.Source = source;
-    sessionPatch.Device = device;
-    if (geo) sessionPatch.Geo = geo;
-    sessionPatch.Link = linkRow
-      ? {
-        Id: linkRow.id,
-        Code: str(linkRow.data.Code, 40),
-        Name: str(linkRow.data.Name, 120),
-        For: str(linkRow.data.For, 120),
-      }
-      : null;
-  }
-
-  if (body.end === true) {
-    sessionPatch.Ended = true;
-    sessionPatch.EndedAt = now;
-  }
-
-  batch.set(sessionRef, sessionPatch, { merge: true });
-
-  // Owner visits are recorded (so the tab that flipped the switch has a record)
-  // but never counted: they would drown the real numbers.
-  if (!owner && !existing?.Owner) {
-    await addCounts(batch, {
+    // What this flush counts, or takes back.
+    const counting = !owner && !existing?.Owner;
+    const adding: Counts | null = counting ? {
       opened: isNew,
       visit,
       countryCode: geo?.Code || "",
@@ -665,20 +583,106 @@ async function applyFlush(ctx: {
       contactOpens,
       cvOpens,
       events: events.length,
-    }, 1, day, now);
-  } else if (owner && existing && !existing.Owner) {
-    // Recognised as the owner part-way through the visit: every flush before this
-    // one was counted as a stranger's. Take them back out, or the totals and the
-    // link's card would count a visit that Trails hides as the owner's own.
-    await addCounts(batch, countedSoFar(existing), -1, dayOf(existing.StartedAt), now);
-  }
+    } : null;
+    // Recognised as the owner part-way through the visit: every flush before this one
+    // was counted as a stranger's. Take them back out, or the totals and the link's
+    // card would count a visit that Trails hides as the owner's own.
+    const takeBack = owner && existing && !existing.Owner ? countedSoFar(existing) : null;
+    const takeDay = existing ? dayOf(existing.FirstSeenAt ?? existing.StartedAt) : todayKey();
 
-  await batch.commit();
+    // Which counter documents exist: projects are never created by a count, and a
+    // take-back never creates anything.
+    const paths = [...new Set([
+      ...(adding ? countPaths(adding, todayKey()).filter((p) => p.startsWith("Projects/")) : []),
+      ...(takeBack ? countPaths(takeBack, takeDay) : []),
+    ])];
+    const existingPaths = new Set<string>();
+    if (paths.length) {
+      const snaps = await tx.getAll(...paths.map((p) => db().doc(p)));
+      snaps.forEach((s, i) => { if (s.exists) existingPaths.add(paths[i]); });
+    }
 
-  // Notification last: a mail failure must never cost us the visit.
-  if (isNew && !owner && linkRow && linkRow.data.Notify === true) {
-    try {
-      await sendOpenedEmail({
+    // ── writes ─────────────────────────────────────────────────────
+    if (isNew && takeQuotas(tx, db(), [visitQuota], quotaSnaps, now)) {
+      throw new Error(`limit:${visitQuota.message}`);
+    }
+
+    const sessionPatch: Record<string, unknown> = {
+      Id: id,
+      Visitor: visitor,
+      Visit: visit,
+      Flushes: FV.increment(1),
+      LastSeenAt: now,
+      OpenMs: FV.increment(openMs),
+      ActiveMs: FV.increment(activeMs),
+      IdleMs: FV.increment(idleMs),
+      Copies: FV.increment(copies),
+      Rage: FV.increment(rage),
+      Prints: FV.increment(prints),
+      Cv: { Opens: FV.increment(cvOpens) },
+      Contact: {
+        Opens: FV.increment(contactOpens),
+        ...(!late && contactTab ? { Tab: contactTab } : {}),
+        ...(!late && contactSent ? { Sent: contactSent } : {}),
+      },
+    };
+    if (!late) sessionPatch.Seq = seq;
+    if (fid) {
+      const fids = Array.isArray(existing?.Fids) ? (existing!.Fids as unknown[]).filter((f) => typeof f === "string") : [];
+      sessionPatch.Fids = [...fids, fid].slice(-MAX_FIDS);
+    }
+    if (Object.keys(sections).length) sessionPatch.Sections = mapIncrements(sections);
+    if (!late && Object.keys(scroll).length) sessionPatch.Scroll = scroll;
+    if (Object.keys(projects).length) {
+      sessionPatch.Projects = Object.fromEntries(Object.entries(projects).map(([k, v]) => [k, mapIncrements(v)]));
+    }
+    if (Object.keys(socials).length) {
+      sessionPatch.Socials = Object.fromEntries(Object.entries(socials).map(([k, v]) => [k, mapIncrements(v)]));
+    }
+    if (!late && exitSection) sessionPatch.Exit = { Section: exitSection };
+    if (!late && perf) sessionPatch.Perf = perf;
+    if (events.length) sessionPatch.Events = FV.arrayUnion(...events);
+    if (eventsCut) sessionPatch.EventsCut = true;
+    if (owner) sessionPatch.Owner = true;
+
+    if (isNew) {
+      sessionPatch.StartedAt = num(hello?.startedAt, now) || now;
+      // The server's own clock: the day the visit was counted under, whatever the
+      // browser claims its start was.
+      sessionPatch.FirstSeenAt = now;
+      sessionPatch.Ended = false;
+      sessionPatch.EndedAt = null;
+      sessionPatch.Entry = entry;
+      if (source) sessionPatch.Source = source;
+      sessionPatch.Device = device;
+      if (geo) sessionPatch.Geo = geo;
+      sessionPatch.Link = linkRow
+        ? {
+          Id: linkRow.id,
+          Code: str(linkRow.data.Code, 40),
+          Name: str(linkRow.data.Name, 120),
+          For: str(linkRow.data.For, 120),
+        }
+        : null;
+    }
+    if (body.end === true) {
+      sessionPatch.Ended = true;
+      sessionPatch.EndedAt = now;
+    }
+    tx.set(sessionRef, sessionPatch, { merge: true });
+
+    // Owner visits are recorded (so the tab that flipped the switch has a record)
+    // but never counted: they would drown the real numbers.
+    const write = (path: string, data: Record<string, unknown>) => tx.set(db().doc(path), data, { merge: true });
+    if (adding) addCounts(write, adding, 1, todayKey(), now, existingPaths);
+    if (takeBack) addCounts(write, takeBack, -1, takeDay, now, existingPaths);
+
+    // The link-opened email, at most once an hour per link.
+    let mail: MailMessage | null = null;
+    if (isNew && !owner && linkRow && linkRow.data.Notify === true
+      && now - num(linkRow.data.LastMailAt, Number.MAX_SAFE_INTEGER) >= LINK_MAIL_EVERY_MS) {
+      write(`${LINKS}/${linkRow.id}`, { LastMailAt: now });
+      mail = openedEmail({
         linkName: str(linkRow.data.Name, 120) || "Someone",
         linkFor: str(linkRow.data.For, 120) || "your portfolio",
         sessionId: id,
@@ -687,17 +691,27 @@ async function applyFlush(ctx: {
         visit,
         ref: str((entry as { Ref?: string }).Ref, 120),
       });
+    }
+
+    const tailor = linkRow ? readTailor(linkRow.data.Tailor) : null;
+    const applied: Applied = {
+      isNew,
+      ...(tailor ? { tailor } : {}),
+      ...(linkRow ? { link: { Name: str(linkRow.data.Name, 120), For: str(linkRow.data.For, 120) } } : {}),
+    };
+    return { applied, mail };
+  });
+
+  // Queued after the commit: a mail failure must never cost us the visit, and the
+  // job id makes a second queueing for this visit a no-op.
+  if (outcome.mail) {
+    try {
+      await enqueueMail(jobId("link-open", id), outcome.mail);
     } catch (err) {
-      console.error("link-open notification failed:", err);
+      console.error("link-open notification could not be queued:", (err as Error)?.message);
     }
   }
-
-  const tailor = linkRow ? readTailor(linkRow.data.Tailor) : null;
-  return {
-    isNew,
-    ...(tailor ? { tailor } : {}),
-    ...(linkRow ? { link: { Name: str(linkRow.data.Name, 120), For: str(linkRow.data.For, 120) } } : {}),
-  };
+  return outcome.applied;
 }
 
 // ── counting ─────────────────────────────────────────────────────────
@@ -718,19 +732,38 @@ interface Counts {
   events: number;
 }
 
+/** Every counter document a Counts touches. */
+function countPaths(c: Counts, day: string): string[] {
+  const sourceKey = c.opened && c.source ? safeKey(c.source.Name) : null;
+  return [
+    `${DAYS}/${day}`,
+    TOTALS,
+    ...(sourceKey ? [`${SOURCES}/${sourceKey}`] : []),
+    ...Object.keys(c.projects).map((id) => `Projects/${id}`),
+    ...Object.keys(c.socials).map((name) => `${SOCIALS}/${name}`),
+    ...(c.opened && c.linkId ? [`${LINKS}/${c.linkId}`] : []),
+  ];
+}
+
 /**
  * Add a visit's counts to the day, the totals, the projects, the socials, the
- * sources and its link (sign 1), or take them back out (sign -1). Taking back
- * never creates a document: a link or project removed since stays removed.
+ * sources and its link (sign 1), or take them back out (sign -1). `exists` holds
+ * the counter documents read as existing in this transaction: a project is only
+ * ever counted when it exists, and taking back never creates a document - a link,
+ * source or day removed since stays removed, with no negative leftovers.
  */
-async function addCounts(
-  batch: admin.firestore.WriteBatch,
+function addCounts(
+  write: (path: string, data: Record<string, unknown>) => void,
   c: Counts,
   sign: 1 | -1,
   day: string,
   now: number,
-): Promise<void> {
+  exists: Set<string>,
+): void {
   const inc = (n: number) => FV.increment(sign * n);
+  const put = (path: string, data: Record<string, unknown>) => {
+    if (sign > 0 || exists.has(path)) write(path, data);
+  };
   const projectOpens = sumBy(c.projects, "Opens");
   const socialClicks = sumBy(c.socials, "Clicks");
 
@@ -765,9 +798,9 @@ async function addCounts(
       dayPatch.Sources = { [sourceKey]: inc(1) };
       // One document per origin, the same shape the socials rollup uses, so the
       // dashboard can list them without reading every session back.
-      batch.set(db().doc(`${SOURCES}/${sourceKey}`), sign > 0
+      put(`${SOURCES}/${sourceKey}`, sign > 0
         ? { Name: c.source.Name, Kind: c.source.Kind, Sessions: inc(1), LastAt: now }
-        : { Sessions: inc(1) }, { merge: true });
+        : { Sessions: inc(1) });
     }
     if (c.deviceType) dayPatch.Devices = { [c.deviceType]: inc(1) };
     if (c.linkId) {
@@ -776,54 +809,38 @@ async function addCounts(
     }
   }
 
-  batch.set(db().doc(`${DAYS}/${day}`), dayPatch, { merge: true });
-  batch.set(db().doc(TOTALS), totalsPatch, { merge: true });
+  put(`${DAYS}/${day}`, dayPatch);
+  put(TOTALS, totalsPatch);
 
   // Per-project engagement stays on the project itself: the public project modal
-  // shows these counts. What changed is that only this function can write them.
-  //
-  // The id comes from the caller's payload and only ever passed safeKey(), which
-  // says the string is a legal document id - not that the project exists. Combined
-  // with merge:true (a create when absent) and the Admin SDK's rules bypass, that
-  // let anyone holding an App Check token post junk ids and have them appear as
-  // real documents in the PUBLICLY READABLE Projects collection, 60 per request.
-  // So: only raise counters on a project that is already there.
-  const projectIds = Object.keys(c.projects);
-  if (projectIds.length) {
-    const refs = projectIds.map((id) => db().doc(`Projects/${id}`));
-    const snaps = await db().getAll(...refs);
-    const known = new Set(snaps.filter((snap) => snap.exists).map((snap) => snap.id));
-
-    for (const [projectId, row] of Object.entries(c.projects)) {
-      if (!known.has(projectId)) continue; // unknown id - drop it, never create it
-      const views: Record<string, unknown> = {};
-      if (row.Opens) views.Project = inc(row.Opens);
-      if (row.Live) views.Live = inc(row.Live);
-      if (row.Github) views.Github = inc(row.Github);
-      if (row.Download) views.Download = inc(row.Download);
-      if (Object.keys(views).length) {
-        batch.set(db().doc(`Projects/${projectId}`), { Views: views }, { merge: true });
-      }
-    }
+  // shows these counts. The id comes from the caller's payload, so only a project
+  // that already exists is counted - never created as a junk document in the
+  // publicly readable Projects collection.
+  for (const [projectId, row] of Object.entries(c.projects)) {
+    const path = `Projects/${projectId}`;
+    if (!exists.has(path)) continue;
+    const views: Record<string, unknown> = {};
+    if (row.Opens) views.Project = inc(row.Opens);
+    if (row.Live) views.Live = inc(row.Live);
+    if (row.Github) views.Github = inc(row.Github);
+    if (row.Download) views.Download = inc(row.Download);
+    if (Object.keys(views).length) write(path, { Views: views });
   }
 
   for (const [name, row] of Object.entries(c.socials)) {
-    batch.set(db().doc(`${SOCIALS}/${name}`), {
+    put(`${SOCIALS}/${name}`, {
       Clicks: inc(row.Clicks || 0),
       AwayMs: inc(row.AwayMs || 0),
       ...(sign > 0 ? { LastAt: now } : {}),
-    }, { merge: true });
+    });
   }
 
   if (c.opened && c.linkId) {
-    const linkRef = db().doc(`${LINKS}/${c.linkId}`);
-    if (sign > 0 || (await linkRef.get()).exists) {
-      batch.set(linkRef, {
-        Opens: inc(1),
-        Sessions: inc(1),
-        ...(sign > 0 ? { LastOpenAt: now } : {}),
-      }, { merge: true });
-    }
+    put(`${LINKS}/${c.linkId}`, {
+      Opens: inc(1),
+      Sessions: inc(1),
+      ...(sign > 0 ? { LastOpenAt: now } : {}),
+    });
   }
 }
 

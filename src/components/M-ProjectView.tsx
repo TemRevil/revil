@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useDialog } from './dialog';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Github, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
+import { X, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
+import { Github } from './BrandIcons';
 import { watchDoc } from '../lib/liveDoc';
 import { cachedDoc, type Data } from '../lib/dataCache';
 import { sanitizeSvg } from '../lib/sanitize';
@@ -524,6 +526,8 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         setCurrentImageIndex((prev) => (prev - 1 + sortedMedia.length) % sortedMedia.length);
     };
 
+    // Role, title, focus, Tab and Escape (see dialog.ts).
+    const { dialogProps } = useDialog({ onClose, labelledBy: 'project-modal-title' });
     const handleClose = () => {
         onClose();
     };
@@ -668,6 +672,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
 
     return createPortal(
         <motion.div
+            {...dialogProps}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -868,7 +873,7 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                     <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }} />
                                     <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Project ID: #{project.id?.toString().slice(-6).toUpperCase() || 'UNKNOWN'}</div>
                                 </div>
-                                <h1 style={{
+                                <h1 id="project-modal-title" style={{
                                     margin: 0, fontSize: isMobile ? (windowWidth < 480 ? '2.2rem' : '3.2rem') : '5rem', fontWeight: 950,
                                     color: 'white', letterSpacing: '-0.05em', lineHeight: 1.1, marginBottom: '24px',
                                     textTransform: 'uppercase'

@@ -39,8 +39,9 @@ lerna-debug.log*
 # backend + every audited security fix). Only its build output + deps are ignored —
 # functions/node_modules is covered by the global node_modules/ rule above.
 functions/lib/
-functions-meeting/lib/
 *-firebase-adminsdk-*.json
+# Firestore backups written by scripts/migrate-per-entry.mjs (private data, never committed)
+backups/
 
 # Project configuration
 cors.json

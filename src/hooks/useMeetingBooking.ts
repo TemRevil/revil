@@ -8,9 +8,9 @@ import type { AlertType } from '../components/Alert';
 import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../utils/availability';
 import { cachedDoc, type Data } from '../lib/dataCache';
 import {
-  BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type PresetSlot,
-  bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, isDayOpen, meetingInstant,
-  presetSlotsForDay, utcOffsetHours, visitorTimeToInstant, wallClock,
+  BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type HostZone, type PresetSlot,
+  bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, hostZone, isDayOpen,
+  presetSlotsForDay, slotStart, visitorTimeToInstant, wallClock,
 } from '../utils/bookingRules';
 import { timezoneOptions, localOffset } from '../utils/timezones';
 
@@ -19,26 +19,18 @@ import { timezoneOptions, localOffset } from '../utils/timezones';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 export const isValidEmail = (s: string) => EMAIL_RE.test(s.trim());
 
+/** A taken slot as Settings/BookedSlots publishes it: the UTC instant it starts, nothing else. */
 export interface Meeting {
-  Date: string;
-  Time: string;
-  Name: string;
-  Email: string;
-  Reason?: string;
-  "What For"?: string;
-  dateObj: Date;
-  MeetingLink?: string;
-  GoogleEventId?: string;
-  UserLocalTime?: string;
-  UserTimezone?: number;
-  timestamp?: number;
+  start: string;
 }
 
-/** Settings/BookedSlots' taken {Date, Time} pairs, as meetings the booking rules read. */
-const meetingsOf = (data: Data | null | undefined): Meeting[] =>
-  ((data?.Slots || []) as Array<{ Date?: string; Time?: string }>)
-    .filter((s) => s && s.Date && s.Time)
-    .map((s): Meeting => ({ Date: s.Date || '', Time: s.Time || '', Name: '', Email: '', dateObj: new Date(s.Date || Date.now()) }));
+/** Settings/BookedSlots' taken slots. An entry in any other shape is dropped. */
+const meetingsOf = (data: Data | null | undefined): Meeting[] => {
+  const slots = Array.isArray(data?.Slots) ? data.Slots as unknown[] : [];
+  return slots
+    .filter((s): s is Meeting => !!s && typeof s === 'object' && slotStart(s as Meeting) !== null)
+    .map((s) => ({ start: s.start }));
+};
 
 interface BookMeetingResponse {
   link?: string;
@@ -95,6 +87,10 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   // The cached copy (lib/dataCache) until Firestore answers.
   const [hostSeed] = useState(() => cachedDoc(['Settings', 'Availability']) ?? {});
   const [hostTimezoneString, setHostTimezoneString] = useState(hostSeed['Current Time'] || DEFAULT_HOST_TZ);
+  // The owner's zone as bookMeeting reads it (hostZone): the named IANA zone when set, so
+  // the picker and the server agree on either side of a daylight-saving change; else the
+  // fixed offset in 'Current Time'.
+  const [hostOffset, setHostOffset] = useState<HostZone>(() => hostZone(hostSeed));
   // The owner's "Current Availability" percent, for pages that show the status pill.
   const [hostAvailability, setHostAvailability] = useState<unknown>(hostSeed['Current Availability']);
   const [userTimezone, setUserTimezone] = useState<number>(localOffset);
@@ -165,6 +161,7 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   useEffect(() => {
     if (!reads) return;
     const unsubscribeAvailability = watchDoc(['Settings', 'Availability'], (data) => {
+      setHostOffset(hostZone(data));
       if (data) {
         if (typeof data['Current Time'] === 'string' && data['Current Time']) {
           setHostTimezoneString(data['Current Time']);
@@ -182,10 +179,10 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
       setAvailLoaded(true);
     });
 
-    // Read busy slots from the sanitized public mirror (Settings/BookedSlots),
-    // NOT Settings/Canary - Canary holds visitor PII and is admin-read-only.
-    // BookedSlots carries only { Date, Time } per booking, which is all the public
-    // calendar needs to grey out taken slots. A Cloud Function keeps it in sync.
+    // Read busy slots from the sanitized public mirror (Settings/BookedSlots), NOT
+    // CanaryMeetings - those hold visitor PII and are admin-read-only. BookedSlots
+    // carries only { start } per upcoming booking, which is all the public calendar
+    // needs to grey out taken slots. A Cloud Function keeps it in sync.
     const unsubscribeMeetings = watchDoc(['Settings', 'BookedSlots'], (data) => {
       setExistingMeetings(meetingsOf(data));
       setSlotsLoaded(true);
@@ -207,8 +204,6 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
     return `${day}/${month}/${year}`;
   }, []);
 
-  const hostOffset = utcOffsetHours(hostTimezoneString);
-
   // Everything the booking rules need, read fresh on each call so "passed" and "today"
   // follow the clock while the page stays open.
   const dayContext = useCallback((): DayContext => ({
@@ -219,16 +214,16 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
   const getMeetingsForDate = useCallback((date: Date) => {
     const day = dayOf(date);
     return existingMeetings.filter((m) => {
-      const at = meetingInstant(m, hostOffset);
+      const at = slotStart(m);
       return at !== null && dayIndexAt(at, userTimezone) === day;
     });
-  }, [existingMeetings, hostOffset, userTimezone]);
+  }, [existingMeetings, userTimezone]);
 
   /** A booked meeting's start time, as the visitor sees it. */
   const meetingTimeForVisitor = useCallback((m: Meeting) => {
-    const at = meetingInstant(m, hostOffset);
-    return at === null ? m.Time : wallClock(at, userTimezone).time;
-  }, [hostOffset, userTimezone]);
+    const at = slotStart(m);
+    return at === null ? '' : wallClock(at, userTimezone).time;
+  }, [userTimezone]);
 
   /** The owner's preset slots that fall on this visitor day, each marked taken/passed. */
   const daySlots = useCallback((date: Date): PresetSlot[] => presetSlotsForDay(dayOf(date), dayContext()), [dayContext]);
@@ -291,8 +286,8 @@ export default function useMeetingBooking({ showAlert, enabled = true, reads = t
 
       // 2. Book it. The bookMeeting function validates the request, checks the slot
       // is still free, creates the Calendar event + Meet link and records the meeting
-      // (host Date/Time are derived server-side from the same UTC instant). Visitors
-      // cannot write Settings/Canary themselves. Firebase loads after the first paint.
+      // as this same UTC instant. Visitors cannot write CanaryMeetings themselves.
+      // Firebase loads after the first paint.
       const [{ default: app }, { httpsCallable, getFunctions }] = await Promise.all([
         loadFirebase(), import('firebase/functions'),
       ]);

@@ -1,35 +1,52 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import admin from "firebase-admin";
-import { createHash } from "node:crypto";
-import type { Transporter } from "nodemailer";
+import { initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { defineSecret } from "firebase-functions/params";
 
-admin.initializeApp();
-const db = admin.firestore();
+initializeApp();
+const db = getFirestore();
 
-// ── Secrets (set via: firebase functions:secrets:set SMTP_USER etc.) ──
-// The email ones (SMTP_USER, RESEND_API_KEY) live in ./mail with the sender.
+// ── Secrets (set via: firebase functions:secrets:set NAME) ────────────
+// The email ones (SMTP_USER, RESEND_API_KEY) live in ./mail with the sender, and the
+// Calendar script's URL (MEETING_SYNC_URL) is defined in ./mcp, which also uses it.
 
 // LLM provider key for the dashboard assistant ("Spark"). Held server-side so it
-// never ships in the public client bundle. Set with:
-//   firebase functions:secrets:set LLM_API_KEY
+// never ships in the public client bundle.
 const llmApiKey = defineSecret("LLM_API_KEY");
 
-// Public-facing inbox that booking notifications are also copied to.
-
-// Remote MCP server (agentic portfolio access over OAuth) - defined in its own
-// module and re-exported so `firebase deploy --only functions:mcp` works.
-export { mcp } from "./mcp.js";
+// Remote MCP server (agentic portfolio access over OAuth) and its daily cleanup -
+// defined in their own module and re-exported so `firebase deploy --only functions:mcp` works.
+export { mcp, cleanupMcp } from "./mcp.js";
 import { meetingSyncUrl } from "./mcp.js";
 import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail.js";
 import { escapeHtml as escHtml } from "./html.js";
 import { clientIp } from "./geoip.js";
-import { bookingRefusal, isTaken, parseAvailability, utcOffsetHours, wallClock, DEFAULT_HOST_TZ } from "./booking.js";
+import {
+  bookingRefusal, hostWallClock, hostZone, isUpcoming, parseAvailability, slotStart, zoneRecord,
+  MEETING_MS, type HostZone,
+} from "./booking.js";
+import { emailShell, SITE_URL } from "./emailShell.js";
+import { handledProjectsMirror, sameMirror, type HandledProject } from "./handledProjects.js";
+import { HOLD_MS, holdActive, holdIds, quota, readQuotas, refundQuotas, takeQuotas, RATE_LIMITS, type Quota } from "./limits.js";
+import { callCalendar, readCreateReply, replySucceeded, MEET_LINK_RE } from "./calendar.js";
+import { enqueueMail, jobId, retryFailed, MAIL_JOBS, type MailMessage } from "./outbox.js";
+import {
+  attachmentPath, futureSlots, greetingName, offsetLabel, replyPath, timeAtOffset, upcomingFrom, visitorOffset,
+} from "./forms.js";
+import { COLLECTIONS } from "./collections.js";
+
+// Mail is delivered by the outbox (./outbox): every notification is a MailJobs
+// document first, retried until it is sent and kept as `failed` if it never is.
+export { sendMail, retryMail } from "./outbox.js";
 
 // ── Shapes of the Firestore records these functions read ─────────────
-interface EmailEntry {
+// One document per contact message (CanaryMessages/{id}) and per meeting
+// (CanaryMeetings/{id}); the id is the key the entry always had.
+interface MessageDoc {
   Name?: string;
   Email?: string;
   Number?: string;
@@ -37,89 +54,41 @@ interface EmailEntry {
   Whatsapp?: boolean;
   Timestamp?: string | number;
   "Files Attached"?: Array<{ url?: string; name?: string }>;
+  RepliedAt?: number;
+  /** false when the visitor's acknowledgement quota was used up at submission. */
+  Ack?: boolean;
+  /** Set on entries copied from the old Settings/Canary map: they were notified then. */
+  migratedFrom?: string;
 }
-interface MeetingEntry {
+interface MeetingDoc {
   Name?: string;
   Email?: string;
-  Date?: string;
-  Time?: string;
+  /** When it starts, as a UTC ISO instant. */
+  start?: string;
+  /** The owner's clock when it was booked: a zone name, or a fixed offset. */
+  timeZone?: string | null;
+  utcOffset?: number | null;
   UserLocalTime?: string;
+  UserTimezone?: number;
   MeetingLink?: string;
   "What For"?: string;
   Reason?: string;
-}
-interface CanaryDoc {
-  Emails?: Record<string, EmailEntry>;
-  Meetings?: Record<string, MeetingEntry>;
+  Ack?: boolean;
+  migratedFrom?: string;
 }
 
-interface EmailTemplateArgs {
-  title: string;
-  preheader?: string;
-  bodyHtml: string;
-  footerNote?: string;
-}
-interface GuestAckArgs {
-  to?: string;
-  name?: string;
-  heading: string;
-  intro: string;
-  detailRows?: Array<{ label: string; value: string }>;
-  ctaHtml?: string;
-}
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+const AVAILABILITY = "Settings/Availability";
+const BOOKED_SLOTS = "Settings/BookedSlots";
+const messages = () => db.collection(COLLECTIONS.messages);
+const meetings = () => db.collection(COLLECTIONS.meetings);
+/** Meetings that have not ended yet, in start order. */
+const upcomingMeetings = (nowMs: number) => meetings().where("start", ">", upcomingFrom(nowMs)).orderBy("start");
 
-/**
- * Escape user-supplied strings before interpolating into email HTML.
- * Prevents an attacker from injecting <img onerror=...> via Name/Email/Message.
- */
-/**
- * A contact-form attachment link is only trustworthy if it actually points at OUR
- * OWN bucket under `emails/`. The public form writes the `Files Attached` array
- * straight into Settings/Canary, so a visitor can name any URL there without
- * uploading anything - escAttr stops attribute breakout but says nothing about the
- * destination, which would put an attacker-chosen link in the owner's inbox.
- *
- * Checking the hostname is not enough on its own: `storage.googleapis.com` serves
- * every public GCS bucket there is, and `firebasestorage.googleapis.com` carries
- * the bucket inside the path, so an attacker's own bucket with an `emails/` folder
- * in it clears a host-only test. The bucket name is pinned here, and the object
- * path must START with `emails/` - the same shape of gate sendReply already applies
- * to `replies/` before it reads a file (it is safe there for a second reason: it
- * reads through the Admin SDK, which is scoped to our bucket whatever the URL said).
- *
- * Returns the URL when it is ours, null otherwise.
- */
+/** The project's default Storage bucket: the only one any stored link may point into. */
 function ourBucket(): string {
-  return admin.storage().bucket().name;
-}
-
-function safeAttachmentUrl(v: unknown): string | null {
-  if (typeof v !== "string" || !v) return null;
-  let u: URL;
-  try { u = new URL(v); } catch { return null; }
-  if (u.protocol !== "https:") return null;
-
-  let bucket: string | null = null;
-  let objectPath: string | null = null;
-  const segs = u.pathname.split("/").filter(Boolean).map((seg) => decodeURIComponent(seg));
-
-  if (u.hostname === "firebasestorage.googleapis.com") {
-    // /v0/b/<bucket>/o/<url-encoded object path>
-    const i = u.pathname.indexOf("/o/");
-    if (segs[0] !== "v0" || segs[1] !== "b" || !segs[2] || i === -1) return null;
-    bucket = segs[2];
-    objectPath = decodeURIComponent(u.pathname.slice(i + 3).split("?")[0]);
-  } else if (u.hostname === "storage.googleapis.com") {
-    // /<bucket>/<object path>
-    if (segs.length < 2) return null;
-    bucket = segs[0];
-    objectPath = segs.slice(1).join("/");
-  } else {
-    return null;
-  }
-
-  if (bucket !== ourBucket()) return null;
-  return objectPath.startsWith("emails/") ? v : null;
+  return getStorage().bucket().name;
 }
 
 /**
@@ -145,164 +114,108 @@ function escSubject(v: unknown): string {
   return String(v).replace(/[\r\n]+/g, " ").trim().slice(0, 200);
 }
 
-/**
- * Extract the storage path from a Firebase Storage download URL.
- * E.g. https://firebasestorage.googleapis.com/v0/b/.../o/emails%2F1781817458723_zmn0zb6%2Ffilename.jpg?alt=media...
- * returns "emails/1781817458723_zmn0zb6/filename.jpg".
- */
-function getStoragePathFromUrl(url: string): string | null {
-  try {
-    const parts = url.split("/o/");
-    if (parts.length < 2) return null;
-    const pathPart = parts[1].split("?")[0];
-    return decodeURIComponent(pathPart);
-  } catch (err) {
-    console.error("Failed to parse storage URL:", url, err);
-    return null;
-  }
-}
-
-/** Helper: create a reusable SMTP transporter (Resend relay). */
-// ── Branded Email Template ─────────────────────────────────────────
-function emailTemplate({ title, preheader, bodyHtml, footerNote }: EmailTemplateArgs): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="color-scheme" content="dark"/>
-<meta name="supported-color-schemes" content="dark"/>
-<title>${title}</title>
-<!--[if mso]><style>body,table,td{font-family:Arial,sans-serif!important}</style><![endif]-->
-<style>
-  body{margin:0;padding:0;background:#0a0a0a;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
-  .wrapper{max-width:600px;margin:0 auto;padding:40px 20px}
-  .card{background:#141414;border:1px solid #222;border-radius:16px;overflow:hidden}
-  .header{padding:32px 32px 24px;border-bottom:1px solid #222;text-align:center}
-  .logo{font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px}
-  .logo span{color:#3395ff}
-  .body{padding:32px}
-  .body h2{margin:0 0 16px;font-size:20px;font-weight:700;color:#ffffff}
-  .body p{margin:0 0 12px;font-size:15px;line-height:1.6;color:#b0b0b0}
-  .info-row{display:flex;padding:12px 0;border-bottom:1px solid #1a1a1a}
-  .info-label{font-size:13px;font-weight:600;color:#666;width:110px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.5px}
-  .info-value{font-size:15px;color:#e0e0e0;word-break:break-word}
-  .badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
-  .badge-blue{background:rgba(51,149,255,0.15);color:#3395ff}
-  .badge-green{background:rgba(16,185,129,0.15);color:#10b981}
-  .badge-orange{background:rgba(245,158,11,0.15);color:#f59e0b}
-  .message-box{background:#1a1a1a;border:1px solid #222;border-radius:12px;padding:20px;margin:16px 0;font-size:15px;line-height:1.7;color:#d0d0d0}
-  .btn{display:inline-block;padding:12px 28px;background:#3395ff;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px}
-  .footer{padding:24px 32px;border-top:1px solid #222;text-align:center}
-  .footer p{margin:0;font-size:12px;color:#555}
-  .footer a{color:#3395ff;text-decoration:none}
-  .divider{height:1px;background:#222;margin:20px 0}
-  .preheader{display:none;font-size:1px;color:#0a0a0a;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden}
-  @media(max-width:600px){
-    .wrapper{padding:16px 8px}
-    .header,.body,.footer{padding-left:20px;padding-right:20px}
-    .info-row{flex-direction:column;gap:4px}
-    .info-label{width:auto}
-  }
-</style>
-</head>
-<body>
-<div class="preheader">${preheader || ""}</div>
-<div class="wrapper">
-  <div class="card">
-    <div class="header">
-      <div class="logo">Revil<span>.</span></div>
-    </div>
-    <div class="body">
-      ${bodyHtml}
-    </div>
-    <div class="footer">
-      <p>${footerNote || "temrevil.com"}</p>
-    </div>
-  </div>
-</div>
-</body>
-</html>`;
-}
-
 /** Basic sanity check so we never try to email obvious junk addresses. */
 const GUEST_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+/** Label/value rows for a mail body. Values are HTML: escape anything a visitor typed. */
+function infoRows(rows: Array<[string, string]>): string {
+  return rows.map(([label, value], i) => `
+            <div class="info-row"${i === rows.length - 1 ? ' style="border:none"' : ""}>
+              <div class="info-label">${escHtml(label)}</div>
+              <div class="info-value">${value}</div>
+            </div>`).join("");
+}
+
+/** The owner's own inbox, plus the public hello@ inbox when that is a different one. */
+function ownerInboxes(): { to: string; cc?: string } {
+  const owner = smtpUser.value();
+  return { to: owner, cc: owner.toLowerCase() === HELLO_EMAIL ? undefined : HELLO_EMAIL };
+}
+
+/** The owner's clock, from Settings/Availability (a zone name, else the fixed offset). */
+async function readHostZone(): Promise<HostZone> {
+  return hostZone((await db.doc(AVAILABILITY).get()).data());
+}
+
+/** "27/10/2026 at 02:15 PM (Europe/Istanbul)": an instant on the owner's clock. */
+function hostTime(instantMs: number, zone: HostZone): string {
+  const w = hostWallClock(instantMs, zone);
+  return `${w.date} at ${w.time} (${typeof zone === "string" ? zone : offsetLabel(zone)})`;
+}
+
 /**
- * The single admin gate for every callable in this file.
- *
- * Fails CLOSED. The old per-callable form was `if (adminUid && uid !== adminUid)`,
- * which skipped the whole check whenever `Settings/Account.uid` was absent - and
- * nothing in this repo ever writes that field (`scripts/set-admin.js` sets the
- * `admin: true` custom claim instead), so on a fresh deployment every signed-in
- * Google user passed. Accepts the claim first, then the optional uid mirror.
+ * The single admin gate for every callable in this file: the `admin` custom claim,
+ * which `scripts/set-admin.mjs` sets and the Firestore and Storage rules check too.
+ * Nothing else counts, so the functions and the rules can never disagree on who the
+ * owner is.
  */
 async function requireAdmin(
   auth: { uid: string; token?: Record<string, unknown> } | undefined,
   denial: string,
 ): Promise<void> {
   if (!auth) throw new HttpsError("unauthenticated", "Sign in required.");
-  if (auth.token?.admin === true) return;
-  const adminUid = (await db.doc("Settings/Account").get()).data()?.uid;
-  if (typeof adminUid === "string" && adminUid && auth.uid === adminUid) return;
-  throw new HttpsError("permission-denied", denial);
+  if (auth.token?.admin !== true) throw new HttpsError("permission-denied", denial);
 }
 
 /**
- * Auto-acknowledge a visitor: a branded "I received it, I'll reply within 24h"
- * email sent back to the address they entered (contact message or booking).
- * `intro`/`detailRows`/`ctaHtml` are server-built HTML; only echoed user fields
- * are passed through escHtml by the caller. No-ops on a missing/invalid address.
+ * An acknowledgement to the address a visitor typed. It carries no text the visitor
+ * wrote: anyone can type a stranger's address, so the only visitor field used is the
+ * name, and only when it is plainly a name (greetingName); otherwise "Hi there". Rows
+ * and the button are server-built.
  */
-async function sendGuestAck(
-  transporter: Transporter,
-  { to, name, heading, intro, detailRows = [], ctaHtml = "" }: GuestAckArgs,
-): Promise<void> {
-  if (!to || !GUEST_EMAIL_RE.test(String(to))) return;
-  const rows = detailRows
-    .map((r) => `
-            <div class="info-row">
-              <div class="info-label">${escHtml(r.label)}</div>
-              <div class="info-value">${r.value}</div>
-            </div>`)
-    .join("");
-
-  const html = emailTemplate({
-    title: heading,
-    preheader: "Thanks - I'll get back to you within 24 hours.",
-    bodyHtml: `
+function guestAckMail(to: string, entryName: unknown, heading: string, intro: string,
+  rows: Array<[string, string]>, ctaHtml: string, label: string): MailMessage {
+  const name = greetingName(entryName);
+  return {
+    to,
+    subject: heading,
+    fromName: "Revil",
+    replyTo: HELLO_EMAIL,
+    label,
+    html: emailShell({
+      title: heading,
+      preheader: "Thanks - I'll get back to you within 24 hours.",
+      bodyHtml: `
           <h2>${escHtml(heading)}</h2>
           <p>Hi ${escHtml(name || "there")},</p>
           <p>${intro}</p>
-          ${rows ? `<div class="divider"></div><div>${rows}</div>` : ""}
+          ${rows.length ? `<div class="divider"></div><div>${infoRows(rows)}</div>` : ""}
           ${ctaHtml}
           <div class="divider"></div>
-          <p>I'll personally get back to you within <strong style="color:#e0e0e0">24 hours</strong>. If it's urgent, just reply to this email.</p>
+          <p>I'll personally get back to you within <strong>24 hours</strong>. If it's urgent, just reply to this email.</p>
           <p style="margin-top:16px">- Revil</p>
         `,
-    footerNote: `Sent from <a href="https://temrevil.com">temrevil.com</a>`,
-  });
-
-  await transporter.sendMail({
-    from: `"Revil" <${HELLO_EMAIL}>`,
-    to,
-    replyTo: HELLO_EMAIL,
-    subject: escSubject(heading),
-    html,
-  });
+    }),
+  };
 }
 
-// =====================================================================
-// NOTE - `syncMeeting` Cloud Function is NOT defined here.
-// It is deployed to this Firebase project from a separate codebase and is called
-// from src/components/dashboard/D-Canary.tsx (admin create/update/cancel). It
-// wraps the Google Calendar API to create/cancel events with Meet links, and is
-// admin-only. Public bookings go through `bookMeeting` below instead.
-//
-// If you redeploy this functions folder, run with `--only` flags to avoid
-// removing syncMeeting:
-//   firebase deploy --only functions:trackSession,functions:notifyCanary,functions:notifyLogin,functions:submitContact,functions:bookMeeting,functions:cleanupAttachments
-// =====================================================================
+/** Queue mail without letting a queueing failure undo the work that caused it. */
+async function queue(id: string, mail: MailMessage): Promise<void> {
+  try {
+    await enqueueMail(id, mail);
+  } catch (err) {
+    console.error(`Could not queue mail ${id}:`, (err as Error)?.message);
+  }
+}
+
+/**
+ * Rebuilds the public busy-slot list from a query of the meetings that have not ended,
+ * inside one transaction - never from the one meeting a trigger fired for. Reading the
+ * query in the transaction is what makes it safe: a run for an older write can't put
+ * back what was true then, because a newer meeting write makes the transaction retry
+ * with the newer meetings. Each slot is a start instant and nothing else.
+ */
+async function refreshBookedSlots(): Promise<void> {
+  const slotsRef = db.doc(BOOKED_SLOTS);
+  await db.runTransaction(async (tx) => {
+    const now = Date.now();
+    const [snap, cur] = await Promise.all([tx.get(upcomingMeetings(now)), tx.get(slotsRef)]);
+    const slots = futureSlots(snap.docs.map((d) => d.data() as MeetingDoc), now);
+    if (cur.exists && JSON.stringify(cur.data()?.Slots) === JSON.stringify(slots)) return;
+    // Replaces the whole doc, so a slot list in an older shape is dropped with it.
+    tx.set(slotsRef, { Slots: slots, lastWrite: FieldValue.serverTimestamp() });
+  });
+}
 
 // =====================================================================
 //  1. Visit recording - see ./analytics.ts
@@ -313,380 +226,218 @@ async function sendGuestAck(
 export { trackSession } from "./analytics.js";
 
 // =====================================================================
-//  2. notifyCanary - Firestore trigger on Settings/Canary
-//     Detects new emails & meetings, sends notification to admin
+//  2. notifyCanaryMessage / notifyCanaryMeeting - Firestore triggers, one run per
+//     message or meeting document.
+//     A new message or meeting queues the owner's notification and the visitor's
+//     acknowledgement; a deleted message has its uploads removed; every meeting
+//     write refreshes the public busy-slot list.
+//
+//     Every mail is queued under an id made from the entry's id, and a job is
+//     only ever created once, so a trigger that runs twice for one write can't
+//     send anything twice. Entries the migration copied over (migratedFrom) were
+//     notified when they first arrived, so they send nothing.
 // =====================================================================
-export const notifyCanary = onDocumentWritten(
+export const notifyCanaryMessage = onDocumentWritten(
   {
-    document: "Settings/Canary",
+    document: `${COLLECTIONS.messages}/{messageId}`,
     region: "us-central1",
-    secrets: [smtpUser, resendKey],
+    secrets: [smtpUser],
   },
   async (event) => {
-    const before = (event.data?.before?.data() || {}) as CanaryDoc;
-    const after = (event.data?.after?.data() || {}) as CanaryDoc;
+    const key = event.params.messageId;
+    const before = event.data?.before?.exists ? event.data.before.data() as MessageDoc : null;
+    const e = event.data?.after?.exists ? event.data.after.data() as MessageDoc : null;
+    const bucket = ourBucket();
 
-    // ── Detect deleted email messages & clean up storage ──────────
-    const oldEmails = before.Emails || {};
-    const newEmails = after.Emails || {};
-    const deletedEmailKeys = Object.keys(oldEmails).filter(
-      (k) => !newEmails[k],
-    );
-
-    for (const key of deletedEmailKeys) {
-      const e = oldEmails[key];
-      if (!e) continue;
-
-      const files = e["Files Attached"] || [];
-      for (const f of files) {
-        if (!f || !f.url) continue;
-        const storagePath = getStoragePathFromUrl(f.url);
-        if (storagePath) {
-          try {
-            console.log(`Deleting storage file: ${storagePath}`);
-            const bucket = admin.storage().bucket();
-            await bucket.file(storagePath).delete();
-            console.log(`Successfully deleted storage file: ${storagePath}`);
-          } catch (err) {
-            console.error(`Failed to delete storage file ${storagePath}:`, err);
-          }
+    // ── A deleted message: remove its uploads ──────────────────
+    // Only paths that really are contact uploads (emails/<folder>/<file> in our
+    // bucket). A hand-edited entry naming any other file - a site image - is skipped.
+    if (before && !e) {
+      for (const f of before["Files Attached"] || []) {
+        const path = attachmentPath(f?.url, bucket);
+        if (!path) {
+          if (f?.url) console.warn(`Message ${key}: skipped an attachment link outside emails/`);
+          continue;
+        }
+        try {
+          await getStorage().bucket().file(path).delete({ ignoreNotFound: true });
+        } catch (err) {
+          console.error(`Failed to delete an attachment of message ${key}:`, (err as Error)?.message);
         }
       }
+      return;
     }
 
-    const adminEmail = smtpUser.value(); // Send to self
+    // ── A new message ──────────────────────────────────────────
+    if (before || !e || !e.Name || e.migratedFrom) return;
+    const owner = ownerInboxes();
+    const zone = await readHostZone();
+    {
+      const sentAt = Number(new Date(e.Timestamp ?? NaN));
+      const ts = Number.isFinite(sentAt) ? hostTime(sentAt, zone) : "Unknown";
 
-    // ── Detect new email messages ──────────────────────────────
-    const addedEmailKeys = Object.keys(newEmails).filter(
-      (k) => !oldEmails[k],
-    );
-
-    for (const key of addedEmailKeys) {
-      const e = newEmails[key];
-      if (!e || !e.Name) continue;
-
-      const ts = e.Timestamp
-        ? new Date(e.Timestamp).toLocaleString("en-US", {
-            timeZone: "Europe/Istanbul",
-            dateStyle: "medium",
-            timeStyle: "short",
-          })
-        : "Unknown";
-
-      const attachmentHtml =
-        e["Files Attached"] && e["Files Attached"].length > 0
-          ? `<div class="divider"></div>
-             <p style="font-size:13px;color:#666;margin-bottom:8px">ATTACHMENTS</p>
-             ${e["Files Attached"]
-               .map((f) => {
-                 const href = safeAttachmentUrl(f.url);
-                 // An unverified URL is shown as plain text, never as a clickable link.
-                 return href
-                   ? `<p style="margin:4px 0"><a href="${escAttr(href)}" style="color:#3395ff;text-decoration:none">${escHtml(f.name)}</a></p>`
-                   : `<p style="margin:4px 0;color:#888">${escHtml(f.name)} <span style="font-size:12px">(link not verified - open from the dashboard)</span></p>`;
-               })
-               .join("")}`
-          : "";
-
-      const whatsappBadge = e.Whatsapp
-        ? `<span class="badge badge-green">WhatsApp</span>`
+      const files = e["Files Attached"] || [];
+      const attachmentHtml = files.length
+        ? `<div class="divider"></div>
+             <p style="font-size:13px;margin-bottom:8px">ATTACHMENTS</p>
+             ${files.map((f) => attachmentPath(f?.url, bucket)
+                // An unverified URL is shown as plain text, never as a clickable link.
+                ? `<p style="margin:4px 0"><a href="${escAttr(f.url)}" style="color:#3395ff;text-decoration:none">${escHtml(f.name)}</a></p>`
+                : `<p style="margin:4px 0">${escHtml(f?.name)} <span style="font-size:12px">(link not verified - open from the dashboard)</span></p>`)
+              .join("")}`
         : "";
 
-      // Pre-escape all user-supplied fields once for safe template interpolation
       const safeName = escHtml(e.Name);
-      const safeEmail = escHtml(e.Email);
       const safeEmailAttr = escAttr(e.Email);
-      const safeNumber = escHtml(e.Number || "Not provided");
-      const safeMessage = escHtml(e.Message || "").replace(/\n/g, "<br/>");
-
-      const html = emailTemplate({
-        title: "New Message Received",
-        preheader: `${safeName} sent you a message`,
-        bodyHtml: `
+      await queue(jobId("contact-owner", key), {
+        ...owner,
+        fromName: "Revil Portfolio",
+        replyTo: GUEST_EMAIL_RE.test(String(e.Email || "")) ? e.Email : undefined,
+        subject: escSubject(`New message from ${e.Name}`),
+        label: "Contact notification",
+        html: emailShell({
+          title: "New Message Received",
+          preheader: `${e.Name} sent you a message`,
+          bodyHtml: `
           <h2>New Contact Message</h2>
           <p>You received a new message through your portfolio.</p>
           <div class="divider"></div>
-          <div>
-            <div class="info-row">
-              <div class="info-label">From</div>
-              <div class="info-value">${safeName}</div>
-            </div>
-            <div class="info-row">
-              <div class="info-label">Email</div>
-              <div class="info-value"><a href="mailto:${safeEmailAttr}" style="color:#3395ff;text-decoration:none">${safeEmail}</a></div>
-            </div>
-            <div class="info-row">
-              <div class="info-label">Phone</div>
-              <div class="info-value">${safeNumber} ${whatsappBadge}</div>
-            </div>
-            <div class="info-row" style="border:none">
-              <div class="info-label">Time</div>
-              <div class="info-value">${ts}</div>
-            </div>
-          </div>
+          <div>${infoRows([
+            ["From", safeName],
+            ["Email", `<a href="mailto:${safeEmailAttr}" style="color:#3395ff;text-decoration:none">${escHtml(e.Email)}</a>`],
+            ["Phone", `${escHtml(e.Number || "Not provided")} ${e.Whatsapp ? `<span class="badge badge-green">WhatsApp</span>` : ""}`],
+            ["Time", escHtml(ts)],
+          ])}</div>
           <div class="divider"></div>
-          <p style="font-size:13px;color:#666;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">MESSAGE</p>
-          <div class="message-box">${safeMessage}</div>
+          <p style="font-size:13px;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">MESSAGE</p>
+          <div class="message-box">${escHtml(e.Message || "").replace(/\n/g, "<br/>")}</div>
           ${attachmentHtml}
           <div style="margin-top:24px;text-align:center">
             <a href="mailto:${safeEmailAttr}?subject=Re: Portfolio Contact" class="btn">Reply to ${safeName}</a>
           </div>
         `,
-        footerNote: `Sent from <a href="https://temrevil.com">temrevil.com</a> contact form`,
+          footerHtml: `Sent from <a href="${SITE_URL}" style="color:#3395ff;text-decoration:none">temrevil.com</a> contact form`,
+        }),
       });
 
-      try {
-        const transporter = createTransporter();
-        await transporter.sendMail({
-          from: `"Revil Portfolio" <${HELLO_EMAIL}>`,
-          to: adminEmail,
-          // Copy the public hello@ inbox too (skip if the admin already is hello@).
-          cc: adminEmail.toLowerCase() === HELLO_EMAIL ? undefined : HELLO_EMAIL,
-          replyTo: e.Email,
-          subject: escSubject(`New message from ${e.Name}`),
-          html,
-        });
-        console.log(`Email notification sent for contact #${key}`);
-      } catch (err) {
-        console.error("Failed to send contact notification:", err);
-      }
-
-      // Auto-acknowledge the sender at the address they entered.
-      try {
-        await sendGuestAck(createTransporter(), {
-          to: e.Email,
-          name: e.Name,
-          heading: "I got your message",
-          intro: "Thanks for reaching out through my portfolio - your message has landed in my inbox.",
-        });
-        console.log(`Acknowledgement sent to sender of contact #${key}`);
-      } catch (err) {
-        console.error("Failed to send sender acknowledgement:", err);
+      if (e.Ack !== false && GUEST_EMAIL_RE.test(String(e.Email || ""))) {
+        await queue(jobId("contact-ack", key), guestAckMail(String(e.Email), e.Name,
+          "I got your message",
+          "Thanks for reaching out through my portfolio - your message has landed in my inbox.",
+          [], "", "Contact acknowledgement"));
       }
     }
 
-    // ── Detect new meetings ────────────────────────────────────
-    const oldMeetings = before.Meetings || {};
-    const newMeetings = after.Meetings || {};
-    const addedMeetingKeys = Object.keys(newMeetings).filter(
-      (k) => !oldMeetings[k],
-    );
+  },
+);
 
-    for (const key of addedMeetingKeys) {
-      const m = newMeetings[key];
-      if (!m || !m.Name) continue;
+export const notifyCanaryMeeting = onDocumentWritten(
+  {
+    document: `${COLLECTIONS.meetings}/{meetingId}`,
+    region: "us-central1",
+    secrets: [smtpUser],
+  },
+  async (event) => {
+    const key = event.params.meetingId;
+    const before = event.data?.before?.exists ?? false;
+    const m = event.data?.after?.exists ? event.data.after.data() as MeetingDoc : null;
 
-      // Only allow safe meet links - must be https://meet.google.com
-      const safeMeetLink =
-        typeof m.MeetingLink === "string" && /^https:\/\/meet\.google\.com\//.test(m.MeetingLink)
-          ? m.MeetingLink
-          : null;
-      const meetLinkHtml = safeMeetLink
-        ? `<div style="margin-top:24px;text-align:center">
-             <a href="${escAttr(safeMeetLink)}" class="btn">Join Google Meet</a>
-           </div>`
+    // ── A new meeting ──────────────────────────────────────────
+    if (!before && m && m.Name && !m.migratedFrom) {
+      const owner = ownerInboxes();
+      const zone = await readHostZone();
+      const meetLink = typeof m.MeetingLink === "string" && MEET_LINK_RE.test(m.MeetingLink) ? m.MeetingLink : null;
+      const meetButton = meetLink
+        ? `<div style="margin-top:24px;text-align:center"><a href="${escAttr(meetLink)}" class="btn">Join Google Meet</a></div>`
         : "";
+      const at = slotStart(m);
+      const guestOffset = visitorOffset(m.UserTimezone);
+      const ownerWhen = at === null ? "Unknown time" : hostTime(at, zone);
+      const guestWhen = at !== null && guestOffset !== null ? timeAtOffset(at, guestOffset) : null;
+      const wall = at === null ? null : hostWallClock(at, zone);
+      const subjectWhen = wall ? ` on ${wall.date} at ${wall.time}` : "";
 
       const mName = escHtml(m.Name);
-      const mEmail = escHtml(m.Email);
-      const mEmailAttr = escAttr(m.Email);
-      const mDate = escHtml(m.Date);
-      const mTime = escHtml(m.Time);
-      const mUserLocal = escHtml(m.UserLocalTime);
-      const mReason = escHtml(m["What For"] || m.Reason || "Not specified");
-
-      const html = emailTemplate({
-        title: "New Meeting Booked",
-        preheader: `${mName} booked a meeting on ${mDate}`,
-        bodyHtml: `
+      await queue(jobId("meeting-owner", key), {
+        // The meeting notice goes to both inboxes as recipients, not as a copy.
+        to: owner.cc ? [owner.to, owner.cc] : owner.to,
+        fromName: "Revil Portfolio",
+        replyTo: GUEST_EMAIL_RE.test(String(m.Email || "")) ? m.Email : undefined,
+        subject: escSubject(`Meeting booked: ${m.Name}${subjectWhen}`),
+        label: "Booking notification",
+        html: emailShell({
+          title: "New Meeting Booked",
+          preheader: `${m.Name} booked a meeting${wall ? ` on ${wall.date}` : ""}`,
+          bodyHtml: `
           <h2>New Meeting Booked</h2>
           <p>Someone scheduled a meeting through your portfolio.</p>
           <div class="divider"></div>
-          <div>
-            <div class="info-row">
-              <div class="info-label">Guest</div>
-              <div class="info-value">${mName}</div>
-            </div>
-            <div class="info-row">
-              <div class="info-label">Email</div>
-              <div class="info-value"><a href="mailto:${mEmailAttr}" style="color:#3395ff;text-decoration:none">${mEmail}</a></div>
-            </div>
-            <div class="info-row">
-              <div class="info-label">Date</div>
-              <div class="info-value"><span class="badge badge-blue">${mDate}</span></div>
-            </div>
-            <div class="info-row">
-              <div class="info-label">Time</div>
-              <div class="info-value">${mTime} (your time)${m.UserLocalTime ? ` / ${mUserLocal} (guest)` : ""}</div>
-            </div>
-            <div class="info-row" style="border:none">
-              <div class="info-label">Reason</div>
-              <div class="info-value">${mReason}</div>
-            </div>
-          </div>
-          ${meetLinkHtml}
+          <div>${infoRows([
+            ["Guest", mName],
+            ["Email", `<a href="mailto:${escAttr(m.Email)}" style="color:#3395ff;text-decoration:none">${escHtml(m.Email)}</a>`],
+            ["Your time", `<span class="badge badge-blue">${escHtml(ownerWhen)}</span>`],
+            ...(guestWhen ? [["Guest time", escHtml(guestWhen)] as [string, string]] : []),
+            ["Reason", escHtml(m["What For"] || m.Reason || "Not specified")],
+          ])}</div>
+          ${meetButton}
         `,
-        footerNote: `Sent from <a href="https://temrevil.com">temrevil.com</a> meeting system`,
+          footerHtml: `Sent from <a href="${SITE_URL}" style="color:#3395ff;text-decoration:none">temrevil.com</a> meeting system`,
+        }),
       });
 
-      // Notify the admin AND the public hello@ inbox (deduped if they're the same).
-      const meetingRecipients = adminEmail.toLowerCase() === HELLO_EMAIL
-        ? [adminEmail]
-        : [adminEmail, HELLO_EMAIL];
-
-      try {
-        const transporter = createTransporter();
-        await transporter.sendMail({
-          from: `"Revil Portfolio" <${HELLO_EMAIL}>`,
-          to: meetingRecipients,
-          replyTo: m.Email,
-          subject: escSubject(`Meeting booked: ${m.Name} on ${m.Date} at ${m.Time}`),
-          html,
-        });
-        console.log(`Email notification sent for meeting #${key}`);
-      } catch (err) {
-        console.error("Failed to send meeting notification:", err);
-      }
-
-      // Auto-acknowledge the guest at the address they entered.
-      try {
-        await sendGuestAck(createTransporter(), {
-          to: m.Email,
-          name: m.Name,
-          heading: "Your call is booked",
-          intro: "Thanks for booking a call - it's on my calendar.",
-          detailRows: [
-            { label: "Date", value: `<span class="badge badge-blue">${mDate}</span>` },
-            { label: "Time", value: `${mUserLocal || mTime}` },
-          ],
-          ctaHtml: safeMeetLink
-            ? `<div style="margin-top:24px;text-align:center"><a href="${escAttr(safeMeetLink)}" class="btn">Join Google Meet</a></div>`
-            : "",
-        });
-        console.log(`Acknowledgement sent to guest of meeting #${key}`);
-      } catch (err) {
-        console.error("Failed to send guest acknowledgement:", err);
+      if (m.Ack !== false && GUEST_EMAIL_RE.test(String(m.Email || ""))) {
+        // The time is computed from the booked instant on the guest's own clock, not
+        // copied from anything the browser sent.
+        await queue(jobId("meeting-ack", key), guestAckMail(String(m.Email), m.Name,
+          "Your call is booked",
+          "Thanks for booking a call - it's on my calendar.",
+          [["When", escHtml(guestWhen || ownerWhen)]], meetButton, "Booking acknowledgement"));
       }
     }
 
-    // ── Mirror busy slots to a sanitized public doc ─────────────
-    // Settings/Canary is admin-read-only (it holds visitor PII + Meet links).
-    // The public booking calendar only needs to know which {Date, Time} slots are
-    // taken, so we mirror exactly that - no names, emails, reasons, or links - to
-    // Settings/BookedSlots, which is publicly readable. Runs on every Canary write
-    // (book / reschedule / cancel) so availability stays in sync. Writing a
-    // different doc does not re-trigger this function, so there is no loop.
+    // ── Public busy slots ──────────────────────────────────────
+    // CanaryMeetings is admin-only (visitor details, Meet links); the public calendar
+    // reads Settings/BookedSlots instead, rebuilt from a query of every meeting that
+    // has not ended. Writing that doc does not re-trigger this function.
     try {
-      const slots = Object.values(after.Meetings || {})
-        .filter((m) => m && typeof m.Date === "string" && typeof m.Time === "string")
-        .map((m) => ({ Date: m.Date, Time: m.Time }));
-      await db.doc("Settings/BookedSlots").set({
-        Slots: slots,
-        lastWrite: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      await refreshBookedSlots();
     } catch (err) {
-      console.error("Failed to mirror booked slots:", err);
+      console.error("Failed to refresh booked slots:", (err as Error)?.message);
     }
   },
 );
 
 // =====================================================================
-//  2b. Public submissions - submitContact, bookMeeting, cleanupAttachments
+//  2b. Public submissions - submitContact, bookMeeting
 //
-//  The contact form and the booking form used to write straight into
-//  Settings/Canary, guarded only by security rules. Rules cannot check the one
-//  new entry inside a map, so any field, type or length got through, and the
-//  cooldown timestamps themselves were publicly writable (one request could jam
-//  both forms for good). Visitors now have NO write access to Canary at all: they
-//  call these functions, which validate every field, rate-limit per IP and
-//  site-wide, and write through the Admin SDK. notifyCanary still does the emails.
+//  Visitors have NO write access to CanaryMessages or CanaryMeetings: they call
+//  these functions, which validate every field, rate-limit per visitor IP and per
+//  email address (./limits - there is no site-wide lock, so one sender can't block
+//  everyone), and write one document through the Admin SDK. notifyCanaryMessage and
+//  notifyCanaryMeeting then queue the emails.
 // =====================================================================
 
-const CONTACT_INBOX_CAP = 50;
+/** The owner is warned once a day when this many messages wait for a reply. */
+const CONTACT_INBOX_WARN = 40;
+/** Upcoming meetings: past ones never count. */
 const MEETINGS_CAP = 100;
 const MAX_ATTACHMENTS = 5;
-const MEETING_MS = 3600000;
+const CUSTOM_GRID_MS = 15 * 60_000;
 
-interface RateLimits {
-  cooldownMs: number;
-  /** Accepted submissions per IP per window. */
-  perIp: number;
-  windowMs: number;
-  /** Attempts per IP per window, failed ones included (for work that can fail after the reservation). */
-  triesPerIp?: number;
-}
-// Site-wide cooldowns are the same as the old rules had (30s / 5min). The per-IP caps
-// are new: one address can no longer use up the whole site's quota. A booking that fails
-// (Calendar error, recording error) is refunded, so a typo does not cost a visitor one
-// of their bookings; the attempts cap is what still bounds how often one address can
-// make the Calendar script run.
-const CONTACT_LIMITS: RateLimits = { cooldownMs: 30_000, perIp: 3, windowMs: 3_600_000 };
-const MEETING_LIMITS: RateLimits = { cooldownMs: 300_000, perIp: 3, windowMs: 86_400_000, triesPerIp: 10 };
-
-/** RateLimits/{kind}: the last accepted submission, plus recent ones (and attempts) per hashed IP. */
-interface RateDoc { last?: number; ips?: Record<string, number[]>; tries?: Record<string, number[]> }
-
-/** Hashed so the rate-limit doc never stores a raw visitor IP. */
-function ipKey(rawRequest: { headers: Record<string, string | string[] | undefined>; ip?: string }): string {
-  const ip = clientIp(rawRequest.headers, rawRequest.ip) || "unknown";
-  return createHash("sha256").update(ip).digest("hex").slice(0, 16);
+/** The caller's address, as the rate limits see it. */
+function callerIp(raw: { headers: Record<string, string | string[] | undefined>; ip?: string }): string {
+  return clientIp(raw.headers, raw.ip) || "unknown";
 }
 
 /**
- * Checks the site-wide cooldown and the caller's per-IP quota, and returns the
- * doc to write back if the submission is allowed. Entries older than the window
- * are pruned on every write, so the doc stays small.
+ * Acknowledgements to a typed address: at most 2 a day to one address and 3 a day
+ * caused by one IP. Past that the submission still goes through; it just gets no ack.
  */
-function takeRateSlot(prev: RateDoc, key: string, limits: RateLimits, now: number, busyMessage: string): RateDoc {
-  if (typeof prev.last === "number" && now - prev.last < limits.cooldownMs) {
-    throw new HttpsError("resource-exhausted", busyMessage);
-  }
-  const recent = (byIp: Record<string, number[]> | undefined) => {
-    const out: Record<string, number[]> = {};
-    for (const [k, times] of Object.entries(byIp || {})) {
-      const kept = (Array.isArray(times) ? times : []).filter((t) => typeof t === "number" && now - t < limits.windowMs);
-      if (kept.length) out[k] = kept;
-    }
-    return out;
-  };
-  const ips = recent(prev.ips);
-  if ((ips[key] || []).length >= limits.perIp) {
-    throw new HttpsError("resource-exhausted", "You've sent a few already - please try again later.");
-  }
-  ips[key] = [...(ips[key] || []), now];
-  if (limits.triesPerIp === undefined) return { last: now, ips };
-
-  const tries = recent(prev.tries);
-  if ((tries[key] || []).length >= limits.triesPerIp) {
-    throw new HttpsError("resource-exhausted", `Too many attempts today - please email ${HELLO_EMAIL} instead.`);
-  }
-  tries[key] = [...(tries[key] || []), now];
-  return { last: now, ips, tries };
-}
-
-/**
- * Undoes a reservation that did not become a booking: the caller's booking is removed
- * from their per-IP count (the attempt stays counted) and the site-wide cooldown goes
- * back to what it was - unless another reservation has been made since.
- */
-async function refundRateSlot(ref: FirebaseFirestore.DocumentReference, key: string, stamp: number, prevLast: number | undefined): Promise<void> {
-  try {
-    await db.runTransaction(async (tx) => {
-      const cur = ((await tx.get(ref)).data() || {}) as RateDoc;
-      const ips = { ...(cur.ips || {}) };
-      const left = (ips[key] || []).filter((t) => t !== stamp);
-      if (left.length) ips[key] = left;
-      else delete ips[key];
-      const next: RateDoc = { ...cur, ips };
-      if (cur.last === stamp) {
-        if (prevLast === undefined) delete next.last;
-        else next.last = prevLast;
-      }
-      tx.set(ref, next);
-    });
-  } catch (err) {
-    console.error("Failed to refund booking reservation:", err);
-  }
+function ackQuotas(email: string, ip: string): Quota[] {
+  return [
+    quota("ack-to", email, 2, DAY_MS, ""),
+    quota("ack-ip", ip, 3, DAY_MS, ""),
+  ];
 }
 
 /** A trimmed string of at most `max` characters, or a clear invalid-argument error. */
@@ -708,39 +459,68 @@ function emailField(v: unknown): string {
   return s;
 }
 
-/** Same key shape the site always used for Emails/Meetings map entries. */
+/** A message or meeting id: the same shape the entries always had. */
 function entryId(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
-
-/** Only an upload the visitor really made to emails/<folder>/<file> in our bucket. */
-const ATTACHMENT_PATH_RE = /^emails\/[A-Za-z0-9_-]{1,40}\/[^/]{1,200}$/;
 
 async function attachmentsField(v: unknown): Promise<Array<{ name: string; url: string }>> {
   if (v === undefined || v === null) return [];
   if (!Array.isArray(v)) throw new HttpsError("invalid-argument", "Attachments must be a list.");
   if (v.length > MAX_ATTACHMENTS) throw new HttpsError("invalid-argument", `At most ${MAX_ATTACHMENTS} attachments.`);
+  const bucket = ourBucket();
   const out: Array<{ name: string; url: string }> = [];
   for (const f of v) {
     const file = (f || {}) as { name?: unknown; url?: unknown };
     const name = textField(file.name, "Attachment name", 200, true);
-    const url = safeAttachmentUrl(file.url);
-    const path = url ? getStoragePathFromUrl(url) : null;
-    if (!url || !path || !ATTACHMENT_PATH_RE.test(path)) {
-      throw new HttpsError("invalid-argument", "An attachment link is not valid.");
-    }
-    const [exists] = await admin.storage().bucket().file(path).exists();
+    const path = attachmentPath(file.url, bucket);
+    if (!path) throw new HttpsError("invalid-argument", "An attachment link is not valid.");
+    const [exists] = await getStorage().bucket().file(path).exists();
     if (!exists) throw new HttpsError("invalid-argument", "An attachment is missing - please attach it again.");
-    out.push({ name, url });
+    out.push({ name, url: String(file.url) });
   }
   return out;
 }
 
+/**
+ * Messages still waiting for a reply: every message minus the replied ones, as two
+ * count queries (no message is read).
+ */
+async function unrepliedMessages(): Promise<number> {
+  const [all, replied] = await Promise.all([
+    messages().count().get(),
+    messages().where("RepliedAt", ">", 0).count().get(),
+  ]);
+  return Math.max(0, all.data().count - replied.data().count);
+}
+
+/** Tell the owner, at most once a day, that messages are piling up unanswered. */
+async function warnInboxPiling(): Promise<void> {
+  const unreplied = await unrepliedMessages();
+  if (unreplied < CONTACT_INBOX_WARN) return;
+  const day = new Date().toISOString().slice(0, 10);
+  await queue(jobId("inbox-filling", day), {
+    to: smtpUser.value(),
+    fromName: "Revil Portfolio",
+    subject: `${unreplied} portfolio messages are waiting for a reply`,
+    label: "Unreplied messages",
+    html: emailShell({
+      title: "Messages waiting",
+      bodyHtml: `
+          <h2>Messages are waiting for a reply</h2>
+          <p>The contact form keeps taking messages; this is a reminder that a number of them are still unanswered. Reply to them or delete them in the dashboard.</p>
+          <div class="divider"></div>
+          <div>${infoRows([["Unreplied", String(unreplied)]])}</div>
+        `,
+    }),
+  });
+}
+
 export const submitContact = onCall(
-  { region: "us-central1", enforceAppCheck: true },
+  { region: "us-central1", enforceAppCheck: true, secrets: [smtpUser] },
   async (request) => {
     const d = (request.data || {}) as Record<string, unknown>;
-    const entry: EmailEntry = {
+    const entry: MessageDoc = {
       Name: textField(d.name, "Name", 100, true),
       Email: emailField(d.email),
       "Files Attached": await attachmentsField(d.files),
@@ -749,178 +529,373 @@ export const submitContact = onCall(
       Whatsapp: d.whatsapp === true,
       Timestamp: Date.now(),
     };
-    const key = ipKey(request.rawRequest);
+    const ip = callerIp(request.rawRequest);
+    const quotas = [
+      quota("contact-ip-hour", ip, 3, HOUR_MS, "You've sent a few messages already - please try again in an hour."),
+      quota("contact-ip-day", ip, 10, DAY_MS, `You've sent a lot of messages today - please email ${HELLO_EMAIL} instead.`),
+      quota("contact-email", entry.Email!, 3, DAY_MS, `This address has sent a few messages today - please email ${HELLO_EMAIL} instead.`),
+    ];
+    const acks = ackQuotas(entry.Email!, ip);
+    const ref = messages().doc(entryId());
 
     await db.runTransaction(async (tx) => {
-      const rlRef = db.doc("RateLimits/contact");
-      const canaryRef = db.doc("Settings/Canary");
-      const [rl, canary] = await Promise.all([tx.get(rlRef), tx.get(canaryRef)]);
-      const emails = (canary.data() as CanaryDoc | undefined)?.Emails || {};
-      if (Object.keys(emails).length >= CONTACT_INBOX_CAP) {
-        throw new HttpsError("resource-exhausted", `The inbox is full right now - please email ${HELLO_EMAIL} directly.`);
-      }
-      const next = takeRateSlot((rl.data() || {}) as RateDoc, key, CONTACT_LIMITS, Date.now(),
-        "Another message just came in - please try again in a minute.");
-      tx.set(rlRef, next);
-      tx.set(canaryRef, { Emails: { [entryId()]: entry } }, { merge: true });
+      const snaps = await readQuotas(tx, db, [...quotas, ...acks]);
+      const row = { ...entry };
+      const now = Date.now();
+      const used = takeQuotas(tx, db, quotas, snaps.slice(0, quotas.length), now);
+      if (used) throw new HttpsError("resource-exhausted", used.message);
+      if (takeQuotas(tx, db, acks, snaps.slice(quotas.length), now)) row.Ack = false;
+      tx.create(ref, row);
     });
+    try {
+      await warnInboxPiling();
+    } catch (err) {
+      console.error("Could not count unreplied messages:", (err as Error)?.message);
+    }
     return { ok: true };
   },
 );
 
-async function postToCalendar(payload: Record<string, unknown>): Promise<{ status?: string; link?: string; id?: string; message?: string }> {
-  const url = (meetingSyncUrl.value() || "").trim();
-  if (!url) throw new HttpsError("failed-precondition", "Meeting sync is not configured.");
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(30000),
+/** Tell the owner about a booking whose Calendar state could not be confirmed. */
+async function alertUnconfirmedBooking(requestId: string, what: string, email: string, startMs: number, zone: HostZone): Promise<void> {
+  await queue(jobId("booking-check", requestId), {
+    to: smtpUser.value(),
+    fromName: "Revil Portfolio",
+    subject: "A booking needs checking in your calendar",
+    label: "Booking needs checking",
+    html: emailShell({
+      title: "Booking needs checking",
+      bodyHtml: `
+          <h2>A booking needs checking</h2>
+          <p>${escHtml(what)} The visitor was told the booking did not go through. Check your calendar for an event at this time and remove it if it is there.</p>
+          <div class="divider"></div>
+          <div>${infoRows([
+            ["Guest email", escHtml(email)],
+            ["Time", escHtml(hostTime(startMs, zone))],
+            ["Request", `<code>${escHtml(requestId)}</code>`],
+          ])}</div>
+        `,
+    }),
   });
-  const data = await res.json().catch(() => ({})) as { status?: string; link?: string; id?: string; message?: string };
-  if (!res.ok || data.status === "error") {
-    throw new HttpsError("internal", data.message || `Calendar sync failed (HTTP ${res.status}).`);
-  }
-  return data;
 }
 
 /**
- * Public booking. Validates the request, reserves the site-wide booking slot,
- * creates the Calendar event (with Meet link) and records the meeting in Canary.
- * If recording fails the event is cancelled again, so there is never an invite
- * for a slot the public calendar does not show as taken.
+ * Public booking. Validates the request, reserves the time, creates the Calendar event
+ * (with Meet link) and records the meeting as its own CanaryMeetings document.
+ *
+ * Only an explicit success from the Calendar script with a usable event id counts
+ * (./calendar). A refusal is passed on as a plain message; anything else - a timeout,
+ * an unreadable reply - may or may not have made an event, so it is cancelled (by the
+ * request id, guest email and time) and the owner is told to check, and the visitor
+ * gets a generic answer. If recording fails the event is cancelled too, so there is
+ * never an invite for a time the public calendar does not show as taken.
  */
 export const bookMeeting = onCall(
-  { region: "us-central1", enforceAppCheck: true, secrets: [meetingSyncUrl] },
+  { region: "us-central1", enforceAppCheck: true, secrets: [meetingSyncUrl, smtpUser], timeoutSeconds: 120 },
   async (request) => {
     const d = (request.data || {}) as Record<string, unknown>;
     const name = textField(d.name, "Name", 100, true);
     const email = emailField(d.email);
     const reason = textField(d.reason, "Reason", 1000, false);
     const userLocalTime = textField(d.userLocalTime, "Local time", 20, false);
-    const userTimezone = typeof d.userTimezone === "number" && Number.isFinite(d.userTimezone) &&
-      Math.abs(d.userTimezone) <= 14 ? d.userTimezone : 0;
+    const userTimezone = visitorOffset(d.userTimezone) ?? 0;
     const via = d.via === "book" ? "book" : "contact";
 
-    const start = new Date(typeof d.startTime === "string" ? d.startTime : NaN);
-    const now = Date.now();
-    if (Number.isNaN(start.getTime())) {
-      throw new HttpsError("invalid-argument", "Invalid meeting time.");
-    }
-    const end = new Date(start.getTime() + MEETING_MS);
+    const startMs = new Date(typeof d.startTime === "string" ? d.startTime : NaN).getTime();
+    if (Number.isNaN(startMs)) throw new HttpsError("invalid-argument", "Invalid meeting time.");
+    const startTime = new Date(startMs).toISOString();
+    const endTime = new Date(startMs + MEETING_MS).toISOString();
 
-    const availability = (await db.doc("Settings/Availability").get()).data() || {};
+    const availability = (await db.doc(AVAILABILITY).get()).data() || {};
     const cfg = parseAvailability(availability);
-    const hostOffset = utcOffsetHours(availability["Current Time"] ?? DEFAULT_HOST_TZ);
-    const host = wallClock(start.getTime(), hostOffset);
-    const key = ipKey(request.rawRequest);
-    const rlRef = db.doc("RateLimits/meeting");
-    const canaryRef = db.doc("Settings/Canary");
+    const zone = hostZone(availability);
+    const ip = callerIp(request.rawRequest);
+    const requestId = entryId();
+    const meetingRef = meetings().doc(requestId);
 
-    // 1. Reserve: slot free, under the cap, and not rate limited.
-    const stamp = now;
-    const prevLast = await db.runTransaction(async (tx) => {
-      const [rl, canary] = await Promise.all([tx.get(rlRef), tx.get(canaryRef)]);
-      const meetings = Object.values((canary.data() as CanaryDoc | undefined)?.Meetings || {});
-      if (meetings.length >= MEETINGS_CAP) {
+    // Refunded when the booking does not happen; the attempts quota is not.
+    const bookings = [
+      quota("booking-ip", ip, 3, DAY_MS, "You've booked a few calls today already - please try again tomorrow."),
+      quota("booking-email", email, 2, DAY_MS, `This email has a few calls booked today already - please email ${HELLO_EMAIL}.`),
+    ];
+    const attempts = [quota("booking-tries", ip, 10, DAY_MS, `Too many attempts today - please email ${HELLO_EMAIL} instead.`)];
+    const acks = ackQuotas(email, ip);
+    const holdRefs = holdIds(startMs, MEETING_MS, CUSTOM_GRID_MS).map((id) => db.collection(RATE_LIMITS).doc(id));
+    const ownHold = db.collection(RATE_LIMITS).doc(`hold_${startMs}`);
+
+    // 1. Reserve: the time is free and allowed, under the cap, not rate limited.
+    const now = Date.now();
+    let ackAllowed = true;
+    await db.runTransaction(async (tx) => {
+      const counted = [...bookings, ...attempts];
+      // Only meetings that have not ended: past calls never count against the cap,
+      // and none of them can overlap a time that is still bookable.
+      const [upcoming, snaps, holds] = await Promise.all([
+        tx.get(upcomingMeetings(now)),
+        readQuotas(tx, db, [...counted, ...acks]),
+        Promise.all(holdRefs.map((r) => tx.get(r))),
+      ]);
+      const booked = upcoming.docs.map((doc) => doc.data() as MeetingDoc).filter((m) => isUpcoming(m, now));
+      if (booked.length >= MEETINGS_CAP) {
         throw new HttpsError("resource-exhausted", `Bookings are full right now - please email ${HELLO_EMAIL}.`);
       }
-      if (isTaken(start.getTime(), hostOffset, meetings)) {
+      // The same day, time and overlap rules the booking calendar draws from
+      // (booking.ts, generated from src/utils/bookingRules.ts).
+      const refusal = bookingRefusal(startMs, { nowMs: now, userTimezone, hostOffset: zone, cfg, meetings: booked });
+      if (refusal) throw new HttpsError("failed-precondition", refusal);
+      if (holds.some((h) => holdActive(h.data(), now))) {
         throw new HttpsError("already-exists", "That time slot is no longer available. Please pick another.");
       }
-      // The same day and time rules the booking calendar draws from (booking.ts,
-      // generated from src/utils/bookingRules.ts).
-      const refusal = bookingRefusal(start.getTime(), { nowMs: now, userTimezone, hostOffset, cfg, meetings });
-      if (refusal) throw new HttpsError("failed-precondition", refusal);
-      const prev = (rl.data() || {}) as RateDoc;
-      tx.set(rlRef, takeRateSlot(prev, key, MEETING_LIMITS, now,
-        "Another booking just came in - please wait a few minutes and try again."));
-      return prev.last;
+      const used = takeQuotas(tx, db, counted, snaps.slice(0, counted.length), now);
+      if (used) throw new HttpsError("resource-exhausted", used.message);
+      ackAllowed = !takeQuotas(tx, db, acks, snaps.slice(counted.length), now);
+      tx.set(ownHold, { expiresAt: new Date(now + HOLD_MS) });
     });
-    // A failed booking gives back the site-wide slot and the caller's booking count.
-    const release = () => refundRateSlot(rlRef, key, stamp, prevLast);
+    const dropHold = () => ownHold.delete().catch(() => undefined);
+    const release = async () => {
+      await refundQuotas(db, bookings, now);
+      await dropHold();
+    };
 
-    // 2. Calendar event + Meet link.
-    let event: { link?: string; id?: string };
-    try {
-      event = await postToCalendar({ name, email, reason, startTime: start.toISOString(), endTime: end.toISOString() });
-    } catch (err) {
+    const url = (meetingSyncUrl.value() || "").trim();
+    if (!url) {
       await release();
-      if (err instanceof HttpsError) {
-        throw /Invalid attendee email/i.test(err.message)
-          ? new HttpsError("invalid-argument", "Invalid Email Address provided.")
-          : err;
-      }
-      throw new HttpsError("internal", "Could not book meeting");
+      console.error("bookMeeting: MEETING_SYNC_URL is not set");
+      throw new HttpsError("failed-precondition", `Booking is unavailable right now - please email ${HELLO_EMAIL}.`);
     }
 
-    // 3. Record it (notifyCanary sends the emails and updates BookedSlots).
+    // 2. Calendar event + Meet link. The invite reaches the address the visitor typed,
+    // so it carries no free text from them: the name only when it is plainly a name,
+    // and no reason (the owner reads that in the dashboard and the notification).
+    const calendarName = greetingName(name) ?? "Guest";
+    const reply = await callCalendar(url, { requestId, name: calendarName, email, reason: "", startTime, endTime });
+    const outcome = readCreateReply(reply);
+    if (outcome.kind === "refused") {
+      await release();
+      console.warn("bookMeeting: the Calendar script refused the booking", { requestId });
+      throw outcome.invalidEmail
+        ? new HttpsError("invalid-argument", "Invalid Email Address provided.")
+        : new HttpsError("internal", "Could not book meeting");
+    }
+    if (outcome.kind === "unknown") {
+      await release();
+      console.error("bookMeeting: Calendar reply not confirmed", { requestId, httpStatus: reply.httpStatus });
+      const cancel = await callCalendar(url, { action: "cancel", requestId, email, name: calendarName, startTime });
+      await alertUnconfirmedBooking(requestId,
+        replySucceeded(cancel)
+          ? "The calendar did not confirm a booking, so a cancel was sent for it."
+          : "The calendar did not confirm a booking, and the cancel sent for it was not confirmed either.",
+        email, startMs, zone);
+      throw new HttpsError("unavailable", `The booking couldn't be confirmed - please email ${HELLO_EMAIL} and I'll sort it out.`);
+    }
+
+    // 3. Record it (notifyCanaryMeeting queues the emails and refreshes BookedSlots).
     try {
-      const entry = {
-        Date: host.date,
-        Time: host.time,
+      const entry: MeetingDoc & Record<string, unknown> = {
+        start: startTime,
+        ...zoneRecord(zone),
         UserLocalTime: userLocalTime,
         UserTimezone: userTimezone,
         Email: email,
         "What For": reason,
         Name: name,
         timestamp: Date.now(),
-        MeetingLink: typeof event.link === "string" ? event.link : "",
-        GoogleEventId: typeof event.id === "string" ? event.id : "",
+        MeetingLink: outcome.link,
+        GoogleEventId: outcome.id,
         Via: via,
+        ...(ackAllowed ? {} : { Ack: false }),
       };
-      await canaryRef.set({ Meetings: { [entryId()]: entry } }, { merge: true });
+      await meetingRef.create(entry);
     } catch (err) {
-      console.error("Failed to record meeting, cancelling the calendar event:", err);
-      if (event.id) {
-        await postToCalendar({ action: "cancel", eventId: event.id, email, name, startTime: start.toISOString() })
-          .catch((e) => console.error("Rollback cancel failed:", e));
+      console.error("bookMeeting: recording failed, cancelling the event:", (err as Error)?.message);
+      const cancel = await callCalendar(url, { action: "cancel", eventId: outcome.id, requestId, email, name: calendarName, startTime });
+      if (!replySucceeded(cancel)) {
+        await alertUnconfirmedBooking(requestId,
+          "A booking was made in the calendar but could not be recorded, and cancelling it was not confirmed.",
+          email, startMs, zone);
       }
       await release();
       throw new HttpsError("internal", "Could not book meeting");
     }
-
-    return { link: typeof event.link === "string" ? event.link : "" };
+    await dropHold();
+    return { link: outcome.link };
   },
 );
 
-/**
- * Deletes contact-form uploads that no message points to, once they are a day
- * old. Storage rules cannot count uploads, so this is what stops `emails/` from
- * becoming free public file hosting (uploads that were never sent with a message).
- */
-export const cleanupAttachments = onSchedule(
-  { schedule: "every day 04:00", timeZone: "Europe/Istanbul", region: "us-central1" },
+// =====================================================================
+//  2c. syncMeeting - admin-only: create, update or cancel a Calendar event from
+//      the dashboard's meeting editor (D-Canary). Moved here from the separate
+//      `functions-meeting` codebase; same name, region, request and reply.
+//      The payload carries guest details, so it is never logged; neither is the
+//      script's URL (a credential) or its raw errors.
+// =====================================================================
+const SYNC_ACTIONS = new Set(["create", "update", "cancel"]);
+
+export const syncMeeting = onCall(
+  { region: "us-central1", enforceAppCheck: true, secrets: [meetingSyncUrl], maxInstances: 10, timeoutSeconds: 60 },
+  async (request) => {
+    await requireAdmin(request.auth, "Admin only.");
+    const payload = request.data;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new HttpsError("invalid-argument", "Missing meeting details.");
+    }
+    const action = (payload as { action?: unknown }).action ?? "create";
+    if (typeof action !== "string" || !SYNC_ACTIONS.has(action)) {
+      throw new HttpsError("invalid-argument", "Unknown meeting action.");
+    }
+    if (JSON.stringify(payload).length > 20_000) throw new HttpsError("invalid-argument", "Meeting details are too large.");
+
+    const url = (meetingSyncUrl.value() || "").trim();
+    if (!url) {
+      console.error("syncMeeting: MEETING_SYNC_URL is not set");
+      throw new HttpsError("failed-precondition", "Meeting sync is not configured.");
+    }
+
+    const reply = await callCalendar(url, payload as Record<string, unknown>);
+    const body = reply.body as Record<string, unknown> | null;
+    if (body && body.status === "error") {
+      console.warn("syncMeeting: the Calendar script refused", { action });
+      throw /invalid attendee email/i.test(String(body.message || ""))
+        ? new HttpsError("invalid-argument", "Invalid attendee email.")
+        : new HttpsError("internal", "The calendar refused the change.");
+    }
+    const ok = action === "create" ? readCreateReply(reply).kind === "created" : replySucceeded(reply);
+    if (!ok) {
+      console.error("syncMeeting: Calendar reply not confirmed", { action, httpStatus: reply.httpStatus });
+      throw new HttpsError("unavailable", "The calendar didn't confirm the change - check it before trying again.");
+    }
+    return body;
+  },
+);
+
+// =====================================================================
+//  2c-ii. retryMailJob - admin-only: put a failed MailJobs entry back in the queue
+//          and try it at once. The job's recipient and content are never taken from
+//          the caller - only its id - so this can only resend what the functions
+//          queued. MailJobs is read-only to every client (firestore.rules).
+// =====================================================================
+export const retryMailJob = onCall(
+  { region: "us-central1", enforceAppCheck: true, secrets: [resendKey] },
+  async (request) => {
+    await requireAdmin(request.auth, "Admin only.");
+    const id = (request.data as { id?: unknown } | undefined)?.id;
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(id)) {
+      throw new HttpsError("invalid-argument", "A mail job id is required.");
+    }
+    const status = await retryFailed(id);
+    if (!status) throw new HttpsError("failed-precondition", "Only a failed mail job can be retried.");
+    return { status };
+  },
+);
+// =====================================================================
+//  2d. mirrorTreasuryProjects - keeps the PUBLIC Settings/HandledProjects (the
+//      homepage's "projects I handle") in step with the private TreasuryProjects,
+//      whoever wrote it: the dashboard, Spark or the MCP tools. Only name, status
+//      and position are published (./handledProjects holds the one projection).
+// =====================================================================
+export const mirrorTreasuryProjects = onDocumentWritten(
+  { document: `${COLLECTIONS.treasuryProjects}/{projectId}`, region: "us-central1" },
   async () => {
-    const canary = (await db.doc("Settings/Canary").get()).data() as CanaryDoc | undefined;
+    const srcRef = db.collection(COLLECTIONS.treasuryProjects);
+    const outRef = db.doc("Settings/HandledProjects");
+    // Rebuilt from a query of every project inside the transaction, never from the
+    // one project this run fired for, so a run for an older write can't publish an
+    // older list over a newer one.
+    await db.runTransaction(async (tx) => {
+      const [src, out] = await Promise.all([tx.get(srcRef), tx.get(outRef)]);
+      const entries: Record<string, unknown> = {};
+      for (const doc of src.docs) entries[doc.id] = doc.data();
+      const next = handledProjectsMirror(entries);
+      const prev = out.data()?.projects as Record<string, HandledProject> | undefined;
+      const clean = !!prev && typeof prev === "object" && Object.keys(out.data() || {}).every((k) => k === "projects" || k === "lastWrite")
+        && Object.values(prev).every((p) => !!p && typeof p === "object" && Object.keys(p).length === 3);
+      if (clean && sameMirror(prev!, next)) return;
+      // Replaces the whole doc, so any field an older build published is dropped.
+      tx.set(outRef, { projects: next, lastWrite: FieldValue.serverTimestamp() });
+    });
+  },
+);
+
+// =====================================================================
+//  2e. cleanupAttachments - the daily sweep:
+//      - contact uploads (emails/) no message points to, once a day old: Storage
+//        rules can't count uploads, so this stops emails/ becoming free hosting;
+//      - reply uploads (replies/) a day old: sendReply removes them once sent,
+//        this catches replies that were never sent;
+//      - rate-limit documents whose window has passed, and the two site-wide
+//        lock documents the old limits used;
+//      - delivered mail jobs older than 30 days (failed ones stay for the owner);
+//      - the public busy-slot list, so meetings that ended drop off it.
+// =====================================================================
+async function deleteOldUploads(prefix: string, keep: Set<string>, cutoff: number): Promise<number> {
+  const [files] = await getStorage().bucket().getFiles({ prefix });
+  let deleted = 0;
+  for (const file of files) {
+    if (keep.has(file.name)) continue;
+    const created = Date.parse(String(file.metadata?.timeCreated || ""));
+    if (!Number.isFinite(created) || created > cutoff) continue;
+    try {
+      await file.delete();
+      deleted++;
+    } catch (err) {
+      console.error("Failed to delete an old upload:", (err as Error)?.message);
+    }
+  }
+  return deleted;
+}
+
+async function deleteMatching(query: FirebaseFirestore.Query): Promise<number> {
+  let deleted = 0;
+  for (;;) {
+    const snap = await query.limit(400).get();
+    if (snap.empty) return deleted;
+    const batch = db.batch();
+    snap.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+    deleted += snap.size;
+    if (snap.size < 400) return deleted;
+  }
+}
+
+export const cleanupAttachments = onSchedule(
+  { schedule: "every day 04:00", timeZone: "Etc/UTC", region: "us-central1" },
+  async () => {
+    const now = Date.now();
+    const cutoff = now - DAY_MS;
+    const bucket = ourBucket();
+
+    const kept = await messages().select("Files Attached").get();
     const keep = new Set<string>();
-    for (const e of Object.values(canary?.Emails || {})) {
-      for (const f of e?.["Files Attached"] || []) {
-        const path = f?.url ? getStoragePathFromUrl(f.url) : null;
+    for (const doc of kept.docs) {
+      for (const f of (doc.data() as MessageDoc)["Files Attached"] || []) {
+        const path = attachmentPath(f?.url, bucket);
         if (path) keep.add(path);
       }
     }
-    const cutoff = Date.now() - 86400000;
-    const [files] = await admin.storage().bucket().getFiles({ prefix: "emails/" });
-    let deleted = 0;
-    for (const file of files) {
-      if (keep.has(file.name)) continue;
-      const created = Date.parse(String(file.metadata?.timeCreated || ""));
-      if (!Number.isFinite(created) || created > cutoff) continue;
+    const steps: Array<[string, () => Promise<number | void>]> = [
+      ["orphaned contact uploads", () => deleteOldUploads("emails/", keep, cutoff)],
+      ["old reply uploads", () => deleteOldUploads("replies/", new Set(), cutoff)],
+      ["expired rate limits", () => deleteMatching(db.collection(RATE_LIMITS).where("expiresAt", "<", new Date(now)))],
+      ["legacy site-wide locks", async () => {
+        await Promise.all(["contact", "meeting"].map((id) => db.collection(RATE_LIMITS).doc(id).delete()));
+      }],
+      ["delivered mail older than 30 days", () => deleteMatching(db.collection(MAIL_JOBS).where("sentAt", "<", now - 30 * DAY_MS))],
+      ["busy-slot refresh", () => refreshBookedSlots()],
+    ];
+    for (const [label, step] of steps) {
       try {
-        await file.delete();
-        deleted++;
+        const n = await step();
+        console.log(`cleanupAttachments: ${label}${typeof n === "number" ? `: ${n}` : " done"}`);
       } catch (err) {
-        console.error(`Failed to delete orphaned attachment ${file.name}:`, err);
+        console.error(`cleanupAttachments: ${label} failed:`, (err as Error)?.message);
       }
     }
-    console.log(`cleanupAttachments: deleted ${deleted} orphaned file(s)`);
   },
 );
 
 // =====================================================================
 //  3. notifyLogin - Callable function triggered by dashboard on sign-in
-//     Sends an email alert with date/time/device info. A sign-in by anyone
+//     Queues an email alert with date/time/device info. A sign-in by anyone
 //     but the owner is refused here: the account is deleted (the page's own
 //     client-side delete can fail and leave it behind) and the owner gets a
 //     "blocked sign-in" alert, at most one per BLOCKED_ALERT_EVERY_MS so a
@@ -931,9 +906,9 @@ const BLOCKED_ALERT_EVERY_MS = 10 * 60 * 1000;
 async function blockSignIn(auth: { uid: string; token?: Record<string, unknown> }, userAgent: unknown, ip: string): Promise<void> {
   const email = String(auth.token?.email || "Unknown");
   try {
-    await admin.auth().deleteUser(auth.uid);
+    await getAuth().deleteUser(auth.uid);
   } catch (err) {
-    console.error("[notifyLogin] could not delete blocked account:", err);
+    console.error("[notifyLogin] could not delete blocked account:", (err as Error)?.message);
   }
   const ref = db.doc("Security/blockedSignIns");
   const now = Date.now();
@@ -941,139 +916,91 @@ async function blockSignIn(auth: { uid: string; token?: Record<string, unknown> 
     const last = Number((await tx.get(ref)).data()?.lastAlertAt || 0);
     const alert = now - last >= BLOCKED_ALERT_EVERY_MS;
     tx.set(ref, {
-      count: admin.firestore.FieldValue.increment(1),
+      count: FieldValue.increment(1),
       lastAttemptAt: now,
       lastEmail: email,
       ...(alert ? { lastAlertAt: now } : {}),
     }, { merge: true });
     return alert;
   });
-  console.warn("[notifyLogin] blocked a non-admin sign-in", { email, alerted: shouldAlert });
+  console.warn("[notifyLogin] blocked a non-admin sign-in", { alerted: shouldAlert });
   if (!shouldAlert) return;
-  const when = new Date(now).toLocaleString("en-US", { timeZone: "Europe/Istanbul", dateStyle: "full", timeStyle: "medium" });
-  const html = emailTemplate({
-    title: "Blocked sign-in",
-    preheader: `Someone who isn't you tried to sign in: ${email}`,
-    bodyHtml: `
+  const when = hostTime(now, await readHostZone());
+  await queue(jobId("blocked-sign-in", String(now)), {
+    to: smtpUser.value(),
+    fromName: "Revil Security",
+    subject: escSubject(`Blocked sign-in: ${email}`),
+    label: "Blocked sign-in",
+    html: emailShell({
+      title: "Blocked sign-in",
+      preheader: `Someone who isn't you tried to sign in: ${email}`,
+      bodyHtml: `
         <h2>Blocked sign-in</h2>
         <p>An account that isn't yours signed in on the admin page. It was refused and deleted; it never reached any private data.</p>
         <div class="divider"></div>
-        <div>
-          <div class="info-row"><div class="info-label">Account</div><div class="info-value">${escHtml(email)}</div></div>
-          <div class="info-row"><div class="info-label">When</div><div class="info-value">${escHtml(when)}</div></div>
-          <div class="info-row"><div class="info-label">IP Address</div><div class="info-value">${escHtml(ip)}</div></div>
-          <div class="info-row" style="border:none"><div class="info-label">Device</div><div class="info-value" style="font-size:13px;color:#888">${escHtml(String(userAgent || "Unknown"))}</div></div>
-        </div>
+        <div>${infoRows([
+          ["Account", escHtml(email)],
+          ["When", escHtml(when)],
+          ["IP Address", escHtml(ip)],
+          ["Device", `<span style="font-size:13px">${escHtml(String(userAgent || "Unknown"))}</span>`],
+        ])}</div>
         <div class="divider"></div>
-        <p style="font-size:13px;color:#888">Further attempts within 10 minutes are counted but not emailed.</p>
+        <p style="font-size:13px">Further attempts within 10 minutes are counted but not emailed.</p>
       `,
-    footerNote: `Security alert from <a href="https://temrevil.com">temrevil.com</a>`,
+      footerHtml: `Security alert from <a href="${SITE_URL}" style="color:#3395ff;text-decoration:none">temrevil.com</a>`,
+    }),
   });
-  try {
-    await createTransporter().sendMail({
-      from: `"Revil Security" <${HELLO_EMAIL}>`,
-      to: smtpUser.value(),
-      subject: `Blocked sign-in: ${email}`,
-      html,
-    });
-  } catch (err) {
-    console.error("[notifyLogin] blocked-sign-in alert failed:", err);
-  }
 }
+
 export const notifyLogin = onCall(
   {
     region: "us-central1",
-    secrets: [smtpUser, resendKey],
+    secrets: [smtpUser],
     enforceAppCheck: true,
   },
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
     const auth = request.auth;
     const { userAgent, provider } = request.data || {};
+    // The same client-IP rule the rate limits use. It is still caller-influenced
+    // input (see geoip.ts), so it is escaped like any other field.
+    const ip = clientIp(request.rawRequest.headers, request.rawRequest.ip) || "Unknown";
     // Only the owner may sign in - and the gate fails closed. Anyone else is removed.
     try {
       await requireAdmin(auth, "Access denied.");
     } catch {
-      await blockSignIn(auth, userAgent, request.rawRequest?.ip || "Unknown");
+      await blockSignIn(auth, userAgent, ip);
       throw new HttpsError("permission-denied", "Access denied - account not recognized.");
     }
 
-    const now = new Date();
-    const dateStr = now.toLocaleString("en-US", {
-      timeZone: "Europe/Istanbul",
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    const timeStr = now.toLocaleString("en-US", {
-      timeZone: "Europe/Istanbul",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-    });
-
-    // Derived from the caller-supplied X-Forwarded-For header (Functions runs behind a
-    // trusted proxy), so it is untrusted input and must be escaped like any other field.
-    const ip = request.rawRequest?.ip || "Unknown";
-
-    const html = emailTemplate({
-      title: "Login Alert",
-      preheader: `Sign-in detected at ${timeStr}`,
-      bodyHtml: `
+    const now = Date.now();
+    const when = hostTime(now, await readHostZone());
+    await queue(jobId("login", auth.uid, String(now)), {
+      to: smtpUser.value(),
+      fromName: "Revil Security",
+      subject: escSubject(`Login alert: ${when}`),
+      label: "Login alert",
+      html: emailShell({
+        title: "Login Alert",
+        preheader: `Sign-in detected ${when}`,
+        bodyHtml: `
         <h2>Sign-In Detected</h2>
         <p>A sign-in to your portfolio admin was detected.</p>
         <div class="divider"></div>
-        <div>
-          <div class="info-row">
-            <div class="info-label">Account</div>
-            <div class="info-value">${escHtml(auth.token?.email || "Unknown")}</div>
-          </div>
-          <div class="info-row">
-            <div class="info-label">Provider</div>
-            <div class="info-value"><span class="badge badge-blue">${escHtml(provider || "google.com")}</span></div>
-          </div>
-          <div class="info-row">
-            <div class="info-label">Date</div>
-            <div class="info-value">${dateStr}</div>
-          </div>
-          <div class="info-row">
-            <div class="info-label">Time</div>
-            <div class="info-value">${timeStr}</div>
-          </div>
-          <div class="info-row">
-            <div class="info-label">IP Address</div>
-            <div class="info-value"><code style="background:#1a1a1a;padding:4px 8px;border-radius:6px;font-size:13px">${escHtml(ip)}</code></div>
-          </div>
-          <div class="info-row" style="border:none">
-            <div class="info-label">Device</div>
-            <div class="info-value" style="font-size:13px;color:#888">${escHtml(userAgent || "Unknown")}</div>
-          </div>
-        </div>
+        <div>${infoRows([
+          ["Account", escHtml(auth.token?.email || "Unknown")],
+          ["Provider", `<span class="badge badge-blue">${escHtml(provider || "google.com")}</span>`],
+          ["When", escHtml(when)],
+          ["IP Address", `<code>${escHtml(ip)}</code>`],
+          ["Device", `<span style="font-size:13px">${escHtml(userAgent || "Unknown")}</span>`],
+        ])}</div>
         <div class="divider"></div>
-        <p style="font-size:13px;color:#888">If this wasn't you, change your password immediately and review your account security.</p>
+        <p style="font-size:13px">If this wasn't you, change your password immediately and review your account security.</p>
       `,
-      footerNote: `Security alert from <a href="https://temrevil.com">temrevil.com</a>`,
+        footerHtml: `Security alert from <a href="${SITE_URL}" style="color:#3395ff;text-decoration:none">temrevil.com</a>`,
+      }),
     });
-
-    try {
-      const adminEmail = smtpUser.value();
-      const transporter = createTransporter();
-      await transporter.sendMail({
-        from: `"Revil Security" <${HELLO_EMAIL}>`,
-        to: adminEmail,
-        subject: `Login alert: ${dateStr} at ${timeStr}`,
-        html,
-      });
-      console.log("Login alert email sent");
-      return { status: "sent" };
-    } catch (err) {
-      // Log details server-side; return a generic message so SMTP/internal
-      // details don't leak to the client.
-      console.error("Failed to send login alert:", err);
-      return { status: "error", message: "Failed to send login alert." };
-    }
+    return { status: "queued" };
   },
 );
 
@@ -1119,28 +1046,23 @@ export const sendReceipt = onCall(
         subject: (subject ? String(subject).slice(0, 200) : "") || "Your receipt from Tem Revil",
         html,
       });
-      console.log(`Receipt emailed to ${email}`);
+      console.log("Receipt emailed");
 
       // Log it to the sent-receipts history (best-effort; a logging failure must not
       // fail the send, which already went out).
       try {
         const id = `rcp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-        await db.doc("Treasury/receipts").set({
-          entries: {
-            [id]: {
-              receiptNo: meta?.receiptNo || "",
-              to: email,
-              sentAt: Date.now(),
-              currency: meta?.currency || "USD",
-              total: typeof meta?.total === "number" ? meta.total : 0,
-              ...(typeof meta?.balance === "number" ? { balance: meta.balance } : {}),
-              projectIds: Array.isArray(meta?.projectIds) ? meta.projectIds : [],
-              projectNames: Array.isArray(meta?.projectNames) ? meta.projectNames : [],
-              via: "dashboard",
-            },
-          },
-          lastWrite: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+        await db.collection(COLLECTIONS.treasuryReceipts).doc(id).set({
+          receiptNo: meta?.receiptNo || "",
+          to: email,
+          sentAt: Date.now(),
+          currency: meta?.currency || "USD",
+          total: typeof meta?.total === "number" ? meta.total : 0,
+          ...(typeof meta?.balance === "number" ? { balance: meta.balance } : {}),
+          projectIds: Array.isArray(meta?.projectIds) ? meta.projectIds : [],
+          projectNames: Array.isArray(meta?.projectNames) ? meta.projectNames : [],
+          via: "dashboard",
+        });
       } catch (logErr) {
         console.error("Receipt sent but history log failed:", logErr);
       }
@@ -1158,8 +1080,8 @@ export const sendReceipt = onCall(
 //      dashboard composer. The dashboard builds the branded HTML (the
 //      same string it previews) and uploads any attachments to Storage
 //      under replies/<folder>/; this verifies the caller is the owner,
-//      reads those objects from our own bucket, and sends the reply via
-//      Resend from hello@temrevil.com (owner bcc'd).
+//      reads those objects from our own bucket, sends the reply via
+//      Resend from hello@temrevil.com (owner bcc'd), then deletes them.
 // =====================================================================
 export const sendReply = onCall(
   {
@@ -1190,17 +1112,19 @@ export const sendReply = onCall(
     const MAX_FILES = 10;
     const MAX_TOTAL = 20 * 1024 * 1024;
     const mailAttachments: { filename: string; content: Buffer }[] = [];
+    const uploaded: string[] = [];
     if (Array.isArray(attachments) && attachments.length) {
       if (attachments.length > MAX_FILES) {
         throw new HttpsError("invalid-argument", `At most ${MAX_FILES} attachments per reply.`);
       }
-      const bucket = admin.storage().bucket();
+      const bucket = getStorage().bucket();
       let total = 0;
       for (const a of attachments) {
-        const path = getStoragePathFromUrl(String(a?.url || ""));
-        if (!path || !path.startsWith("replies/")) {
+        const path = replyPath(a?.url, bucket.name);
+        if (!path) {
           throw new HttpsError("invalid-argument", "Invalid attachment reference.");
         }
+        uploaded.push(path);
         try {
           const [buf] = await bucket.file(path).download();
           total += buf.length;
@@ -1213,7 +1137,7 @@ export const sendReply = onCall(
           });
         } catch (err) {
           if (err instanceof HttpsError) throw err;
-          console.error("Failed to read reply attachment:", path, err);
+          console.error("Failed to read a reply attachment:", (err as Error)?.message);
           throw new HttpsError("internal", "Could not read one of the attachments.");
         }
       }
@@ -1232,7 +1156,11 @@ export const sendReply = onCall(
         html,
         attachments: mailAttachments.length ? mailAttachments : undefined,
       });
-      console.log(`Reply emailed to ${email} (${mailAttachments.length} attachment(s))`);
+      console.log(`Reply emailed (${mailAttachments.length} attachment(s))`);
+      // The uploads were only the way into this one mail: they go once it is sent.
+      // (The daily cleanup removes any left by a reply that never went out.)
+      await Promise.all(uploaded.map((p) => getStorage().bucket().file(p).delete({ ignoreNotFound: true })
+        .catch((e) => console.error("Failed to remove a sent reply's upload:", (e as Error)?.message))));
       return { status: "sent" };
     } catch (err) {
       console.error("Failed to send reply:", err);

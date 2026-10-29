@@ -225,6 +225,9 @@ export default function MReply({ email, isDark, onClose, onSent, notify }: MRepl
                                     ref={iframeRef}
                                     title="reply-preview"
                                     srcDoc={html}
+                                    /* No scripts ever run in the preview: allow-same-origin only lets the height be
+                                       measured from contentDocument, and without allow-scripts the HTML gets nothing. */
+                                    sandbox="allow-same-origin"
                                     onLoad={() => { measureHeight(); setTimeout(measureHeight, 60); }}
                                     className="border-0 rounded-xl bg-white block"
                                     style={{ width: 600, height: natH, transform: `scale(${scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}

@@ -547,6 +547,9 @@ const MReceipt = ({ projects, income, rates, displayCurrency, initialProjectId, 
                                     ref={iframeRef}
                                     title="Receipt preview"
                                     srcDoc={html}
+                                    /* No scripts ever run in the preview: allow-same-origin only lets the height be
+                                       measured from contentDocument, and without allow-scripts the HTML gets nothing. */
+                                    sandbox="allow-same-origin"
                                     onLoad={remeasure}
                                     scrolling="no"
                                     style={{ width: NAT_W, height: natH, border: 0, display: 'block', transformOrigin: 'top left', transform: `scale(${scale})` }}

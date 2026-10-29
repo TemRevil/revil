@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import anime from 'animejs';
+import { enter } from './entrance';
 import { Activity, Flame, FolderGit2 } from 'lucide-react';
 import GitHubCommitsGraph from './GitHubCommitsGraph';
 import StreakCircle from './StreakCircle';
@@ -73,16 +73,15 @@ const Developer = ({ active = true }: { active?: boolean }) => {
     // Staggered entrance: instances captured + paused on unmount (no detached-DOM churn)
     useEffect(() => {
         if (!active) return;
-        const base = { easing: 'easeOutExpo' as const };
         const instances = [
-            anime({ targets: handwritingRef.current, opacity: [0, 1], translateX: [-20, 0], duration: 600, ...base }),
-            anime({ targets: titleRef.current, opacity: [0, 1], translateX: [-30, 0], duration: 800, delay: 150, ...base }),
-            anime({ targets: taglineRef.current, opacity: [0, 1], translateY: [10, 0], duration: 700, delay: 280, ...base }),
-            anime({ targets: statsRef.current, opacity: [0, 1], translateY: [20, 0], duration: 700, delay: 400, ...base }),
-            anime({ targets: activityRef.current, opacity: [0, 1], translateY: [24, 0], duration: 750, delay: 540, ...base }),
-            anime({ targets: bottomRef.current, opacity: [0, 1], translateY: [24, 0], duration: 750, delay: 680, ...base }),
+            enter(handwritingRef.current, { x: -20 }, { duration: 600 }),
+            enter(titleRef.current, { x: -30 }, { duration: 800, delay: 150 }),
+            enter(taglineRef.current, { y: 10 }, { duration: 700, delay: 280 }),
+            enter(statsRef.current, { y: 20 }, { duration: 700, delay: 400 }),
+            enter(activityRef.current, { y: 24 }, { duration: 750, delay: 540 }),
+            enter(bottomRef.current, { y: 24 }, { duration: 750, delay: 680 }),
         ];
-        return () => instances.forEach(inst => inst?.pause());
+        return () => instances.forEach(inst => inst?.stop());
     }, [active]);
 
     return (
