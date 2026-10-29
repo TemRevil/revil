@@ -91,16 +91,7 @@ writes Firestore and Storage directly, within the security rules.
 **Private data is one document per entry**, in the collections named in
 `src/lib/collections.ts`: `CanaryMessages`, `CanaryMeetings` (each meeting's `start` is a
 UTC instant, with the owner's `timeZone` beside it), `TreasuryProjects`, `TreasuryIncome`,
-`TreasurySpendings`, `TreasuryAccounts` and `TreasuryReceipts`. `scripts/migrate-per-entry.mjs`
-copies them there from the old maps in `Settings/Canary` and `Treasury/*`; it backs up to
-`backups/` (git-ignored) and runs as a dry run unless given `--apply` or `--remove-old`.
-
-For cutover, pause booking/contact submissions and close legacy dashboard tabs before
-copying. Run the dry run, inspect time-zone fallbacks and resolve invalid meetings, then
-apply and deploy the new readers/writers. Keep writes paused until the copied records
-are verified. Cleanup refuses missing or different copies and unconverted meetings;
-it also uses source update-time preconditions so a concurrent legacy edit aborts the
-entire cleanup batch. Never delete old records merely because their new IDs exist.
+`TreasurySpendings`, `TreasuryAccounts` and `TreasuryReceipts`.
 
 ## Backend
 

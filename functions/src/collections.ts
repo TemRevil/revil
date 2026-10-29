@@ -8,8 +8,8 @@
  *
  * The dashboard, Spark, the Cloud Functions and the MCP server all name them from here.
  * The functions build copies this file to functions/src/collections.ts
- * (functions/scripts/sync-shared.mjs): edit it here. firestore.rules and
- * scripts/migrate-per-entry.mjs spell the same names out, since neither can import it.
+ * (functions/scripts/sync-shared.mjs): edit it here. firestore.rules spells the same
+ * names out, since it can't import it.
  */
 export const COLLECTIONS = {
     /** Contact-form messages. */
