@@ -6,7 +6,18 @@ let env: RulesTestEnvironment;
 
 beforeAll(async () => { env = await startRulesEnv(); });
 afterAll(async () => { await env?.cleanup(); });
-beforeEach(async () => { await env.clearStorage(); });
+beforeEach(async () => {
+    // The SDK's clearStorage currently deletes only root-level items, not prefixes.
+    // Our fixtures all live in nested folders: leaving them behind makes a later
+    // upload fail the intentional no-overwrite rule before download is even tested.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+        const clear = async (ref: ReturnType<Storage['ref']>): Promise<void> => {
+            const { items, prefixes } = await ref.listAll();
+            await Promise.all([...items.map(item => item.delete()), ...prefixes.map(clear)]);
+        };
+        await clear(ctx.storage().ref());
+    });
+});
 
 type Storage = ReturnType<ReturnType<RulesTestEnvironment['unauthenticatedContext']>['storage']>;
 
@@ -58,8 +69,6 @@ describe('contact-form attachments (emails/)', () => {
 
     it('the uploader can fetch the download link right after uploading', async () => {
         await assertSucceeds(put(anon(), path, 'image/png'));
-        const metadata = await admin().ref(path).getMetadata();
-        console.info('Attachment time-window diagnostic', { created: metadata.timeCreated, now: new Date().toISOString() });
         await assertSucceeds(anon().ref(path).getDownloadURL());
     });
 
