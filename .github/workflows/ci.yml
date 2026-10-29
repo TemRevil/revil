@@ -69,6 +69,11 @@ jobs:
       - name: Shared code synced into functions
         run: node functions/scripts/sync-shared.mjs --check
 
+      # Functions specs import the root Vitest dependency. Install it here too:
+      # a clean runner has no parent node_modules to inherit from another job.
+      - name: Install test tooling
+        run: npm ci
+
       - name: Type-check functions
         working-directory: functions
         run: |
