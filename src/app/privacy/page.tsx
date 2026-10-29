@@ -4,6 +4,7 @@ import { SITE_URL } from '../../lib/projectPages';
 import { EMAIL } from '../../lib/siteProfile';
 import StandaloneBar from '../../standalone/StandaloneBar';
 import Contents from '../../standalone/Contents';
+import Kicker from '../../standalone/Kicker';
 import '../../standalone/standalone.css';
 import '../../standalone/privacy.css';
 
@@ -90,7 +91,7 @@ export default function Privacy() {
                 <StandaloneBar />
                 <main className="pv">
                     <header className="pv-hero">
-                        <div className="pj-kicker" aria-hidden="true">Your</div>
+                        <Kicker text="Your" />
                         <h1 className="pj-display">Privacy &amp; terms</h1>
                         <p className="pv-lead">The short version: this site keeps a simple record of visits to see what people read, and keeps what you send through its forms so it can reply. Nothing is sold or shared for advertising, and there are no ad or tracking networks on it.</p>
                     </header>

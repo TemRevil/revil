@@ -2210,3 +2210,11 @@ html[data-lite] .blob-container { display: none; }
   }
 }
 
+
+/* A handwritten label's letters (ui/Chars, written in by lib/handwrite). Each letter's box
+   reaches past its tails, so the ink mask never cuts one off, without moving anything. */
+[data-write] .ch {
+  display: inline-block;
+  padding: .3em .2em;
+  margin: -.3em -.2em;
+}

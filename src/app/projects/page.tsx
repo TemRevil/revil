@@ -3,6 +3,7 @@ import { SITE_URL, projectPages, projectPageUrl, tagsDoc, contributorsDoc, profi
 import { baseGraph, jsonLd, personRef, websiteRef, SHARE_CARD } from '../../lib/siteProfile';
 import StandaloneBar from '../../standalone/StandaloneBar';
 import ProjectsList from '../../standalone/ProjectsList';
+import Kicker from '../../standalone/Kicker';
 import type { FirestoreProject } from '../../home/projects/shape';
 import '../../standalone/standalone.css';
 
@@ -62,7 +63,7 @@ export default function ProjectsIndex() {
                 <StandaloneBar current="list" />
                 <main>
                     <div className="pj-list-head">
-                        <div className="pj-kicker" aria-hidden="true">Selected</div>
+                        <Kicker text="Selected" />
                         <h1 className="pj-display">Projects</h1>
                         <p className="pj-intro">Things I designed and built: web apps, AI tools, a desktop system and UI designs. Each one has its live site and source code.</p>
                     </div>

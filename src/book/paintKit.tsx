@@ -1,6 +1,6 @@
 /**
- * What /book and the homepage hero share: the SVG filters the brushes use, the letter
- * spans the entrance animates, the owner's live clock, and usePaint, which runs the
+ * What /book and the homepage hero share: the SVG filters the brushes use, the owner's
+ * live clock, and usePaint, which runs the
  * paint (brushes.ts) on a root element.
  */
 import { useEffect, useRef, useState, type RefObject, useLayoutEffect } from 'react';
@@ -19,10 +19,6 @@ export function splitSlogan(s: string): string[] {
     for (let i = 0; i < s.length; i++) if (s[i] === ' ' && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
     return [s.slice(0, best), s.slice(best + 1)];
 }
-
-export const Chars = ({ text, className }: { text: string; className: string }) => (
-    <>{[...text].map((ch, i) => <span key={i} className={className}>{ch === ' ' ? String.fromCharCode(160) : ch}</span>)}</>
-);
 
 /** The owner's local time, from the zone set in Settings/Availability ("Current Time"). */
 export const useHostClock = (tz: string) => {

@@ -228,6 +228,7 @@
   font-size: 3rem;
   line-height: 1;
   color: var(--accent);
+  opacity: 0; /* until Kicker writes it in */
 }
 .pj .pj-display {
   font-family: var(--font-inter), sans-serif;

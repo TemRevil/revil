@@ -1,5 +1,7 @@
 import { createElement, useEffect, useRef, useState, useMemo } from 'react';
 import { EASE_OUT_QUAD, enter } from './entrance';
+import { handwrite } from '../lib/handwrite';
+import { Chars } from '../ui/Chars';
 import { watchDoc } from '../lib/liveDoc';
 import { cachedDoc, type Data } from '../lib/dataCache';
 import { Mail, Link as LinkIcon, Code } from 'lucide-react';
@@ -235,11 +237,9 @@ const Stack = ({ active = true }: { active?: boolean }) => {
 
     useEffect(() => {
         if (!active) return;
-        const all = [
-            enter(handwritingRef.current, { y: 20 }, { duration: 600 }),
-            enter(titleRef.current, { y: 30 }, { duration: 800, delay: 100 }),
-        ];
-        return () => all.forEach(a => a?.stop());
+        const ink = handwrite(handwritingRef.current, { show: true });
+        const all = [enter(titleRef.current, { y: 30 }, { duration: 800, delay: 100 })];
+        return () => { ink.forEach(a => a.cancel()); all.forEach(a => a?.stop()); };
     }, [active]);
 
     // Calculate which items are in the last row for border styling
@@ -263,12 +263,14 @@ const Stack = ({ active = true }: { active?: boolean }) => {
                     <div
                         ref={handwritingRef}
                         className="text-4xl md:text-5xl opacity-0 mb-[-15px] ml-2"
+                        aria-hidden="true"
+                        data-write
                         style={{
                             fontFamily: "var(--font-caveat), cursive",
                             color: 'var(--accent)'
                         }}
                     >
-                        My Tech
+                        <Chars text="My Tech" />
                     </div>
                     <h2
                         ref={titleRef}

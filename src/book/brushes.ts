@@ -11,6 +11,7 @@
  */
 
 import { isLite } from '../lib/device';
+import { handwrite } from '../lib/handwrite';
 import { onIdle } from '../lib/idle';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -338,14 +339,10 @@ function drawShirt(root: HTMLElement, t0: number, animate: boolean) {
 /** Lite pages bring the text in without the blur, which re-rasters every letter on each frame. */
 const unblur = (frames: Keyframe[]) => (isLite() ? frames.map(f => { const c = { ...f }; delete c.filter; return c; }) : frames);
 
-/** Handwritten labels and the stacked name, character by character (spans rendered by React). */
+/** The handwritten labels written in by pen, then the stacked name letter by letter (spans rendered by React). */
 function textIn(root: HTMLElement) {
     const ease = 'cubic-bezier(.25,1,.5,1)';
-    root.querySelectorAll<HTMLElement>('[data-write]').forEach((n, j) => {
-        n.querySelectorAll<HTMLElement>('.ch').forEach((s, i) => s.animate(
-            unblur([{ opacity: 0, transform: 'translateY(6px) scale(.9)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }]),
-            { duration: 320, delay: (j ? 1900 : 0) + i * 80, easing: 'ease-out', fill: 'backwards' }));
-    });
+    root.querySelectorAll<HTMLElement>('[data-write]').forEach((n, j) => handwrite(n, { delay: j ? 1900 : 0 }));
     root.querySelectorAll<HTMLElement>('.name-char').forEach((c, i) => c.animate(
         unblur([{ opacity: 0, transform: 'translateY(20px)', filter: 'blur(12px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }]),
         { duration: 700, delay: 300 + i * 60, easing: ease, fill: 'backwards' }));

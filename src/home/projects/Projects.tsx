@@ -10,6 +10,8 @@ import Reflow from '../../ui/Reflow';
 import MContributorView, { Contributor } from './ContributorView';
 import { ContributorData } from '../../types';
 import { enter } from '../entrance';
+import { handwrite } from '../../lib/handwrite';
+import { Chars } from '../../ui/Chars';
 import { useTailor } from '../../lib/analytics/useTailor';
 import { projectSlugs } from '../../lib/projectSlug';
 import {
@@ -80,11 +82,9 @@ const Projects = ({ active = true }: { active?: boolean }) => {
 
     useEffect(() => {
         if (!active) return;
-        const all = [
-            enter(handwritingRef.current, { x: -20 }, { duration: 600 }),
-            enter(titleRef.current, { x: -30 }, { duration: 800, delay: 150 }),
-        ];
-        return () => all.forEach(a => a?.stop());
+        const ink = handwrite(handwritingRef.current, { show: true });
+        const all = [enter(titleRef.current, { x: -30 }, { duration: 800, delay: 150 })];
+        return () => { ink.forEach(a => a.cancel()); all.forEach(a => a?.stop()); };
     }, [active]);
 
     useEffect(() => {
@@ -110,13 +110,15 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                     <div
                         ref={handwritingRef}
                         className="text-5xl opacity-0 ml-2.5"
+                        aria-hidden="true"
+                        data-write
                         style={{
                             fontFamily: "var(--font-caveat), cursive",
                             color: 'var(--accent)',
                             marginBottom: -20
                         }}
                     >
-                        Selected
+                        <Chars text="Selected" />
                     </div>
                     <h2
                         ref={titleRef}

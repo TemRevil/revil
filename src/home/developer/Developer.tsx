@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { enter } from '../entrance';
+import { handwrite } from '../../lib/handwrite';
+import { Chars } from '../../ui/Chars';
 import { Activity, Flame, FolderGit2 } from 'lucide-react';
 import GitHubCommitsGraph from './GitHubCommitsGraph';
 import StreakCircle from './StreakCircle';
@@ -73,15 +75,15 @@ const Developer = ({ active = true }: { active?: boolean }) => {
     // Staggered entrance: instances captured + paused on unmount (no detached-DOM churn)
     useEffect(() => {
         if (!active) return;
+        const ink = handwrite(handwritingRef.current, { show: true });
         const instances = [
-            enter(handwritingRef.current, { x: -20 }, { duration: 600 }),
             enter(titleRef.current, { x: -30 }, { duration: 800, delay: 150 }),
             enter(taglineRef.current, { y: 10 }, { duration: 700, delay: 280 }),
             enter(statsRef.current, { y: 20 }, { duration: 700, delay: 400 }),
             enter(activityRef.current, { y: 24 }, { duration: 750, delay: 540 }),
             enter(bottomRef.current, { y: 24 }, { duration: 750, delay: 680 }),
         ];
-        return () => instances.forEach(inst => inst?.stop());
+        return () => { ink.forEach(a => a.cancel()); instances.forEach(inst => inst?.stop()); };
     }, [active]);
 
     return (
@@ -93,13 +95,15 @@ const Developer = ({ active = true }: { active?: boolean }) => {
                     <div
                         ref={handwritingRef}
                         className="text-5xl opacity-0 ml-2.5"
+                        aria-hidden="true"
+                        data-write
                         style={{
                             fontFamily: 'var(--font-caveat), cursive',
                             color: 'var(--accent)',
                             marginBottom: -20,
                         }}
                     >
-                        Open Source
+                        <Chars text="Open Source" />
                     </div>
                     <h2
                         ref={titleRef}
