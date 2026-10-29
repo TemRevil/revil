@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import { SITE_URL, projectPages, projectPageUrl, tagNames, mediaOf, shortDescription } from '../../utils/projectPages';
-import { baseGraph, jsonLd, personRef, websiteRef, SHARE_CARD } from '../../utils/siteProfile';
-import ProjectsBar from './ProjectsBar';
-import './projects.css';
+import { SITE_URL, projectPages, projectPageUrl, tagNames, mediaOf, shortDescription } from '../../lib/projectPages';
+import { baseGraph, jsonLd, personRef, websiteRef, SHARE_CARD } from '../../lib/siteProfile';
+import StandaloneBar from '../../standalone/StandaloneBar';
+import '../../standalone/standalone.css';
 
 const title = 'Projects | Tem Revil';
 const description =
@@ -50,7 +50,7 @@ export default function ProjectsIndex() {
         <div className="pj">
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
-                <ProjectsBar current="list" />
+                <StandaloneBar current="list" />
                 <main>
                     <h1 style={{ marginTop: 40 }}>Projects</h1>
                     <p className="pj-intro">Things I designed and built: web apps, AI tools, a desktop system and UI designs. Each one has its live site and source code.</p>

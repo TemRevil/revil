@@ -1,7 +1,7 @@
 import { preload } from 'react-dom'
 import HomeApp from './HomeApp'
-import { projectPages } from '../utils/projectPages'
-import { baseGraph, homeGraph, jsonLd, HOME_FAQ, JOB_TITLE, SERVICES, SKILLS, SOCIAL_PROFILES } from '../utils/siteProfile'
+import { projectPages } from '../lib/projectPages'
+import { baseGraph, homeGraph, jsonLd, HOME_FAQ, JOB_TITLE, SERVICES, SKILLS, SOCIAL_PROFILES } from '../lib/siteProfile'
 
 // A server component on purpose: the <noscript> copy below is built from the project
 // snapshot at build time, and nothing of it ships to the browser as JavaScript.

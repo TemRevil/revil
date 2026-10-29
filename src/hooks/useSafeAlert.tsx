@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AlertType } from '../components/Alert';
+import type { AlertType } from '../ui/Alert';
 
 type AlertShape = { show: boolean; type: AlertType; message: string; duration?: number } | null;
 

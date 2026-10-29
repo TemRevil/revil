@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EMPTY_TAILOR, type LinkTailor } from './types';
-import { TAILOR_KEY } from '../../components/Algorithm';
+import { TAILOR_KEY } from '../../home/Algorithm';
 
 /**
  * What this particular visitor's share link asked the site to do differently.

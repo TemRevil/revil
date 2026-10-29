@@ -21,7 +21,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '../..');
 
 const FILES = [
-  ['src/utils/bookingRules.ts', 'booking.ts'],
+  ['src/lib/bookingRules.ts', 'booking.ts'],
   ['src/lib/money.ts', 'money.ts'],
   ['src/lib/html.ts', 'html.ts'],
   ['src/lib/receipt.ts', 'receipt.ts'],

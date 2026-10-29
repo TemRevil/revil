@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
-import { SITE_URL } from '../../utils/projectPages';
-import { EMAIL } from '../../utils/siteProfile';
-import ProjectsBar from '../projects/ProjectsBar';
-import '../projects/projects.css';
-import './privacy.css';
+import { SITE_URL } from '../../lib/projectPages';
+import { EMAIL } from '../../lib/siteProfile';
+import StandaloneBar from '../../standalone/StandaloneBar';
+import '../../standalone/standalone.css';
+import '../../standalone/privacy.css';
 
 const title = 'Privacy & terms | Tem Revil';
 const description = 'What temrevil.com records about a visit, what the contact and booking forms keep, which services it uses, and the terms of using the site.';
@@ -21,7 +21,7 @@ export default function Privacy() {
     return (
         <div className="pj">
             <div className="pj-wrap">
-                <ProjectsBar />
+                <StandaloneBar />
                 <main className="pv">
                     <h1>Privacy &amp; terms</h1>
                     <p className="pv-lead">The short version: this site keeps a simple record of visits to see what people read, and keeps what you send through its forms so it can reply. Nothing is sold or shared for advertising, and there are no ad or tracking networks on it.</p>

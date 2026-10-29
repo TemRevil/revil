@@ -3,7 +3,7 @@ import {
     convertMeeting, hostZoneOf, idProblem, legacyDay, legacyMinutes, legacyStart, planMigration, sameData,
     backupStamp, cleanupProblems, toJson, OLD_DOCS,
 } from './per-entry.mjs';
-import { dayIndex, hostTimeToInstant, hostZone } from '../../src/utils/bookingRules';
+import { dayIndex, hostTimeToInstant, hostZone } from '../../src/lib/bookingRules';
 
 const iso = (ms) => new Date(ms).toISOString();
 

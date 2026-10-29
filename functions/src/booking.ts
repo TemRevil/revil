@@ -1,4 +1,4 @@
-// GENERATED from src/utils/bookingRules.ts by scripts/sync-shared.mjs - edit that file.
+// GENERATED from src/lib/bookingRules.ts by scripts/sync-shared.mjs - edit that file.
 
 /**
  * Public booking rules - the ONE definition of which days and times a visitor may book.

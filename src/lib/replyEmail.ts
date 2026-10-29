@@ -1,7 +1,7 @@
 /**
  * Reply email builder (owner -> a contact who messaged through the site).
  *
- * The dashboard composer (M-Reply.tsx) builds this exact HTML, previews it, and
+ * The dashboard composer (Reply.tsx) builds this exact HTML, previews it, and
  * passes the string to the `sendReply` Cloud Function, which only attaches the
  * files and sends it. Same trust model as sendReceipt: the admin's dashboard
  * builds the body, the function verifies the caller is the owner and relays it.

@@ -17,7 +17,7 @@ import {
     hasInstallments, installmentMonthlyAmount, projectBalance, computeTotals,
     projectPaymentStatus, ymd, accountBalance,
 } from './money';
-import { levenshtein } from '../utils/fuzzy';
+import { levenshtein } from './fuzzy';
 import { STATUS_FLAGS, storedStatus, type ProjectStatus } from './handledProjects';
 
 // The money math lives in ./money (shared with the Cloud Functions); everything that

@@ -7,9 +7,9 @@ import { LITE_SCRIPT } from '../lib/device'
 const THEME_SCRIPT = "(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;if(d){c.add('dark');}else{c.remove('dark');}}catch(e){}})();"
 /** GitHub Pages visitors (temrevil.github.io/revil) go to temrevil.com, path, query and hash kept. */
 const CANONICAL_SCRIPT = "(function(){try{if(location.hostname==='temrevil.github.io'){var p=location.pathname;if(p==='/revil'){p='/';}else if(p.indexOf('/revil/')===0){p=p.slice(6);}location.replace('https://temrevil.com'+p+location.search+location.hash);}}catch(e){}})();"
-import { SITE_URL as siteUrl, SITE_NAME as siteName, SITE_TITLE as siteTitle, SITE_DESCRIPTION as siteDescription, SHARE_CARD } from '../utils/siteProfile'
+import { SITE_URL as siteUrl, SITE_NAME as siteName, SITE_TITLE as siteTitle, SITE_DESCRIPTION as siteDescription, SHARE_CARD } from '../lib/siteProfile'
 
-// The JSON-LD lives with each page (see src/utils/siteProfile.ts), not here: a layout
+// The JSON-LD lives with each page (see src/lib/siteProfile.ts), not here: a layout
 // prints on every page, and the homepage's profile node doesn't belong on /book.
 
 export const viewport: Viewport = {

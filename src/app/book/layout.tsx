@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { preload } from 'react-dom'
-import { baseGraph, jsonLd } from '../../utils/siteProfile'
+import { baseGraph, jsonLd } from '../../lib/siteProfile'
 
 const siteUrl = 'https://temrevil.com'
 const pageUrl = `${siteUrl}/book`

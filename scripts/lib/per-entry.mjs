@@ -3,7 +3,7 @@
  * collection, how an old meeting's "DD/MM/YYYY" + "hh:mm AM/PM" becomes a UTC instant,
  * and what to write. No Firebase here, so it can be tested on its own.
  *
- * The zone math is the same as src/utils/bookingRules.ts (offsetAt, zonedInstant,
+ * The zone math is the same as src/lib/bookingRules.ts (offsetAt, zonedInstant,
  * hostZone), written out again because this script runs on plain Node without the
  * TypeScript build; per-entry.test.mjs checks the two agree.
  */
@@ -30,7 +30,7 @@ export const SOURCES = [
 /** Every old document the migration reads (and --remove-old changes). */
 export const OLD_DOCS = [...new Set(SOURCES.map((s) => s.doc))];
 
-// ── zone math (as src/utils/bookingRules.ts) ─────────────────────────
+// ── zone math (as src/lib/bookingRules.ts) ─────────────────────────
 
 const formats = new Map();
 function zoneFormat(zone) {

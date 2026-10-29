@@ -2,11 +2,11 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import {
     SITE_URL, projectPages, projectPageUrl, tagNames, contributorsOf, mediaOf, shortDescription,
-} from '../../../utils/projectPages';
-import { baseGraph, jsonLd, personRef, projectNode, websiteRef } from '../../../utils/siteProfile';
-import ProjectsBar from '../ProjectsBar';
-import CaseStudy from '../CaseStudy';
-import '../projects.css';
+} from '../../../lib/projectPages';
+import { baseGraph, jsonLd, personRef, projectNode, websiteRef } from '../../../lib/siteProfile';
+import StandaloneBar from '../../../standalone/StandaloneBar';
+import CaseStudy from '../../../standalone/CaseStudy';
+import '../../../standalone/standalone.css';
 
 // One static page per project, built from the snapshot. A slug the build doesn't
 // know is a 404 rather than a page rendered on demand (there is no server).
@@ -85,7 +85,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
         <div className="pj">
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
-                <ProjectsBar />
+                <StandaloneBar />
 
                 <main>
                     <ol className="pj-crumbs" aria-label="Breadcrumb">

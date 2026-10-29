@@ -645,7 +645,7 @@ function readEntries<T extends object>(s: QuerySnapshot): Array<T & { id: string
 /** One of the per-entry collections (./collections). */
 const entries = (name: keyof typeof COLLECTIONS) => db().collection(COLLECTIONS[name]);
 
-// ── Availability (working days + hours) - parsed by booking.ts, which mirrors src/utils/availability.ts ──
+// ── Availability (working days + hours) - parsed by booking.ts, which mirrors src/lib/availability.ts ──
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function sortUnique(arr: number[]): number[] {
@@ -665,7 +665,7 @@ interface CategoryRow { id: string; name: string; color: string; created: number
 
 /**
  * The built-in bucket. It is never stored: a booking is Personal exactly when it
- * carries no `Category` field. Mirrors src/utils/categories.ts on the dashboard side.
+ * carries no `Category` field. Mirrors src/lib/categories.ts on the dashboard side.
  */
 const PERSONAL_CATEGORY_ID = "personal";
 const PERSONAL_CATEGORY_NAME = "Personal";
@@ -1104,7 +1104,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       // stays refused by default. Deliberately recording a meeting that already happened is a
       // real need though, so it is allowed behind an opt-in the caller may only set once the
       // owner has confirmed the date - which is exactly what the error below asks for.
-      // This escape hatch is MCP-only: the public booking form (M-Contact) never offers a past
+      // This escape hatch is MCP-only: the public booking form (Contact) never offers a past
       // day, so a visitor still cannot book one.
       const backdated = a.date < time.date;
       if (backdated && !a.allowPast) {
@@ -1667,7 +1667,7 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       // Moving to a status that is *about* a moment stamps that moment, once. An
       // existing stamp is kept, so re-confirming a pause doesn't move its date -
       // but LEAVING that status clears it. Mirrors setProjectStatus in
-      // D-Treasury.tsx; the two must agree or the dashboard and MCP disagree about
+      // TreasuryTab.tsx; the two must agree or the dashboard and MCP disagree about
       // when a project paused or finished.
       if (a.status !== undefined) {
         const finished = a.status === "completed" || a.status === "closed";

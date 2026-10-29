@@ -27,10 +27,15 @@ and a private admin dashboard behind it, on Next.js and Firebase.
 
 ```text
 src/
-  app/              Next.js routes (/, /book, /projects, /mcp-login), metadata, SEO files
-  components/       sections, modals (M-*.tsx), book/ (the /book page), dashboard/ (D-*.tsx tabs)
-  lib/              Firebase setup, public data reads (liveDoc, dataCache), money, receipts, analytics
-  utils/            booking rules, time zones, site profile (JSON-LD)
+  app/              Next.js routes (/, /book, /projects, /privacy, /mcp-login), metadata, SEO files
+  home/             the homepage app: Hero, Navbar, one folder per section with its modal beside it
+  book/             the /book page and the brush paint the homepage shares
+  standalone/       the parts of /projects, /projects/<name> and /privacy
+  dashboard/        the owner's dashboard: one folder per tab (<Name>Tab.tsx) with its modals
+  ui/               controls used in more than one place (Select, DatePicker, Alert, dialog...)
+  hooks/            React hooks
+  lib/              helpers: Firebase setup, public data reads, booking rules, time zones,
+                    money, receipts, analytics, site profile (JSON-LD)
   data/             publicPaths.json and the build's data snapshot
 functions/          the Cloud Functions (one codebase)
 scripts/            build, data, preview, deploy and admin scripts (below)

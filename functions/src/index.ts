@@ -640,7 +640,7 @@ export const bookMeeting = onCall(
         throw new HttpsError("resource-exhausted", `Bookings are full right now - please email ${HELLO_EMAIL}.`);
       }
       // The same day, time and overlap rules the booking calendar draws from
-      // (booking.ts, generated from src/utils/bookingRules.ts).
+      // (booking.ts, generated from src/lib/bookingRules.ts).
       const refusal = bookingRefusal(startMs, { nowMs: now, userTimezone, hostOffset: zone, cfg, meetings: booked });
       if (refusal) throw new HttpsError("failed-precondition", refusal);
       if (holds.some((h) => holdActive(h.data(), now))) {
@@ -724,7 +724,7 @@ export const bookMeeting = onCall(
 
 // =====================================================================
 //  2c. syncMeeting - admin-only: create, update or cancel a Calendar event from
-//      the dashboard's meeting editor (D-Canary). Moved here from the separate
+//      the dashboard's meeting editor (CanaryTab). Moved here from the separate
 //      `functions-meeting` codebase; same name, region, request and reply.
 //      The payload carries guest details, so it is never logged; neither is the
 //      script's URL (a credential) or its raw errors.
