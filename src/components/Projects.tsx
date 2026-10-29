@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Search } from 'lucide-react';
+import { X, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { watchCollection, watchDoc } from '../lib/liveDoc';
 import { cachedCollection, cachedDoc, type Data, type Row } from '../lib/dataCache';
 import { sanitizeSvg } from '../lib/sanitize';
@@ -15,7 +15,7 @@ import { enter } from './entrance';
 import { useTailor } from '../lib/analytics/useTailor';
 import { projectSlugs } from '../utils/projectSlug';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../utils/fuzzy';
-import { useDragScroll } from '../hooks/useDragScroll';
+import { useScrollRail } from '../hooks/useScrollRail';
 
 interface RawContributorData {
     Name?: string;
@@ -393,7 +393,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const tagRail = useRef<HTMLDivElement>(null);
-    useDragScroll(tagRail);
+    const rail = useScrollRail(tagRail);
 
     // Debounce search input - waits 250ms after user stops typing before filtering
     useEffect(() => {
@@ -539,12 +539,19 @@ const Projects = ({ active = true }: { active?: boolean }) => {
             && !projectsData.some(p => hasTags(p, [...selectedTags, tag.name])))
         .map(tag => tag.name)), [availableTags, projectsData, selectedTags]);
 
+    // On a phone the picked tags move to the front of the rail, so it goes back there too
+    // rather than staying on the tags that slid into view.
     const toggleTag = (tagName: string) => {
         setSelectedTags(prev =>
             prev.includes(tagName)
                 ? prev.filter(t => t !== tagName)
                 : [...prev, tagName]
         );
+        rail.toStart();
+    };
+    const clearTags = () => {
+        setSelectedTags([]);
+        rail.toStart();
     };
 
     useEffect(() => {
@@ -626,27 +633,60 @@ const Projects = ({ active = true }: { active?: boolean }) => {
                     {/* Phone-only classes are max-md: and the wide ones md:, never a base class
                         undone by md: - globals.css has unlayered display utilities (.flex) that
                         would beat the layered md:hidden. */}
-                    <div className="max-md:flex items-baseline justify-between mb-3 md:hidden">
+                    <div className="max-md:flex items-center justify-between mb-3 md:hidden">
                         <span className="text-xs font-bold text-sec">
                             {selectedTags.length > 0
                                 ? `${filteredProjects.length} of ${projectsData.length} projects`
                                 : `Filter by technology`}
                         </span>
-                        {selectedTags.length > 0 && (
-                            <button
-                                onClick={() => setSelectedTags([])}
-                                className="text-xs font-bold text-accent cursor-pointer min-h-10 -my-3 px-1"
-                            >
-                                Clear {selectedTags.length}
-                            </button>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                            {selectedTags.length > 0 && (
+                                <button
+                                    onClick={clearTags}
+                                    className="text-xs font-bold text-accent cursor-pointer min-h-10 -my-2 px-1.5"
+                                >
+                                    Clear {selectedTags.length}
+                                </button>
+                            )}
+                            {/* While tags are hidden past either end, both arrows stay so the
+                                row never shifts; the one at an end that is reached dims. Out of
+                                the tab order: focusing a tag already scrolls it into view. */}
+                            {(rail.before || rail.after) && (
+                                <>
+                                    <button
+                                        type="button"
+                                        tabIndex={-1}
+                                        aria-label="Show earlier technologies"
+                                        disabled={!rail.before}
+                                        onClick={() => rail.page(-1)}
+                                        className="rail-arrow"
+                                    >
+                                        <ChevronLeft size={16} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        tabIndex={-1}
+                                        aria-label="Show more technologies"
+                                        disabled={!rail.after}
+                                        onClick={() => rail.page(1)}
+                                        className="rail-arrow"
+                                    >
+                                        <ChevronRight size={16} />
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
                     <span className="hidden md:inline text-xs font-black text-sec mr-2.5 uppercase tracking-widest opacity-60">
                         Filter View:
                     </span>
 
                     {/* Tags Container */}
-                    <div ref={tagRail} className="phone-rail gap-2 max-md:grid max-md:grid-rows-2 max-md:grid-flow-col max-md:auto-cols-max max-md:overflow-x-auto max-md:overscroll-x-contain max-md:snap-x max-md:py-1 hide-scrollbar md:flex md:flex-wrap md:items-center">
+                    <div
+                        ref={tagRail}
+                        data-more-before={rail.before || undefined}
+                        data-more-after={rail.after || undefined}
+                        className="phone-rail gap-2 max-md:grid max-md:grid-rows-2 max-md:grid-flow-col max-md:auto-cols-max max-md:overflow-x-auto max-md:overscroll-x-contain max-md:snap-x max-md:py-1 hide-scrollbar md:flex md:flex-wrap md:items-center">
                         {availableTags.map(tag => {
                             const isActive = selectedTags.includes(tag.name);
                             const isDead = deadTags.has(tag.name);
@@ -692,7 +732,7 @@ const Projects = ({ active = true }: { active?: boolean }) => {
 
                         {selectedTags.length > 0 && (
                             <button
-                                onClick={() => setSelectedTags([])}
+                                onClick={clearTags}
                                 className="hidden md:inline-block px-3 py-2 bg-transparent border-none text-accent text-xs font-black cursor-pointer transition-all duration-200 uppercase tracking-widest ml-1 hover:opacity-70"
                             >
                                 [ Reset ]

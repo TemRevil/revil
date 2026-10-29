@@ -239,13 +239,40 @@ textarea,
 }
 
 /* The projects' filter tags on a phone: the rail lines up with the page text and fades out
-   at its right edge, so the tags past it read as "swipe for more". */
+   at each end that still hides tags (hooks/useScrollRail.ts sets the attributes). The
+   arrows sit in the line above it, away from the page's own side arrow. */
 @media (max-width: 767px) {
-  .phone-rail {
-    mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  .phone-rail[data-more-after] {
+    mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent);
+  }
+  .phone-rail[data-more-before] {
+    mask-image: linear-gradient(to right, transparent, #000 64px);
+  }
+  .phone-rail[data-more-before][data-more-after] {
+    mask-image: linear-gradient(to right, transparent, #000 64px, #000 calc(100% - 64px), transparent);
+  }
+  .rail-arrow {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    border: 1px solid var(--section-border);
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: opacity 0.3s ease;
+    animation: rail-arrow-in 0.4s ease-out;
+  }
+  .rail-arrow:disabled {
+    opacity: 0.3;
+    cursor: default;
   }
 }
-/* With a mouse the rail is dragged (hooks/useDragScroll.ts): the cursor says so. */
+@keyframes rail-arrow-in {
+  from { opacity: 0; }
+}
+/* With a mouse the rail is dragged (hooks/useScrollRail.ts): the cursor says so. */
 @media (max-width: 767px) and (hover: hover) and (pointer: fine) {
   .phone-rail { cursor: grab; }
 }

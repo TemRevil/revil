@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dragScroll } from './useDragScroll';
+import { dragScroll, nudgeOnce, railEdges } from './useScrollRail';
 
 // jsdom has no layout: give the rail a size, an overflow and a real scrollLeft.
 function rail(scrollWidth = 1000, clientWidth = 300) {
@@ -68,5 +68,57 @@ describe('dragScroll', () => {
         el.dispatchEvent(pointer('pointermove', 100));
         expect(wheel.defaultPrevented).toBe(false);
         expect(el.scrollLeft).toBe(0);
+    });
+});
+
+describe('railEdges', () => {
+    it('reports which ends still hide items as the rail scrolls, once per change', () => {
+        const { el } = rail();
+        const seen: string[] = [];
+        railEdges(el, e => seen.push(`${e.before ? '<' : '-'}${e.after ? '>' : '-'}`));
+        el.scrollLeft = 300;
+        el.dispatchEvent(new Event('scroll'));
+        el.scrollLeft = 350;
+        el.dispatchEvent(new Event('scroll'));
+        el.scrollLeft = 700;
+        el.dispatchEvent(new Event('scroll'));
+        el.scrollLeft = 0;
+        el.dispatchEvent(new Event('scroll'));
+        expect(seen).toEqual(['->', '<>', '<-', '->']);
+    });
+
+    it('shows no hidden ends while the rail fits', () => {
+        const { el } = rail(300, 300);
+        const onChange = vi.fn();
+        railEdges(el, onChange);
+        expect(onChange).toHaveBeenCalledWith({ before: false, after: false });
+    });
+});
+
+describe('nudgeOnce', () => {
+    it('waits for the tags when the rail is on screen before they arrive, then slides once', async () => {
+        // jsdom has no IntersectionObserver or matchMedia: report the rail as on screen.
+        let fire: (entries: { isIntersecting: boolean }[]) => void = () => {};
+        vi.stubGlobal('IntersectionObserver', class { constructor(cb: typeof fire) { fire = cb; } observe() {} disconnect() {} });
+        vi.stubGlobal('matchMedia', () => ({ matches: false }));
+        const el = document.createElement('div');
+        document.body.appendChild(el);
+        let width = 300;
+        Object.defineProperty(el, 'scrollWidth', { get: () => width });
+        Object.defineProperty(el, 'clientWidth', { value: 300 });
+        Object.defineProperty(el, 'scrollLeft', { value: 0 });
+        const scrollTo = vi.fn();
+        el.scrollTo = scrollTo as unknown as typeof el.scrollTo;
+        nudgeOnce(el);
+        fire([{ isIntersecting: true }]);
+        expect(scrollTo).not.toHaveBeenCalled();
+        width = 1000;
+        el.appendChild(document.createElement('button'));
+        await new Promise(r => setTimeout(r, 0));
+        expect(scrollTo).toHaveBeenCalledTimes(1);
+        el.appendChild(document.createElement('button'));
+        await new Promise(r => setTimeout(r, 0));
+        expect(scrollTo).toHaveBeenCalledTimes(1);
+        vi.unstubAllGlobals();
     });
 });
