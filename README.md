@@ -136,13 +136,11 @@ firebase deploy --only functions:mcp,functions:bookMeeting    # named functions
 firebase deploy --only firestore:rules,storage                # security rules
 ```
 
-`syncMeeting` used to live in a second codebase (`meeting`). On the first deploy after
-it moved into `functions/`, delete the old one first, or the deploy refuses the clash:
-
-```bash
-firebase functions:delete syncMeeting --region us-central1
-firebase deploy --only functions
-```
+`syncMeeting` used to live in a second codebase (`meeting`). The current Firebase CLI
+matches the existing function by project, region and name and updates it in place when
+moving it into `default`. Run `firebase deploy --only functions --dry-run` first; do
+not delete the existing function merely to change its codebase. The release preflight
+and deployment confirmed the in-place update path.
 
 A bare `firebase deploy` also republishes hosting and the rules. If discovery times out
 ("Cannot determine backend specification"), retry with `FUNCTIONS_DISCOVERY_TIMEOUT=120`.
