@@ -121,7 +121,7 @@ service cloud.firestore {
     // lives under Settings any more - visit analytics moved to /Analytics below.
     // (Subcollections only: a recursive match here would also re-grant writes to the
     // function-owned docs above.)
-    match /Settings/{settingsDoc}/{rest=**} {
+    match /Settings/{settingsDoc}/{subcollection}/{nestedDoc}/{rest=**} {
       allow read, write: if isAdmin();
     }
 
@@ -188,7 +188,7 @@ service cloud.firestore {
       allow read: if isAdmin() && !(coll in functionCollections());
       allow write: if isAdmin() && !(coll in functionCollections()) && !functionOwned(coll, doc);
     }
-    match /{coll}/{doc}/{rest=**} {
+    match /{coll}/{doc}/{subcollection}/{nestedDoc}/{rest=**} {
       allow read, write: if isAdmin() && !(coll in functionCollections());
     }
   }

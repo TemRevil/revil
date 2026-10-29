@@ -51,7 +51,9 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm --prefix functions ci
 
       # The build bakes in a snapshot of the public Firestore content (scripts/sync-data.mjs).
       # A read-only service account, reached through Workload Identity Federation (no key

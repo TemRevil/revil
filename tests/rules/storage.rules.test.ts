@@ -58,6 +58,8 @@ describe('contact-form attachments (emails/)', () => {
 
     it('the uploader can fetch the download link right after uploading', async () => {
         await assertSucceeds(put(anon(), path, 'image/png'));
+        const metadata = await admin().ref(path).getMetadata();
+        console.info('Attachment time-window diagnostic', { created: metadata.timeCreated, now: new Date().toISOString() });
         await assertSucceeds(anon().ref(path).getDownloadURL());
     });
 
