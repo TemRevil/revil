@@ -514,7 +514,7 @@
 .pj-page-heading .pj-display {
   font-family: var(--font-inter), sans-serif;
   font-weight: 900;
-  font-size: clamp(3rem, 6.4vw, 5rem);
+  font-size: 3rem;
   line-height: 1;
   letter-spacing: -.02em;
   margin: 0;
@@ -523,6 +523,17 @@
 .pj-page-heading .pj-intro, .pj-page-heading .pv-lead { margin: 0; padding-bottom: 8px; color: var(--text-secondary); }
 @media (max-width: 767px) {
   .pj-page-heading { grid-template-columns: 1fr; gap: 24px; margin: 40px 0 32px; }
-  .pj-page-heading .pj-display { font-size: clamp(2.75rem, 11vw, 4rem); }
   .pj-title-stroke { width: 64%; margin-top: 10px; }
+}
+
+/* Match Projects' text-5xl / md:text-7xl / lg:text-8xl scale,
+   including the shared small-phone heading override. */
+@media (max-width: 400px) {
+  .pj-page-heading .pj-display { font-size: 2.5rem; }
+}
+@media (min-width: 768px) {
+  .pj-page-heading .pj-display { font-size: 4.5rem; }
+}
+@media (min-width: 1024px) {
+  .pj-page-heading .pj-display { font-size: 6rem; }
 }
