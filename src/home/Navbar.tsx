@@ -138,6 +138,32 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
     // Desktop: while a modal is open its icon lives in the modal's header (it flew there).
     const dock = useDockOpen();
     const isMobile = useMediaQuery(PHONE_QUERY);
+    const dockRef = useRef<HTMLElement>(null);
+
+    // Share the actual dock's top edge, including responsive sizing and safe area.
+    // The projects bar consumes this instead of guessing its height at each breakpoint.
+    useLayoutEffect(() => {
+        const dock = dockRef.current;
+        if (!dock) return;
+        const root = document.documentElement;
+        const update = () => {
+            const clearance = `${Math.ceil(window.innerHeight - dock.getBoundingClientRect().top + 10)}px`;
+            if (root.style.getPropertyValue('--bottom-nav-clearance') === clearance) return;
+            root.style.setProperty('--bottom-nav-clearance', clearance);
+            window.dispatchEvent(new Event('revil:dock-resize'));
+        };
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(dock);
+        window.addEventListener('resize', update);
+        window.visualViewport?.addEventListener('resize', update);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', update);
+            window.visualViewport?.removeEventListener('resize', update);
+            root.style.removeProperty('--bottom-nav-clearance');
+        };
+    }, []);
 
     // The theme is the <html> class the theme script set before the first paint (the
     // prerendered page is dark, as <html> is until that script runs).
@@ -244,7 +270,7 @@ const Navbar = ({ onNavigate, currentSection = 'home', onOpenContact, isContactO
 
     return (
         <>
-        <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[95%]">
+        <nav ref={dockRef} data-main-dock aria-label="Main navigation" className="main-dock fixed left-1/2 -translate-x-1/2 z-50 w-max max-w-[95%]">
             <div
                 className={`
                     glass-bar flex items-center

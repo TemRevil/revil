@@ -564,8 +564,12 @@ html[data-lite] .blob-container { display: none; }
 
 /* The privacy line under the navbar: quiet, but still readable (--text-muted meets
    contrast on both themes) and a real link with a visible focus ring. */
+.main-dock {
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
 .privacy-line {
-  bottom: 7px;
+  bottom: calc(7px + env(safe-area-inset-bottom, 0px));
   color: var(--text-muted);
   opacity: 0.8;
   text-decoration: none;
