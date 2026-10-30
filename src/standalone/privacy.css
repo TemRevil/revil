@@ -2,7 +2,7 @@
    text beside an "On this page" list that stays in view and marks the section being
    read (Contents.tsx). On a phone the list sits above the text. */
 .pv {
-  padding-top: 40px;
+  padding-top: 0;
   color: var(--text-secondary);
 }
 .pv-hero .pv-lead { max-width: 680px; }
@@ -62,10 +62,10 @@
 .toc-link:hover { color: var(--text-primary); }
 .toc-link[aria-current] {
   color: var(--text-primary);
-  box-shadow: inset 2px 0 0 #C46532;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .toc-link:focus-visible {
-  outline: 2px solid #C46532;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -98,7 +98,7 @@
   text-underline-offset: 3px;
 }
 .pv-article a:focus-visible {
-  outline: 2px solid #C46532;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
