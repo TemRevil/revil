@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect, useImperativeHandle, useRef, forwardRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { createPortal } from 'react-dom';
+import { useHydrated } from '../../hooks/useHydrated';
 import { FolderKanban, GitBranch } from 'lucide-react';
 import Projects from './Projects';
 import Developer from '../developer/Developer';
@@ -41,6 +43,9 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
     const [direction, setDirection] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
     const [showSubnav, setShowSubnav] = useState(false);
+    const [withinSection, setWithinSection] = useState(false);
+    const subnavRef = useRef<HTMLDivElement>(null);
+    const hydrated = useHydrated();
 
     const activeIndex = SUB_TABS.findIndex(t => t.key === activeTab);
 
@@ -104,6 +109,42 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
         return () => io.disconnect();
     }, [active, embedded]);
 
+    // Bottom-sticky gets pushed down by its section boundary as it enters, behind
+    // the dock. Reserve a fixed slot and show it only inside the projects section.
+    useEffect(() => {
+        const content = contentRef.current;
+        const subnav = subnavRef.current;
+        if (!embedded || !showSubnav || !hydrated || !content || !subnav) return;
+        const scroller = content.closest('#mobile-scroll');
+        let frame = 0;
+        const update = () => {
+            frame = 0;
+            const dock = document.querySelector('[data-main-dock]');
+            if (!dock) { setWithinSection(false); return; }
+            const slotBottom = dock.getBoundingClientRect().top - 10;
+            const slotTop = slotBottom - subnav.getBoundingClientRect().height;
+            const bounds = content.getBoundingClientRect();
+            setWithinSection(bounds.top <= slotTop && bounds.bottom >= slotBottom);
+        };
+        const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+        const observer = new ResizeObserver(schedule);
+        observer.observe(content);
+        observer.observe(subnav);
+        scroller?.addEventListener('scroll', schedule, { passive: true });
+        window.addEventListener('resize', schedule);
+        window.addEventListener('revil:dock-resize', schedule);
+        window.visualViewport?.addEventListener('resize', schedule);
+        schedule();
+        return () => {
+            cancelAnimationFrame(frame);
+            observer.disconnect();
+            scroller?.removeEventListener('scroll', schedule);
+            window.removeEventListener('resize', schedule);
+            window.removeEventListener('revil:dock-resize', schedule);
+            window.visualViewport?.removeEventListener('resize', schedule);
+        };
+    }, [embedded, showSubnav, hydrated]);
+
     // Dispatch custom event when hovering sub-nav so Navbar can suppress tooltips
     const handleSubnavEnter = useCallback(() => {
         window.dispatchEvent(new CustomEvent('revil:subnav_hover', { detail: true }));
@@ -118,42 +159,18 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
         exit: (d: number) => ({ x: d > 0 ? '-40%' : '40%', opacity: 0 }),
     };
 
-    return (
-        <>
-            {/* Content area - overflow-x hidden kills horizontal scrollbar during slide transitions */}
-            <div ref={contentRef} style={{ overflowX: 'hidden', minHeight: '100vh' }}>
-                <AnimatePresence
-                    mode="wait"
-                    custom={direction}
-                    initial={false}
-                    onExitComplete={() => setIsAnimating(false)}
-                >
-                    <motion.div
-                        key={activeTab}
-                        custom={direction}
-                        variants={variants}
-                        initial="enter"
-                        animate="center"
-                        exit="exit"
-                        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                        className="min-h-screen"
-                    >
-                        {activeTab === 'projects' ? <Projects active={active} /> : <Developer active={active} />}
-                    </motion.div>
-                </AnimatePresence>
-            </div>
-
-            {/* Sub-navbar - delayed entrance until page transition settles */}
+    const subnav = (
             <AnimatePresence>
                 {showSubnav && (
                     <div
-                        /* Fixed mode: sits ~10px above the navbar's top edge at each breakpoint
-                           (mobile ≈ 90px, desktop ≈ 106px; md: = 768px = navbar threshold).
-                           Embedded mode (mobile single-scroll page): sticks to the bottom of the
-                           viewport WITHIN the Projects section instead of floating over everything. */
-                        className={embedded
-                            ? 'sticky bottom-[90px] md:bottom-[106px] z-40 mx-auto w-fit mb-4'
-                            : 'fixed bottom-[90px] md:bottom-[106px] left-1/2 -translate-x-1/2 z-50'}
+                        ref={subnavRef}
+                        data-project-subnav
+                        aria-hidden={embedded && !withinSection}
+                        className="fixed left-1/2 -translate-x-1/2 z-40 w-max max-w-[95%]"
+                        style={{
+                            bottom: 'var(--bottom-nav-clearance, 106px)',
+                            visibility: embedded && !withinSection ? 'hidden' : undefined,
+                        }}
                         onMouseEnter={handleSubnavEnter}
                         onMouseLeave={handleSubnavLeave}
                     >
@@ -205,6 +222,34 @@ const ProjectsHub = forwardRef<ProjectsHubHandle, ProjectsHubProps>(({ isTransit
                     </div>
                 )}
             </AnimatePresence>
+    );
+
+    return (
+        <>
+            {/* Content area - overflow-x hidden kills horizontal scrollbar during slide transitions */}
+            <div ref={contentRef} style={{ overflowX: 'hidden', minHeight: '100vh' }}>
+                <AnimatePresence
+                    mode="wait"
+                    custom={direction}
+                    initial={false}
+                    onExitComplete={() => setIsAnimating(false)}
+                >
+                    <motion.div
+                        key={activeTab}
+                        custom={direction}
+                        variants={variants}
+                        initial="enter"
+                        animate="center"
+                        exit="exit"
+                        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                        className="min-h-screen"
+                    >
+                        {activeTab === 'projects' ? <Projects active={active} /> : <Developer active={active} />}
+                    </motion.div>
+                </AnimatePresence>
+            </div>
+
+            {embedded ? hydrated && createPortal(subnav, document.body) : subnav}
         </>
     );
 });
