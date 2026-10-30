@@ -4,7 +4,7 @@
    Colours come from the site tokens in globals.css, so light and dark both work. */
 
 .pj {
-  --pj-blue: rgb(59, 130, 246);
+  --pj-blue: var(--accent);
   --pj-line: var(--section-border);
   --pj-chip: color-mix(in srgb, var(--text-primary) 6%, transparent);
   min-height: 100dvh;
@@ -24,32 +24,71 @@
 
 /* ── top bar ─────────────────────────────────────────────── */
 .pj-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 20px 0;
+  gap: 32px;
+  padding: 28px 0 24px;
   border-bottom: 1px solid var(--pj-line);
 }
 .pj-home {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: fit-content;
+  min-width: 86px;
+  padding: 4px 0 11px;
   font-family: var(--font-archivo-black), sans-serif;
-  font-size: 18px;
+  font-size: 27px;
+  line-height: .86;
+  text-transform: uppercase;
   color: var(--text-primary);
   text-decoration: none;
-  letter-spacing: -0.01em;
+  letter-spacing: -.035em;
 }
-.pj-bar nav { display: flex; align-items: center; gap: 6px; }
+.pj-signature {
+  position: absolute;
+  left: -2px;
+  bottom: -3px;
+  width: 100%;
+  height: 14px;
+  color: var(--accent);
+  transition: transform .2s ease;
+}
+.pj-home:hover .pj-signature { transform: translateX(3px); }
+.pj-home:focus-visible, .pj-navlink:focus-visible, .pj-bar-cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+  border-radius: 3px;
+}
+.pj-bar nav { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 28px; }
 .pj-navlink {
-  padding: 8px 12px;
-  border-radius: 999px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-muted);
   text-decoration: none;
-  transition: color .15s, background-color .15s;
+  transition: color .15s ease;
 }
-.pj-navlink:hover { color: var(--text-primary); background: var(--pj-chip); }
-.pj-navlink[aria-current="page"] { color: var(--text-primary); }
+.pj-navlink::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  height: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .2s ease;
+}
+.pj-navlink:hover, .pj-navlink[aria-current="page"] { color: var(--text-primary); }
+.pj-navlink:hover::after, .pj-navlink[aria-current="page"]::after { transform: scaleX(1); }
 .pj-cta {
   display: inline-flex;
   align-items: center;
@@ -58,16 +97,30 @@
   border-radius: 999px;
   font-size: 14px;
   font-weight: 700;
-  color: #fff;
+  color: #071a31;
   background: var(--pj-blue);
   text-decoration: none;
-  box-shadow: 0 6px 18px rgba(59, 130, 246, .3);
+  box-shadow: none;
   transition: filter .15s;
 }
 .pj-cta:hover { filter: brightness(1.1); }
 
-@media (max-width: 480px) {
-  .pj-navlink.pj-hide-sm { display: none; }
+.pj-bar-cta {
+  min-height: 44px;
+  padding: 11px 17px;
+  border-radius: 8px;
+}
+.pj-bar-cta svg { transition: transform .2s ease; }
+.pj-bar-cta:hover svg { transform: translate(2px, -2px); }
+@media (max-width: 680px) {
+  .pj-bar { grid-template-columns: 1fr auto; gap: 18px; padding: 22px 0 12px; }
+  .pj-home { font-size: 24px; min-width: 78px; }
+  .pj-bar nav { grid-row: 2; grid-column: 1 / -1; justify-content: flex-start; gap: 24px; }
+  .pj-bar-cta { grid-column: 2; grid-row: 1; }
+  .pj-navlink { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pj-signature, .pj-navlink, .pj-navlink::after, .pj-bar-cta svg { transition: none; }
 }
 
 /* ── project header ──────────────────────────────────────── */
@@ -448,4 +501,28 @@
   .pj-slide, .pj-dots button, .pj-action { transition: none; }
   .pj-slide { transform: none; }
   .pj-action:hover { transform: none; }
+}
+
+/* Reading-page titles use the portfolio's block lettering and blue ink. */
+.pj-page-heading {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 1fr);
+  align-items: end;
+  gap: 48px;
+  margin: 64px 0 40px;
+}
+.pj-page-heading .pj-display {
+  font-family: var(--font-archivo-black), sans-serif;
+  font-weight: 400;
+  font-size: clamp(3rem, 6.4vw, 5rem);
+  line-height: 1.02;
+  letter-spacing: -.035em;
+  margin: 0;
+}
+.pj-title-stroke { display: block; width: 80%; height: 18px; margin-top: 14px; color: var(--accent); }
+.pj-page-heading .pj-intro, .pj-page-heading .pv-lead { margin: 0; padding-bottom: 8px; color: var(--text-secondary); }
+@media (max-width: 767px) {
+  .pj-page-heading { grid-template-columns: 1fr; gap: 24px; margin: 40px 0 32px; }
+  .pj-page-heading .pj-display { font-size: clamp(2.75rem, 11vw, 4rem); }
+  .pj-title-stroke { width: 64%; margin-top: 10px; }
 }
