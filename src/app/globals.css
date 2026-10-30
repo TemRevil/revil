@@ -1328,16 +1328,11 @@ html[data-lite] .blob-container { display: none; }
   100% { transform: translateX(150%) skewX(-20deg); }
 }
 
-/* Scroll wheel indicator animation */
-@keyframes scrollWheel {
-  0% { transform: translateY(0); opacity: 1; }
-  50% { transform: translateY(15px); opacity: 1; }
-  100% { transform: translateY(15px); opacity: 0; }
-}
-
-/* Hide scrollbars for creators containers */
-.creators-scroll-container::-webkit-scrollbar { display: none; }
-.creators-scroll-container { -ms-overflow-style: none; scrollbar-width: none; }
+/* Project popup: previous/next stay off the screenshot until the pointer is on it */
+.pv-nav { opacity: 0; transition: opacity 0.4s ease, background 0.3s ease; }
+.pv-frame:hover .pv-nav, .pv-nav:focus-visible { opacity: 1; }
+.pv-nav:hover { background: rgba(0, 0, 0, 0.55) !important; }
+@media (hover: none) { .pv-nav { opacity: 1; } }
 
 /* GitHub Commits Graph */
 @keyframes commits-pulse {

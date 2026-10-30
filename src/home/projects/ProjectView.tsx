@@ -2,38 +2,84 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDialog } from '../../ui/dialog';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ExternalLink, ChevronLeft, ChevronRight, Upload, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
+import { X, ExternalLink, ChevronLeft, ChevronRight, Download, User, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
 import { Github } from '../../ui/BrandIcons';
+import Handwriting from '../../ui/Handwriting';
+import { handwrite } from '../../lib/handwrite';
 import { watchDoc } from '../../lib/liveDoc';
 import { cachedDoc } from '../../lib/dataCache';
 import { tagsOf } from './shape';
 import { sanitizeSvg } from '../../lib/sanitize';
 import { isVideoFile, getStackIcon, getTechColor, stillFrame } from '../../lib/projectUtils';
-import { isLite } from '../../lib/device';
+import { isLite, prefersReducedMotion } from '../../lib/device';
 import { ProjectData as Project, ContributorData as Contributor, TagData as TagItem } from '../../types';
-import useTheme from '../../hooks/useTheme';
 import { useBoilHold } from '../../book/paintKit';
 
-// These are utility functions exported from this file
 interface MProjectViewProps {
     project: Project;
     onClose: () => void;
     onContributorClick: (contributor: Contributor) => void;
 }
 
-const GlassPanel = ({ children, style, className = "", isDark }: React.PropsWithChildren<{ style?: React.CSSProperties; className?: string; isDark?: boolean }>) => (
-    <div className={className} style={{
-        background: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.15)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
-        borderRadius: '32px',
-        border: `1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'}`,
-        padding: '30px',
-        ...style
-    }}>
-        {children}
-    </div>
+const INK = '#e9eaee';
+const SOFT = 'rgba(233, 234, 238, 0.8)';
+const MUTED = 'rgba(233, 234, 238, 0.55)';
+const LINE = '1px solid rgba(255, 255, 255, 0.07)';
+/** How much of the details shows under the pictures before any scroll (desktop, px). */
+const PEEK = 130;
+/** The room under the pictures that "the story" is written in (px). */
+const STORY_GAP = { desktop: 96, mobile: 70 };
+/** The notebook's margin, where the pen writes, and the space after it (desktop, px). */
+const MARGIN = 200;
+const GUTTER = 40;
+const NAV: React.CSSProperties = {
+    position: 'absolute', top: '50%', transform: 'translateY(-50%)', borderRadius: '50%',
+    background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.18)',
+    color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 8
+};
+
+type BoxRef = React.RefObject<HTMLDivElement | null>;
+
+/** Handwriting (ui/Handwriting) that the pen writes in once it scrolls into the popup's view. */
+const InkOnView = ({ root, style, children }: React.PropsWithChildren<{ root: BoxRef; style?: React.CSSProperties }>) => {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        let ink: Animation[] = [];
+        const seen = new IntersectionObserver(([e]) => {
+            if (!e.isIntersecting) return;
+            seen.disconnect();
+            ink = handwrite(el, { show: true });
+        }, { root: root.current, threshold: 0.5 });
+        seen.observe(el);
+        return () => { seen.disconnect(); ink.forEach(a => a.cancel()); };
+    }, [root]);
+    return <div ref={ref} aria-hidden="true" style={{ opacity: 0, ...style }}>{children}</div>;
+};
+
+/** One line of the notebook: the pen's note in the margin, what it's about beside it. */
+const NoteRow = ({ label, isMobile, root, children }: React.PropsWithChildren<{ label: string; isMobile: boolean; root: BoxRef }>) => (
+    <section style={isMobile
+        ? { padding: '26px 0', borderTop: LINE }
+        : { display: 'grid', gridTemplateColumns: `${MARGIN}px 1fr`, gap: `${GUTTER}px`, padding: '34px 0', borderTop: LINE }}>
+        <h2 className="sr-only">{label[0].toUpperCase() + label.slice(1)}</h2>
+        <InkOnView root={root} style={{
+            color: 'var(--accent)', fontSize: isMobile ? '24px' : '28px', lineHeight: 1,
+            transform: 'rotate(-2deg)', transformOrigin: 'left', paddingTop: isMobile ? 0 : '2px', marginBottom: isMobile ? '14px' : 0
+        }}>
+            <Handwriting text={label} />
+        </InkOnView>
+        <div>{children}</div>
+    </section>
 );
+
+const TagIcon = ({ icon, color }: { icon?: string | null; color: string }) => {
+    const box: React.CSSProperties = { width: '18px', height: '18px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+    if (icon && (icon.startsWith('http') || icon.includes('/o/'))) return <img src={icon} alt="" style={{ ...box, objectFit: 'contain' }} />;
+    if (icon && icon.startsWith('<svg')) return <span style={{ ...box, color }} dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} />;
+    return <span style={box}><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color }} /></span>;
+};
 
 const VideoPlayer = React.memo(({ src, isActive, isMobile, style }: { src: string, isActive: boolean, isMobile: boolean, style?: React.CSSProperties }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -477,8 +523,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
         setProject(initialProject);
     }
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
-    const isDark = useTheme();
     const [isHovered, setIsHovered] = useState(false);
+    const boxRef = useRef<HTMLDivElement>(null);
+    const detailsRef = useRef<HTMLDivElement>(null);
+    const storyRef = useRef<HTMLButtonElement>(null);
+    const storyInkRef = useRef<HTMLSpanElement>(null);
+    // "the story" points at the details until the reader scrolls, then never again.
+    const [storyGone, setStoryGone] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
     // The cached copy (lib/dataCache) first, so the tags draw with their icons at once.
@@ -551,8 +602,45 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
     };
 
 
-    const displayTitle = (project.title || project.name || 'Untitled Project').toUpperCase();
+    const displayTitle = project.title || project.name || 'Untitled project';
     const displayFullDescription = project.fullDescription || project.description || 'No description available.';
+
+    // The first link is the main one, drawn solid.
+    const liveHref = project.liveLink || project.demoLink;
+    const links = [
+        liveHref && { href: liveHref, label: 'Open the live site', icon: <ExternalLink size={18} />, onClick: handleLiveClick },
+        project.downloadLink && { href: project.downloadLink, label: 'Download the app', icon: <Download size={18} />, onClick: handleDownloadClick },
+        project.repoLink && { href: project.repoLink, label: 'Source on GitHub', icon: <Github size={18} />, onClick: handleGithubClick },
+    ].filter(Boolean) as { href: string; label: string; icon: React.ReactNode; onClick: () => void }[];
+
+    // How often it was opened and followed, only the counts that aren't zero.
+    const tally = ([
+        [project.views, 'view'],
+        [project.downloadViews, 'download'],
+        [project.liveViews, 'live site visit'],
+        [project.githubViews, 'GitHub visit'],
+    ] as [number | undefined, string][])
+        .filter(([n]) => typeof n === 'number' && n > 0)
+        .map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`)
+        .join(', ');
+
+    const toStory = () => {
+        const box = boxRef.current, details = detailsRef.current;
+        if (!box || !details) return;
+        const top = box.scrollTop + details.getBoundingClientRect().top - box.getBoundingClientRect().top - 24;
+        box.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    };
+
+    // Write "the story" in once the pictures have settled, unless everything already fits.
+    useEffect(() => {
+        const box = boxRef.current;
+        if (box && box.scrollHeight - box.clientHeight < 40) {
+            if (storyRef.current) storyRef.current.style.display = 'none';
+            return;
+        }
+        const ink = handwrite(storyInkRef.current, { show: true, delay: 1100 });
+        return () => ink.forEach(a => a.cancel());
+    }, []);
 
     const displayTags = (project.tags && project.tags.length > 0)
         ? project.tags.map(t => {
@@ -671,11 +759,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
             transition={{ duration: 0.25 }}
             style={{
                 position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                // Solid, so the page behind never shows through the text.
+                backgroundColor: 'rgb(9, 10, 13)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 zIndex: 2100,
                 overflow: 'hidden',
                 fontFamily: "'Inter', sans-serif",
+                color: INK,
                 userSelect: 'none', // Added user-select: none to the modal overlay
             }} onClick={handleClose}>
             {/* Dynamic Background Blur */}
@@ -700,11 +790,13 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
             </button>
 
             <motion.div
+                ref={boxRef}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3, ease: "easeOut" }}
                 onClick={e => e.stopPropagation()}
+                onScroll={e => { if (!storyGone && e.currentTarget.scrollTop > 40) setStoryGone(true); }}
                 style={{
                     width: isMobile ? '100%' : '90vw',
                     height: isMobile ? '100%' : '90vh',
@@ -723,34 +815,23 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
                 >
-                    {/* Hero Showcase Section */}
+                    {/* The pictures. Sized so the details below always show at the bottom of
+                        the screen (PEEK on desktop), which tells the eye there is more. */}
                     <div style={{
                         position: 'relative', width: '100%',
-                        height: '100vh', minHeight: '100vh',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        padding: '20px'
+                        display: 'flex', justifyContent: 'center',
+                        padding: isMobile ? `84px 20px ${STORY_GAP.mobile}px` : `40px 20px ${STORY_GAP.desktop}px`
                     }}>
-                        {/* Big Decorative Title */}
-                        <div style={{
-                            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                            fontSize: isMobile ? '20vw' : '12vw', fontWeight: 950, color: 'white',
-                            opacity: isMobile ? 0.02 : 0.03, whiteSpace: 'nowrap', pointerEvents: 'none',
-                            zIndex: 0, userSelect: 'none', letterSpacing: '-0.07em'
-                        }}>{displayTitle}</div>
-                        {/* Main Image Spotlight - Shared Element */}
-                        {/* Box shadow wrapper - not part of layout animation */}
                         <div style={{
                             position: 'relative',
-                            width: isMobile ? '100%' : '85%',
+                            width: isMobile
+                                ? `min(100%, calc((100vh - ${84 + STORY_GAP.mobile}px) * 16 / 9))`
+                                : `min(85%, calc((90vh - ${40 + STORY_GAP.desktop + PEEK}px) * 16 / 9))`,
                             maxWidth: '1200px',
-                            maxHeight: '80vh', // Prevent vertical overflow
-                            zIndex: 1,
-                            borderRadius: isMobile ? '16px' : '32px',
-                            boxShadow: '0 50px 100px rgba(0,0,0,0.5)',
-                            display: 'flex',
-                            flexDirection: 'column'
+                            zIndex: 1
                         }}>
                             <motion.div
+                                className="pv-frame"
                                 onMouseEnter={() => setIsHovered(true)}
                                 onMouseLeave={() => setIsHovered(false)}
                                 initial={{ opacity: 0, scale: 0.95 }}
@@ -759,12 +840,11 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                 style={{
                                     position: 'relative',
                                     width: '100%',
-                                    height: 'auto',
-                                    aspectRatio: isMobile ? '16/9' : '16/9',
-                                    maxHeight: '80vh',
+                                    aspectRatio: '16/9',
                                     borderRadius: isMobile ? '16px' : '32px',
                                     overflow: 'hidden',
                                     background: '#000',
+                                    boxShadow: '0 50px 100px rgba(0,0,0,0.5)',
                                     willChange: 'transform' // Ensure hardware acceleration
                                 }}
                             >
@@ -789,339 +869,143 @@ const MProjectView = ({ project: initialProject, onClose, onContributorClick }: 
                                     ))}
                                 </div>
 
-                                {/* Manual Nav Controls */}
+                                {/* Previous and next: shown on hover (globals.css .pv-nav), so they
+                                    don't sit on the screenshot's own buttons the rest of the time. */}
                                 {sortedMedia.length > 1 && (
                                     <>
-                                        <button onClick={handlePrev} aria-label="Previous image" style={{
-                                            position: 'absolute', left: isMobile ? '4px' : '30px', top: '50%', transform: 'translateY(-50%)',
-                                            width: isMobile ? '32px' : '60px', height: isMobile ? '32px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
-                                            backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                                            zIndex: 8, transition: 'all 0.3s'
-                                        }}>
-                                            <ChevronLeft size={isMobile ? 16 : 28} />
+                                        <button className="pv-nav" onClick={handlePrev} aria-label="Previous image" style={{ ...NAV, left: isMobile ? '6px' : '20px', width: isMobile ? '32px' : '44px', height: isMobile ? '32px' : '44px' }}>
+                                            <ChevronLeft size={isMobile ? 16 : 22} />
                                         </button>
-                                        <button onClick={handleNext} aria-label="Next image" style={{
-                                            position: 'absolute', right: isMobile ? '4px' : '30px', top: '50%', transform: 'translateY(-50%)',
-                                            width: isMobile ? '32px' : '60px', height: isMobile ? '32px' : '60px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)',
-                                            backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)', color: 'white',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                                            zIndex: 8, transition: 'all 0.3s'
-                                        }}>
-                                            <ChevronRight size={isMobile ? 16 : 28} />
+                                        <button className="pv-nav" onClick={handleNext} aria-label="Next image" style={{ ...NAV, right: isMobile ? '6px' : '20px', width: isMobile ? '32px' : '44px', height: isMobile ? '32px' : '44px' }}>
+                                            <ChevronRight size={isMobile ? 16 : 22} />
                                         </button>
                                     </>
                                 )}
-
-                                {/* Indicator Dots (Hidden on mobile to save space) */}
-                                {!isMobile && (
-                                    <div style={{ position: 'absolute', bottom: '30px', left: '0', right: '0', display: 'flex', justifyContent: 'center', gap: '12px', zIndex: 2 }}>
-                                        {sortedMedia.map((_, i) => (
-                                            <div key={i} onClick={() => setCurrentImageIndex(i)} style={{
-                                                width: i === currentImageIndex ? '40px' : '10px', height: '10px', borderRadius: '5px',
-                                                background: 'white', opacity: i === currentImageIndex ? 1 : 0.3,
-                                                cursor: 'pointer', transition: 'all 0.4s'
-                                            }} />
-                                        ))}
-                                    </div>
-                                )}
                             </motion.div>
-                        </div>
 
-                        {/* Scroll for More Indicator */}
-                        <div style={{
-                            position: 'absolute', bottom: isMobile ? '30px' : '40px', left: '50%', transform: 'translateX(-50%)',
-                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px',
-                            color: 'rgba(255,255,255,0.5)', zIndex: 10, pointerEvents: 'none',
-                            animation: 'fadeIn 1s ease-out 1.5s both'
-                        }}>
-                            <span style={{ fontSize: '0.65rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.25em' }}>Scroll for more</span>
-                            <div style={{
-                                width: '24px', height: '42px', borderRadius: '15px', border: '2px solid rgba(255,255,255,0.2)',
-                                display: 'flex', justifyContent: 'center', padding: '6px'
+                            {/* Which picture: under the frame, not on it (hidden on phones to save space) */}
+                            {!isMobile && sortedMedia.length > 1 && (
+                                <div style={{ position: 'absolute', top: 'calc(100% + 20px)', left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: '10px' }}>
+                                    {sortedMedia.map((_, i) => (
+                                        <button key={i} onClick={() => setCurrentImageIndex(i)} aria-label={`Show image ${i + 1}`} style={{
+                                            width: i === currentImageIndex ? '28px' : '8px', height: '8px', borderRadius: '4px', padding: 0, border: 'none',
+                                            background: 'white', opacity: i === currentImageIndex ? 0.9 : 0.25,
+                                            cursor: 'pointer', transition: 'all 0.4s'
+                                        }} />
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* "the story", written in by pen, pointing at the details. It leaves
+                                for good on the first scroll; a tap takes the reader there. */}
+                            <button ref={storyRef} onClick={toStory} aria-label="Read about the project" style={{
+                                position: 'absolute', top: '100%', left: isMobile ? '8px' : '40px', marginTop: isMobile ? '6px' : '14px',
+                                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                color: 'var(--accent)', fontSize: isMobile ? '24px' : '30px', lineHeight: 1,
+                                transform: 'rotate(-3deg)',
+                                opacity: storyGone ? 0 : 1, pointerEvents: storyGone ? 'none' : 'auto',
+                                transition: 'opacity 0.8s ease'
                             }}>
-                                <div style={{
-                                    width: '2px', height: '8px', borderRadius: '2px', background: '#60a5fa',
-                                    animation: 'scrollWheel 1.5s ease-in-out infinite',
-                                    boxShadow: '0 0 10px #60a5fa'
-                                }} />
-                            </div>
+                                <span ref={storyInkRef} style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', opacity: 0 }}>
+                                    <span style={{ marginTop: '0.2em' }}><Handwriting text="the story" /></span>
+                                    <svg width="1.47em" height="1.93em" viewBox="0 0 44 58" aria-hidden="true" style={{ overflow: 'visible', display: 'block' }}>
+                                        <g fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M 4 4 C 26 6, 38 24, 30 52" pathLength={1} data-pen={1.4} />
+                                            <path d="M 21 42 C 25 46, 28 49, 30 52 C 33 47, 36 44, 40 41" pathLength={1} data-pen={0.5} />
+                                        </g>
+                                    </svg>
+                                </span>
+                            </button>
                         </div>
                     </div>
 
-                    {/* Content Matrix */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: isMobile ? '1fr' : '1.8fr 1fr',
-                        gap: '40px',
+                    {/* The details, a notebook page: the pen writes each note in the margin
+                        as it comes into view, the text beside it. */}
+                    <div ref={detailsRef} style={{
                         position: 'relative', zIndex: 2,
-                        padding: isMobile ? '20px' : '0 0 60px 0',
-                        marginTop: isMobile ? '0' : '40px'
+                        maxWidth: '1040px', width: '100%', margin: '0 auto',
+                        padding: isMobile ? '0 24px 80px' : '0 8px 120px'
                     }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
-                            <GlassPanel isDark={isDark}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                                    <div style={{ padding: '6px 14px', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', borderRadius: '50px', fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.1em' }}>More Details</div>
-                                    <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }} />
-                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>Project ID: #{project.id?.toString().slice(-6).toUpperCase() || 'UNKNOWN'}</div>
-                                </div>
-                                <h1 id="project-modal-title" style={{
-                                    margin: 0, fontSize: isMobile ? (windowWidth < 480 ? '2.2rem' : '3.2rem') : '5rem', fontWeight: 950,
-                                    color: 'white', letterSpacing: '-0.05em', lineHeight: 1.1, marginBottom: '24px',
-                                    textTransform: 'uppercase'
-                                }}>{displayTitle}</h1>
-                                <p style={{
-                                    margin: 0, fontSize: '1.35rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.75)',
-                                    fontWeight: 400, borderLeft: '3px solid #60a5fa', paddingLeft: '24px'
-                                }}>{displayFullDescription}</p>
-                            </GlassPanel>
+                        <div style={{ paddingLeft: isMobile ? 0 : `${MARGIN + GUTTER}px`, paddingBottom: '30px' }}>
+                            <h1 id="project-modal-title" style={{
+                                display: 'inline-block', margin: 0,
+                                fontSize: isMobile ? (windowWidth < 480 ? '38px' : '48px') : '68px', fontWeight: 600,
+                                letterSpacing: '-0.035em', lineHeight: 1.05, color: INK,
+                                paddingRight: isMobile ? '48px' : 0
+                            }}>{displayTitle}</h1>
+                            <InkOnView root={boxRef} style={{ color: 'var(--accent)', marginTop: '10px' }}>
+                                <svg width={isMobile ? 170 : 270} height="14" viewBox="0 0 270 14" style={{ display: 'block', overflow: 'visible' }}>
+                                    <path d="M3 9 C 60 3, 130 4, 200 7 S 255 10, 267 5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" pathLength={1} data-pen={6} />
+                                </svg>
+                            </InkOnView>
+                        </div>
 
-                            <GlassPanel isDark={isDark}>
-                                <h3 style={{ margin: '0 0 35px 0', fontSize: '0.85rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.25em', color: '#60a5fa' }}>Technological Blueprint</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px' }}>
+                        <NoteRow label="what it does" isMobile={isMobile} root={boxRef}>
+                            <p style={{ margin: 0, fontSize: isMobile ? '17px' : '19px', lineHeight: 1.75, color: SOFT, maxWidth: '62ch', userSelect: 'text' }}>{displayFullDescription}</p>
+                        </NoteRow>
+
+                        {displayTags.length > 0 && (
+                            <NoteRow label="built with" isMobile={isMobile} root={boxRef}>
+                                <ul style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', margin: 0, padding: 0, listStyle: 'none' }}>
                                     {displayTags.map((tag, i) => (
-                                        <div key={i} style={{
-                                            display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px',
-                                            background: `${tag.color}11`, borderRadius: '24px',
-                                            border: `1px solid ${tag.color}33`, transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-                                            cursor: 'default'
-                                        }} onMouseEnter={e => {
-                                            e.currentTarget.style.background = `${tag.color}22`;
-                                            e.currentTarget.style.borderColor = tag.color;
-                                            e.currentTarget.style.transform = 'translateY(-4px)';
-                                            e.currentTarget.style.boxShadow = `0 10px 20px -10px ${tag.color}88`;
-                                        }} onMouseLeave={e => {
-                                            e.currentTarget.style.background = `${tag.color}11`;
-                                            e.currentTarget.style.borderColor = `${tag.color}33`;
-                                            e.currentTarget.style.transform = 'translateY(0)';
-                                            e.currentTarget.style.boxShadow = 'none';
-                                        }}>
-                                            <div style={{ width: '28px', height: '28px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                {tag.icon ? (
-                                                    (typeof tag.icon === 'string' && (tag.icon.startsWith('http') || tag.icon.includes('/o/'))) ?
-                                                        <img
-                                                            src={tag.icon}
-                                                            style={{
-                                                                width: '100%',
-                                                                height: '100%',
-                                                                objectFit: 'contain',
-                                                                filter: `drop-shadow(0 0 8px ${tag.color}88)`
-                                                            }}
-                                                            alt={tag.name}
-                                                        />
-                                                        : (typeof tag.icon === 'string' && tag.icon.startsWith('<svg')) ?
-                                                            <div
-                                                                style={{ width: '100%', height: '100%', color: tag.color }}
-                                                                dangerouslySetInnerHTML={{ __html: sanitizeSvg(tag.icon) }}
-                                                            />
-                                                            : <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: tag.color, boxShadow: `0 0 10px ${tag.color}` }} />
-                                                ) : <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: tag.color, boxShadow: `0 0 10px ${tag.color}` }} />}
-                                            </div>
-                                            <span style={{ fontSize: windowWidth < 480 ? '0.85rem' : '0.95rem', fontWeight: 900, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag.name}</span>
-                                        </div>
+                                        <li key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', fontSize: '16px' }}>
+                                            <TagIcon icon={tag.icon} color={tag.color} />
+                                            {tag.name}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </NoteRow>
+                        )}
+
+                        {project.contributors.length > 0 && (
+                            <NoteRow label="made by" isMobile={isMobile} root={boxRef}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 24px', margin: '-8px' }}>
+                                    {project.contributors.map((c, i) => (
+                                        <button key={i} onClick={() => onContributorClick(c)} style={{
+                                            display: 'flex', alignItems: 'center', gap: '14px', padding: '8px 14px 8px 8px',
+                                            background: 'transparent', border: 'none', borderRadius: '16px', color: INK,
+                                            cursor: 'pointer', textAlign: 'left', transition: 'background 0.4s ease'
+                                        }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                                            {c.image ? (
+                                                <img src={typeof c.image === 'string' ? c.image : undefined} alt="" style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                                            ) : (
+                                                <span style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                    <User size={20} color={MUTED} />
+                                                </span>
+                                            )}
+                                            <span>
+                                                <span style={{ display: 'block', fontSize: '16px', fontWeight: 500 }}>{c.name}</span>
+                                                {c.role && <span style={{ display: 'block', fontSize: '14px', color: MUTED, marginTop: '2px' }}>{c.role}</span>}
+                                            </span>
+                                        </button>
                                     ))}
                                 </div>
-                            </GlassPanel>
-                        </div>
+                            </NoteRow>
+                        )}
 
-                        {/* Sidebar / Actions */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                            {/* Action Link Hub */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-                                {(project.liveLink || project.demoLink) && (
-                                    <a href={project.liveLink || project.demoLink} onClick={handleLiveClick} target="_blank" rel="noopener noreferrer" style={{
-                                        height: '90px', background: '#ffffff', color: '#000', borderRadius: '28px',
-                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                        textDecoration: 'none', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                        boxShadow: '0 15px 35px -5px rgba(255, 255, 255, 0.2)',
-                                        border: '1px solid rgba(255,255,255,0.8)'
-                                    }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px) scale(1.02)'; e.currentTarget.style.boxShadow = '0 25px 50px -10px rgba(255, 255, 255, 0.3)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.boxShadow = '0 15px 35px -5px rgba(255, 255, 255, 0.2)'; }}>
-                                        <ExternalLink size={24} />
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Live View</span>
-                                    </a>
-                                )}
-                                {project.downloadLink && (
-                                    <a href={project.downloadLink} onClick={handleDownloadClick} target="_blank" rel="noopener noreferrer" style={{
-                                        height: '90px',
-                                        background: '#ffffff',
-                                        color: '#000', borderRadius: '28px',
-                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                        textDecoration: 'none', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                        boxShadow: '0 15px 35px -5px rgba(255, 255, 255, 0.2)',
-                                        border: '1px solid rgba(255,255,255,0.8)'
-                                    }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px) scale(1.03)'; e.currentTarget.style.boxShadow = '0 25px 50px -10px rgba(255, 255, 255, 0.3)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.boxShadow = '0 15px 35px -5px rgba(255, 255, 255, 0.2)'; }}>
-                                        <Upload size={24} />
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.15em' }}>Download the App</span>
-                                    </a>
-                                )}
-                                {project.repoLink && (
-                                    <a href={project.repoLink} onClick={handleGithubClick} target="_blank" rel="noopener noreferrer" style={{
-                                        height: '90px', background: 'rgba(255,255,255,0.03)', color: '#fff', borderRadius: '28px',
-                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                                        textDecoration: 'none', transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                        border: '1px solid rgba(255,255,255,0.08)'
-                                    }} onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px) scale(1.02)'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; }} onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}>
-                                        <Github size={24} />
-                                        <span style={{ fontSize: '0.75rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.12em' }}>GitHub</span>
-                                    </a>
-                                )}
-                            </div>
-
-                            {/* Creative Team Section */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px', padding: '0 8px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <div style={{ width: '3px', height: '18px', background: '#60a5fa', borderRadius: '4px' }} />
-                                        <h3 style={{ margin: 0, fontSize: '0.8rem', fontWeight: 950, textTransform: 'uppercase', letterSpacing: '0.35em', color: 'white' }}>Project Team</h3>
-                                    </div>
-                                    <div style={{ fontSize: '0.65rem', fontWeight: 900, color: 'rgba(96,165,250,0.5)', background: 'rgba(96,165,250,0.1)', padding: '2px 8px', borderRadius: '4px', fontFamily: 'monospace' }}>COUNT::{project.contributors.length.toString().padStart(2, '0')}</div>
+                        {links.length > 0 && (
+                            <NoteRow label="try it" isMobile={isMobile} root={boxRef}>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px' }}>
+                                    {links.map((l, i) => (
+                                        <a key={l.label} href={l.href} onClick={l.onClick} target="_blank" rel="noopener noreferrer" style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: '10px', height: '50px', padding: '0 22px',
+                                            borderRadius: '12px', fontSize: '15px', fontWeight: 500, textDecoration: 'none',
+                                            transition: 'background 0.4s ease, border-color 0.4s ease',
+                                            ...(i === 0
+                                                ? { background: '#f3f3f1', color: '#0b0c0f', border: '1px solid #f3f3f1' }
+                                                : { background: 'transparent', color: INK, border: '1px solid rgba(255,255,255,0.14)' })
+                                        }} onMouseEnter={e => { if (i === 0) e.currentTarget.style.background = '#ffffff'; else e.currentTarget.style.borderColor = 'rgba(255,255,255,0.32)'; }} onMouseLeave={e => { if (i === 0) e.currentTarget.style.background = '#f3f3f1'; else e.currentTarget.style.borderColor = 'rgba(255,255,255,0.14)'; }}>
+                                            {l.icon}
+                                            {l.label}
+                                        </a>
+                                    ))}
                                 </div>
-
-                                <div style={{ position: 'relative' }}>
-                                    <div className="creators-scroll-container" style={{
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: '10px',
-                                        maxHeight: '340px',
-                                        overflowY: 'auto',
-                                        padding: '5px 8px 15px 5px',
-                                        scrollbarWidth: 'none',
-                                        msOverflowStyle: 'none'
-                                    }}>
-                                        {project.contributors.map((c, i) => (
-                                            <div key={i} onClick={() => onContributorClick(c)} style={{
-                                                position: 'relative',
-                                                background: 'rgba(255,255,255,0.02)',
-                                                borderRadius: '24px',
-                                                padding: '16px 20px',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '18px',
-                                                border: '1px solid rgba(255,255,255,0.03)',
-                                                overflow: 'hidden'
-                                            }} onMouseEnter={e => {
-                                                e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-                                                e.currentTarget.style.borderColor = 'rgba(96,165,250,0.3)';
-                                                e.currentTarget.style.transform = 'translateY(-4px)';
-                                                e.currentTarget.style.boxShadow = '0 20px 40px rgba(0,0,0,0.25)';
-                                                const roleBadge = e.currentTarget.querySelector('.role-badge') as HTMLElement;
-                                                if (roleBadge) { roleBadge.style.background = 'rgba(96,165,250,0.25)'; roleBadge.style.borderColor = '#60a5fa'; }
-                                            }} onMouseLeave={e => {
-                                                e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
-                                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.03)';
-                                                e.currentTarget.style.transform = 'translateY(0)';
-                                                e.currentTarget.style.boxShadow = 'none';
-                                                const roleBadge = e.currentTarget.querySelector('.role-badge') as HTMLElement;
-                                                if (roleBadge) { roleBadge.style.background = 'rgba(96,165,250,0.1)'; roleBadge.style.borderColor = 'rgba(96,165,250,0.2)'; }
-                                            }}>
-                                                <div style={{
-                                                    position: 'relative', flexShrink: 0,
-                                                    width: '50px', height: '50px', borderRadius: '18px', overflow: 'hidden',
-                                                    border: '2px solid rgba(255,255,255,0.05)',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    backgroundColor: 'rgba(255,255,255,0.03)'
-                                                }}>
-                                                    {c.image ? (
-                                                        <img
-                                                            src={typeof c.image === 'string' ? c.image : undefined}
-                                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                                            alt={c.name}
-                                                        />
-                                                    ) : (
-                                                        <User size={24} className="text-zinc-500/50" />
-                                                    )}
-                                                </div>
-
-                                                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                    <div style={{ fontWeight: 950, fontSize: '1.05rem', color: 'white', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
-
-                                                    {/* Specialized Project Role Badge */}
-                                                    <div className="role-badge" style={{
-                                                        alignSelf: 'flex-start',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '6px',
-                                                        fontSize: '0.62rem',
-                                                        fontWeight: 900,
-                                                        textTransform: 'uppercase',
-                                                        letterSpacing: '0.12em',
-                                                        color: '#60a5fa',
-                                                        background: 'rgba(96,165,250,0.1)',
-                                                        padding: '4px 10px',
-                                                        borderRadius: '8px',
-                                                        border: '1px solid rgba(96,165,250,0.2)',
-                                                        transition: 'all 0.4s ease'
-                                                    }}>
-                                                        <span style={{ fontSize: '0.55rem', opacity: 0.5, fontFamily: 'monospace' }}>ASSIGNMENT //</span>
-                                                        {c.role}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {/* Fog indicated more content if scrollable */}
-                                    {project.contributors.length > 3 && (
-                                        <div style={{
-                                            position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px',
-                                            background: 'linear-gradient(to top, rgba(10,10,10,0.95), transparent)',
-                                            pointerEvents: 'none', borderRadius: '0 0 24px 24px', zIndex: 10
-                                        }} />
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Analytics Panel */}
-                            <div style={{
-                                padding: '30px', borderRadius: '32px', background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
-                                border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '25px'
-                            }}>
-                                <h3 style={{ margin: 0, fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)' }}>Engagements</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px' }}>
-                                    <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                        <div style={{ marginBottom: '8px' }}>
-                                            <span style={{ fontSize: '30px', fontWeight: 950, color: 'white' }}>
-                                                {typeof project.githubViews === 'number' ? project.githubViews : 0}
-                                            </span>
-                                        </div>
-                                        <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Github</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                        <div style={{ marginBottom: '8px' }}>
-                                            <span style={{ fontSize: '30px', fontWeight: 950, color: 'white' }}>
-                                                {typeof project.liveViews === 'number' ? project.liveViews : 0}
-                                            </span>
-                                        </div>
-                                        <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Live</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                        <div style={{ marginBottom: '8px' }}>
-                                            <span style={{ fontSize: '30px', fontWeight: 950, color: 'white' }}>
-                                                {typeof project.downloadViews === 'number' ? project.downloadViews : 0}
-                                            </span>
-                                        </div>
-                                        <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Downloads</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center', borderLeft: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                        <div style={{ marginBottom: '8px' }}>
-                                            <span style={{ fontSize: '30px', fontWeight: 950, color: 'white' }}>
-                                                {typeof project.views === 'number' ? project.views : 0}
-                                            </span>
-                                        </div>
-                                        <div style={{ fontSize: '0.6rem', fontWeight: 900, color: '#60a5fa', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Views</div>
-                                    </div>
-                                </div>
-                                <div style={{ height: '4px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden', marginTop: '5px' }}>
-                                    <div style={{ height: '100%', width: '100%', background: 'linear-gradient(to right, #60a5fa, #3b82f6)', borderRadius: '2px', boxShadow: '0 0 15px rgba(96,165,250,0.5)' }} />
-                                </div>
-                            </div>
-                        </div>
+                                {tally && <p style={{ margin: '18px 0 0', fontSize: '14px', color: MUTED }}>{tally}</p>}
+                            </NoteRow>
+                        )}
                     </div>
                 </motion.div>
             </motion.div>
-
-            {/* Keyframes (scrollWheel, scrollbar hiding) now in globals.css */}
         </motion.div>,
         document.body
     );
