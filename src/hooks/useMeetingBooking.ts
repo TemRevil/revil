@@ -4,15 +4,15 @@ import type React from 'react';
 // off the first paint, and the submit handler imports Functions on demand, so
 // /book draws without waiting for the SDK (or App Check's reCAPTCHA).
 import { loadFirebase, watchDoc } from '../lib/liveDoc';
-import type { AlertType } from '../components/Alert';
-import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../utils/availability';
+import type { AlertType } from '../ui/Alert';
+import { AvailabilityConfig, DEFAULT_AVAILABILITY, parseAvailabilityConfig } from '../lib/availability';
 import { cachedDoc, type Data } from '../lib/dataCache';
 import {
   BOOKING_WINDOW_DAYS, DAY_MS, DEFAULT_HOST_TZ, type DayContext, type HostZone, type PresetSlot,
   bookingRefusal, customTimeRefusal, dayIndex, dayIndexAt, hostZone, isDayOpen,
   presetSlotsForDay, slotStart, visitorTimeToInstant, wallClock,
-} from '../utils/bookingRules';
-import { timezoneOptions, localOffset } from '../utils/timezones';
+} from '../lib/bookingRules';
+import { timezoneOptions, localOffset } from '../lib/timezones';
 
 /** Pragmatic email validator: requires local@domain.tld and rejects whitespace.
  *  Not RFC 5322 perfect, but rejects 99% of typos / pasted junk. */
@@ -57,7 +57,7 @@ export const getDaysInMonth = (date: Date) => {
  * The public "book a 60 minute call" flow: host availability + booked slots from
  * Firestore, time-zone conversion, the calendar's bookable days, and the submit
  * (the bookMeeting function creates the Calendar event and records the meeting).
- * Shared by the contact modal (M-Contact) and the standalone /book page, so both
+ * Shared by the contact modal (Contact) and the standalone /book page, so both
  * book through exactly the same rules.
  *
  * `enabled` gates the one-time move to the next open day (the modal only wants it

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { Plug, ShieldCheck, Lock, Loader2 } from 'lucide-react';
 import { appAuth } from '../../lib/appAuth';
-import Alert from '../../components/Alert';
+import Alert from '../../ui/Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 
 /**

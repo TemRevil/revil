@@ -1,12 +1,18 @@
+import type { CSSProperties } from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { ExternalLink, Download, User } from 'lucide-react';
 import {
-    SITE_URL, projectPages, projectPageUrl, tagNames, contributorsOf, mediaOf, shortDescription,
-} from '../../../utils/projectPages';
-import { baseGraph, jsonLd, personRef, projectNode, websiteRef } from '../../../utils/siteProfile';
-import ProjectsBar from '../ProjectsBar';
-import CaseStudy from '../CaseStudy';
-import '../projects.css';
+    SITE_URL, projectPages, projectPageUrl, tagNames, mediaOf, shortDescription, tagsDoc, contributorsDoc, profileRows,
+} from '../../../lib/projectPages';
+import { baseGraph, jsonLd, personRef, projectNode, websiteRef } from '../../../lib/siteProfile';
+import { allContributors, contributorsOf, profilesOf, shapeProject, tagsOf, type FirestoreProject } from '../../../home/projects/shape';
+import TagIcon from '../../../home/projects/TagIcon';
+import { Github } from '../../../ui/BrandIcons';
+import StandaloneBar from '../../../standalone/StandaloneBar';
+import CaseStudy from '../../../standalone/CaseStudy';
+import ProjectGallery from '../../../standalone/ProjectGallery';
+import '../../../standalone/standalone.css';
 
 // One static page per project, built from the snapshot. A slug the build doesn't
 // know is a 404 rather than a page rendered on demand (there is no server).
@@ -17,6 +23,9 @@ export function generateStaticParams() {
 }
 
 const find = (slug: string) => projectPages.find((p) => p.slug === slug);
+
+const knownTags = tagsOf(tagsDoc);
+const people = allContributors(contributorsOf(contributorsDoc), profilesOf(profileRows));
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
     const page = find((await params).slug);
@@ -42,9 +51,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     const page = find((await params).slug);
     if (!page) notFound();
     const { project, name, note, slug } = page;
-    const tags = tagNames(project);
-    const people = contributorsOf(project);
+    // The tags with their icons and colours, and the people with their pictures, as the
+    // project's window on the homepage resolves them.
+    const { tags, contributors } = shapeProject(project as FirestoreProject, people, knownTags);
     const media = mediaOf(project);
+    // Videos lead, as in the window.
+    const shown = [...media.filter((m) => m.video), ...media.filter((m) => !m.video)];
     const live = project['Live Link'];
     const repo = project['Repository Link'];
     const download = project['Download Link'];
@@ -85,7 +97,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
         <div className="pj">
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
-                <ProjectsBar />
+                <StandaloneBar />
 
                 <main>
                     <ol className="pj-crumbs" aria-label="Breadcrumb">
@@ -94,52 +106,71 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                         <li aria-current="page">{name}</li>
                     </ol>
 
-                    <div className="pj-head">
-                        {project['Project Icon'] && <img className="pj-icon" src={project['Project Icon']} alt={`${name} logo`} width={64} height={64} />}
-                        <div>
-                            <h1>{name}</h1>
-                            {note && <span className="pj-note">{note}</span>}
+                    <ProjectGallery name={name} media={shown} />
+
+                    {/* Laid out like the project's window on the homepage: the project and
+                        what it is built with on the left, the ways to open it and the people
+                        who built it on the right. */}
+                    <div className="pj-detail">
+                        <div className="pj-main">
+                            <section className="pj-panel" aria-labelledby="pj-title">
+                                <div className="pj-head">
+                                    {project['Project Icon'] && <img className="pj-icon" src={project['Project Icon']} alt={`${name} logo`} width={64} height={64} />}
+                                    <div>
+                                        <h1 id="pj-title">{name}</h1>
+                                        {note && <span className="pj-note">{note}</span>}
+                                    </div>
+                                </div>
+                                {project.Description && <p className="pj-lede">{project.Description}</p>}
+                            </section>
+
+                            {tags.length > 0 && (
+                                <section className="pj-panel" aria-labelledby="pj-stack">
+                                    <h2 id="pj-stack">Built with</h2>
+                                    <ul className="pj-stack">
+                                        {tags.map((t) => (
+                                            <li key={t.name} style={{ '--tag': t.color } as CSSProperties}>
+                                                {t.iconSvg
+                                                    ? <TagIcon icon={t.iconSvg} name="" className="pj-stack-icon" />
+                                                    : <span className="pj-stack-dot" aria-hidden="true" />}
+                                                {t.name}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </section>
+                            )}
+
+                            {project['Case Study'] && <CaseStudy text={project['Case Study']} />}
                         </div>
+
+                        <aside className="pj-side" aria-label={`About ${name}`}>
+                            {(live || repo || download) && (
+                                <div className="pj-actions">
+                                    {live && <a className="pj-action primary" href={live} target="_blank" rel="noopener"><ExternalLink size={22} aria-hidden="true" />Open the live site</a>}
+                                    {download && <a className="pj-action" href={download} rel="noopener"><Download size={22} aria-hidden="true" />Download the app</a>}
+                                    {repo && <a className="pj-action" href={repo} target="_blank" rel="noopener"><Github size={22} aria-hidden="true" />Source code</a>}
+                                </div>
+                            )}
+
+                            {contributors.length > 0 && (
+                                <section aria-labelledby="pj-people">
+                                    <h2 id="pj-people">Built by</h2>
+                                    <ul className="pj-people">
+                                        {contributors.map((c) => (
+                                            <li key={c.name}>
+                                                <span className="pj-avatar">
+                                                    {typeof c.image === 'string' && c.image
+                                                        ? <img src={c.image} alt="" width={48} height={48} loading="lazy" />
+                                                        : <User size={22} aria-hidden="true" />}
+                                                </span>
+                                                <span><b>{c.name}</b>{c.role && <small>{c.role}</small>}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </section>
+                            )}
+                        </aside>
                     </div>
-
-                    {project.Description && <p className="pj-lede">{project.Description}</p>}
-
-                    {tags.length > 0 && (
-                        <ul className="pj-tags" aria-label="Built with">
-                            {tags.map((t) => <li key={t}>{t}</li>)}
-                        </ul>
-                    )}
-
-                    {(live || repo || download) && (
-                        <div className="pj-actions">
-                            {live && <a className="pj-btn primary" href={live} target="_blank" rel="noopener">Open the live site ↗</a>}
-                            {repo && <a className="pj-btn" href={repo} target="_blank" rel="noopener">Source code on GitHub ↗</a>}
-                            {download && <a className="pj-btn" href={download} rel="noopener">Download</a>}
-                        </div>
-                    )}
-
-                    {media.length > 0 && (
-                        <div className="pj-gallery">
-                            {media.map((m, i) => (
-                                <figure className="pj-shot" key={m.url}>
-                                    {m.video
-                                        ? <video src={m.url} controls muted playsInline preload="metadata" aria-label={`${name} video`} />
-                                        : <img src={m.url} alt={`${name} screenshot ${i + 1}`} loading={i === 0 ? 'eager' : 'lazy'} decoding="async" />}
-                                </figure>
-                            ))}
-                        </div>
-                    )}
-
-                    {project['Case Study'] && <CaseStudy text={project['Case Study']} />}
-
-                    {people.length > 0 && (
-                        <section className="pj-section" aria-labelledby="pj-people">
-                            <h2 id="pj-people">Built by</h2>
-                            <ul className="pj-people">
-                                {people.map((p) => <li key={p.name}><b>{p.name}</b>{p.role && <span>{p.role}</span>}</li>)}
-                            </ul>
-                        </section>
-                    )}
 
                     {others.length > 0 && (
                         <section className="pj-section" aria-labelledby="pj-more">

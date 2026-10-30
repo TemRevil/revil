@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next'
-import { projectPages } from '../utils/projectPages'
+import { projectPages } from '../lib/projectPages'
 
 const siteUrl = 'https://temrevil.com'
 

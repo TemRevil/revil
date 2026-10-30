@@ -1,0 +1,1048 @@
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'motion/react';
+import { X, Send, Paperclip, User, Phone, MessageSquare, Check, Mail, Calendar, Clock, ChevronLeft, ChevronRight, Globe } from 'lucide-react';
+// firebase/storage + firebase/functions are dynamic-imported inside the submit
+// handlers below (not statically) so they stay OUT of the eager first-paint
+// bundle - Contact is imported eagerly by App.tsx, so a static import here
+// would pull both SDKs into the critical chunk.
+import { loadFirebase } from '../../lib/liveDoc';
+import Alert from '../../ui/Alert'; // Import Custom Alert
+import useSafeAlert from '../../hooks/useSafeAlert';
+import useMeetingBooking, { getDaysInMonth, type Meeting } from '../../hooks/useMeetingBooking';
+import Select from '../../ui/Select';
+import CustomTimePicker from '../../ui/CustomTimePicker';
+import HintTooltip from '../../ui/HintTooltip';
+import useTheme from '../../hooks/useTheme';
+import { blurFade, dockRise } from '../../lib/modalMotion';
+import useDockOpen from '../../hooks/useDockOpen';
+import { PHONE_QUERY } from '../../lib/device';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import DockIcon from '../DockIcon';
+import { useBoilHold } from '../../book/paintKit';
+import WarmHide from '../../ui/WarmHide';
+import { useDialog } from '../../ui/dialog';
+import { ALLOWED_TYPES, attachmentFolder, CONTACT_LIMITS, contactProblem, MAX_FILE_SIZE } from './contactRules';
+
+interface MContactProps {
+  isOpen: boolean;
+  onClose: () => void;
+  initialTab?: 'message' | 'meeting';
+  hideTabs?: boolean;
+  /** Rendered hidden only to warm up the first real open: no reads, tracking or scroll lock. */
+  warm?: boolean;
+}
+
+const MContact = ({ onClose, initialTab = 'meeting', hideTabs = false, warm = false }: Omit<MContactProps, 'isOpen'>) => {
+    useBoilHold(!warm);
+  const dock = useDockOpen();
+  const isDark = useTheme();
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '', // Added email field for message form
+    number: '',
+    hasWhatsapp: false,
+    message: '',
+    attachments: [] as File[],
+  });
+
+
+  // Meeting State (shared with the /book page - see useMeetingBooking)
+  const [activeTab, setActiveTab] = useState<'message' | 'meeting'>(initialTab);
+  const [direction, setDirection] = useState(0);
+  const [tabDirection, setTabDirection] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { alert, showAlert, hideAlert } = useSafeAlert(4000);
+  const {
+    today, limitDate,
+    calendarDate, setCalendarDate, isPrevMonthDisabled, isNextMonthDisabled, isFutureMonth,
+    selectedDate, setSelectedDate, selectedTime, setSelectedTime, isCustomTime, setIsCustomTime,
+    meetingData, setMeetingData, isSubmitting: isBooking, bookingSuccess, setBookingSuccess,
+    userTimezone, setUserTimezone, tzOptions,
+    convertedSlots, daySlots,
+    getMeetingsForDate, meetingTimeForVisitor, isDayBookable,
+    handleMeetingSubmit, validateCustomTime, isCustomTimeUnavailable,
+  } = useMeetingBooking({ showAlert, enabled: !warm && activeTab === 'meeting', reads: !warm });
+  const isMobile = useMediaQuery(PHONE_QUERY);
+  // True once a details column is scrolled - its header frosts (blurs) only then.
+  const [agendaScrolled, setAgendaScrolled] = useState(false);
+  const [messageScrolled, setMessageScrolled] = useState(false);
+
+  const tabVariants = {
+    enter: (d: number) => ({ x: d > 0 ? '40%' : '-40%', opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (d: number) => ({ x: d > 0 ? '-40%' : '40%', opacity: 0 }),
+  };
+
+  // Bookings only open ~1.5 months ahead. When the visitor pages into a month beyond
+  // that window, surface the "email instead" hint as a toast (showAlert dedupes, so it
+  // won't spam) rather than an inline card notice that got clipped at the card bottom.
+  useEffect(() => {
+    if (isFutureMonth) {
+      showAlert({
+        type: 'info',
+        message: 'Bookings open about 1.5 months ahead. For dates further out, use the “Send a Message” tab with your preferred times.',
+        duration: 10000,
+      });
+    }
+  }, [isFutureMonth, showAlert]);
+
+  // New day: the details column starts back at the top (adjusted during render, React's
+  // documented pattern, so the frosted header never paints for a frame on the new day).
+  const [prevDate, setPrevDate] = useState(selectedDate);
+  if (prevDate !== selectedDate) {
+    setPrevDate(selectedDate);
+    setAgendaScrolled(false);
+  }
+
+  // How far into the contact funnel they got, whether or not they send anything.
+  useEffect(() => {
+    if (warm) return;
+    window.dispatchEvent(new CustomEvent('revil:contact_tab', { detail: { tab: activeTab } }));
+  }, [activeTab, warm]);
+
+  // Switching tabs resets the frosted-header state (each panel starts scrolled to top).
+  const [prevTab, setPrevTab] = useState(activeTab);
+  if (prevTab !== activeTab) {
+    setPrevTab(activeTab);
+    setAgendaScrolled(false);
+    setMessageScrolled(false);
+  }
+
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // File upload constraints (contactRules: the same limits submitContact holds to)
+  const MAX_FILES = CONTACT_LIMITS.files;
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      const currentCount = formData.attachments.length;
+
+      // Check total file count
+      if (currentCount + newFiles.length > MAX_FILES) {
+        showAlert({ type: 'warning', message: `Maximum ${MAX_FILES} files allowed.` });
+        return;
+      }
+
+      // Validate each file
+      const validFiles: File[] = [];
+      for (const file of newFiles) {
+        if (file.size > MAX_FILE_SIZE) {
+          showAlert({ type: 'warning', message: `"${file.name}" exceeds 10MB limit.` });
+          continue;
+        }
+        if (!ALLOWED_TYPES.includes(file.type)) {
+          showAlert({ type: 'warning', message: `"${file.name}" - file type not allowed. Use images, PDFs, or documents.` });
+          continue;
+        }
+        validFiles.push(file);
+      }
+
+      if (validFiles.length > 0) {
+        setFormData(prev => ({
+          ...prev,
+          attachments: [...prev.attachments, ...validFiles]
+        }));
+      }
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      attachments: prev.attachments.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Updated Message Submit Handler
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Everything submitContact would refuse is caught here, before any attachment is
+    // uploaded for a message that was never going to be accepted.
+    const problem = contactProblem(formData);
+    if (problem) {
+      showAlert({ type: 'warning', message: problem });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const { default: app } = await loadFirebase();
+      // 1. Handle File Uploads (outside transaction to prevent duplicate uploads on retry)
+      const uploadedFiles: { name: string, url: string }[] = [];
+      if (formData.attachments.length > 0) {
+        // firebase/storage loaded on demand (kept out of the eager bundle)
+        const { getStorage, ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+        const storage = getStorage(app);
+        // Unguessable: storage.rules lets anyone who knows a path read the file.
+        const uniqueFolderId = attachmentFolder();
+        // Index-prefixed so two attachments with the SAME filename get two paths.
+        // They used to collide, and the second upload quietly overwrote the first -
+        // leaving two entries in the email pointing at one file. It also matters now
+        // that storage.rules only lets a visitor upload to a path that is still empty:
+        // a colliding path is (correctly) refused.
+        for (const [i, file] of formData.attachments.entries()) {
+          // storage.rules caps the object name at 200 characters; keep the tail so
+          // the extension survives.
+          const fileRef = ref(storage, `emails/${uniqueFolderId}/${i}_${file.name.slice(-150)}`);
+          const snapshot = await uploadBytes(fileRef, file);
+          const downloadURL = await getDownloadURL(snapshot.ref);
+          uploadedFiles.push({ name: file.name.slice(-200), url: downloadURL });
+        }
+      }
+
+      // 2. Send the message. Visitors cannot write CanaryMessages; the
+      // submitContact function validates the message, rate-limits it and stores it.
+      const { httpsCallable, getFunctions } = await import('firebase/functions');
+      const submitContact = httpsCallable(getFunctions(app), 'submitContact');
+      await submitContact({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        message: formData.message.trim(),
+        number: formData.number.trim(),
+        whatsapp: formData.hasWhatsapp,
+        files: uploadedFiles,
+      });
+      window.dispatchEvent(new CustomEvent('revil:contact_sent', { detail: { kind: 'message' } }));
+
+      showAlert({ type: 'success', message: "Message sent! I'll get back to you soon." });
+      setFormData({
+        name: '',
+        email: '',
+        number: '',
+        hasWhatsapp: false,
+        message: '',
+        attachments: [],
+      });
+      setTimeout(onClose, 2000);
+
+    } catch (error) {
+      console.error("Error sending message:", error);
+      // The function's own messages (rate limit, a field too long) are written for
+      // visitors; anything else gets the generic one.
+      const { code, message } = (error || {}) as { code?: string; message?: string };
+      const readable = code === 'functions/resource-exhausted' || code === 'functions/invalid-argument';
+      showAlert({ type: 'error', message: readable && message ? message : "Failed to send message. Please try again." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Role, title, focus, Tab and Escape (see dialog.ts). The custom-time picker is its own
+  // dialog on top while it's open, so Escape only closes the whole modal when the picker
+  // isn't showing.
+  const { dialogProps } = useDialog({ onClose, labelledBy: 'contact-modal-title', active: !warm });
+  useEffect(() => {
+    if (warm) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [warm]);
+
+
+
+  return createPortal(
+    <WarmHide warm={warm}>
+      {alert?.show && <Alert type={alert.type} message={alert.message} onClose={() => hideAlert()} duration={alert.duration ?? 4000} />}
+      {/* Overlay */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+        style={{
+          position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)',
+          backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 1400
+        }}
+        onClick={onClose}
+      />
+
+      {/* Modal Container */}
+      <div 
+        className="fixed inset-0 z-[1401] flex items-center justify-center p-4 pointer-events-none"
+        style={{ overscrollBehavior: 'contain' }}
+      >
+        <motion.div
+          {...dialogProps}
+          layout
+          {...(dock ? dockRise : blurFade)}
+          className={isMobile ? "glass-panel-deep" : ""}
+          style={{
+            // originY, not transformOrigin: `layout` hands the box to Motion's projection, which
+            // keeps its own origin and ignores a CSS transform-origin.
+            originY: dock ? 1 : undefined,
+            // Responsive but bounded: scales with the viewport, never below a usable
+            // floor or past a comfortable ceiling - both columns inherit this fixed height.
+            // min() (not clamp with a px floor) so the modal NEVER exceeds the
+            // viewport on short/small screens - content scrolls inside instead of
+            // overflowing off-screen and getting clipped.
+            width: isMobile ? '90vw' : 'min(1240px, 94vw)',
+            height: isMobile ? '90dvh' : 'min(760px, 92vh)',
+            maxWidth: isMobile ? '90vw' : '94vw',
+            maxHeight: isMobile ? '90dvh' : '92vh',
+            overflow: isMobile ? 'hidden' : 'visible',
+            borderRadius: isMobile ? '16px' : '0',
+            display: 'flex',
+            flexDirection: 'column',
+            pointerEvents: 'auto',
+            backgroundColor: isMobile ? undefined : 'transparent',
+            border: isMobile ? undefined : 'none',
+            boxShadow: isMobile ? undefined : 'none',
+            willChange: 'transform, opacity',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Internal background elements */}
+          {isMobile && <div className="absolute inset-0 bg-gradient-to-b from-black/[0.04] dark:from-white/[0.04] to-transparent pointer-events-none -z-10" />}
+
+          {/* Main Content Wrapper (Fixed Header/Tabs, Internal Scroll) */}
+          <div className="flex flex-col flex-1 overflow-hidden" style={{ overscrollBehavior: 'contain', padding: isMobile ? '0' : '24px 24px 0 24px' }}>
+
+            {/* Header only on Mobile */}
+            {isMobile && (
+              <div className="p-6 pb-0 flex flex-col gap-4">
+                <div className="flex-row-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <DockIcon id="contact-icon" fly={dock && !warm}>
+                      <Mail size={24} strokeWidth={2} aria-hidden="true" />
+                    </DockIcon>
+                    <h2 id="contact-modal-title" className="heading-md m-0 font-bold" style={{ fontSize: '1.5rem' }}>
+                      Contact Me
+                    </h2>
+                  </div>
+                  <button
+                    onClick={onClose}
+                    aria-label="Close contact form"
+                    className="btn-icon rounded-full"
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)';
+                      e.currentTarget.style.color = 'var(--text-primary)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                      e.currentTarget.style.color = 'var(--text-muted)';
+                    }}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div
+                className={isMobile ? 'custom-scrollbar' : ''}
+                style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: isMobile ? 'auto' : 'hidden', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}
+            >
+              <AnimatePresence mode="wait" custom={tabDirection} initial={false}>
+                {activeTab === 'meeting' ? (
+                  <motion.div
+                    key="meeting"
+                    custom={tabDirection}
+                    variants={tabVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                    style={{ flex: isMobile ? '0 0 auto' : 1, minHeight: 0, display: isMobile ? 'flex' : 'grid', flexDirection: isMobile ? 'column' : 'row', gridTemplateColumns: isMobile ? 'none' : '1.2fr 1fr', gap: isMobile ? '40px' : '32px', overflowY: isMobile ? 'visible' : 'hidden', padding: isMobile ? '0 16px 24px' : '0 24px 12px', height: isMobile ? 'auto' : '100%' }}
+                  >
+
+                    {/* Left Column: Calendar (Card Box on desktop) */}
+                    <div
+                      className={!isMobile ? "glass-panel-deep hide-scrollbar" : ""}
+                      style={{
+                        height: isMobile ? 'auto' : '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '24px',
+                        overflowY: isMobile ? 'visible' : 'auto',
+                        padding: isMobile ? '0' : '24px',
+                        borderRadius: isMobile ? '0' : '24px',
+                        boxShadow: isMobile ? 'none' : '0 18px 44px -22px rgba(0,0,0,0.16), 0 44px 96px -40px rgba(0,0,0,0.2)',
+                      }}
+                    >
+                      {/* Left Box Header */}
+                      {!isMobile && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', width: '100%' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <DockIcon id="contact-icon" fly={dock && !warm}>
+                              <Mail size={22} className="text-primary" aria-hidden="true" />
+                            </DockIcon>
+                            <h2 style={{ fontSize: 'clamp(1.15rem, 0.85rem + 1.1vw, 1.45rem)', fontWeight: 700, margin: 0 }}>Contact Me</h2>
+                          </div>
+                          {!selectedDate && (
+                            <button
+                              type="button"
+                              onClick={onClose}
+                              aria-label="Close contact form"
+                              className="btn-icon rounded-full"
+                              style={{
+                                backgroundColor: 'transparent',
+                                color: 'var(--text-muted)',
+                                border: 'none',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '50%',
+                                transition: 'all 0.2s',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)';
+                                e.currentTarget.style.color = 'var(--text-primary)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                                e.currentTarget.style.color = 'var(--text-muted)';
+                              }}
+                            >
+                              <X size={18} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Calendar block - vertically centered so it fills the card */}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'safe center', gap: '24px', width: '100%', minHeight: 0 }}>
+                      {/* Calendar Header with No Scrollbar style */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, width: '100%' }}>
+                        <h3 style={{ fontSize: 'clamp(1rem, 0.85rem + 0.6vw, 1.15rem)', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                          <AnimatePresence mode="wait">
+                            <motion.span
+                              key={calendarDate.toISOString()}
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 10 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              {calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                            </motion.span>
+                          </AnimatePresence>
+                        </h3>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            aria-label="Previous month"
+                            disabled={isPrevMonthDisabled}
+                            onClick={() => {
+                              if (!isPrevMonthDisabled) {
+                                  setDirection(-1);
+                                  setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
+                              }
+                            }}
+                            style={{
+                              padding: '8px',
+                              borderRadius: '10px',
+                              border: 'none',
+                              background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                              color: 'var(--text-primary)',
+                              cursor: isPrevMonthDisabled ? 'not-allowed' : 'pointer',
+                              opacity: isPrevMonthDisabled ? 0.4 : 1
+                            }}
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <button
+                            aria-label="Next month"
+                            disabled={isNextMonthDisabled}
+                            onClick={() => {
+                              if (!isNextMonthDisabled) {
+                                  setDirection(1);
+                                  setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
+                              }
+                            }}
+                            style={{
+                              padding: '8px',
+                              borderRadius: '10px',
+                              border: 'none',
+                              background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                              color: 'var(--text-primary)',
+                              cursor: isNextMonthDisabled ? 'not-allowed' : 'pointer',
+                              opacity: isNextMonthDisabled ? 0.4 : 1
+                            }}
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Calendar Grid - Hiding Overflow Check */}
+                      <div style={{ overflow: 'hidden', flexShrink: 0, width: '100%' }}>
+                        <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+                          <motion.div
+                            key={calendarDate.toISOString()}
+                            custom={direction}
+                            variants={{
+                              enter: (direction: number) => ({ x: direction > 0 ? '100%' : '-100%', opacity: 0 }),
+                              center: { x: 0, opacity: 1 },
+                              exit: (direction: number) => ({ x: direction > 0 ? '-100%' : '100%', opacity: 0 })
+                            }}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                            style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', textAlign: 'center' }}
+                          >
+                            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                              <div key={`${d}-${i}`} style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-muted)', paddingBottom: '8px' }}>{d}</div>
+                            ))}
+                            {Array.from({ length: getDaysInMonth(calendarDate).firstDay }).map((_, i) => (
+                              <div key={`empty-${i}`} />
+                            ))}
+
+                            {/* Days Generation */}
+                            {Array.from({ length: getDaysInMonth(calendarDate).days }).map((_, i) => {
+                              const day = i + 1;
+                              const date = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), day);
+                              const isSelected = selectedDate?.toDateString() === date.toDateString();
+                              const meetingsForDay = getMeetingsForDate(date);
+                              const hasMeetings = meetingsForDay.length > 0;
+                              const isPast = date < today;
+                              const isTooFar = date > limitDate;
+                              const isBookable = isDayBookable(date);
+
+                              return (
+                                <div
+                                  key={day}
+                                  role="button"
+                                  tabIndex={isBookable ? 0 : -1}
+                                  aria-disabled={!isBookable}
+                                  aria-pressed={isSelected}
+                                  aria-label={date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                                  onClick={() => { if (isBookable) setSelectedDate(date); }}
+                                  onKeyDown={(e) => { if (isBookable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setSelectedDate(date); } }}
+                                  style={{
+                                    width: '100%',
+                                    height: 'clamp(38px, 6vh, 52px)',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                                    borderRadius: '14px',
+                                    cursor: isBookable ? 'pointer' : 'default',
+                                    position: 'relative',
+                                    opacity: isBookable ? 1 : 0.4,
+                                  }}
+                                >
+                                  {isSelected && (
+                                    <motion.div
+                                      layoutId="selected-day-bg"
+                                      style={{
+                                        position: 'absolute', inset: 0, borderRadius: '14px',
+                                        backgroundColor: 'rgb(59, 130, 246)', zIndex: 0
+                                      }}
+                                    />
+                                  )}
+                                  <span style={{
+                                    position: 'relative', zIndex: 1,
+                                    color: isSelected ? 'white' : (isPast || isTooFar ? 'var(--text-muted)' : 'var(--text-primary)'),
+                                    fontWeight: isSelected ? 700 : 600,
+                                    fontSize: 'clamp(0.92rem, 0.82rem + 0.4vw, 1.05rem)'
+                                  }}>
+                                    {day}
+                                  </span>
+
+                                  {/* Meeting Indicators on Calendar */}
+                                  {hasMeetings && !isSelected && (
+                                    <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', marginTop: '2px' }}>
+                                      {meetingsForDay.slice(0, 3).map((m: Meeting, idx) => (
+                                        <div key={idx} title={`${meetingTimeForVisitor(m)} - Booked`} style={{
+                                          width: '4px', height: '4px', borderRadius: '50%',
+                                          background: '#10b981', // Slot taken (guest identity is private)
+                                          position: 'relative', zIndex: 1
+                                        }} />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </motion.div>
+                        </AnimatePresence>
+                      </div>
+
+                      {/* The "further than 1.5 months" hint is surfaced as a toast
+                          (see the isFutureMonth effect) - inline it was clipped at the
+                          bottom of the calendar card. */}
+                      </div>
+                    </div>
+
+                    {/* Right Column: Details & Agenda (Card Box on desktop) */}
+                    <div className={!isMobile ? "glass-panel-deep" : ""} style={{ flex: 1, height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: isMobile ? '0' : '24px', boxShadow: isMobile ? 'none' : '0 18px 44px -22px rgba(0,0,0,0.16), 0 44px 96px -40px rgba(0,0,0,0.2)', willChange: 'transform', position: 'relative' }}>
+                      {/* Header - flush with the card top; frosts only once the body scrolls */}
+                      <div style={{
+                        flexShrink: 0,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: isMobile ? '4px 0 16px' : '20px 24px',
+                        backgroundColor: agendaScrolled ? (isDark ? 'rgba(20,20,25,0.55)' : 'rgba(255,255,255,0.55)') : 'transparent',
+                        backdropFilter: agendaScrolled ? 'blur(14px)' : 'none',
+                        WebkitBackdropFilter: agendaScrolled ? 'blur(14px)' : 'none',
+                        borderBottom: `1px solid ${agendaScrolled ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : 'transparent'}`,
+                        borderTopLeftRadius: isMobile ? '0' : '24px',
+                        borderTopRightRadius: isMobile ? '0' : '24px',
+                        transition: 'background-color 0.25s ease, border-color 0.25s ease',
+                        zIndex: 5,
+                      }}>
+                        <h4 style={{ fontSize: 'clamp(1.05rem, 0.9rem + 0.6vw, 1.25rem)', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+                          {selectedDate ? selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : 'Select a Date'}
+                        </h4>
+                        {!isMobile && (
+                          <button
+                            type="button"
+                            onClick={onClose}
+                            aria-label="Close contact form"
+                            className="btn-icon rounded-full"
+                            style={{ backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', transition: 'all 0.2s' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                          >
+                            <X size={18} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Scrolling body */}
+                      <div
+                        onScroll={(e) => setAgendaScrolled(e.currentTarget.scrollTop > 4)}
+                        className={!isMobile ? "hide-scrollbar" : ""}
+                        style={{ flex: 1, minHeight: 0, overflowY: isMobile ? 'visible' : 'auto', padding: isMobile ? '0' : '4px 24px 24px', display: 'flex', flexDirection: 'column' }}
+                      >
+                      <AnimatePresence mode="wait">
+                        <motion.div
+                          key={bookingSuccess ? 'success' : (selectedDate?.toISOString() || 'no-date')}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -20 }}
+                          transition={{ duration: 0.2 }}
+                          style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}
+                        >
+                          {/* ... (Success View Logic Same as before, just ensuring wrapper closes correctly) ... */}
+
+                          {/* Re-inserting the Booking Success / Agenda View Logic here for completeness of the visual block */}
+                          {bookingSuccess ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center', textAlign: 'center', height: '100%', justifyContent: 'center', paddingTop: '40px' }}>
+                              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                <Check size={32} />
+                              </div>
+                              <div>
+                                <h3 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>Booking Confirmed!</h3>
+                                <p style={{ color: 'var(--text-muted)' }}>You are scheduled for {bookingSuccess.date} at {bookingSuccess.time}.</p>
+                              </div>
+                              {bookingSuccess.link && bookingSuccess.link.startsWith('http') ? (
+                                <div style={{ padding: '16px', background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', borderRadius: '12px', width: '100%' }}>
+                                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Google Meet Link</div>
+                                  <a href={bookingSuccess.link} target="_blank" rel="noopener noreferrer" style={{ color: 'rgb(59, 130, 246)', fontWeight: 600, wordBreak: 'break-all', textDecoration: 'none' }}>
+                                    {bookingSuccess.link}
+                                  </a>
+                                </div>
+                              ) : null}
+                              <button onClick={() => { setBookingSuccess(null); onClose(); }} style={{ marginTop: 'auto', padding: '12px 32px', borderRadius: '12px', border: 'none', backgroundColor: 'var(--text-primary)', color: 'var(--bg-primary)', fontWeight: 600, cursor: 'pointer' }}>Done</button>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Existing Bookings List */}
+                              {selectedDate && getMeetingsForDate(selectedDate).length > 0 && (
+                                <div style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '8px',
+                                  marginTop: '8px',
+                                  padding: '16px',
+                                  borderRadius: '16px',
+                                  background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                                }}>
+                                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Existing Bookings Today
+                                  </div>
+                                  {getMeetingsForDate(selectedDate).map((m, i) => (
+                                    <div key={i} className="flex items-center gap-3 py-1" style={{ borderBottom: i === getMeetingsForDate(selectedDate).length - 1 ? 'none' : (isDark ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(0,0,0,0.05)') }}>
+                                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px rgba(16, 185, 129, 0.5)' }} />
+                                      <div className="flex-1">
+                                        <div className="text-sm font-semibold text-primary">{meetingTimeForVisitor(m)} - <span style={{ opacity: 0.7 }}>Booked</span></div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Time Slots & Form */}
+                              {selectedDate && isDayBookable(selectedDate) && (
+                                  <>
+                                    {/* Timezone Selection (Before Available Slots) */}
+                                    <div style={{ position: 'relative', marginBottom: '24px' }}>
+                                      <div>
+                                        <label
+                                          className="label-help flex items-center gap-2 mb-2"
+                                          style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}
+                                        >
+                                          <Globe size={14} className="opacity-70" /> User Timezone
+                                          <HintTooltip text="We've detected your timezone automatically, but you can adjust it here. Available slots will update to match your local area's time." isDark={isDark} />
+                                        </label>
+                                      </div>
+
+                                      <Select
+                                        value={String(userTimezone)}
+                                        options={tzOptions.map(t => ({ value: String(t.value), label: t.label }))}
+                                        onChange={(v) => setUserTimezone(Number(v))}
+                                        isDark={isDark}
+                                        searchable
+                                        aria-label="Your timezone"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <h3 className="heading-sm mb-3 flex items-center gap-2"><Clock size={16} /> Available Slots</h3>
+                                      <div className="slot-grid" style={{ marginBottom: '16px' }}>
+                                        {daySlots(selectedDate).map(({ label: time, taken, passed }) => (
+                                          <button key={time} type="button" className="slot-chip" disabled={taken || passed}
+                                            aria-pressed={selectedTime === time && !isCustomTime}
+                                            onClick={() => { setSelectedTime(time); setIsCustomTime(false); }}
+                                          >{time}</button>
+                                        ))}
+
+                                        {/* Custom (free) slot, always last: a time picker so the visitor can
+                                            propose any time, not just the host's fixed hours. */}
+                                        <CustomTimePicker
+                                          className="slot-chip"
+                                          isDark={isDark}
+                                          active={isCustomTime}
+                                          value={selectedTime}
+                                          validate={validateCustomTime}
+                                          isUnavailable={isCustomTimeUnavailable}
+                                          onError={(msg) => showAlert({ type: 'warning', message: msg })}
+                                          onApply={(t) => {
+                                            setSelectedTime(t);
+                                            // Composing a time the host already offers is just picking
+                                            // that slot. Calling it custom lit up the matching button AND
+                                            // left the same time on the chip - the hour appearing twice in
+                                            // one grid - besides waiving the "must be a slot on offer"
+                                            // check for a time that plainly is one.
+                                            setIsCustomTime(!convertedSlots.includes(t));
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        <div>
+                                          <label className="label-help">
+                                            Name *
+                                            <HintTooltip text="Warning: your name will show in the calendar, if you want to hide it, please use a nickname." isDark={isDark} />
+                                          </label>
+                                          <input aria-label="Name" className="dashboard-input" style={{ borderRadius: '12px', width: '100%' }} placeholder="Your Name" value={meetingData.name} onChange={e => setMeetingData({ ...meetingData, name: e.target.value })} />
+                                        </div>
+
+                                        <div>
+                                          <label className="label-help">
+                                            Email *
+                                            <HintTooltip text="Please use a correct email address. I will send the Google Calendar invitation and meeting link directly to this inbox." isDark={isDark} />
+                                          </label>
+                                          <input type="email" aria-label="Email" className="dashboard-input" style={{ borderRadius: '12px', width: '100%' }} placeholder="Your Email" value={meetingData.email} onChange={e => setMeetingData({ ...meetingData, email: e.target.value })} />
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <label className="input-label font-semibold">Reason *</label>
+                                        <textarea aria-label="Reason for meeting" className="dashboard-textarea" style={{ minHeight: '60px', borderRadius: '12px' }} placeholder="What's this meeting for?" rows={1} value={meetingData.reason} onChange={e => setMeetingData({ ...meetingData, reason: e.target.value })} />
+                                      </div>
+                                    </div>
+                                    <button onClick={handleMeetingSubmit} disabled={isBooking || !selectedDate || !selectedTime || !meetingData.email} className="btn-primary btn w-full" style={{ padding: '14px', borderRadius: '14px', opacity: (isBooking || !selectedDate || !selectedTime || !meetingData.email) ? 0.5 : 1 }}>
+                                      {isBooking ? (
+                                        <>
+                                          <motion.div
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                            style={{ display: 'flex' }}
+                                          >
+                                            <Clock size={16} />
+                                          </motion.div>
+                                          Booking...
+                                        </>
+                                      ) : (
+                                        'Confirm Booking'
+                                      )}
+                                    </button>
+                                  </>
+                                )}
+                            </>
+                          )}
+                        </motion.div>
+                      </AnimatePresence>
+                      </div>
+                    </div>
+
+                  </motion.div>                ) : (
+                  <motion.div
+                    key="message"
+                    custom={tabDirection}
+                    variants={tabVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                    style={{ flex: isMobile ? '0 0 auto' : 1, minHeight: 0, display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: isMobile ? 'flex-start' : 'center', overflowY: isMobile ? 'visible' : 'hidden', padding: isMobile ? '0 16px 24px' : '0 24px 12px', height: isMobile ? 'auto' : '100%' }}
+                  >
+                    {/* Single mailing box - flush blur-on-scroll header, info column removed */}
+                    <form
+                      onSubmit={handleSubmit}
+                      className={!isMobile ? "glass-panel-deep" : ""}
+                      style={{
+                        width: '100%',
+                        maxWidth: isMobile ? 'none' : '640px',
+                        height: isMobile ? 'auto' : '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                        borderRadius: isMobile ? '0' : '24px',
+                        boxShadow: isMobile ? 'none' : '0 18px 44px -22px rgba(0,0,0,0.16), 0 44px 96px -40px rgba(0,0,0,0.2)',
+                        willChange: 'transform',
+                        position: 'relative'
+                      }}
+                    >
+                      {/* Header - flush with the card top; frosts only once the body scrolls */}
+                      <div style={{
+                        flexShrink: 0,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: isMobile ? '4px 0 16px' : '20px 24px',
+                        backgroundColor: messageScrolled ? (isDark ? 'rgba(20,20,25,0.55)' : 'rgba(255,255,255,0.55)') : 'transparent',
+                        backdropFilter: messageScrolled ? 'blur(14px)' : 'none',
+                        WebkitBackdropFilter: messageScrolled ? 'blur(14px)' : 'none',
+                        borderBottom: `1px solid ${messageScrolled ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : 'transparent'}`,
+                        borderTopLeftRadius: isMobile ? '0' : '24px',
+                        borderTopRightRadius: isMobile ? '0' : '24px',
+                        transition: 'background-color 0.25s ease, border-color 0.25s ease',
+                        zIndex: 5,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {/* The navbar's mail icon docks here on this tab too, or the navbar shows an empty button. */}
+                          {!isMobile && (
+                            <DockIcon id="contact-icon" fly={dock && !warm}>
+                              <Mail size={20} className="text-primary" aria-hidden="true" />
+                            </DockIcon>
+                          )}
+                          <h3 style={{ fontSize: 'clamp(1.1rem, 0.9rem + 0.7vw, 1.3rem)', fontWeight: 700, margin: 0 }}>Send a Message</h3>
+                        </div>
+                        {!isMobile && (
+                          <button
+                            type="button"
+                            onClick={onClose}
+                            aria-label="Close contact form"
+                            className="btn-icon rounded-full"
+                            style={{ backgroundColor: 'transparent', color: 'var(--text-muted)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', transition: 'all 0.2s' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0, 0, 0, 0.05)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                          >
+                            <X size={18} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Scrolling body */}
+                      <div
+                        onScroll={(e) => setMessageScrolled(e.currentTarget.scrollTop > 4)}
+                        className={!isMobile ? "hide-scrollbar" : ""}
+                        style={{ flex: 1, minHeight: 0, overflowY: isMobile ? 'visible' : 'auto', padding: isMobile ? '0' : '4px 24px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}
+                      >
+
+                      {/* Message Form Fields */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div>
+                          <label className="input-label font-semibold">Name *</label>
+                          <div className="input-container">
+                            <User size={18} className="input-icon" />
+                            <input name="name" aria-label="Name" value={formData.name} onChange={handleInputChange} required className="input-with-icon" placeholder="Full Name" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="input-label font-semibold">Email *</label>
+                          <div className="input-container">
+                            <Mail size={18} className="input-icon" />
+                            <input type="email" name="email" aria-label="Email" value={formData.email} onChange={handleInputChange} required className="input-with-icon" placeholder="name@example.com" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div>
+                          <label className="input-label font-semibold">Phone Number <span className="font-normal" style={{ color: 'var(--text-muted)' }}>(optional)</span></label>
+                          <div className="input-container">
+                            <Phone size={18} className="input-icon" />
+                            <input type="tel" inputMode="tel" name="number" aria-label="Phone number (optional)" value={formData.number} onChange={handleInputChange} maxLength={CONTACT_LIMITS.number} className="input-with-icon" placeholder="+1 (555) 123-4567" />
+                          </div>
+                        </div>
+
+                        <div className="toggle-container" style={{ height: '48px', margin: 0 }}>
+                          <div className="flex items-center gap-2 font-semibold text-sm">
+                            <MessageSquare size={16} />
+                            WhatsApp Available
+                          </div>
+                          <div
+                            onClick={() => setFormData(prev => ({ ...prev, hasWhatsapp: !prev.hasWhatsapp }))}
+                            className={`toggle-switch ${formData.hasWhatsapp ? 'active' : ''}`}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <div className="toggle-knob">
+                              {formData.hasWhatsapp && <Check size={12} className="text-info" />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="input-label font-semibold">Message *</label>
+                        <textarea name="message" aria-label="Message" value={formData.message} onChange={handleInputChange} required rows={3} className="dashboard-textarea" placeholder="How can I help you?" />
+                      </div>
+
+                      {/* Attachments */}
+                      <div>
+                        <div className="flex-row-between mb-3">
+                          <label className="input-label font-semibold m-0">Attachments</label>
+                          <label className="flex items-center gap-1 text-sm text-info cursor-pointer font-medium">
+                            <Paperclip size={16} /> Add Files
+                            <input type="file" multiple onChange={handleFileChange} className="hidden" />
+                          </label>
+                        </div>
+                        {formData.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {formData.attachments.map((file, i) => (
+                              <div key={i} className="attachment-item">
+                                <span className="max-w-[150px] overflow-hidden truncate">{file.name}</span>
+                                <button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeFile(i)} className="btn-icon p-0 h-auto w-auto opacity-70 hover:opacity-100">
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <button type="submit" disabled={isSubmitting} className="btn-primary btn w-full" style={{ opacity: isSubmitting ? 0.7 : 1 }}>
+                        {isSubmitting ? (
+                          <>
+                            <motion.div
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                              className="flex"
+                            >
+                              <Clock size={18} />
+                            </motion.div>
+                            Sending...
+                          </>
+                        ) : (
+                          <>
+                            <Send size={18} /> Send Message
+                          </>
+                        )}
+                      </button>
+                      </div>
+                    </form>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+          </div>
+
+          {/* Sub-nav footer - inside the modal so it always sits centered at the
+              modal's bottom (tracks any screen size) instead of floating over content. */}
+          {!hideTabs && (
+            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', padding: isMobile ? '8px 0 12px' : '6px 0 16px', pointerEvents: 'auto' }}>
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.92 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.96 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="flex items-center gap-1 p-1.5 rounded-2xl md:gap-1.5 md:p-2 md:rounded-3xl backdrop-blur-xl
+                         shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.3)]"
+              style={{
+                backgroundColor: 'var(--subnav-bg, rgba(255,255,255,0.25))',
+                border: '1px solid var(--section-border)',
+              }}
+            >
+              {/* Book a Call Tab */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab !== 'meeting') {
+                    setTabDirection(-1);
+                    setActiveTab('meeting');
+                  }
+                }}
+                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold
+                           md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm cursor-pointer"
+                style={{
+                  color: activeTab === 'meeting' ? 'var(--accent)' : 'var(--text-muted)',
+                  background: 'transparent',
+                  border: 'none',
+                  transition: 'color 0.2s ease',
+                }}
+              >
+                {activeTab === 'meeting' && (
+                  <motion.div
+                    layoutId="contact-subnav-pill"
+                    className="absolute inset-0 rounded-xl md:rounded-2xl"
+                    style={{
+                      background: 'rgba(51, 149, 255, 0.12)',
+                      border: '1px solid rgba(51, 149, 255, 0.25)',
+                    }}
+                    transition={{ type: 'spring', damping: 28, stiffness: 380 }}
+                  />
+                )}
+                <Calendar className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" strokeWidth={2.2} />
+                <span className="relative z-10">Book a Call</span>
+              </button>
+
+              {/* Send a Message Tab */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab !== 'message') {
+                    setTabDirection(1);
+                    setActiveTab('message');
+                  }
+                }}
+                className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold
+                           md:gap-2.5 md:px-5 md:py-2.5 md:rounded-2xl md:text-sm cursor-pointer"
+                style={{
+                  color: activeTab === 'message' ? 'var(--accent)' : 'var(--text-muted)',
+                  background: 'transparent',
+                  border: 'none',
+                  transition: 'color 0.2s ease',
+                }}
+              >
+                {activeTab === 'message' && (
+                  <motion.div
+                    layoutId="contact-subnav-pill"
+                    className="absolute inset-0 rounded-xl md:rounded-2xl"
+                    style={{
+                      background: 'rgba(51, 149, 255, 0.12)',
+                      border: '1px solid rgba(51, 149, 255, 0.25)',
+                    }}
+                    transition={{ type: 'spring', damping: 28, stiffness: 380 }}
+                  />
+                )}
+                <MessageSquare className="relative z-10 w-[15px] h-[15px] md:w-[18px] md:h-[18px]" strokeWidth={2.2} />
+                <span className="relative z-10">Send a Message</span>
+              </button>
+            </motion.div>
+            </div>
+          )}
+        </motion.div>
+      </div>
+    </WarmHide>,
+    document.body
+  );
+};
+
+export default MContact;

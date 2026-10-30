@@ -1,4 +1,4 @@
-import { llmsFullText } from '../../utils/llmsText';
+import { llmsFullText } from '../../lib/llmsText';
 
 export const dynamic = 'force-static';
 

@@ -1,0 +1,1398 @@
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { collection, deleteDoc, doc, onSnapshot, setDoc, serverTimestamp, runTransaction, type QuerySnapshot } from 'firebase/firestore';
+import { Reorder, motion, AnimatePresence } from 'motion/react';
+import {
+    Plus, Download, CheckCircle2, Pencil, Receipt, Briefcase, LayoutDashboard,
+    TrendingUp, TrendingDown, Wallet, Sparkles, Clock, Lightbulb, SlidersHorizontal,
+    ChevronLeft, ChevronRight, RefreshCcw, Percent, Repeat, Hourglass, Tag, Banknote,
+    GripVertical, Landmark, Wallet2, Paperclip, CalendarClock,
+    AlertTriangle, PauseCircle, XCircle, Rocket, Gauge, Users, Unlink, Mail, ChevronDown,
+} from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { ref, listAll, deleteObject, getStorage } from 'firebase/storage';
+import app, { db } from '../../lib/firebase';
+import { appAuth } from '../../lib/appAuth';
+// Lazy Dashboard chunk - keeps firebase/storage out of the eager bundle.
+const storage = getStorage(app);
+import {
+    CURRENCIES, CURRENCY_SYMBOL, TreasuryData, TreasuryProject, TreasuryExpense, TreasuryReceipt,
+    DEFAULT_CONFIG, computeTotals, buildDailySeries, buildInsights, formatMoney, projectBalance,
+    projectReceived, projectPaymentStatus, buildHtmlReport, fetchLiveRates, TreasuryIncome, convert,
+    Insight, InsightAction, InsightIcon, InsightTone, actionableCount,
+    projectNextPaymentDate, TreasuryAccount, accountBalance, accountActivityCount, accountsTotal, accountOptions,
+    hasInstallments, installmentMonthlyAmount, installmentsPaidCount, projectContractTotal,
+    ProjectStatus, PROJECT_STATUSES, statusMeta, isFinished, isOngoing, normalizeProject,
+} from '../../lib/treasury';
+import RollingNumber from '../../ui/RollingNumber';
+import MTreasuryEntry from './TreasuryEntry';
+import MReceipt from './Receipt';
+import MAccount, { ACCOUNT_ICON, ACCOUNT_COLOR } from './Account';
+import DatePicker from '../../ui/DatePicker';
+import Select from '../../ui/Select';
+import SaveBar from '../SaveBar';
+import Alert, { AlertType } from '../../ui/Alert';
+import useSafeAlert from '../../hooks/useSafeAlert';
+import useTheme from '../../hooks/useTheme';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { XS_QUERY } from '../breakpoints';
+import { EASE } from '../motion';
+import { entryDoc, orderUpdates, planIncomeSave } from './writes';
+import { COLLECTIONS } from '../../lib/collections';
+import { ChartFilter, ChartPoint, TreasuryChart } from './TreasuryChart';
+
+// Treasury is admin-only: one document per project, payment, expense, account and
+// sent receipt (lib/collections), plus Treasury/settings for currency + FX. The
+// homepage's public name/status list (Settings/HandledProjects) is kept by a backend
+// trigger on TreasuryProjects, not written from here.
+const PROJECTS = collection(db, COLLECTIONS.treasuryProjects);
+const SPENDINGS = collection(db, COLLECTIONS.treasurySpendings);
+const INCOME = collection(db, COLLECTIONS.treasuryIncome);
+const ACCOUNTS = collection(db, COLLECTIONS.treasuryAccounts);
+const RECEIPTS = collection(db, COLLECTIONS.treasuryReceipts);
+const SETTINGS_DOC = doc(db, 'Treasury', 'settings');
+
+/** A collection snapshot as rows, each with its document id. */
+const rowsOf = <T,>(snap: QuerySnapshot) => snap.docs.map(d => ({ ...(d.data() as Omit<T, 'id'>), id: d.id }) as T);
+
+/** Local 'YYYY-MM-DD' day key for a ms-epoch timestamp (receipts store sentAt in ms). */
+const localDayKey = (ms: number): string => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+type Tab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
+
+// Per-insight Lucide icon + severity colour. The icon and the eyebrow carry the
+// meaning on their own, so colour is never the only thing saying "this is bad".
+const INSIGHT_ICONS: Record<InsightIcon, typeof Wallet> = {
+    overdue: AlertTriangle, outstanding: Clock, invoice: Receipt, installment: CalendarClock,
+    paused: PauseCircle, closed: XCircle, live: Rocket, pending: Hourglass, running: Hourglass,
+    ratio: Percent, profit: TrendingUp, loss: TrendingDown, runway: Gauge, account: Landmark,
+    noprice: Tag, recurring: Repeat, client: Users, unlinked: Unlink, email: Mail,
+    rates: RefreshCcw, empty: Lightbulb,
+};
+const TONE_COLOR: Record<InsightTone, string> = { urgent: '#f43f5e', warn: '#f59e0b', good: '#22c55e', info: '#3b82f6' };
+// How many suggestions show before the rest fold away - two rows of the two-column
+// grid. Enough to act on, short enough that the chart stays on screen.
+const INSIGHT_PREVIEW = 4;
+
+const DTreasury = () => {
+    const isDark = useTheme();
+    const [loading, setLoading] = useState(true);
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const [data, setData] = useState<TreasuryData>({ config: { ...DEFAULT_CONFIG }, projects: [], expenses: [], income: [], accounts: [], receipts: [] });
+    const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
+    const [archiveOpen, setArchiveOpen] = useState(false);
+    const [insightsOpen, setInsightsOpen] = useState(false);
+    const [tab, setTab] = useState<Tab>('overview');
+    const [chartFilter, setChartFilter] = useState<ChartFilter>('daily');
+    const [moneyView, setMoneyView] = useState<'all' | 'day'>('all');
+    const [moneyType, setMoneyType] = useState<'all' | 'income' | 'expense' | 'unlinked'>('all');
+    // Account filter: 'all' = every account, or a specific account id.
+    const [moneyAccount, setMoneyAccount] = useState<string>('all');
+    const [selectedDay, setSelectedDay] = useState(''); // '' = no day filter
+    const [modal, setModal] = useState<{ mode: 'project' | 'expense' | 'income'; project?: TreasuryProject | null; expense?: TreasuryExpense | null; income?: TreasuryIncome | null } | null>(null);
+    // Which project the receipt builder opened from (more can be added inside it). Null = closed.
+    const [receiptFor, setReceiptFor] = useState<string | null>(null);
+    // Receipts-tab filters (mirror the Money tab): by customer, flat vs grouped-by-day, and a day jump.
+    const [receiptCustomer, setReceiptCustomer] = useState<string>('all');
+    const [receiptView, setReceiptView] = useState<'all' | 'day'>('all');
+    const [receiptDay, setReceiptDay] = useState('');
+    const [accountModal, setAccountModal] = useState<{ account: TreasuryAccount | null } | null>(null);
+    const [ratesLoading, setRatesLoading] = useState(false);
+    const ratesChecked = useRef(false);
+    const { alert, showAlert, hideAlert } = useSafeAlert();
+
+    // Settings are STAGED in a draft and committed via Save / Discard (like
+    // SettingsTab) - currency choices + FX rates don't persist until you save.
+    const [draft, setDraft] = useState<TreasuryData['config']>({ ...DEFAULT_CONFIG });
+    const [settingsDirty, setSettingsDirty] = useState(false);
+
+    const isExtraSmall = useMediaQuery(XS_QUERY);
+
+    useEffect(() => {
+        // Treasury docs are admin-only - attach the listeners ONLY once a user is
+        // signed in, so we never fire an unauthenticated read (which Firestore
+        // rejects with permission-denied). onAuthStateChanged also re-attaches if
+        // the session restores after this mounts (e.g. dashboard kept on refresh).
+        let unsubs: Array<() => void> = [];
+        const detach = () => { unsubs.forEach(u => u()); unsubs = []; };
+        // Caught error handler → never an "uncaught snapshot listener" console error.
+        const onErr = (e: { code?: string }) => { if (e?.code !== 'permission-denied') console.warn('[Treasury] listener error', e); setLoading(false); };
+
+        const attach = () => {
+            unsubs.push(onSnapshot(PROJECTS, snap => {
+                const projects = snap.docs
+                    .map((d, i) => normalizeProject(d.id, d.data(), i))
+                    .sort((a, b) => a.order - b.order);
+                setData(prev => ({ ...prev, projects }));
+                setLoading(false);
+            }, onErr));
+            unsubs.push(onSnapshot(SPENDINGS, snap => {
+                const expenses = rowsOf<TreasuryExpense>(snap)
+                    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                setData(prev => ({ ...prev, expenses }));
+            }, onErr));
+            unsubs.push(onSnapshot(INCOME, snap => {
+                const income = rowsOf<TreasuryIncome>(snap)
+                    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                setData(prev => ({ ...prev, income }));
+            }, onErr));
+            unsubs.push(onSnapshot(ACCOUNTS, snap => {
+                const accounts = rowsOf<TreasuryAccount>(snap)
+                    .map((a, i) => ({ ...a, order: a.order ?? i }))
+                    .sort((a, b) => a.order - b.order);
+                setData(prev => ({ ...prev, accounts }));
+            }, onErr));
+            unsubs.push(onSnapshot(RECEIPTS, snap => {
+                const receipts = rowsOf<TreasuryReceipt>(snap)
+                    .sort((a, b) => (b.sentAt || 0) - (a.sentAt || 0)); // newest first
+                setData(prev => ({ ...prev, receipts }));
+            }, onErr));
+            unsubs.push(onSnapshot(SETTINGS_DOC, snap => {
+                const c = (snap.exists() ? snap.data() : {}) as Partial<TreasuryData['config']>;
+                const config: TreasuryData['config'] = {
+                    defaultCurrency: c.defaultCurrency ?? DEFAULT_CONFIG.defaultCurrency,
+                    displayCurrency: c.displayCurrency ?? DEFAULT_CONFIG.displayCurrency,
+                    rates: { ...DEFAULT_CONFIG.rates, ...(c.rates || {}) },
+                    ratesUpdatedAt: c.ratesUpdatedAt,
+                };
+                setData(prev => ({ ...prev, config }));
+                setSettingsLoaded(true);
+            }, e => { onErr(e); setSettingsLoaded(true); }));
+        };
+
+        const offAuth = onAuthStateChanged(appAuth(), user => {
+            detach();
+            if (user) attach(); else { setLoading(false); setSettingsLoaded(true); }
+        });
+        return () => { offAuth(); detach(); };
+    }, []);
+
+    const showToast = useCallback((text: string, tone: 'good' | 'warn' | 'info') => {
+        const type: AlertType = tone === 'good' ? 'success' : tone === 'warn' ? 'warning' : 'info';
+        showAlert({ type, message: text });
+    }, [showAlert]);
+
+    // Every entry is its own document (see treasury/writes.ts): a save replaces that one
+    // document whole and a delete removes it, so no other row is ever rewritten. The
+    // listeners above get Firestore's local echo straight away, so the screen updates
+    // without a hand-kept copy.
+    const failed = useCallback((what: string) => (err: unknown) => {
+        console.warn(`[Treasury] ${what} save failed`, err);
+        showToast('Save failed - check connection', 'warn');
+    }, [showToast]);
+    const putRow = useCallback((col: typeof PROJECTS, entry: { id: string }, what: string) => {
+        const { id, data: row } = entryDoc(entry);
+        setDoc(doc(col, id), row).catch(failed(what));
+    }, [failed]);
+    const removeRow = useCallback((col: typeof PROJECTS, id: string, what: string) => {
+        deleteDoc(doc(col, id)).catch(failed(what));
+    }, [failed]);
+
+    const writeConfig = useCallback((config: TreasuryData['config']) => {
+        setData(prev => ({ ...prev, config }));
+        return setDoc(SETTINGS_DOC, { ...config, lastWrite: serverTimestamp() }, { merge: true });
+    }, []);
+
+    // Always-current snapshot of the committed config, so the async silent rate
+    // refresh never writes against a stale closure (which used to clobber the
+    // saved currency back to USD when it fired before the settings doc loaded).
+    const configRef = useRef(data.config);
+    useEffect(() => { configRef.current = data.config; }, [data.config]);
+
+    const saveProject = (p: TreasuryProject) => putRow(PROJECTS, p, 'project');
+    const deleteProject = (id: string) => removeRow(PROJECTS, id, 'project');
+    const saveExpense = (e: TreasuryExpense) => putRow(SPENDINGS, e, 'spending');
+    // Best-effort: drop any uploaded receipt images for an entry when it's deleted.
+    const purgeAttachments = (id: string) => {
+        listAll(ref(storage, `treasury/${id}`))
+            .then(res => Promise.all(res.items.map(it => deleteObject(it).catch(() => { }))))
+            .catch(() => { /* nothing to clean / offline */ });
+    };
+
+    const deleteExpense = (id: string) => { purgeAttachments(id); removeRow(SPENDINGS, id, 'spending'); };
+
+    // A newly-logged monthly retainer payment advances that project's schedule to the
+    // next due date (even if the money arrived early or late). The payment and the
+    // advance commit in one transaction against the project as stored, so neither can
+    // land without the other.
+    const saveIncome = (i: TreasuryIncome) => {
+        const isNew = !data.income.some(x => x.id === i.id);
+        const advances = isNew && i.monthlyPayment && i.projectId && data.projects.find(p => p.id === i.projectId)?.monthly;
+        if (!advances) {
+            putRow(INCOME, i, 'income');
+            return;
+        }
+        runTransaction(db, async tx => {
+            const projectRef = doc(PROJECTS, i.projectId!);
+            const snap = await tx.get(projectRef);
+            const stored = snap.exists() ? snap.data() as Partial<TreasuryProject> : undefined;
+            const plan = planIncomeSave(i, true, stored);
+            tx.set(doc(INCOME, plan.income.id), plan.income.data);
+            if (plan.project) tx.update(projectRef, plan.project.data);
+            return { nextDate: plan.nextDate, name: stored?.name };
+        }).then(({ nextDate, name }) => {
+            if (!nextDate) { showToast('Payment logged', 'good'); return; }
+            const pretty = new Date(`${nextDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            showToast(`Logged ${name ?? 'the project'}'s monthly payment - next due ${pretty}`, 'good');
+        }).catch(err => { console.warn('[Treasury] income save failed', err); showToast('Save failed - check connection', 'warn'); });
+    };
+    const deleteIncome = (id: string) => { purgeAttachments(id); removeRow(INCOME, id, 'income'); };
+
+    // Add/edit a single account: its entry is replaced whole, so an optional field the
+    // edit cleared (notes, archived, excludeFromNetProfit) really goes, and no other
+    // account is touched (e.g. an opening-balance edit made via the MCP).
+    const saveAccount = (a: TreasuryAccount) => putRow(ACCOUNTS, a, 'account');
+    const deleteAccount = (id: string) => removeRow(ACCOUNTS, id, 'account');
+
+    /**
+     * Move a project to a status, stamping the date that status is about.
+     *
+     * Each stamp is written once and then left alone: re-entering a status keeps
+     * the original date rather than resetting it, so "paused since March" doesn't
+     * silently become today the next time the card is touched. Clearing a stamp is
+     * deliberate - leaving 'closed' for live work drops closedAt, because a project
+     * that is running again was plainly not closed on that date after all.
+     */
+    const setProjectStatus = (p: TreasuryProject, status: ProjectStatus) => {
+        if (status === p.status) return;
+        const today = localDayKey(Date.now());
+        const meta = statusMeta(status);
+        const next: TreasuryProject = { ...p, status };
+
+        next.endDate = meta.finished ? (p.endDate || today) : null;
+        // Cleared on resume, or a project paused in January, resumed in March and
+        // paused again today still reports its pause as 8 months old.
+        next.pausedAt = status === 'paused' ? (p.pausedAt || today) : null;
+        // Closed means the work ended, so closedAt IS the end date - derived, never
+        // stamped separately, or completing on one day and closing on another leaves
+        // the two disagreeing about when the project finished.
+        if (status === 'closed') next.closedAt = next.endDate;
+        else { next.closedAt = null; next.closedReason = ''; }
+
+        saveProject(next);
+        showToast(`"${p.name}" is now ${meta.label.toLowerCase()}`, meta.finished ? 'good' : 'info');
+    };
+
+    /**
+     * Correct a date a status stamped. Marking a project Completed or Closed
+     * records today, but work is usually marked done days or weeks after it
+     * actually ended - so the stamp is editable here rather than final, without
+     * having to open the full editor.
+     *
+     * For a closed project endDate and closedAt are the same day by definition,
+     * so editing one moves the other; they can never drift apart.
+     */
+    const setProjectDate = (p: TreasuryProject, field: 'endDate' | 'pausedAt', date: string) => {
+        const next: TreasuryProject = { ...p, [field]: date || null };
+        if (field === 'endDate' && p.status === 'closed') next.closedAt = date || null;
+        saveProject(next);
+    };
+
+    // -- staged settings (Save / Discard) -------------------------------------
+    // Keep the draft in sync with the committed config UNLESS the user is editing.
+    // Adjusted during render (React's documented pattern) rather than in an effect, so a
+    // freshly-synced config never renders one frame behind. `settingsDirty` still guards
+    // it, so an in-progress edit is never clobbered by an incoming snapshot.
+    const [syncedConfig, setSyncedConfig] = useState(data.config);
+    if (syncedConfig !== data.config) {
+        setSyncedConfig(data.config);
+        if (!settingsDirty) setDraft(data.config);
+    }
+
+    const stageConfig = (patch: Partial<TreasuryData['config']>) => { setDraft(d => ({ ...d, ...patch })); setSettingsDirty(true); };
+    const saveSettings = async () => {
+        try {
+            await writeConfig(draft);
+            setSettingsDirty(false);
+            showToast('Settings saved', 'good');
+        } catch (e) {
+            console.warn('[Treasury] settings save failed', e);
+            showToast("Couldn't save - make sure you're signed in as admin.", 'warn');
+        }
+    };
+    const discardSettings = () => { setDraft(data.config); setSettingsDirty(false); };
+
+    // -- live exchange rates --------------------------------------------------
+    const refreshRates = useCallback(async (silent = false) => {
+        if (!silent) setRatesLoading(true);
+        const r = await fetchLiveRates();
+        if (!silent) setRatesLoading(false);
+        if (r) {
+            if (silent) {
+                // Read the latest committed config (NOT a captured closure) so we only
+                // touch the rate fields and never overwrite the saved currency.
+                writeConfig({ ...configRef.current, rates: r.rates, ratesUpdatedAt: r.updatedAt }).catch(() => { });
+            } else {
+                setDraft(d => ({ ...d, rates: r.rates, ratesUpdatedAt: r.updatedAt }));
+                setSettingsDirty(true);
+                showToast('Rates fetched - Save to apply', 'info');
+            }
+        } else if (!silent) {
+            showToast("Couldn't reach FX source - kept current rates", 'warn');
+        }
+    }, [writeConfig, showToast]);
+
+    // Auto-refresh once per session if rates are missing or older than 6h. MUST wait
+    // for the settings doc to load first - otherwise it would compute "age" from the
+    // default config and write defaults (USD) over the real saved currency.
+    useEffect(() => {
+        if (loading || !settingsLoaded || ratesChecked.current) return;
+        ratesChecked.current = true;
+        const age = Date.now() - (configRef.current.ratesUpdatedAt || 0);
+        if (age > 6 * 3600 * 1000) refreshRates(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, settingsLoaded]);
+
+    const handleReorderActive = (newActive: TreasuryProject[]) => {
+        const completed = data.projects.filter(isFinished);
+        const merged = [...newActive, ...completed].map((p, idx) => ({ ...p, order: idx }));
+        setData(d => ({ ...d, projects: merged }));
+    };
+    // Only the rows whose position changed get a new `order`, checked against each
+    // project as stored so one removed elsewhere meanwhile isn't brought back as a stub.
+    const persistOrder = () => {
+        const ids = data.projects.map(p => p.id);
+        runTransaction(db, async tx => {
+            const snaps = await Promise.all(ids.map(id => tx.get(doc(PROJECTS, id))));
+            const stored: Record<string, { order?: unknown }> = {};
+            snaps.forEach(s => { if (s.exists()) stored[s.id] = s.data(); });
+            for (const u of orderUpdates(stored, ids)) tx.update(doc(PROJECTS, u.id), { order: u.order });
+        }).catch(err => { console.warn('[Treasury] order save failed', err); showToast('Save failed - check connection', 'warn'); });
+    };
+
+    const exportHtml = () => {
+        const html = buildHtmlReport(data, new Date());
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `treasury-${localDayKey(Date.now())}.html`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast('Report downloaded', 'good');
+    };
+
+    // -- derived --------------------------------------------------------------
+    const totals = useMemo(() => computeTotals(data), [data]);
+    const insights = useMemo(() => buildInsights(data), [data]);
+    const insightsToAct = useMemo(() => actionableCount(insights), [insights]);
+    const cur = data.config.displayCurrency;
+    const dailySeries = useMemo(() => buildDailySeries(data), [data]);
+
+    const activeProjects = useMemo(() => data.projects.filter(isOngoing), [data.projects]);
+    const completedProjects = useMemo(() => data.projects.filter(isFinished), [data.projects]);
+
+    const liveAccounts = useMemo(() => accountOptions(data.accounts), [data.accounts]);
+    const archivedAccounts = useMemo(() => data.accounts.filter(a => a.archived), [data.accounts]);
+    const liquidTotal = useMemo(() => accountsTotal(data), [data]);
+
+    const focusedProject = useMemo(() => {
+        if (focusedProjectId) {
+            const found = data.projects.find(p => p.id === focusedProjectId);
+            if (found) return found;
+        }
+        return activeProjects[0] || null;
+    }, [data.projects, focusedProjectId, activeProjects]);
+
+    // Unified money ledger (income + expenses), newest first, for the Money tab.
+    const moneyRows = useMemo(() => [
+        ...data.income.map(i => ({ t: 'income' as const, date: i.date, raw: i })),
+        ...data.expenses.map(e => ({ t: 'expense' as const, date: e.date, raw: e })),
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || '')), [data.income, data.expenses]);
+
+    // Apply the income/expense type filter and the account filter together.
+    const visibleRows = useMemo(() => {
+        let rows = moneyType === 'all'
+            ? moneyRows
+            // Unlinked is income-only by definition: an expense has no project earnings to miss.
+            : moneyType === 'unlinked'
+                ? moneyRows.filter(r => r.t === 'income' && !r.raw.projectId)
+                : moneyRows.filter(r => r.t === moneyType);
+        if (moneyAccount !== 'all') rows = rows.filter(r => r.raw.accountId === moneyAccount);
+        return rows;
+    }, [moneyRows, moneyType, moneyAccount]);
+
+    // Same rows grouped by day (newest day first) for the "By day" view.
+    const moneyByDay = useMemo(() => {
+        const map = new Map<string, typeof moneyRows>();
+        for (const r of visibleRows) { const k = r.date || '-'; (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
+        return Array.from(map.entries());
+    }, [visibleRows]);
+
+    // ── Receipts tab data (kept here, before the early return, so the hooks always run) ──
+    const receiptCustomers = useMemo(
+        () => [...new Set(data.receipts.map(r => r.to).filter(Boolean))],
+        [data.receipts],
+    );
+    const filteredReceipts = useMemo(
+        () => (receiptCustomer === 'all' ? data.receipts : data.receipts.filter(r => r.to === receiptCustomer)),
+        [data.receipts, receiptCustomer],
+    );
+    const receiptDayRows = useMemo(
+        () => (receiptDay ? filteredReceipts.filter(r => localDayKey(r.sentAt) === receiptDay) : []),
+        [filteredReceipts, receiptDay],
+    );
+    const receiptsByDay = useMemo(() => {
+        const map = new Map<string, TreasuryReceipt[]>();
+        for (const r of filteredReceipts) { const k = localDayKey(r.sentAt); (map.get(k) ?? map.set(k, []).get(k)!).push(r); }
+        return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0])); // newest day first
+    }, [filteredReceipts]);
+
+    // Aggregate the continuous daily series for the active filter (D-Views style).
+    const chartData = useMemo<ChartPoint[]>(() => {
+        if (!dailySeries.length) return [];
+        if (chartFilter === 'daily') {
+            return dailySeries.map(s => { const d = new Date(`${s.date}T00:00:00`); return { label: `${d.getDate()}/${d.getMonth() + 1}`, fullDate: s.date, earned: s.earned, spent: s.spent, type: 'daily' as const }; });
+        }
+        if (chartFilter === 'weekly') {
+            const weeks: Record<string, { e: number; s: number }> = {};
+            dailySeries.forEach(s => {
+                const d = new Date(`${s.date}T00:00:00`);
+                const day = d.getDay();
+                const monday = new Date(d); monday.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+                const key = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+                (weeks[key] ||= { e: 0, s: 0 }); weeks[key].e += s.earned; weeks[key].s += s.spent;
+            });
+            return Object.entries(weeks).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => { const d = new Date(`${key}T00:00:00`); return { label: `${d.getDate()}/${d.getMonth() + 1}`, fullDate: key, earned: v.e, spent: v.s, type: 'weekly' as const }; });
+        }
+        const months: Record<string, { e: number; s: number }> = {};
+        dailySeries.forEach(s => { const key = s.date.slice(0, 7); (months[key] ||= { e: 0, s: 0 }); months[key].e += s.earned; months[key].s += s.spent; });
+        return Object.entries(months).sort((a, b) => a[0].localeCompare(b[0])).map(([key, v]) => { const d = new Date(`${key}-01T00:00:00`); return { label: d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(), fullDate: `${key}-01`, earned: v.e, spent: v.s, type: 'monthly' as const }; });
+    }, [dailySeries, chartFilter]);
+
+    const cards = [
+        { label: 'Received', value: totals.earned, icon: TrendingUp, color: '#22c55e' },
+        { label: 'Outstanding', value: totals.outstanding, icon: Clock, color: '#f59e0b' },
+        { label: 'Spent', value: totals.spent, icon: TrendingDown, color: '#f43f5e' },
+        { label: 'Net profit', value: totals.net, icon: Wallet, color: totals.net >= 0 ? '#22c55e' : '#f43f5e' },
+    ];
+
+    const statusColor = (s: string) => statusMeta(s).color;
+    const payColor: Record<string, string> = { paid: '#22c55e', partial: '#f59e0b', unpaid: '#f43f5e' };
+
+    const TABS: { id: Tab; label: string; icon: typeof Wallet }[] = [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+        { id: 'projects', label: 'Projects', icon: Briefcase },
+        { id: 'money', label: 'Money', icon: Wallet },
+        { id: 'accounts', label: 'Accounts', icon: Landmark },
+        { id: 'receipts', label: 'Receipts', icon: Receipt },
+        { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
+    ];
+
+    if (loading || !settingsLoaded) {
+        return <div className="w-full h-full flex items-center justify-center text-sec"><Sparkles className="animate-pulse mr-2" size={20} /> Loading treasury…</div>;
+    }
+
+    const sectionTitle = (icon: React.ReactNode, text: string, action?: React.ReactNode) => (
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+            <div className="flex items-center gap-2">{icon}<span className="text-sm font-bold text-primary">{text}</span></div>
+            {action}
+        </div>
+    );
+
+    // Acting on a suggestion: focus what it is about, then open the tab that can
+    // do something about it.
+    const runInsight = (a: InsightAction) => {
+        // Any money-tab suggestion clears the slices first. Landing on the right
+        // filter only to find an empty list because a day or an account was still
+        // selected is worse than not filtering at all - and that cuts both ways:
+        // when this reset lived inside the `unlinked` branch, every OTHER money
+        // suggestion inherited a sticky income-only filter from the last one, so
+        // "Net negative -> Review spending" opened on an empty list of expenses.
+        if (a.tab === 'money') {
+            setMoneyType(a.filter === 'unlinked' ? 'unlinked' : 'all');
+            setMoneyAccount('all');
+            setSelectedDay('');
+            setMoneyView('all');
+        }
+        if (a.projectId) {
+            setFocusedProjectId(a.projectId);
+            // Finished work sits inside the collapsed archive - open it, or the
+            // click would focus a card nobody can see.
+            const p = data.projects.find(x => x.id === a.projectId);
+            if (p && isFinished(p)) setArchiveOpen(true);
+        }
+        setTab(a.tab);
+    };
+
+    // One suggestion. Actionable ones are real buttons that take you to the fix;
+    // the rest are inert cards, so a hover never promises something that isn't there.
+    const renderInsight = (ins: Insight) => {
+        const Icon = INSIGHT_ICONS[ins.icon] || Lightbulb;
+        const c = TONE_COLOR[ins.tone];
+        const act = ins.action;
+        return (
+            <button key={ins.id} type="button" disabled={!act} title={act?.label}
+                onClick={act ? () => runInsight(act) : undefined}
+                className={`group text-left w-full flex items-start gap-3 p-3 rounded-2xl border transition-[background-color,border-color] duration-200
+                    ${ins.tone === 'urgent'
+                        ? 'border-rose-500/25 bg-rose-500/[0.06]'
+                        : 'border-black/[0.06] dark:border-white/[0.06] bg-black/[0.015] dark:bg-white/[0.02]'}
+                    ${act ? 'cursor-pointer hover:border-blue-500/40 hover:bg-blue-500/[0.05]' : 'cursor-default'}`}>
+                <span className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${c}24`, color: c }}><Icon size={17} /></span>
+                <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-2">
+                        <span className="text-[10.5px] font-bold uppercase tracking-[0.08em] leading-tight" style={{ color: c }}>{ins.label}</span>
+                        {ins.value && <span className="text-xs font-extrabold text-primary tnum shrink-0">{ins.value}</span>}
+                    </span>
+                    <span className="block text-[13px] leading-snug text-sec mt-0.5">{ins.text}</span>
+                </span>
+                {act && <ChevronRight size={15} className="shrink-0 mt-1.5 text-sec/35 group-hover:text-blue-500 transition-colors" />}
+            </button>
+        );
+    };
+
+    // One money-ledger row (income or expense), tappable to edit.
+    const renderMoneyRow = (r: typeof moneyRows[number]) => {
+        if (r.t === 'income') {
+            const i = r.raw;
+            const proj = i.projectId ? data.projects.find(p => p.id === i.projectId) : null;
+            const acct = i.accountId ? data.accounts.find(a => a.id === i.accountId) : null;
+            return (
+                <div key={`i-${i.id}`} onClick={() => setModal({ mode: 'income', income: i })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500 flex-shrink-0"><Banknote size={16} /></div>
+                    <div className="min-w-0 flex-1">
+                        <span className="text-sm font-semibold text-primary truncate block">{proj ? proj.name : (i.note || 'Payment')}</span>
+                        <span className="text-xs text-sec truncate block">{i.date}{proj && i.note ? ` · ${i.note}` : ''}{acct ? ` · → ${acct.name}` : ''}</span>
+                    </div>
+                    {i.attachments?.length ? <span className="flex items-center gap-0.5 text-[11px] text-sec font-semibold flex-shrink-0" title={`${i.attachments.length} attachment${i.attachments.length === 1 ? '' : 's'}`}><Paperclip size={12} />{i.attachments.length}</span> : null}
+                    <span className="text-sm font-bold text-emerald-500 tnum flex-shrink-0">+{formatMoney(i.amount, i.currency)}</span>
+                    <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                </div>
+            );
+        }
+        const e = r.raw;
+        const eproj = e.projectId ? data.projects.find(p => p.id === e.projectId) : null;
+        const eacct = e.accountId ? data.accounts.find(a => a.id === e.accountId) : null;
+        return (
+            <div key={`e-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e })} role="button" tabIndex={0} className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-rose-500/10 text-rose-400 flex-shrink-0"><Receipt size={16} /></div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-primary truncate">{e.label}</span>
+                        {e.recurring && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">monthly</span>}
+                        {e.clientPaid && <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500">client-paid</span>}
+                    </div>
+                    <span className="text-xs text-sec truncate block">{e.category ? `${e.category} · ` : ''}{eproj ? `${eproj.name} · ` : ''}{e.date}{eacct ? ` · ← ${eacct.name}` : ''}</span>
+                </div>
+                {e.attachments?.length ? <span className="flex items-center gap-0.5 text-[11px] text-sec font-semibold flex-shrink-0" title={`${e.attachments.length} attachment${e.attachments.length === 1 ? '' : 's'}`}><Paperclip size={12} />{e.attachments.length}</span> : null}
+                <span className="text-sm font-bold text-rose-500 tnum flex-shrink-0">−{formatMoney(e.amount, e.currency)}</span>
+                <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+            </div>
+        );
+    };
+
+    // Net of a day's rows in the display currency, + a friendly header label.
+    const dayNet = (rows: typeof moneyRows) => rows.reduce((s, r) => {
+        const amt = convert(r.raw.amount || 0, r.raw.currency, cur, data.config.rates);
+        if (r.t === 'income') return s + amt;
+        if (r.raw.clientPaid) return s; // client-paid: not my money
+        return s - amt;
+    }, 0);
+    const fmtDayHeader = (day: string) => {
+        if (day === '-') return 'Undated';
+        const d = new Date(`${day}T00:00:00`);
+        if (Number.isNaN(d.getTime())) return day;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const diff = Math.round((today.getTime() - d.getTime()) / 86400000);
+        if (diff === 0) return 'Today';
+        if (diff === 1) return 'Yesterday';
+        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+    };
+    // Move the day filter by ±1 day (starts from today when none is set).
+    const stepDay = (delta: number) => {
+        const base = selectedDay ? new Date(`${selectedDay}T00:00:00`) : new Date();
+        base.setDate(base.getDate() + delta);
+        setSelectedDay(`${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`);
+    };
+    const dayRows = selectedDay ? visibleRows.filter(r => r.date === selectedDay) : [];
+
+    // ── Receipts tab: day navigator + row renderer (the memos live up with the others,
+    // before the early return, since hooks can't run conditionally). ──
+    const stepReceiptDay = (delta: number) => {
+        const base = receiptDay ? new Date(`${receiptDay}T00:00:00`) : new Date();
+        base.setDate(base.getDate() + delta);
+        setReceiptDay(localDayKey(base.getTime()));
+    };
+
+    const renderReceiptRow = (r: TreasuryReceipt) => {
+        const d = new Date(r.sentAt);
+        return (
+            <div key={r.id} className="flex items-center gap-3 p-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-500/10 text-blue-500"><Receipt size={16} /></div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-primary truncate">{r.to}</span>
+                        {r.via === 'mcp' && <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400">via AI</span>}
+                    </div>
+                    <div className="text-[11px] text-sec truncate">
+                        {r.projectNames && r.projectNames.length ? r.projectNames.join(', ') : '-'} · {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    {r.receiptNo && <div className="text-[10px] text-sec/60 font-mono mt-0.5">{r.receiptNo}</div>}
+                </div>
+                <div className="text-right shrink-0">
+                    <div className="text-base font-extrabold text-primary tnum">{formatMoney(r.total, r.currency)}</div>
+                    {typeof r.balance === 'number' && r.balance > 0 && <div className="text-[10.5px] text-amber-500 font-semibold leading-tight mt-0.5">{formatMoney(r.balance, r.currency)} due</div>}
+                </div>
+            </div>
+        );
+    };
+
+    const kpiCards = (
+        <div className={`grid gap-3 ${isExtraSmall ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
+            {cards.map(c => {
+                const Icon = c.icon;
+                return (
+                    <div key={c.label} className="glass-panel p-4 flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-sec uppercase tracking-wider">{c.label}</span>
+                            <Icon size={16} style={{ color: c.color }} />
+                        </div>
+                        <RollingNumber
+                            text={formatMoney(c.value, cur)}
+                            className="text-2xl font-extrabold font-inter tnum"
+                            style={{ color: c.color }}
+                        />
+                    </div>
+                );
+            })}
+        </div>
+    );
+
+    return (
+        <div className="h-[85vh] flex flex-col gap-5 relative">
+            {/* Navbar */}
+            <div className="glass-surface p-1.5 rounded-xl flex gap-2 overflow-x-auto shrink-0">
+                {TABS.map(t => {
+                    const Icon = t.icon;
+                    const active = tab === t.id;
+                    return (
+                        <button key={t.id} onClick={() => setTab(t.id)}
+                            className={`flex items-center gap-2 px-5 py-3 rounded-lg border-none cursor-pointer font-sans font-semibold text-sm whitespace-nowrap transition-all
+                                ${active ? 'bg-blue-500/15 text-blue-500' : 'bg-transparent text-gray-500 hover:bg-blue-500/10 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400'}`}>
+                            <Icon size={18} />
+                            <span className={isExtraSmall ? 'hidden' : ''}>{t.label}</span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pr-1 pb-6">
+                {/* Plays on a tab switch only: the dashboard already fades this whole page in
+                    once when it opens, and a second entrance on mount read as a stutter. */}
+                <AnimatePresence mode="wait" initial={false}>
+                <motion.div key={tab} className="flex flex-col gap-5"
+                    initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.45, ease: EASE.outQuint }}>
+
+                    {tab === 'overview' && (
+                        <>
+                            {kpiCards}
+                            {/* Suggestions. lib/treasury.ts decides WHAT is worth saying;
+                                this decides how much of it you see at once - loudest first,
+                                two across, and everything past the first four folded away.
+                                The old panel was one column of equally-weighted rows that ran
+                                the length of the screen before the chart got a look in. */}
+                            <div className="glass-panel p-4 sm:p-5">
+                                <div className="flex items-center justify-between gap-3 mb-3.5">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-amber-400/15 text-amber-500"><Lightbulb size={15} /></span>
+                                        <span className="text-sm font-bold text-primary">Suggestions</span>
+                                        <span className="text-xs text-sec truncate hidden sm:inline">
+                                            {insightsToAct ? `${insightsToAct} waiting on a decision` : 'Nothing is waiting on you'}
+                                        </span>
+                                    </div>
+                                    <span className={`text-[11px] font-bold tnum px-2 py-0.5 rounded-full shrink-0 ${insightsToAct ? 'bg-amber-500/15 text-amber-500' : 'bg-black/[0.05] dark:bg-white/[0.07] text-sec'}`}>{insights.length}</span>
+                                </div>
+                                <div className="grid gap-1.5 sm:grid-cols-2">
+                                    {insights.slice(0, INSIGHT_PREVIEW).map(renderInsight)}
+                                </div>
+                                <AnimatePresence initial={false}>
+                                    {insightsOpen && (
+                                        <motion.div key="more" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.28, ease: 'easeInOut' }} className="overflow-hidden">
+                                            <div className="grid gap-1.5 sm:grid-cols-2 pt-1.5">
+                                                {insights.slice(INSIGHT_PREVIEW).map(renderInsight)}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                                {insights.length > INSIGHT_PREVIEW && (
+                                    <button onClick={() => setInsightsOpen(o => !o)}
+                                        className="mt-4 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border-none bg-transparent cursor-pointer text-xs font-bold text-sec hover:text-primary hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors">
+                                        {insightsOpen ? 'Show less' : `${insights.length - INSIGHT_PREVIEW} more`}
+                                        <ChevronDown size={14} className={`transition-transform duration-200 ${insightsOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                )}
+                            </div>
+                            {chartData.length === 0 ? (
+                                <div className="glass-panel p-8 text-center text-sec text-sm">No dated activity yet - add a project payment or an expense and the graph fills in from that day.</div>
+                            ) : (
+                                <TreasuryChart data={chartData} filter={chartFilter} setFilter={setChartFilter} isDark={isDark} cur={cur} />
+                            )}
+                        </>
+                    )}
+
+                    {tab === 'projects' && (
+                        <div className="flex flex-col gap-6">
+                            {/* Dual-Pane active workspace */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                                {/* Left Column: Active Projects slider (col-span-2) */}
+                                <div className="lg:col-span-2 glass-panel p-5 flex flex-col gap-4">
+                                    {sectionTitle(
+                                        <Briefcase size={16} className="text-blue-400" />,
+                                        'Active projects',
+                                        <button onClick={() => setModal({ mode: 'project', project: null })} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Project</button>
+                                    )}
+                                    <p className="text-xs text-sec -mt-2">Drag cards to reorder - everything not finished. Click a card to focus details.</p>
+                                    
+                                    {activeProjects.length === 0 ? (
+                                        <div className="border-2 border-dashed border-input-border rounded-2xl p-8 text-center text-sec text-sm">No active projects. Click "+ Project" to add one.</div>
+                                    ) : (
+                                        <Reorder.Group as="div" layoutScroll axis="x" values={activeProjects} onReorder={handleReorderActive} className="flex gap-3 overflow-x-auto pb-3 custom-scrollbar">
+                                            {activeProjects.map(p => {
+                                                const pay = projectPaymentStatus(p, data.income, data.config.rates);
+                                                const bal = projectBalance(p, data.income, data.config.rates);
+                                                const received = projectReceived(p, data.income, data.config.rates);
+                                                const isFocused = focusedProject?.id === p.id;
+                                                return (
+                                                    <Reorder.Item as="div" key={p.id} value={p} onDragEnd={persistOrder}
+                                                        onClick={() => setFocusedProjectId(p.id)}
+                                                        className={`group flex-shrink-0 w-[240px] p-4 flex flex-col gap-3 cursor-grab active:cursor-grabbing relative border rounded-2xl backdrop-blur-md shadow-sm hover:shadow-md transition-[border-color,box-shadow,background-color] duration-200 select-none
+                                                            ${isFocused 
+                                                                ? 'bg-white border-blue-500/50 dark:border-blue-400/50 ring-1 ring-blue-500/30 dark:bg-[#1c1c24]' 
+                                                                : 'bg-slate-50 dark:bg-[#13131a] border-slate-200/80 dark:border-white/5'}`}
+                                                    >
+                                                        <div className="absolute top-0 left-4 right-4 h-0.5 rounded-full" style={{ background: statusColor(p.status) }} />
+                                                        
+                                                        <div className="min-w-0 pr-14">
+                                                            <h4 className="text-[15px] font-bold text-primary truncate" title={p.name}>{p.name}</h4>
+                                                            {p.client && <p className="text-xs text-sec truncate">{p.client}</p>}
+                                                        </div>
+
+                                                        <div className="absolute top-4 right-4 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                                                            <div className="p-1.5 rounded-lg text-sec/45 hover:text-primary cursor-grab active:cursor-grabbing hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
+                                                                <GripVertical size={14} />
+                                                            </div>
+                                                            <button onClick={(e) => { e.stopPropagation(); setModal({ mode: 'project', project: p }); }} className="p-1.5 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-colors"><Pencil size={14} /></button>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${statusColor(p.status)}22`, color: statusColor(p.status) }}>{statusMeta(p.status).label}</span>
+                                                            {p.monthly
+                                                                ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#10b98122', color: '#10b981' }}>monthly</span>
+                                                                : <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${payColor[pay]}22`, color: payColor[pay] }}>{pay}</span>}
+                                                            {/* The list already flags retainers; flag plans too, or installments are
+                                                                invisible until you open the project. */}
+                                                            {hasInstallments(p) && (
+                                                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full tnum" style={{ background: '#3395ff22', color: '#3395ff' }}>{p.installmentMonths}x</span>
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-base font-extrabold text-primary tnum">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}{p.monthly ? <span className="text-xs font-bold text-sec">/mo</span> : ''}</span>
+                                                            {received > 0 && <p className="text-[10.5px] text-emerald-500 font-semibold leading-tight mt-0.5">{formatMoney(received, p.priceCurrency)} received</p>}
+                                                            {!p.monthly && bal > 0 && <p className="text-[10.5px] text-amber-500 font-semibold leading-tight mt-0.5">{formatMoney(bal, p.priceCurrency)} to collect</p>}
+                                                            {p.monthly && (() => { const np = projectNextPaymentDate(p, data.income); return np ? <p className="text-[10.5px] text-sec font-semibold leading-tight mt-0.5">next {new Date(`${np}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p> : null; })()}
+                                                        </div>
+                                                        <div className="text-[10.5px] text-sec flex items-center gap-1 mt-auto pt-2"><Clock size={11} /><span>{p.startDate || '-'}{p.endDate ? ` → ${p.endDate}` : isFinished(p) ? '' : ' → ongoing'}</span></div>
+                                                    </Reorder.Item>
+                                                );
+                                            })}
+                                        </Reorder.Group>
+                                    )}
+                                </div>
+
+                                {/* Right Column: Focus Detail Panel (col-span-1) */}
+                                <div className="glass-panel p-5 flex flex-col gap-4 h-full min-h-[300px]">
+                                    {focusedProject ? (
+                                        <div className="flex flex-col gap-4 h-full justify-between">
+                                            {/* Header details */}
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-500 font-inter">Project Focus</span>
+                                                        <h3 className="text-lg font-black text-primary truncate mt-0.5" title={focusedProject.name}>{focusedProject.name}</h3>
+                                                        {focusedProject.client && <p className="text-xs text-sec truncate">{focusedProject.client}</p>}
+                                                    </div>
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full" style={{ background: `${statusColor(focusedProject.status)}22`, color: statusColor(focusedProject.status) }}>{statusMeta(focusedProject.status).label}</span>
+                                                </div>
+
+                                                {/* Progress Tracker */}
+                                                {!focusedProject.monthly && focusedProject.priceAmount > 0 && (() => {
+                                                    const received = projectReceived(focusedProject, data.income, data.config.rates);
+                                                    // Measure against price + installment surcharge, NOT the raw price - otherwise
+                                                    // "% paid" overstates and contradicts the "left" figure right next to it
+                                                    // (which already uses the true total via projectBalance).
+                                                    const owed = projectContractTotal(focusedProject);
+                                                    const pct = Math.min(100, Math.round((received / owed) * 100));
+                                                    const onPlan = hasInstallments(focusedProject);
+                                                    const months = focusedProject.installmentMonths || 0;
+                                                    const perMonth = installmentMonthlyAmount(focusedProject);
+                                                    // Shared with the receipt builder so the two never disagree (it also
+                                                    // carries the rounding tolerance a bare floor() got wrong).
+                                                    const paidCount = installmentsPaidCount(focusedProject, data.income, data.config.rates);
+                                                    return (
+                                                        <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/5">
+                                                            <div className="flex items-center justify-between text-xs font-bold text-sec">
+                                                                <span>Payment progress</span>
+                                                                <span className="tnum text-emerald-500">{pct}% paid</span>
+                                                            </div>
+                                                            <div className="w-full h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden relative">
+                                                                <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.4, ease: "easeOut" }} className="h-full bg-emerald-500 rounded-full" />
+                                                                {/* On a plan, notch the bar into one segment per installment, so you can
+                                                                    read "how many months are covered" straight off the bar. */}
+                                                                {onPlan && Array.from({ length: months - 1 }, (_, i) => (
+                                                                    <div
+                                                                        key={i}
+                                                                        className="absolute top-0 bottom-0 w-px bg-white/70 dark:bg-black/50"
+                                                                        style={{ left: `${((i + 1) / months) * 100}%` }}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                            {onPlan && (
+                                                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                                                    <span className="inline-flex items-center gap-1.5 font-bold text-blue-500">
+                                                                        <CalendarClock size={13} className="shrink-0" />
+                                                                        <span className="tnum">{months} installments x {formatMoney(perMonth, focusedProject.priceCurrency)}/mo</span>
+                                                                    </span>
+                                                                    <span className="font-semibold text-sec tnum">{paidCount} of {months} paid</span>
+                                                                </div>
+                                                            )}
+                                                            <div className="flex flex-wrap items-center justify-between text-[11px] text-sec gap-2 mt-0.5">
+                                                                <span className="font-semibold text-emerald-500 tnum">{formatMoney(received, focusedProject.priceCurrency)} received</span>
+                                                                <span className="font-semibold text-amber-500 tnum">{formatMoney(projectBalance(focusedProject, data.income, data.config.rates), focusedProject.priceCurrency)} left</span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+
+                                                {/* Monthly retainer: rate + next due date */}
+                                                {focusedProject.monthly && (
+                                                    <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-emerald-500/[0.04] border border-emerald-500/15">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <Repeat size={15} className="text-emerald-500 shrink-0" />
+                                                            <div className="min-w-0">
+                                                                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Monthly retainer</div>
+                                                                <div className="text-xs text-sec truncate">{focusedProject.priceAmount ? `${formatMoney(focusedProject.priceAmount, focusedProject.priceCurrency)}/mo` : 'No rate set'}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right shrink-0">
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider text-sec">Next payment</div>
+                                                            <div className="text-xs font-bold text-primary tnum">
+                                                                {(() => { const np = projectNextPaymentDate(focusedProject, data.income); return np ? new Date(`${np}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Log a payment'; })()}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Sub-Ledger: Linked Transactions */}
+                                                <div className="flex flex-col gap-2">
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-sec font-inter">Linked ledger</span>
+                                                    <div className="max-h-[140px] overflow-y-auto pr-1 flex flex-col gap-1.5 custom-scrollbar min-h-[60px]">
+                                                        {(() => {
+                                                            const linkedInc = data.income.filter(i => i.projectId === focusedProject.id);
+                                                            const linkedExp = data.expenses.filter(e => e.projectId === focusedProject.id);
+                                                            if (linkedInc.length === 0 && linkedExp.length === 0) {
+                                                                return <div className="text-[11px] text-sec italic text-center py-4 bg-black/[0.01] dark:bg-white/[0.01] rounded-xl border border-dashed border-black/5 dark:border-white/5">No payments or expenses linked.</div>;
+                                                            }
+                                                            return (
+                                                                <>
+                                                                    {linkedInc.map(i => (
+                                                                        <div key={`li-${i.id}`} onClick={() => setModal({ mode: 'income', income: i })} role="button" tabIndex={0} title="Edit this payment"
+                                                                            className="group flex items-center justify-between gap-2 p-2 rounded-xl bg-emerald-500/[0.03] dark:bg-emerald-500/[0.05] border border-emerald-500/10 text-xs cursor-pointer hover:border-emerald-500/40 hover:bg-emerald-500/[0.08] transition-colors">
+                                                                            <span className="text-sec truncate max-w-[120px] flex items-center gap-1.5">{i.note || 'Payment'}<Pencil size={11} className="text-sec opacity-0 group-hover:opacity-70 transition-opacity shrink-0" /></span>
+                                                                            <span className="font-bold text-emerald-500 tnum">+{formatMoney(i.amount, i.currency)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                    {linkedExp.map(e => (
+                                                                        <div key={`le-${e.id}`} onClick={() => setModal({ mode: 'expense', expense: e })} role="button" tabIndex={0} title="Edit this expense"
+                                                                            className="group flex items-center justify-between gap-2 p-2 rounded-xl bg-rose-500/[0.03] dark:bg-rose-500/[0.05] border border-rose-500/10 text-xs cursor-pointer hover:border-rose-500/40 hover:bg-rose-500/[0.08] transition-colors">
+                                                                            <span className="text-sec truncate max-w-[120px] flex items-center gap-1.5">{e.label}<Pencil size={11} className="text-sec opacity-0 group-hover:opacity-70 transition-opacity shrink-0" /></span>
+                                                                            <span className="font-bold text-rose-500 tnum">-{formatMoney(e.amount, e.currency)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Quick Actions Panel */}
+                                            <div className="flex flex-col gap-2 mt-auto pt-4 border-t border-[var(--section-border)]">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <button onClick={() => setModal({ mode: 'income', income: { projectId: focusedProject.id, date: localDayKey(Date.now()), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/15 transition-all"><Plus size={14} /> Log income</button>
+                                                    <button onClick={() => setModal({ mode: 'expense', expense: { projectId: focusedProject.id, date: localDayKey(Date.now()), amount: 0, currency: focusedProject.priceCurrency, createdAt: Date.now(), id: '', label: '' } })} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-rose-500 bg-rose-500/10 hover:bg-rose-500/15 transition-all"><Plus size={14} /> Log expense</button>
+                                                </div>
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sec"><CheckCircle2 size={12} /> Status</div>
+                                                    <Select
+                                                        value={focusedProject.status}
+                                                        options={PROJECT_STATUSES.map(m => ({ value: m.id, label: m.label, hint: m.hint }))}
+                                                        onChange={(v) => setProjectStatus(focusedProject, v as ProjectStatus)}
+                                                        isDark={isDark}
+                                                        searchable={false}
+                                                        aria-label="Project status"
+                                                    />
+                                                    {/* The date whichever status stamped, editable in place - the work
+                                                        rarely ended on the day someone got round to marking it. */}
+                                                    {isFinished(focusedProject) && (
+                                                        <div className="flex flex-col gap-1 mt-0.5">
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-sec">Ended</span>
+                                                            <DatePicker value={focusedProject.endDate || ''} onChange={(d) => setProjectDate(focusedProject, 'endDate', d)} isDark={isDark} placeholder="Not ended" />
+                                                        </div>
+                                                    )}
+                                                    {focusedProject.status === 'paused' && (
+                                                        <div className="flex flex-col gap-1 mt-0.5">
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-sec">Paused since</span>
+                                                            <DatePicker value={focusedProject.pausedAt || ''} onChange={(d) => setProjectDate(focusedProject, 'pausedAt', d)} isDark={isDark} placeholder="Today" />
+                                                        </div>
+                                                    )}
+                                                    {focusedProject.status === 'closed' && focusedProject.closedReason && (
+                                                        <p className="text-[11px] text-sec m-0">{focusedProject.closedReason}</p>
+                                                    )}
+                                                </div>
+                                                <button onClick={() => setReceiptFor(focusedProject.id)} className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-primary bg-black/[0.05] dark:bg-white/[0.07] hover:bg-black/[0.09] dark:hover:bg-white/[0.11] transition-all"><Receipt size={14} /> Receipt</button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-center text-sec text-xs italic">Select an active project card to view detail actions.</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Completed Projects Archive Section */}
+                            <div className="glass-panel p-5 flex flex-col gap-3">
+                                <button onClick={() => setArchiveOpen(!archiveOpen)} className="flex items-center justify-between w-full border-none bg-transparent p-0 cursor-pointer text-sec hover:text-primary transition-colors">
+                                    <div className="flex items-center gap-2">
+                                        <CheckCircle2 size={16} className="text-emerald-500" />
+                                        <span className="text-sm font-bold text-primary">Completed projects archive</span>
+                                        <span className="text-[11px] font-bold tnum px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">{completedProjects.length}</span>
+                                    </div>
+                                    <motion.div animate={{ rotate: archiveOpen ? -90 : 0 }} transition={{ duration: 0.2 }}><ChevronLeft size={16} /></motion.div>
+                                </button>
+                                
+                                <AnimatePresence initial={false}>
+                                    {archiveOpen && (
+                                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25, ease: "easeInOut" }} className="overflow-hidden">
+                                            {completedProjects.length === 0 ? (
+                                                <div className="text-xs text-sec italic py-6 text-center">No completed projects archived yet.</div>
+                                            ) : (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-3">
+                                                    {completedProjects.map(p => {
+                                                        const received = projectReceived(p, data.income, data.config.rates);
+                                                        return (
+                                                            <div key={p.id} onClick={() => setFocusedProjectId(p.id)} 
+                                                                className={`p-4 rounded-2xl border flex flex-col gap-2 relative shadow-sm hover:shadow-md transition-[border-color,box-shadow,background-color] duration-200 cursor-pointer backdrop-blur-sm
+                                                                    ${focusedProject?.id === p.id 
+                                                                        ? 'bg-white border-blue-500/30 ring-1 ring-blue-500/30 dark:bg-[#1c1c24]' 
+                                                                        : 'bg-slate-50 dark:bg-[#13131a] border-slate-200/80 dark:border-white/5'}`}
+                                                            >
+                                                                <div className="absolute top-0 left-4 right-4 h-0.5 rounded-full bg-emerald-500" />
+                                                                <div className="min-w-0 pr-10">
+                                                                    <h4 className="text-sm font-bold text-primary truncate" title={p.name}>{p.name}</h4>
+                                                                    {p.client && <p className="text-[11px] text-sec truncate">{p.client}</p>}
+                                                                </div>
+                                                                <div className="absolute top-4 right-4 flex gap-1">
+                                                                    <button onClick={(e) => { e.stopPropagation(); setModal({ mode: 'project', project: p }); }} className="p-1 rounded-lg text-sec hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 transition-colors"><Pencil size={12} /></button>
+                                                                </div>
+                                                                <div className="flex items-center justify-between text-xs border-t border-black/[0.03] dark:border-white/[0.03] pt-2 mt-1 gap-2 flex-wrap">
+                                                                    <span className="font-bold text-primary tnum">{p.priceAmount ? formatMoney(p.priceAmount, p.priceCurrency) : '-'}</span>
+                                                                    {received > 0 && <span className="text-[10px] text-emerald-500 font-semibold tnum">paid</span>}
+                                                                </div>
+                                                                {/* This list holds both endings, so it says which one this was. */}
+                                                                <div className="text-[10px] text-sec flex items-center gap-1 mt-1"><Clock size={11} /><span>{statusMeta(p.status).label} {p.endDate || '-'}</span></div>
+                                                                <button onClick={(e) => { e.stopPropagation(); setProjectStatus(p, 'active'); }} className="mt-2 py-1.5 rounded-lg text-[10px] font-bold bg-blue-500/10 text-blue-500 hover:bg-blue-500/15 transition-all w-fit px-3">Reopen</button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'money' && (
+                        <div className="glass-panel overflow-hidden">
+                            {/* Sticky header */}
+                            <div className="sticky top-0 z-10 px-5 pt-5 pb-3 border-b border-[var(--section-border)]" style={{ background: isDark ? 'rgba(15,15,20,0.92)' : 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }}>
+                                {sectionTitle(
+                                    <Wallet size={16} className="text-blue-400" />,
+                                    'Money',
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <div className="w-[152px]">
+                                            <Select
+                                                value={moneyType === 'income' ? 'Income only' : moneyType === 'expense' ? 'Expenses only' : moneyType === 'unlinked' ? 'Unlinked income' : 'Income & expenses'}
+                                                options={['Income & expenses', 'Income only', 'Expenses only', 'Unlinked income']}
+                                                onChange={(v) => setMoneyType(v === 'Income only' ? 'income' : v === 'Expenses only' ? 'expense' : v === 'Unlinked income' ? 'unlinked' : 'all')}
+                                                isDark={isDark}
+                                                searchable={false}
+                                            />
+                                        </div>
+                                        <div className="w-[136px]">
+                                            <Select
+                                                value={moneyView === 'day' ? 'Grouped by day' : 'Flat list'}
+                                                options={['Flat list', 'Grouped by day']}
+                                                onChange={(v) => setMoneyView(v === 'Grouped by day' ? 'day' : 'all')}
+                                                isDark={isDark}
+                                                searchable={false}
+                                            />
+                                        </div>
+                                        {data.accounts.length > 0 && (
+                                            <div className="w-[152px]">
+                                                <Select
+                                                    value={moneyAccount === 'all' ? 'All accounts' : (data.accounts.find(a => a.id === moneyAccount)?.name ?? 'All accounts')}
+                                                    options={['All accounts', ...data.accounts.map(a => a.name)]}
+                                                    onChange={(v) => setMoneyAccount(v === 'All accounts' ? 'all' : (data.accounts.find(a => a.name === v)?.id ?? 'all'))}
+                                                    isDark={isDark}
+                                                    searchable={data.accounts.length > 6}
+                                                />
+                                            </div>
+                                        )}
+                                        <button onClick={() => setModal({ mode: 'income', income: null })} className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add money</button>
+                                    </div>
+                                )}
+                                {/* Day navigator: ‹  date  › */}
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => stepDay(-1)} title="Previous day" className="p-2 rounded-xl text-sec hover:text-primary border border-[var(--input-border)] hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><ChevronLeft size={16} /></button>
+                                    <div className="w-44"><DatePicker value={selectedDay} onChange={setSelectedDay} isDark={isDark} placeholder="Jump to a day" allowClear /></div>
+                                    <button onClick={() => stepDay(1)} title="Next day" className="p-2 rounded-xl text-sec hover:text-primary border border-[var(--input-border)] hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><ChevronRight size={16} /></button>
+                                    {selectedDay && <button onClick={() => setSelectedDay('')} className="text-xs font-semibold text-blue-500 hover:text-blue-600 px-1">Clear</button>}
+                                </div>
+                            </div>
+
+                            {/* Body */}
+                            <div className="p-5">
+                                {moneyRows.length === 0 ? (
+                                    <div className="glass-surface p-6 text-center text-sec text-sm">Nothing yet. Click "+ Add money" to log income or an expense.</div>
+                                ) : !selectedDay && visibleRows.length === 0 ? (
+                                    <div className="glass-surface p-6 text-center text-sec text-sm">No entries match these filters.</div>
+                                ) : selectedDay ? (
+                                    <div className="glass-surface overflow-hidden">
+                                        <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
+                                            <span className="text-[11px] font-bold text-sec uppercase tracking-wider">{fmtDayHeader(selectedDay)}</span>
+                                            {dayRows.length > 0 && (() => { const net = dayNet(dayRows); return <span className="text-xs font-bold tnum" style={{ color: net >= 0 ? '#10b981' : '#f43f5e' }}>{net >= 0 ? '+' : '−'}{formatMoney(Math.abs(net), cur)}</span>; })()}
+                                        </div>
+                                        {dayRows.length > 0
+                                            ? <div className="divide-y divide-[var(--input-border)]">{dayRows.map(renderMoneyRow)}</div>
+                                            : <div className="p-6 text-center text-sec text-sm">No entries on this day.</div>}
+                                    </div>
+                                ) : moneyView === 'all' ? (
+                                    <div className="glass-surface divide-y divide-[var(--input-border)] overflow-hidden">
+                                        {visibleRows.map(renderMoneyRow)}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-3">
+                                        {moneyByDay.map(([day, rows]) => {
+                                            const net = dayNet(rows);
+                                            return (
+                                                <div key={day} className="glass-surface overflow-hidden">
+                                                    <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
+                                                        <span className="text-[11px] font-bold text-sec uppercase tracking-wider">{fmtDayHeader(day)}</span>
+                                                        <span className="text-xs font-bold tnum" style={{ color: net >= 0 ? '#10b981' : '#f43f5e' }}>{net >= 0 ? '+' : '−'}{formatMoney(Math.abs(net), cur)}</span>
+                                                    </div>
+                                                    <div className="divide-y divide-[var(--input-border)]">
+                                                        {rows.map(renderMoneyRow)}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'accounts' && (
+                        <div className="flex flex-col gap-5">
+                            {/* Liquid total + add */}
+                            <div className="glass-panel p-5 flex items-center justify-between gap-4 flex-wrap">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <span className="w-11 h-11 rounded-2xl flex items-center justify-center bg-blue-500/12 text-blue-500 shrink-0"><Wallet2 size={22} /></span>
+                                    <div className="min-w-0">
+                                        <div className="text-[11px] font-bold uppercase tracking-wider text-sec">Total balance · {cur}</div>
+                                        <div className="text-2xl sm:text-3xl font-black tnum text-primary leading-tight" style={{ color: liquidTotal >= 0 ? undefined : '#f43f5e' }}>{formatMoney(liquidTotal, cur)}</div>
+                                        <div className="text-[11px] text-sec">{liveAccounts.length} active account{liveAccounts.length === 1 ? '' : 's'}</div>
+                                    </div>
+                                </div>
+                                <button onClick={() => setAccountModal({ account: null })} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Account</button>
+                            </div>
+
+                            {data.accounts.length === 0 ? (
+                                <div className="glass-panel p-10 text-center flex flex-col items-center gap-3">
+                                    <span className="w-14 h-14 rounded-2xl flex items-center justify-center bg-blue-500/10 text-blue-500"><Landmark size={26} /></span>
+                                    <p className="text-sm text-sec max-w-sm">No accounts yet. Add a bank, cash or wallet, then pick it when logging income or an expense to track each balance.</p>
+                                    <button onClick={() => setAccountModal({ account: null })} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Plus size={16} /> Add your first account</button>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {liveAccounts.map(a => {
+                                        const bal = accountBalance(a, data.income, data.expenses, data.config.rates);
+                                        const moves = accountActivityCount(a.id, data.income, data.expenses);
+                                        const Icon = ACCOUNT_ICON[a.type];
+                                        const tColor = ACCOUNT_COLOR[a.type];
+                                        return (
+                                            <div key={a.id} onClick={() => setAccountModal({ account: a })} role="button" tabIndex={0}
+                                                className="group glass-panel p-4 flex flex-col gap-3 cursor-pointer hover:shadow-md transition-shadow relative">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${tColor}1f`, color: tColor }}><Icon size={18} /></span>
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-bold text-primary truncate" title={a.name}>{a.name}</div>
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider text-sec">{a.type} · {a.currency}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        {a.excludeFromNetProfit && (
+                                                            <span title="Excluded from Net profit and the earnings chart" className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-black/[0.06] dark:bg-white/[0.08] text-sec">Off P&amp;L</span>
+                                                        )}
+                                                        <Pencil size={14} className="text-sec opacity-40 group-hover:opacity-100 transition-opacity" />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] font-bold uppercase tracking-wider text-sec">Balance</div>
+                                                    <div className="text-xl font-extrabold tnum" style={{ color: bal >= 0 ? '#10b981' : '#f43f5e' }}>{formatMoney(bal, a.currency)}</div>
+                                                </div>
+                                                <div className="text-[11px] text-sec flex items-center justify-between gap-2 pt-1 border-t border-[var(--section-border)]">
+                                                    <span>{moves} movement{moves === 1 ? '' : 's'}</span>
+                                                    <span className="tnum">opening {formatMoney(a.openingBalance || 0, a.currency)}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {archivedAccounts.length > 0 && (
+                                <div className="glass-panel p-5 flex flex-col gap-3">
+                                    <span className="text-sm font-bold text-primary flex items-center gap-2"><Landmark size={15} className="text-sec" /> Archived accounts</span>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {archivedAccounts.map(a => {
+                                            const bal = accountBalance(a, data.income, data.expenses, data.config.rates);
+                                            const Icon = ACCOUNT_ICON[a.type];
+                                            return (
+                                                <div key={a.id} onClick={() => setAccountModal({ account: a })} role="button" tabIndex={0}
+                                                    className="glass-surface p-3.5 flex items-center justify-between gap-2 cursor-pointer opacity-70 hover:opacity-100 transition-opacity">
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <span className="w-9 h-9 rounded-xl flex items-center justify-center bg-black/5 dark:bg-white/5 text-sec shrink-0"><Icon size={16} /></span>
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-semibold text-primary truncate">{a.name}</div>
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider text-sec">{a.currency}</div>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-sm font-bold tnum text-sec">{formatMoney(bal, a.currency)}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {tab === 'receipts' && (
+                        <div className="glass-panel overflow-hidden">
+                            <div className="sticky top-0 z-10 px-5 pt-5 pb-3 border-b border-[var(--section-border)]" style={{ background: isDark ? 'rgba(15,15,20,0.92)' : 'rgba(255,255,255,0.92)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)' }}>
+                                {sectionTitle(
+                                    <Receipt size={16} className="text-blue-400" />,
+                                    'Receipts',
+                                    data.receipts.length > 0 ? (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-bold text-sec tnum mr-0.5">{filteredReceipts.length}{receiptCustomer !== 'all' ? ` of ${data.receipts.length}` : ''} sent</span>
+                                            <div className="w-[176px]">
+                                                <Select
+                                                    value={receiptCustomer === 'all' ? 'All customers' : receiptCustomer}
+                                                    options={['All customers', ...receiptCustomers]}
+                                                    onChange={(v) => setReceiptCustomer(v === 'All customers' ? 'all' : v)}
+                                                    isDark={isDark}
+                                                    searchable={receiptCustomers.length > 6}
+                                                />
+                                            </div>
+                                            <div className="w-[136px]">
+                                                <Select
+                                                    value={receiptView === 'day' ? 'Grouped by day' : 'Flat list'}
+                                                    options={['Flat list', 'Grouped by day']}
+                                                    onChange={(v) => setReceiptView(v === 'Grouped by day' ? 'day' : 'all')}
+                                                    isDark={isDark}
+                                                    searchable={false}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : undefined,
+                                )}
+                                {data.receipts.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => stepReceiptDay(-1)} title="Previous day" className="p-2 rounded-xl text-sec hover:text-primary border border-[var(--input-border)] hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><ChevronLeft size={16} /></button>
+                                        <div className="w-44"><DatePicker value={receiptDay} onChange={setReceiptDay} isDark={isDark} placeholder="Jump to a day" allowClear /></div>
+                                        <button onClick={() => stepReceiptDay(1)} title="Next day" className="p-2 rounded-xl text-sec hover:text-primary border border-[var(--input-border)] hover:bg-black/5 dark:hover:bg-white/10 transition-all flex-shrink-0"><ChevronRight size={16} /></button>
+                                        {receiptDay && <button onClick={() => setReceiptDay('')} className="text-xs font-semibold text-blue-500 hover:text-blue-600 px-1">Clear</button>}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="p-5">
+                                {data.receipts.length === 0 ? (
+                                    <div className="glass-surface p-8 text-center text-sec text-sm">
+                                        No receipts sent yet. Open a project in <span className="font-semibold">Projects</span> and hit <span className="font-semibold">Receipt</span> to send one.
+                                    </div>
+                                ) : !receiptDay && filteredReceipts.length === 0 ? (
+                                    <div className="glass-surface p-6 text-center text-sec text-sm">No receipts match these filters.</div>
+                                ) : receiptDay ? (
+                                    <div className="glass-surface overflow-hidden">
+                                        <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
+                                            <span className="text-[11px] font-bold text-sec uppercase tracking-wider">{fmtDayHeader(receiptDay)}</span>
+                                            {receiptDayRows.length > 0 && <span className="text-xs font-bold text-sec tnum">{receiptDayRows.length} sent</span>}
+                                        </div>
+                                        {receiptDayRows.length > 0
+                                            ? <div className="divide-y divide-[var(--input-border)]">{receiptDayRows.map(renderReceiptRow)}</div>
+                                            : <div className="p-6 text-center text-sec text-sm">No receipts on this day.</div>}
+                                    </div>
+                                ) : receiptView === 'all' ? (
+                                    <div className="glass-surface divide-y divide-[var(--input-border)] overflow-hidden">
+                                        {filteredReceipts.map(renderReceiptRow)}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-3">
+                                        {receiptsByDay.map(([day, rows]) => (
+                                            <div key={day} className="glass-surface overflow-hidden">
+                                                <div className={`flex items-center justify-between px-3.5 py-2 ${isDark ? 'bg-white/[0.04]' : 'bg-black/[0.03]'}`}>
+                                                    <span className="text-[11px] font-bold text-sec uppercase tracking-wider">{fmtDayHeader(day)}</span>
+                                                    <span className="text-xs font-bold text-sec tnum">{rows.length} sent</span>
+                                                </div>
+                                                <div className="divide-y divide-[var(--input-border)]">{rows.map(renderReceiptRow)}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'settings' && (
+                        <>
+                            <div className="glass-panel p-5 flex flex-col gap-5">
+                                <h3 className="heading-sm m-0">Currency</h3>
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-xs font-semibold text-sec uppercase tracking-wider">Show totals in</label>
+                                    <div className={`flex rounded-xl border ${isDark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/[0.03]'} p-1 gap-1 w-fit`}>
+                                        {CURRENCIES.map(c => (
+                                            <button key={c} onClick={() => stageConfig({ displayCurrency: c })} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${draft.displayCurrency === c ? 'bg-blue-500 text-white shadow' : 'text-sec hover:text-primary'}`}>{CURRENCY_SYMBOL[c]} {c}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-xs font-semibold text-sec uppercase tracking-wider">Default for new entries</label>
+                                    <p className="text-xs text-sec -mt-1">Used when you don't name a currency - e.g. "add 100" vs "add 100$". New projects & expenses are added in this currency.</p>
+                                    <div className={`flex rounded-xl border ${isDark ? 'border-white/10 bg-white/5' : 'border-black/10 bg-black/[0.03]'} p-1 gap-1 w-fit`}>
+                                        {CURRENCIES.map(c => (
+                                            <button key={c} onClick={() => stageConfig({ defaultCurrency: c })} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${draft.defaultCurrency === c ? 'bg-emerald-500 text-white shadow' : 'text-sec hover:text-primary'}`}>{c}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="glass-panel p-5 flex flex-col gap-4">
+                                <div className="flex items-start justify-between gap-3 flex-wrap">
+                                    <div>
+                                        <h3 className="heading-sm m-0">Exchange rates</h3>
+                                        <p className="text-xs text-sec mt-1">
+                                            Live mid-market rates (units per $1), pulled from the internet.
+                                            {draft.ratesUpdatedAt ? ` Updated ${new Date(draft.ratesUpdatedAt).toLocaleString()}.` : ' Not fetched yet.'}
+                                        </p>
+                                    </div>
+                                    <button onClick={() => refreshRates(false)} disabled={ratesLoading} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-blue-500 border border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-all disabled:opacity-50">
+                                        <RefreshCcw size={15} className={ratesLoading ? 'animate-spin' : ''} /> {ratesLoading ? 'Updating…' : 'Update now'}
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    {CURRENCIES.map(c => (
+                                        <div key={c} className="glass-surface p-4 flex flex-col gap-1">
+                                            <span className="text-xs font-semibold text-sec uppercase tracking-wider">{CURRENCY_SYMBOL[c]} {c} per $1</span>
+                                            <span className="text-2xl font-extrabold text-primary tnum">{c === 'USD' ? '1.00' : (draft.rates[c] || 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="glass-panel p-5 flex items-center justify-between gap-4 flex-wrap">
+                                <div>
+                                    <h3 className="heading-sm m-0">Export</h3>
+                                    <p className="text-xs text-sec mt-1">Download a styled, self-contained HTML report of all projects & spendings.</p>
+                                </div>
+                                <button onClick={exportHtml} className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all active:scale-95"><Download size={16} /> Export report</button>
+                            </div>
+                        </>
+                    )}
+                </motion.div>
+                </AnimatePresence>
+            </div>
+
+            {/* Staged-settings bar (shared component) */}
+            <SaveBar show={tab === 'settings' && settingsDirty} onApply={saveSettings} onCancel={discardSettings} isDark={isDark} />
+
+            {/* Alerts (shared app component) */}
+            {alert?.show && <Alert type={alert.type} message={alert.message} onClose={hideAlert} duration={alert.duration} />}
+
+            <AnimatePresence>
+                {modal && (
+                    <MTreasuryEntry
+                        // Remount per record. Every field in the form (price, the installment
+                        // sliders, ...) is seeded ONCE from `project` via useState initialisers
+                        // and never re-synced, so reusing the instance for a different record
+                        // would silently show the previous one's values. The key forces a fresh
+                        // mount, so the sliders always read the record you actually opened.
+                        key={modal.project?.id ?? modal.expense?.id ?? modal.income?.id ?? modal.mode}
+                        mode={modal.mode}
+                        config={data.config}
+                        project={modal.project}
+                        expense={modal.expense}
+                        income={modal.income}
+                        projects={data.projects}
+                        accounts={data.accounts}
+                        expenseList={data.expenses}
+                        incomeList={data.income}
+                        rates={data.config.rates}
+                        nextOrder={data.projects.length}
+                        onSaveProject={saveProject}
+                        onSaveExpense={saveExpense}
+                        onSaveIncome={saveIncome}
+                        onDelete={modal.project ? () => deleteProject(modal.project!.id) : modal.expense ? () => deleteExpense(modal.expense!.id) : modal.income ? () => deleteIncome(modal.income!.id) : undefined}
+                        onClose={() => setModal(null)}
+                    />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {accountModal && (
+                    <MAccount
+                        config={data.config}
+                        account={accountModal.account}
+                        nextOrder={data.accounts.length}
+                        onSave={saveAccount}
+                        onDelete={accountModal.account ? () => deleteAccount(accountModal.account!.id) : undefined}
+                        onClose={() => setAccountModal(null)}
+                    />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {receiptFor && (
+                    <MReceipt
+                        projects={data.projects}
+                        income={data.income}
+                        rates={data.config.rates}
+                        displayCurrency={data.config.displayCurrency}
+                        initialProjectId={receiptFor}
+                        isDark={isDark}
+                        onClose={() => setReceiptFor(null)}
+                        onToast={showToast}
+                    />
+                )}
+            </AnimatePresence>
+        </div>
+    );
+};
+
+export default DTreasury;

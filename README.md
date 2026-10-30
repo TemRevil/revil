@@ -27,10 +27,15 @@ and a private admin dashboard behind it, on Next.js and Firebase.
 
 ```text
 src/
-  app/              Next.js routes (/, /book, /projects, /mcp-login), metadata, SEO files
-  components/       sections, modals (M-*.tsx), book/ (the /book page), dashboard/ (D-*.tsx tabs)
-  lib/              Firebase setup, public data reads (liveDoc, dataCache), money, receipts, analytics
-  utils/            booking rules, time zones, site profile (JSON-LD)
+  app/              Next.js routes (/, /book, /projects, /privacy, /mcp-login), metadata, SEO files
+  home/             the homepage app: Hero, Navbar, one folder per section with its modal beside it
+  book/             the /book page and the brush paint the homepage shares
+  standalone/       the parts of /projects, /projects/<name> and /privacy
+  dashboard/        the owner's dashboard: one folder per tab (<Name>Tab.tsx) with its modals
+  ui/               controls used in more than one place (Select, DatePicker, Alert, dialog...)
+  hooks/            React hooks
+  lib/              helpers: Firebase setup, public data reads, booking rules, time zones,
+                    money, receipts, analytics, site profile (JSON-LD)
   data/             publicPaths.json and the build's data snapshot
 functions/          the Cloud Functions (one codebase)
 scripts/            build, data, preview, deploy and admin scripts (below)
@@ -86,16 +91,7 @@ writes Firestore and Storage directly, within the security rules.
 **Private data is one document per entry**, in the collections named in
 `src/lib/collections.ts`: `CanaryMessages`, `CanaryMeetings` (each meeting's `start` is a
 UTC instant, with the owner's `timeZone` beside it), `TreasuryProjects`, `TreasuryIncome`,
-`TreasurySpendings`, `TreasuryAccounts` and `TreasuryReceipts`. `scripts/migrate-per-entry.mjs`
-copies them there from the old maps in `Settings/Canary` and `Treasury/*`; it backs up to
-`backups/` (git-ignored) and runs as a dry run unless given `--apply` or `--remove-old`.
-
-For cutover, pause booking/contact submissions and close legacy dashboard tabs before
-copying. Run the dry run, inspect time-zone fallbacks and resolve invalid meetings, then
-apply and deploy the new readers/writers. Keep writes paused until the copied records
-are verified. Cleanup refuses missing or different copies and unconverted meetings;
-it also uses source update-time preconditions so a concurrent legacy edit aborts the
-entire cleanup batch. Never delete old records merely because their new IDs exist.
+`TreasurySpendings`, `TreasuryAccounts` and `TreasuryReceipts`.
 
 ## Backend
 

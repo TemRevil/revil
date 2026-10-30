@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
-import { SITE_URL, projectPages, projectPageUrl, tagNames, mediaOf, shortDescription } from '../../utils/projectPages';
-import { baseGraph, jsonLd, personRef, websiteRef, SHARE_CARD } from '../../utils/siteProfile';
-import ProjectsBar from './ProjectsBar';
-import './projects.css';
+import { SITE_URL, projectPages, projectPageUrl, tagsDoc, contributorsDoc, profileRows } from '../../lib/projectPages';
+import { baseGraph, jsonLd, personRef, websiteRef, SHARE_CARD } from '../../lib/siteProfile';
+import StandaloneBar from '../../standalone/StandaloneBar';
+import ProjectsList from '../../standalone/ProjectsList';
+import Kicker from '../../standalone/Kicker';
+import type { FirestoreProject } from '../../home/projects/shape';
+import '../../standalone/standalone.css';
 
 const title = 'Projects | Tem Revil';
 const description =
@@ -15,6 +18,13 @@ export const metadata: Metadata = {
     openGraph: { type: 'website', url: `${SITE_URL}/projects`, title, description, siteName: 'Tem Revil', locale: 'en_US', images: [SHARE_CARD] },
     twitter: { card: 'summary_large_image', title, description, images: [SHARE_CARD.url] },
 };
+
+// What the grid needs of each project: the long write-up and the view counts stay out of
+// the page, which carries this list once more for the browser to take over.
+const gridProjects = projectPages.map(({ project, name, slug }) => {
+    const { 'Case Study': _story, Views: _views, ...card } = project as typeof project & { Views?: unknown };
+    return { ...(card as FirestoreProject), name, slug };
+});
 
 export default function ProjectsIndex() {
     const graph = [
@@ -50,31 +60,14 @@ export default function ProjectsIndex() {
         <div className="pj">
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
-                <ProjectsBar current="list" />
+                <StandaloneBar current="list" />
                 <main>
-                    <h1 style={{ marginTop: 40 }}>Projects</h1>
-                    <p className="pj-intro">Things I designed and built: web apps, AI tools, a desktop system and UI designs. Each one has its live site and source code.</p>
-                    <ul className="pj-grid">
-                        {projectPages.map((p, i) => {
-                            const cover = mediaOf(p.project).find((m) => !m.video)?.url || p.project['Project Icon'];
-                            return (
-                                <li key={p.slug}>
-                                    <a className="pj-card" href={`/projects/${p.slug}`}>
-                                        <figure>{cover && <img src={cover} alt={`${p.name} screenshot`} loading={i < 3 ? 'eager' : 'lazy'} decoding="async" />}</figure>
-                                        <div>
-                                            <h2>{p.name}</h2>
-                                            {p.project.Description && <p>{shortDescription(p.project.Description, 120)}</p>}
-                                            {tagNames(p.project).length > 0 && (
-                                                <ul className="pj-tags" style={{ marginTop: 4 }}>
-                                                    {tagNames(p.project).slice(0, 4).map((t) => <li key={t}>{t}</li>)}
-                                                </ul>
-                                            )}
-                                        </div>
-                                    </a>
-                                </li>
-                            );
-                        })}
-                    </ul>
+                    <div className="pj-list-head">
+                        <Kicker text="Selected" />
+                        <h1 className="pj-display">Projects</h1>
+                        <p className="pj-intro">Things I designed and built: web apps, AI tools, a desktop system and UI designs. Each one has its live site and source code.</p>
+                    </div>
+                    <ProjectsList projects={gridProjects} tagsDoc={tagsDoc} contributorsDoc={contributorsDoc} profiles={profileRows} />
                     <div className="pj-end">
                         <p>Have a project in mind?<span>A free 60 minute call about it, in your own time zone.</span></p>
                         <a className="pj-cta" href="/book">Book a call</a>
