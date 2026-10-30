@@ -503,7 +503,7 @@
   .pj-action:hover { transform: none; }
 }
 
-/* Reading-page titles use the portfolio's block lettering and blue ink. */
+/* Reading-page titles reuse the homepage section lettering and blue ink. */
 .pj-page-heading {
   display: grid;
   grid-template-columns: 1fr minmax(0, 1fr);
@@ -512,11 +512,11 @@
   margin: 64px 0 40px;
 }
 .pj-page-heading .pj-display {
-  font-family: var(--font-archivo-black), sans-serif;
-  font-weight: 400;
+  font-family: var(--font-inter), sans-serif;
+  font-weight: 900;
   font-size: clamp(3rem, 6.4vw, 5rem);
-  line-height: 1.02;
-  letter-spacing: -.035em;
+  line-height: 1;
+  letter-spacing: -.02em;
   margin: 0;
 }
 .pj-title-stroke { display: block; width: 80%; height: 18px; margin-top: 14px; color: var(--accent); }
