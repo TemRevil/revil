@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { SITE_URL } from '../../lib/projectPages';
 import { EMAIL } from '../../lib/siteProfile';
 import StandaloneBar from '../../standalone/StandaloneBar';
+import PageTitle from '../../standalone/PageTitle';
 import Contents from '../../standalone/Contents';
 import '../../standalone/standalone.css';
 import '../../standalone/privacy.css';
@@ -90,7 +91,7 @@ export default function Privacy() {
                 <StandaloneBar current="privacy" />
                 <main className="pv">
                     <header className="pv-hero pj-page-heading">
-                        <div className="pj-heading-title"><h1 className="pj-display">Privacy &amp; terms</h1><svg className="pj-title-stroke" viewBox="0 0 360 20" fill="none" aria-hidden="true"><path d="M4 13C83 3 188 4 271 9S332 12 355 6M36 17C118 11 208 12 287 14" stroke="currentColor" strokeWidth="4" strokeLinecap="round" /></svg></div>
+                        <PageTitle>Privacy &amp; terms</PageTitle>
                         <p className="pv-lead">The short version: this site keeps a simple record of visits to see what people read, and keeps what you send through its forms so it can reply. Nothing is sold or shared for advertising, and there are no ad or tracking networks on it.</p>
                     </header>
 

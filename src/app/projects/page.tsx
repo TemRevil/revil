@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { SITE_URL, projectPages, projectPageUrl, tagsDoc, contributorsDoc, profileRows } from '../../lib/projectPages';
 import { baseGraph, jsonLd, personRef, websiteRef, SHARE_CARD } from '../../lib/siteProfile';
 import StandaloneBar from '../../standalone/StandaloneBar';
+import PageTitle from '../../standalone/PageTitle';
 import ProjectsList from '../../standalone/ProjectsList';
 import type { FirestoreProject } from '../../home/projects/shape';
 import '../../standalone/standalone.css';
@@ -62,7 +63,7 @@ export default function ProjectsIndex() {
                 <StandaloneBar current="list" />
                 <main>
                     <header className="pj-list-head pj-page-heading">
-                        <div className="pj-heading-title"><h1 className="pj-display">Projects</h1><svg className="pj-title-stroke" viewBox="0 0 360 20" fill="none" aria-hidden="true"><path d="M4 13C83 3 188 4 271 9S332 12 355 6M36 17C118 11 208 12 287 14" stroke="currentColor" strokeWidth="4" strokeLinecap="round" /></svg></div>
+                        <PageTitle>Projects</PageTitle>
                         <p className="pj-intro">Things I designed and built: web apps, AI tools, a desktop system and UI designs. Each one has its live site and source code.</p>
                     </header>
                     <ProjectsList projects={gridProjects} tagsDoc={tagsDoc} contributorsDoc={contributorsDoc} profiles={profileRows} />
