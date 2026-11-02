@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, type MouseEvent } from 'react';
-import { fadeJump } from '../lib/fadeJump';
 
 /** How far below the top of the window a section counts as the one being read (px): clear
  *  of the floating top bar, the same as --pj-under-bar in standalone.css. */
@@ -51,12 +50,9 @@ export default function Contents({ items }: { items: { id: string; title: string
         const target = document.getElementById(id);
         if (!target || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
         e.preventDefault();
-        // The text fades out, the page jumps to the section and the text fades back in; the
-        // list stays put beside it.
-        fadeJump(target.closest('article') ?? target.closest('main'), () => {
-            window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - OFFSET, behavior: 'instant' });
-            target.focus({ preventScroll: true });
-        });
+        const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - OFFSET, behavior: calm ? 'auto' : 'smooth' });
+        target.focus({ preventScroll: true });
     };
 
     return (

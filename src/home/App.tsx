@@ -8,7 +8,6 @@ import { useHydrated } from '../hooks/useHydrated';
 import useMediaQuery from '../hooks/useMediaQuery';
 import Navbar from './Navbar';
 import PageTransition from './PageTransition';
-import { fadeJump } from '../lib/fadeJump';
 import { ChevronRight } from 'lucide-react';
 import Loader from '../ui/reactbits/Loader';
 import { Algorithm } from './Algorithm';
@@ -585,14 +584,13 @@ function App() {
     }
   }, [currentSection, isTransitioning]);
 
-  // Navbar taps: on the touch scroll page, a public-section tap fades the page out, jumps to
-  // it and fades back in (no swap/curtain); everything else (secret, dashboard, or desktop)
-  // uses the switcher.
+  // Navbar taps: on the touch scroll page, a public-section tap smooth-scrolls to it
+  // (no swap/curtain); everything else (secret, dashboard, or desktop) uses the switcher.
   const handleNavbarNav = useCallback((section: Section) => {
     if (scrollLayout && PUBLIC_SCROLL_SECTIONS.includes(section) && PUBLIC_SCROLL_SECTIONS.includes(currentSectionRef.current)) {
       const target = section === 'view_link' ? 'home' : section;
       showAddress(target);
-      fadeJump(mobileScrollRef.current, () => document.getElementById(`mobsec-${target}`)?.scrollIntoView({ behavior: 'instant', block: 'start' }));
+      document.getElementById(`mobsec-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setMobileActiveSection(target as Section);
     } else {
       navigateTo(section);
