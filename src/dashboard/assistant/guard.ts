@@ -12,7 +12,7 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type NativeMsg = any;
 
-export type SparkAction =
+type SparkAction =
     | { kind: 'write'; path: string; merge: boolean }
     | { kind: 'delete'; path: string }
     | { kind: 'memory' }
@@ -39,7 +39,7 @@ export function mustConfirm(action: SparkAction, auto: boolean): boolean {
 /** Words on a control that deletes, sends, commits or changes something. */
 const RISKY_LABEL = /\b(delete|remove|erase|discard|clear|reset|wipe|purge|destroy|cancel|revoke|disconnect|unlink|archive|send|reply|submit|publish|unpublish|confirm|apply|save|overwrite|replace|sign ?out|log ?out|logout|yes|ok|do it|proceed|reopen|resume|pause[d]?|close[d]?|complete[d]?|enable[d]?|disable[d]?|turn (on|off)|upload|import|restore|move|reschedule|mark)\b/i;
 
-export interface ClickInfo {
+interface ClickInfo {
     /** The control's visible text, or its aria-label/title when it has none. */
     label: string;
     /** Inside a dialog, e.g. the delete confirmation: its buttons commit what it asks. */

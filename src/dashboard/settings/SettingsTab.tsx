@@ -17,7 +17,7 @@ import MStackItem, { StackItemData } from './StackItemForm';
 import DMcpPanel from './McpSettings';
 import Select from '../../ui/Select';
 import SaveBar from '../SaveBar';
-import Loader from '../../ui/reactbits/Loader';
+import LoadingCurtain from '../../ui/LoadingCurtain';
 import MConfirmModal from '../ConfirmModal';
 import { createImage, getCroppedImg, readFileAsDataUrl, type CropArea } from '../../lib/cropImage';
 import useTheme from '../../hooks/useTheme';
@@ -1137,7 +1137,7 @@ export default function DSettings() {
 
     return (
         <div className="h-[85vh] flex flex-col gap-6 relative">
-            <Loader isOpen={isLoading} isFullScreen={true} />
+            <LoadingCurtain open={isLoading} portal />
             {/* Custom Alert */}
             {alert.show && (
                 <Alert

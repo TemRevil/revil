@@ -18,7 +18,7 @@ const FOCUSABLE = [
 ].join(',');
 
 /** The elements Tab can reach inside `root`, in order. */
-export function focusablesIn(root: HTMLElement): HTMLElement[] {
+function focusablesIn(root: HTMLElement): HTMLElement[] {
     return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => {
         if (el.closest('[inert]') || el.getAttribute('aria-hidden') === 'true') return false;
         // Not drawn (display:none, or inside a hidden part) means not reachable.

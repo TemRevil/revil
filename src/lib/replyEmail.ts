@@ -12,7 +12,7 @@
 import { escapeHtml as esc } from './html';
 import { emailShell } from './emailShell';
 
-export interface ReplyEmailData {
+interface ReplyEmailData {
   /** Recipient's name, used for the greeting. */
   toName?: string;
   /** The owner's message, plain text with newlines preserved. */

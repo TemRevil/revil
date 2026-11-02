@@ -5,7 +5,7 @@ import { ChevronDown, Check, Search } from 'lucide-react';
 import { selectTriggerClass } from './selectTrigger';
 import { firstEnabled, keyAction, typeahead } from './selectKeys';
 
-export interface SelectOption {
+interface SelectOption {
     value: string;
     label: string;
     /** Optional muted hint shown to the right of the label. */

@@ -9,7 +9,7 @@ import useMediaQuery from '../hooks/useMediaQuery';
 import Navbar from './Navbar';
 import PageTransition from './PageTransition';
 import { ChevronRight } from 'lucide-react';
-import Loader from '../ui/reactbits/Loader';
+import LoadingCurtain from '../ui/LoadingCurtain';
 import { Algorithm } from './Algorithm';
 import TailorNote from './TailorNote';
 import type { ProjectsHubHandle } from './projects/ProjectsHub';
@@ -897,23 +897,9 @@ function App() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* The loader over the whole page. Drawn here rather than portaled to <body> by the
-          Loader itself, so it is in the prerendered HTML from the first paint. */}
-      <AnimatePresence>
-        {appLoading && (
-          <motion.div
-            key="loader"
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4, ease: 'easeInOut' }}
-            className="fixed inset-0 flex items-center justify-center z-[999999]"
-            style={{ backgroundColor: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(60px)', WebkitBackdropFilter: 'blur(60px)' }}
-          >
-            <Loader isOpen isFullScreen={false} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* The loading curtain over the whole page. Drawn here, not portaled to <body>, so it
+          is in the prerendered HTML from the first paint. */}
+      <LoadingCurtain open={appLoading} />
       {/* The phone page never changes the current section - it scrolls - so the recorder
           has to be told what the scroll-spy sees, or every phone visit reads as though
           the reader never left home no matter how far down they got. */}

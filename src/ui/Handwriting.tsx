@@ -1,6 +1,16 @@
 import { ASCENT, BASELINE, DESCENT, STROKE, UNITS, penLine } from '../lib/pen/pen';
 
 /**
+ * A curtain's written name size (a CSS length): up to 100px, a sixth of the window on a
+ * narrow one but never under 40px, and smaller again for a long name, to fit 90% of the
+ * window's width.
+ */
+export function fitSize(text: string) {
+    const width = Math.max(penLine(text).width / UNITS, 0.01);
+    return `min(clamp(40px, 16.667vw, 100px), calc(90vw / ${width.toFixed(3)}))`;
+}
+
+/**
  * A line of handwriting in the pen's strokes (lib/pen), sized by the font-size around it
  * and inked in currentColor. It sits on the text baseline like a word would. Rendered
  * whole, so the page reads right without a script; lib/handwrite writes it in by pen.

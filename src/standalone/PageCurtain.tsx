@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { isLite, prefersReducedMotion } from '../lib/device';
 import { handwrite } from '../lib/handwrite';
-import Handwriting from '../ui/Handwriting';
-import { UNITS, penLine } from '../lib/pen/pen';
+import Handwriting, { fitSize } from '../ui/Handwriting';
 import { EASE_IN_OUT, FADE, past, type Side } from '../home/PageTransition';
 
 /** The curtain's sweep over the page being left (ms): a little quicker than the homepage's. */
@@ -14,7 +13,7 @@ const COVER = 120;
 const PACE = 8;
 
 /** sessionStorage key: the side the curtain came in from, set as the page is left under it. */
-export const CURTAIN_KEY = 'pj-curtain';
+const CURTAIN_KEY = 'pj-curtain';
 
 const trim = (path: string) => path.replace(/\/+$/, '') || '/';
 
@@ -51,12 +50,6 @@ export function nextTitle(path: string, link: { dataset: DOMStringMap; textConte
     if (p === '/privacy') return 'Privacy & terms';
     return (link.dataset.pageTitle || link.textContent || '').trim();
 }
-
-/** The written name's size: as on the homepage's curtain, smaller for a long name, to fit across the window. */
-const nameSize = (text: string) => {
-    const width = Math.max(penLine(text).width / UNITS, 0.01);
-    return `min(clamp(40px, 16.667vw, 100px), calc(90vw / ${width.toFixed(3)}))`;
-};
 
 /**
  * The homepage's curtain, between the standalone pages (/projects, each project, /privacy).
@@ -168,7 +161,7 @@ export default function PageCurtain({ title }: { title: string }) {
 
     return (
         <div ref={curtainRef} className="pj-curtain" aria-hidden="true">
-            <div ref={nameRef} className="pj-curtain-name" style={{ fontSize: nameSize(shown) }}>
+            <div ref={nameRef} className="pj-curtain-name" style={{ fontSize: fitSize(shown) }}>
                 <Handwriting text={shown} />
             </div>
         </div>

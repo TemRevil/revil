@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useBoilHold } from '../book/paintKit';
 import { whenFramesFlow } from '../lib/idle';
 import { prefersReducedMotion } from '../lib/device';
 import { useHydrated } from '../hooks/useHydrated';
 import { handwrite } from '../lib/handwrite';
-import Handwriting from '../ui/Handwriting';
-import { UNITS, penLine } from '../lib/pen/pen';
+import Handwriting, { fitSize } from '../ui/Handwriting';
 
 interface PageTransitionProps {
     isTransitioning: boolean;
@@ -45,27 +44,12 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
     const curtainRef = useRef<HTMLDivElement>(null);
     const nameRef = useRef<HTMLDivElement>(null);
     const hydrated = useHydrated();
-    const [fontSize, setFontSize] = useState(100);
     const currentDirection: Side =
         direction === 2 ? 'right' :
             direction === -2 ? 'left' :
                 direction > 0 ? 'bottom' : 'top';
 
     const displayName = nextSectionName.charAt(0).toUpperCase() + nextSectionName.slice(1);
-    /** The written name's width (em). */
-    const nameWidth = displayName ? penLine(displayName).width / UNITS : 0;
-
-    useEffect(() => {
-        // A longer name (a standalone page's section title) is written smaller, to fit across
-        // the window; the homepage's one-word names stay at the size set by the window alone.
-        const handleResize = () => {
-            const fit = nameWidth ? window.innerWidth * 0.9 / nameWidth : Infinity;
-            setFontSize(Math.min(Math.max(40, Math.min(window.innerWidth / 6, 100)), fit));
-        };
-        handleResize();
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, [nameWidth]);
 
     // Read from refs, so a parent re-render mid-switch can't restart the sequence.
     const moving = useRef(onCurtainMoving);
@@ -161,7 +145,7 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
             style={{ backgroundColor: 'transparent', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', display: 'none' }}
         >
             <div className="absolute flex items-center justify-center" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', height: '100%' }}>
-                <div ref={nameRef} style={{ visibility: 'hidden', fontSize, lineHeight: 1, color: 'var(--text-primary)' }}>
+                <div ref={nameRef} style={{ visibility: 'hidden', fontSize: fitSize(displayName), lineHeight: 1, color: 'var(--text-primary)' }}>
                     <Handwriting text={displayName} />
                 </div>
             </div>

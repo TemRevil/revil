@@ -18,7 +18,7 @@ import MContact from '../../home/contact/Contact';
 import MReply from './Reply';
 import CustomTimePicker from '../../ui/CustomTimePicker';
 import Select from '../../ui/Select';
-import Loader from '../../ui/reactbits/Loader';
+import LoadingCurtain from '../../ui/LoadingCurtain';
 import useTheme from '../../hooks/useTheme';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import { BELOW_LG_QUERY } from '../breakpoints';
@@ -1001,7 +1001,7 @@ const DCanary = () => {
 
     return (
         <div className="w-full h-full flex flex-col gap-6" style={{ opacity: 1 }}>
-            <Loader isOpen={isLoading} isFullScreen={true} />
+            <LoadingCurtain open={isLoading} portal />
             {/* Header Navbar */}
             <div className="glass-surface p-1.5 rounded-xl flex gap-2 overflow-x-auto shrink-0 w-fit self-center min-[960px]:self-start">
                 <button

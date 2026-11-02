@@ -306,7 +306,7 @@ const Hero = ({ onLoaded, onAnimationComplete, isReady = true, onOpenContact }: 
             .then(() => { if (alive) setAssetsReady(true); });
         return () => { alive = false; };
     }, []);
-    // A beat after the loader lifts, so the entrance isn't spent behind its fade.
+    // Once the loading curtain has lifted (150 ms), so the entrance isn't spent behind it.
     const [loaderGone, setLoaderGone] = useState(false);
     useEffect(() => {
         if (!isReady) return;

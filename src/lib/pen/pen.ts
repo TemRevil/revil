@@ -60,7 +60,7 @@ export function samplePath(d: string, steps = 16): Point[] {
 const lengthOf = (points: Point[]) =>
     points.reduce((sum, p, i) => i ? sum + Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]) : 0, 0);
 
-export interface PenStroke {
+interface PenStroke {
     d: string;
     /** Where the stroke starts (font units, the line's own). */
     x: number;
@@ -69,13 +69,13 @@ export interface PenStroke {
     length: number;
 }
 
-export type PenLetter =
+type PenLetter =
     | { kind: 'ink'; strokes: PenStroke[] }
     | { kind: 'space' }
     /** Not in the font: drawn as text at x (font units). */
     | { kind: 'text'; char: string; x: number };
 
-export interface PenLine {
+interface PenLine {
     letters: PenLetter[];
     /** The written width (font units). */
     width: number;

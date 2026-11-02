@@ -18,7 +18,7 @@ export interface MeetingCategory {
 }
 
 /** Raw stored shape: Settings/Canary → Categories[id]. */
-export interface CategoryData {
+interface CategoryData {
     Name?: string;
     Color?: string;
     Created?: number;

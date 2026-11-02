@@ -22,7 +22,7 @@ import { ProjectData, ContributorData, ProjectFormData, TagData } from '../../ty
 import MProjectView from '../../home/projects/ProjectView';
 import { getTechColor, getStackIcon } from '../../lib/projectUtils';
 import MContributorView, { Contributor } from '../../home/projects/ContributorView';
-import Loader from '../../ui/reactbits/Loader';
+import LoadingCurtain from '../../ui/LoadingCurtain';
 import MConfirmModal, { ConfirmType } from '../ConfirmModal';
 import FileImage from '../../ui/FileImage';
 import { bestDistance, SEARCH_MAX_DISTANCE } from '../../lib/fuzzy';
@@ -685,7 +685,7 @@ const DProjects = () => {
 
     return (
         <div className="h-[90%] flex flex-col" style={{ gap: gap }}>
-            <Loader isOpen={isLoading} isFullScreen={true} />
+            <LoadingCurtain open={isLoading} portal />
             {/* Header Actions */}
             <div className="flex justify-between items-center" style={{
                 flexWrap: isExtraSmall ? 'wrap' : 'nowrap',

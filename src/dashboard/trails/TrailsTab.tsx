@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { doc, onSnapshot, updateDoc, collection, getDocs, setDoc, deleteDoc, query, orderBy, limit as fsLimit, where, increment } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import Reflow from '../../ui/Reflow';
-import Loader from '../../ui/reactbits/Loader';
+import LoadingCurtain from '../../ui/LoadingCurtain';
 import Alert from '../../ui/Alert';
 import Toggle from '../../ui/Toggle';
 import RollingNumber from '../../ui/RollingNumber';
@@ -477,7 +477,7 @@ const DTrails = () => {
 
     return (
         <div className="flex flex-col gap-6 h-full overflow-y-auto lg:overflow-hidden p-1 sm:p-0">
-            <Loader isOpen={isLoading} isFullScreen={true} />
+            <LoadingCurtain open={isLoading} portal />
 
             {/* One header row - tabs, what you're looking at, and the live pill.
                 Everything below it is content. */}

@@ -10,7 +10,7 @@ import { storagePathFromUrl } from '../storagePath';
 
 export type SaveOutcome = 'saved' | 'skipped' | 'failed';
 
-export interface ApplySummary {
+interface ApplySummary {
     /** True when every section that had something to save saved it. */
     ok: boolean;
     saved: string[];

@@ -15,13 +15,13 @@
  */
 import { offsetAt } from './bookingRules';
 
-export interface TimezoneOption {
+interface TimezoneOption {
     value: number;
     label: string;
 }
 
 /** A named zone, labelled with the offset it has right now. */
-export interface ZoneOption {
+interface ZoneOption {
     value: string;
     label: string;
 }

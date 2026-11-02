@@ -2017,25 +2017,8 @@ html[data-lite] .blob-container { display: none; }
 }
 
 /* ========================================
-   20. STACK GRID COMPONENT
+   20. STACK GRID MARKERS (home/Stack.tsx)
    ======================================== */
-
-.stack-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0;
-  border: 1px dashed var(--text-muted);
-  position: relative;
-}
-
-.stack-item {
-  border-bottom: 1px dashed var(--text-muted);
-  padding: 20px;
-}
-
-.stack-item:last-child {
-  border-bottom: none;
-}
 
 .marker {
   position: absolute;
@@ -2067,23 +2050,6 @@ html[data-lite] .blob-container { display: none; }
 }
 
 @media (min-width: 768px) {
-  .stack-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .stack-item {
-    border-right: 1px dashed var(--text-muted);
-    border-bottom: 1px dashed var(--text-muted);
-  }
-
-  .stack-item:nth-child(2n) {
-    border-right: none;
-  }
-
-  .stack-item:nth-last-child(-n+2) {
-    border-bottom: none;
-  }
-
   .marker-edge-top {
     top: -6px;
   }
@@ -2093,49 +2059,11 @@ html[data-lite] .blob-container { display: none; }
   }
 }
 
-@media (min-width: 1024px) {
-  .stack-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .stack-item {
-    border-right: 1px dashed var(--text-muted) !important;
-    border-bottom: 1px dashed var(--text-muted) !important;
-  }
-
-  .stack-item:nth-child(3n) {
-    border-right: none !important;
-  }
-
-  .stack-item:nth-last-child(-n+3) {
-    border-bottom: none !important;
-  }
-}
-.stack-icon {
-  width: 80px;
-  height: 80px;
-  flex-shrink: 0;
-  transition: opacity 0.3s ease, filter 0.3s ease, transform 0.3s ease;
-}
-
 /* ========================================
    21. RESPONSIVE OVERRIDES
    ======================================== */
 
 @media (max-width: 400px) {
-  .stack-grid {
-    margin-bottom: 40px;
-  }
-
-  .stack-item {
-    padding: 10px !important;
-  }
-
-  .stack-icon {
-    width: 50px;
-    height: 50px;
-  }
-
   :is(h1, h2).text-5xl {
     font-size: 2.5rem;
   }
@@ -2207,4 +2135,39 @@ html[data-lite] .blob-container { display: none; }
   .project-mobile-toggle {
     display: flex;
   }
+}
+
+/* ── loading curtain (ui/LoadingCurtain.tsx) ───────────────────────────── */
+/* The page curtain's glass with "Loading" boiling on it: copy k of the word shows on every
+   third frame of a 15fps grid, starting at frame k, as the brushes' copies do (book/brushes.ts).
+   Pure CSS, so it moves on the prerendered page before any script. */
+.loading-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(40px);
+  color: var(--text-primary);
+}
+.loading-curtain-word { display: grid; line-height: 1; }
+.loading-curtain-frame {
+  grid-area: 1 / 1;
+  opacity: 0;
+  will-change: opacity;
+  animation: loading-boil-0 .2s steps(1, end) infinite;
+}
+/* One clock for all three (no offsets that could drift into two frames at once). */
+.loading-curtain-frame:nth-child(2) { animation-name: loading-boil-1; }
+.loading-curtain-frame:nth-child(3) { animation-name: loading-boil-2; }
+@keyframes loading-boil-0 { 0% { opacity: 1; } 33.333%, 100% { opacity: 0; } }
+@keyframes loading-boil-1 { 0% { opacity: 0; } 33.333% { opacity: 1; } 66.667%, 100% { opacity: 0; } }
+@keyframes loading-boil-2 { 0%, 33.333% { opacity: 0; } 66.667%, 100% { opacity: 1; } }
+/* Phones: no live blur (see lite above), so the curtain is the page's own colour. */
+html[data-lite] .loading-curtain { background: var(--bg-primary); }
+/* Reduced motion: the word holds still. */
+@media (prefers-reduced-motion: reduce) {
+  .loading-curtain-frame { animation: none; }
+  .loading-curtain-frame:first-child { opacity: 1; }
 }
