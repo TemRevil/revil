@@ -179,7 +179,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                             <ul className="pj-more">
                                 {others.map((o) => (
                                     <li key={o.slug}>
-                                        <a href={`/projects/${o.slug}`}>
+                                        <a href={`/projects/${o.slug}`} data-page-title={o.name}>
                                             {o.project['Project Icon'] && <img src={o.project['Project Icon']} alt="" width={36} height={36} loading="lazy" />}
                                             <span><b>{o.name}</b><small>{tagNames(o.project).slice(0, 3).join(', ')}</small></span>
                                         </a>
