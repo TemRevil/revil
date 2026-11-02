@@ -6,10 +6,10 @@ export default function StandaloneBar({ current }: { current?: 'list' | 'privacy
     return (
         <header className="pj-bar">
             <a href="/" className="pj-home" aria-label="Tem Revil, home">
-                <RevilMark size={44} className="pj-mark" />
+                <RevilMark size={30} className="pj-mark" />
             </a>
             <nav aria-label="Site">
-                <a href="/" className="pj-navlink">Portfolio</a>
+                <a href="/" className="pj-navlink pj-nav-wide">Portfolio</a>
                 <a href="/projects" className="pj-navlink" aria-current={current === 'list' ? 'page' : undefined}>Projects</a>
                 <a href="/privacy" className="pj-navlink" aria-current={current === 'privacy' ? 'page' : undefined}>Privacy &amp; terms</a>
             </nav>

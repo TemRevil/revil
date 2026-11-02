@@ -2,8 +2,9 @@
 
 import { useEffect, useState, type MouseEvent } from 'react';
 
-/** How far below the top of the window a section counts as the one being read (px). */
-const OFFSET = 32;
+/** How far below the top of the window a section counts as the one being read (px): clear
+ *  of the floating top bar, the same as --pj-under-bar in standalone.css. */
+const OFFSET = 88;
 
 /**
  * The index of the section being read: the last heading that has reached OFFSET from the

@@ -23,37 +23,52 @@
 }
 
 /* ── top bar ─────────────────────────────────────────────── */
+/* A floating glass pill that hugs its content and stays at the top as the page scrolls
+   under it, like the homepage navbar. --pj-under-bar is where content is clear of it (its
+   gap, its height and some air): sticky side columns and section jumps stop there. */
+.pj { --pj-under-bar: 88px; }
 .pj-bar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  position: sticky;
+  top: 12px;
+  z-index: 40;
+  display: flex;
   align-items: center;
-  gap: 32px;
-  padding: 28px 0 24px;
-  border-bottom: 1px solid var(--pj-line);
+  gap: 24px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px auto 0;
+  padding: 4px 4px 4px 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
 }
+.dark .pj-bar { background: rgba(0, 0, 0, 0.6); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4); }
+/* Lite (phones, see globals.css): no live blur, so the bar goes solid like the navbar. */
+html[data-lite] .pj-bar { background: rgb(255, 255, 255); }
+html[data-lite].dark .pj-bar { background: rgb(14, 14, 16); }
 /* The R monogram alone is the home link; its label carries the name. */
 .pj-home {
   display: flex;
   align-items: center;
-  width: fit-content;
   color: var(--text-primary);
   text-decoration: none;
 }
-.pj-mark { width: 44px; height: 44px; flex-shrink: 0; }
+.pj-mark { width: 30px; height: 30px; flex-shrink: 0; }
 .pj-home:focus-visible, .pj-navlink:focus-visible, .pj-bar-cta:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 5px;
-  border-radius: 3px;
+  outline-offset: 3px;
+  border-radius: 6px;
 }
-.pj-bar nav { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 28px; }
+.pj-bar nav { display: flex; gap: 22px; }
 .pj-navlink {
   position: relative;
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  padding: 8px 0;
-  font-size: 14px;
+  min-height: 40px;
+  font-size: 13.5px;
   font-weight: 600;
+  white-space: nowrap;
   color: var(--text-muted);
   text-decoration: none;
   transition: color .15s ease;
@@ -63,7 +78,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 4px;
+  bottom: 6px;
   height: 2px;
   background: var(--accent);
   transform: scaleX(0);
@@ -89,18 +104,24 @@
 .pj-cta:hover { filter: brightness(1.1); }
 
 .pj-bar-cta {
-  min-height: 44px;
-  padding: 11px 17px;
-  border-radius: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  white-space: nowrap;
 }
 .pj-bar-cta svg { transition: transform .2s ease; }
 .pj-bar-cta:hover svg { transform: translate(2px, -2px); }
-@media (max-width: 680px) {
-  .pj-bar { grid-template-columns: 1fr auto; gap: 18px; padding: 22px 0 12px; }
-  .pj-mark { width: 40px; height: 40px; }
-  .pj-bar nav { grid-row: 2; grid-column: 1 / -1; justify-content: flex-start; gap: 24px; }
-  .pj-bar-cta { grid-column: 2; grid-row: 1; }
-  .pj-navlink { font-size: 13px; }
+/* A phone fits the bar on one line: "Portfolio" goes, since the R beside it is the same
+   link home, and the call button drops its arrow. */
+@media (max-width: 520px) {
+  .pj-bar { gap: 16px; }
+  .pj-bar nav { gap: 16px; }
+  .pj-nav-wide { display: none; }
+  .pj-mark { width: 28px; height: 28px; }
+  .pj-navlink, .pj-bar-cta { font-size: 13px; }
+  .pj-bar-cta { padding: 0 12px; }
+  .pj-bar-cta svg { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pj-navlink, .pj-navlink::after, .pj-bar-cta svg { transition: none; }
@@ -402,7 +423,7 @@
 }
 .pj-side { display: flex; flex-direction: column; gap: 28px; }
 @media (min-width: 901px) {
-  .pj-side { position: sticky; top: 24px; }
+  .pj-side { position: sticky; top: var(--pj-under-bar); }
 }
 @media (max-width: 900px) {
   .pj-detail { grid-template-columns: minmax(0, 1fr); }
