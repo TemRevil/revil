@@ -2,12 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { whenFramesFlow } from '../lib/idle';
 import { isLite, prefersReducedMotion } from '../lib/device';
 import { handwrite } from '../lib/handwrite';
 import Handwriting from '../ui/Handwriting';
 import { UNITS, penLine } from '../lib/pen/pen';
-import { EASE_IN_OUT, FADE, FAR, HOLD, PACE, SWEEP, past, type Side } from '../home/PageTransition';
+import { EASE_IN_OUT, FADE, past, type Side } from '../home/PageTransition';
+
+/** The curtain's sweep over the page being left (ms): a little quicker than the homepage's. */
+const COVER = 120;
+/** The next page's name is written this many times faster than the labels on the page. */
+const PACE = 8;
 
 /** sessionStorage key: the side the curtain came in from, set as the page is left under it. */
 export const CURTAIN_KEY = 'pj-curtain';
@@ -60,7 +64,8 @@ const nameSize = (text: string) => {
  * name on it, so the reader sees where they are going. The next page then opens under
  * the same curtain with its name already there (an inline script in the layout's <head>
  * marks it covered before its first paint and skips the browser's own page transition),
- * and the curtain lifts by the far side. On phones (lite: nothing is blurred, the curtain
+ * and the curtain lifts by the far side at once. Pointing at such a link already asks
+ * for its page, so it is ready by the time its name is written. On phones (lite: nothing is blurred, the curtain
  * would be see-through) the plain cross-page fade stays.
  */
 export default function PageCurtain({ title }: { title: string }) {
@@ -69,35 +74,20 @@ export default function PageCurtain({ title }: { title: string }) {
     /** The name on the curtain: this page's own, or the next one's while leaving. */
     const [shown, setShown] = useState(title);
 
-    // Arriving under the curtain, its name already written: hold, then lift by the far side.
+    // Arriving: the curtain lifts by itself in CSS (pageTransition.css) from the first
+    // paint; once it is gone, the page drops the mark.
     useEffect(() => {
         const root = document.documentElement;
         const curtain = curtainRef.current;
-        const from = root.getAttribute('data-pj-curtain') as Side | null;
         try { sessionStorage.removeItem(CURTAIN_KEY); } catch { /* storage blocked */ }
-        if (!from || !curtain) return;
-
-        const still = prefersReducedMotion();
-        let live = true, stopWaiting = () => { }, lift: Animation | undefined;
-        new Promise<void>(r => { stopWaiting = whenFramesFlow(r); })
-            .then(() => live ? new Promise(r => setTimeout(r, HOLD)) : undefined)
-            .then(() => {
-                if (!live) return;
-                lift = curtain.animate(
-                    still ? [{ opacity: 1 }, { opacity: 0 }] : [{ transform: 'none' }, { transform: past(FAR[from]) }],
-                    { duration: still ? FADE : SWEEP, easing: EASE_IN_OUT, fill: 'forwards' },
-                );
-                return lift.finished;
-            })
-            .then(() => {
-                if (!live) return;
-                root.removeAttribute('data-pj-curtain');
-                lift?.cancel();
-            })
-            .catch(() => { /* cancelled */ });
-        // Not removing the mark here: in development React runs this effect twice, and the
-        // second run still needs the page covered.
-        return () => { live = false; stopWaiting(); lift?.cancel(); };
+        if (!root.hasAttribute('data-pj-curtain') || !curtain) return;
+        const done = () => {
+            if (curtain.getAnimations().some(a => a.playState === 'running')) return;
+            root.removeAttribute('data-pj-curtain');
+        };
+        curtain.addEventListener('animationend', done);
+        done();
+        return () => curtain.removeEventListener('animationend', done);
     }, []);
 
     // Leaving: a link to another standalone page sweeps the curtain over this one and
@@ -107,22 +97,35 @@ export default function PageCurtain({ title }: { title: string }) {
         const name = nameRef.current;
         let leaving = false;
         const anims: Animation[] = [];
-        const onClick = (e: MouseEvent) => {
-            if (leaving || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || isLite()) return;
-            const link = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
-            if (!link || (link.target && link.target !== '_self') || link.hasAttribute('download')) return;
-            const url = new URL(link.href, location.href);
-            if (url.origin !== location.origin) return;
-            const side = curtainSide(location.pathname, url.pathname);
-            if (!side || !curtain || !name) return;
-            e.preventDefault();
-            leaving = true;
-            try { sessionStorage.setItem(CURTAIN_KEY, side); } catch { /* the next page just opens */ }
-            // Ask for the next page now, so it is ready once its name is written.
+        const asked = new Set<string>();
+        /** Ask for a page ahead of opening it, once. */
+        const prefetch = (url: URL) => {
+            if (asked.has(url.pathname)) return;
+            asked.add(url.pathname);
             const ahead = document.createElement('link');
             ahead.rel = 'prefetch';
             ahead.href = url.href;
             document.head.appendChild(ahead);
+        };
+        /** The standalone page a link opens, if it is another one. */
+        const target = (el: EventTarget | null) => {
+            const link = (el as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+            if (!link || (link.target && link.target !== '_self') || link.hasAttribute('download')) return null;
+            const url = new URL(link.href, location.href);
+            if (url.origin !== location.origin) return null;
+            const side = curtainSide(location.pathname, url.pathname);
+            return side ? { link, url, side } : null;
+        };
+        const onPoint = (e: PointerEvent) => { const t = target(e.target); if (t) prefetch(t.url); };
+        const onClick = (e: MouseEvent) => {
+            if (leaving || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || isLite()) return;
+            const t = target(e.target);
+            if (!t || !curtain || !name) return;
+            const { link, url, side } = t;
+            e.preventDefault();
+            leaving = true;
+            try { sessionStorage.setItem(CURTAIN_KEY, side); } catch { /* the next page just opens */ }
+            prefetch(url);
 
             flushSync(() => setShown(nextTitle(url.pathname, link)));
             const still = prefersReducedMotion();
@@ -130,7 +133,7 @@ export default function PageCurtain({ title }: { title: string }) {
             curtain.style.display = 'flex';
             const cover = curtain.animate(
                 still ? [{ opacity: 0 }, { opacity: 1 }] : [{ transform: past(side) }, { transform: 'none' }],
-                { duration: still ? FADE : SWEEP, easing: EASE_IN_OUT, fill: 'forwards' },
+                { duration: still ? FADE : COVER, easing: EASE_IN_OUT, fill: 'forwards' },
             );
             anims.push(cover);
             void cover.finished
@@ -154,9 +157,11 @@ export default function PageCurtain({ title }: { title: string }) {
             setShown(title);
         };
         document.addEventListener('click', onClick);
+        document.addEventListener('pointerover', onPoint);
         window.addEventListener('pageshow', onShow);
         return () => {
             document.removeEventListener('click', onClick);
+            document.removeEventListener('pointerover', onPoint);
             window.removeEventListener('pageshow', onShow);
         };
     }, [title]);

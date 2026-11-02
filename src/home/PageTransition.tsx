@@ -19,16 +19,16 @@ interface PageTransitionProps {
 
 export const EASE_IN_OUT = 'cubic-bezier(.76, 0, .24, 1)';
 /** The curtain's sweep across the page, in and out. */
-export const SWEEP = 150;
+const SWEEP = 150;
 /** The name is written this many times faster than the labels on the page: it holds up the switch. */
-export const PACE = 3;
+const PACE = 3;
 /** How long the written name stays before the curtain lifts. */
-export const HOLD = 150;
+const HOLD = 150;
 /** With reduced motion: the curtain fades in and out over the page instead of sweeping. */
 export const FADE = 150;
 
 export type Side = 'top' | 'bottom' | 'right' | 'left';
-export const FAR: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
+const FAR: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
 /** The curtain moved just past one side of the page. */
 export const past = (side: Side) =>
     side === 'top' ? 'translateY(-100%)' : side === 'bottom' ? 'translateY(100%)' :

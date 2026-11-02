@@ -38,8 +38,9 @@
 /* The homepage's curtain between the standalone pages (PageCurtain.tsx): hidden until a
    link to another of them sweeps it in, and shown from the first paint of the page that
    opens under it (<html data-pj-curtain>, set in the layout's <head>) until it lifts. It
-   carries the next page's name, written on the page being left. If
-   the page's script never runs, it gets out of the way by itself. */
+   carries the next page's name, written on the page being left. Arriving, it lifts by
+   itself from the first paint, by the side opposite the one it came in from: no wait for
+   the page's script. */
 .pj-curtain {
   position: fixed;
   inset: 0;
@@ -50,8 +51,19 @@
   overflow: hidden;
   backdrop-filter: blur(40px);
 }
-:root[data-pj-curtain] .pj-curtain { display: flex; animation: pj-curtain-bail .3s 6s forwards; }
+:root[data-pj-curtain] .pj-curtain { display: flex; animation: .12s cubic-bezier(.76, 0, .24, 1) .06s both; }
+:root[data-pj-curtain="left"] .pj-curtain { animation-name: pj-lift-right; }
+:root[data-pj-curtain="right"] .pj-curtain { animation-name: pj-lift-left; }
+:root[data-pj-curtain="bottom"] .pj-curtain { animation-name: pj-lift-up; }
+:root[data-pj-curtain="top"] .pj-curtain { animation-name: pj-lift-down; }
 .pj-curtain-name { visibility: hidden; line-height: 1; color: var(--text-primary); }
 /* Arriving: the name was written on the page before, so it is there from the first paint. */
 :root[data-pj-curtain] .pj-curtain-name { visibility: visible; }
-@keyframes pj-curtain-bail { to { opacity: 0; } }
+@keyframes pj-lift-right { to { transform: translateX(100%); } }
+@keyframes pj-lift-left { to { transform: translateX(-100%); } }
+@keyframes pj-lift-up { to { transform: translateY(-100%); } }
+@keyframes pj-lift-down { to { transform: translateY(100%); } }
+@keyframes pj-lift-fade { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-pj-curtain] .pj-curtain { animation-name: pj-lift-fade; }
+}
