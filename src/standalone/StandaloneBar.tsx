@@ -1,9 +1,12 @@
 import { ArrowUpRight } from 'lucide-react';
 import RevilMark from '../ui/RevilMark';
+import PageCurtain from './PageCurtain';
 
-/** Shared navigation for the public reading and project pages. */
-export default function StandaloneBar({ current }: { current?: 'list' | 'privacy' }) {
+/** Shared navigation for the public reading and project pages, and the curtain between them
+ *  (`title`: this page's name, written on the curtain as it opens). */
+export default function StandaloneBar({ current, title }: { current?: 'list' | 'privacy'; title: string }) {
     return (
+        <>
         <header className="pj-bar">
             <a href="/" className="pj-home" aria-label="Tem Revil, home">
                 <RevilMark size={30} className="pj-mark" />
@@ -15,5 +18,7 @@ export default function StandaloneBar({ current }: { current?: 'list' | 'privacy
             </nav>
             <a href="/book" className="pj-cta pj-bar-cta">Book a call<ArrowUpRight size={18} strokeWidth={1.8} aria-hidden="true" /></a>
         </header>
+        <PageCurtain title={title} />
+        </>
     );
 }

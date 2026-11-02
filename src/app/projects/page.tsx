@@ -61,7 +61,7 @@ export default function ProjectsIndex() {
         <div className="pj">
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
-                <StandaloneBar current="list" />
+                <StandaloneBar current="list" title="Projects" />
                 <main>
                     <header className="pj-list-head pj-page-heading">
                         <PageTitle>Projects</PageTitle>

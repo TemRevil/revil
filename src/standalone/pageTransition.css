@@ -34,3 +34,21 @@
 @media (prefers-reduced-motion: reduce) {
   @view-transition { navigation: none; }
 }
+
+/* The homepage's curtain between the standalone pages (PageCurtain.tsx): hidden until a
+   link to another of them sweeps it in, and shown from the first paint of the page that
+   opens under it (<html data-pj-curtain>, set in the layout's <head>) until it lifts. If
+   the page's script never runs, it gets out of the way by itself. */
+.pj-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  backdrop-filter: blur(40px);
+}
+:root[data-pj-curtain] .pj-curtain { display: flex; animation: pj-curtain-bail 0s 6s forwards; }
+.pj-curtain-name { visibility: hidden; line-height: 1; color: var(--text-primary); }
+@keyframes pj-curtain-bail { to { visibility: hidden; } }

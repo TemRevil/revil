@@ -98,7 +98,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
         <div className="pj">
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
-                <StandaloneBar />
+                <StandaloneBar title={name} />
 
                 <main>
                     <ol className="pj-crumbs" aria-label="Breadcrumb">

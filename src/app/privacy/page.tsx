@@ -89,7 +89,7 @@ export default function Privacy() {
     return (
         <div className="pj">
             <div className="pj-wrap">
-                <StandaloneBar current="privacy" />
+                <StandaloneBar current="privacy" title="Privacy & terms" />
                 <main className="pv">
                     <header className="pv-hero pj-page-heading">
                         <PageTitle>Privacy &amp; terms</PageTitle>
