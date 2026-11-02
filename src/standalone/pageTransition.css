@@ -51,7 +51,14 @@
   overflow: hidden;
   backdrop-filter: blur(40px);
 }
-:root[data-pj-curtain] .pj-curtain { display: flex; animation: .12s cubic-bezier(.76, 0, .24, 1) .06s both; }
+:root[data-pj-curtain] .pj-curtain {
+  display: flex;
+  /* Longhands: the build drops a shorthand that has no name in it. */
+  animation-duration: .15s;
+  animation-timing-function: cubic-bezier(.76, 0, .24, 1);
+  animation-delay: .06s;
+  animation-fill-mode: both;
+}
 :root[data-pj-curtain="left"] .pj-curtain { animation-name: pj-lift-right; }
 :root[data-pj-curtain="right"] .pj-curtain { animation-name: pj-lift-left; }
 :root[data-pj-curtain="bottom"] .pj-curtain { animation-name: pj-lift-up; }
