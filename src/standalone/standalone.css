@@ -31,39 +31,15 @@
   padding: 28px 0 24px;
   border-bottom: 1px solid var(--pj-line);
 }
-/* The R monogram, then the two-line wordmark with its pen stroke. */
+/* The R monogram alone is the home link; its label carries the name. */
 .pj-home {
   display: flex;
   align-items: center;
-  gap: 12px;
   width: fit-content;
-  font-family: var(--font-archivo-black), sans-serif;
-  font-size: 27px;
-  line-height: .86;
-  text-transform: uppercase;
   color: var(--text-primary);
   text-decoration: none;
-  letter-spacing: -.035em;
 }
-.pj-mark { width: 40px; height: 40px; flex-shrink: 0; margin-bottom: 7px; }
-.pj-word {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 86px;
-  padding: 4px 0 11px;
-}
-.pj-signature {
-  position: absolute;
-  left: -2px;
-  bottom: -3px;
-  width: 100%;
-  height: 14px;
-  color: var(--accent);
-  transition: transform .2s ease;
-}
-.pj-home:hover .pj-signature { transform: translateX(3px); }
+.pj-mark { width: 44px; height: 44px; flex-shrink: 0; }
 .pj-home:focus-visible, .pj-navlink:focus-visible, .pj-bar-cta:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 5px;
@@ -121,15 +97,13 @@
 .pj-bar-cta:hover svg { transform: translate(2px, -2px); }
 @media (max-width: 680px) {
   .pj-bar { grid-template-columns: 1fr auto; gap: 18px; padding: 22px 0 12px; }
-  .pj-home { font-size: 24px; gap: 10px; }
-  .pj-word { min-width: 78px; }
-  .pj-mark { width: 35px; height: 35px; }
+  .pj-mark { width: 40px; height: 40px; }
   .pj-bar nav { grid-row: 2; grid-column: 1 / -1; justify-content: flex-start; gap: 24px; }
   .pj-bar-cta { grid-column: 2; grid-row: 1; }
   .pj-navlink { font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pj-signature, .pj-navlink, .pj-navlink::after, .pj-bar-cta svg { transition: none; }
+  .pj-navlink, .pj-navlink::after, .pj-bar-cta svg { transition: none; }
 }
 
 /* ── project header ──────────────────────────────────────── */

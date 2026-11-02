@@ -6,13 +6,7 @@ export default function StandaloneBar({ current }: { current?: 'list' | 'privacy
     return (
         <header className="pj-bar">
             <a href="/" className="pj-home" aria-label="Tem Revil, home">
-                <RevilMark size={40} className="pj-mark" />
-                <span className="pj-word">
-                    <span>Tem</span><span>Revil</span>
-                    <svg className="pj-signature" viewBox="0 0 120 16" fill="none" aria-hidden="true">
-                        <path d="M3 10C27 5 52 5 76 7S104 9 117 4M17 13C43 9 71 10 95 11" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                    </svg>
-                </span>
+                <RevilMark size={44} className="pj-mark" />
             </a>
             <nav aria-label="Site">
                 <a href="/" className="pj-navlink">Portfolio</a>
