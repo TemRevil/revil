@@ -13,6 +13,7 @@ import StandaloneBar from '../../../standalone/StandaloneBar';
 import CaseStudy from '../../../standalone/CaseStudy';
 import ProjectGallery from '../../../standalone/ProjectGallery';
 import '../../../standalone/standalone.css';
+import '../../../standalone/pageTransition.css';
 
 // One static page per project, built from the snapshot. A slug the build doesn't
 // know is a 404 rather than a page rendered on demand (there is no server).
@@ -97,7 +98,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
         <div className="pj">
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
-                <StandaloneBar />
+                <StandaloneBar title={name} />
 
                 <main>
                     <ol className="pj-crumbs" aria-label="Breadcrumb">
@@ -178,7 +179,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                             <ul className="pj-more">
                                 {others.map((o) => (
                                     <li key={o.slug}>
-                                        <a href={`/projects/${o.slug}`}>
+                                        <a href={`/projects/${o.slug}`} data-page-title={o.name}>
                                             {o.project['Project Icon'] && <img src={o.project['Project Icon']} alt="" width={36} height={36} loading="lazy" />}
                                             <span><b>{o.name}</b><small>{tagNames(o.project).slice(0, 3).join(', ')}</small></span>
                                         </a>

@@ -12,7 +12,7 @@ import { cleanName, nameNote, projectSlugs } from './projectSlug';
  */
 
 /** A row of the snapshot's Projects collection (mirrors the Firestore doc). */
-export type SnapshotProject = {
+type SnapshotProject = {
     id: string;
     Description?: string;
     /** The long write-up, only on the project's own page (see standalone/CaseStudy). */

@@ -11,7 +11,7 @@ const MIN_STROKE = 60;
 /** A character the pen can't write (see lib/pen) fades in for this long (ms). */
 const TEXT = 180;
 
-export type PenStep = { kind: 'stroke'; length: number } | { kind: 'text' } | { kind: 'space' };
+type PenStep = { kind: 'stroke'; length: number } | { kind: 'text' } | { kind: 'space' };
 
 /**
  * When each step starts and how long it takes: strokes one after another at a steady pen

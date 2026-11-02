@@ -40,14 +40,14 @@ export interface SessionEvent {
     v?: string;
 }
 
-export interface SessionLink {
+interface SessionLink {
     Id: string;
     Code: string;
     Name: string;
     For: string;
 }
 
-export interface SessionEntry {
+interface SessionEntry {
     Section: string;
     Path: string;
     /** Full referrer URL, or '' for a direct visit. */
@@ -58,13 +58,13 @@ export interface SessionEntry {
 }
 
 /** Where the visit came from, resolved server-side from the referrer + query tags. */
-export interface SessionSource {
+interface SessionSource {
     Name: string;
     /** 'ai' means an assistant sent them: the one worth watching on its own. */
     Kind: 'ai' | 'search' | 'social' | 'mail' | 'referral' | 'direct';
 }
 
-export interface SessionDevice {
+interface SessionDevice {
     Type: 'phone' | 'tablet' | 'desktop';
     OS: string;
     Browser: string;
@@ -78,7 +78,7 @@ export interface SessionDevice {
     Touch: boolean;
 }
 
-export interface SessionProject {
+interface SessionProject {
     Opens: number;
     Ms: number;
     Live: number;
@@ -86,12 +86,12 @@ export interface SessionProject {
     Download: number;
 }
 
-export interface SessionSocial {
+interface SessionSocial {
     Clicks: number;
     AwayMs: number;
 }
 
-export interface SessionContact {
+interface SessionContact {
     Opens: number;
     /** Last tab they were on: the furthest step of the funnel they reached. */
     Tab: string;

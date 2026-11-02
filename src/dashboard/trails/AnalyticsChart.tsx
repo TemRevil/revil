@@ -15,7 +15,7 @@ export interface ChartDataPoint {
     type?: 'daily' | 'weekly' | 'monthly';
 }
 
-export const CustomTooltip = ({ active, payload, isDark }: TooltipContentProps & { isDark?: boolean }) => {
+const CustomTooltip = ({ active, payload, isDark }: TooltipContentProps & { isDark?: boolean }) => {
     if (active && payload && payload.length) {
         const item = payload[0].payload as ChartDataPoint;
         const d = new Date(item.fullDate);
@@ -77,7 +77,7 @@ export const CustomTooltip = ({ active, payload, isDark }: TooltipContentProps &
     return null;
 };
 
-export const CustomTick = ({ x, y, payload, index, data, isDark }: XAxisTickContentProps & { data: ChartDataPoint[]; isDark?: boolean }) => {
+const CustomTick = ({ x, y, payload, index, data, isDark }: XAxisTickContentProps & { data: ChartDataPoint[]; isDark?: boolean }) => {
     const item = data[index];
     if (!item) return null;
     return (

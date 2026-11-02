@@ -14,7 +14,7 @@ import { TagData, ContributorData, TagFormData } from '../../types';
 import MTagForm from './TagForm';
 import MContributorForm from './ContributorForm';
 import { createPortal } from 'react-dom';
-import Loader from '../../ui/reactbits/Loader';
+import LoadingCurtain from '../../ui/LoadingCurtain';
 import MConfirmModal from '../ConfirmModal';
 import useTheme from '../../hooks/useTheme';
 
@@ -354,7 +354,7 @@ const DTags = () => {
 
     return (
         <div className="h-[85vh] flex flex-col" style={{ gap: gap, touchAction: 'pan-y' }}>
-            <Loader isOpen={isLoading} isFullScreen={true} />
+            <LoadingCurtain open={isLoading} portal />
             {/* Header Actions */}
             <div className="flex justify-between items-center" style={{
                 flexWrap: isExtraSmall ? 'wrap' : 'nowrap',

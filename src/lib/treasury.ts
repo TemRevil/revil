@@ -31,7 +31,7 @@ export * from './money';
  */
 export type { ProjectStatus };
 
-export interface ProjectStatusMeta {
+interface ProjectStatusMeta {
     id: ProjectStatus;
     label: string;
     /** One line saying when to pick it, shown under the picker. */
@@ -476,7 +476,7 @@ export function accountOptions(accounts: TreasuryAccount[]): TreasuryAccount[] {
 // Continuous daily series (powers the day/week/month paginated chart)
 // ---------------------------------------------------------------------------
 
-export interface DaySeriesPoint { date: string; earned: number; spent: number; }
+interface DaySeriesPoint { date: string; earned: number; spent: number; }
 
 const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const toDay = (s: string | null | undefined, fallbackMs?: number) =>
@@ -544,7 +544,7 @@ export type InsightIcon =
     | 'rates' | 'empty';
 
 /** The Treasury tabs a suggestion can send you to - same ids the dashboard uses. */
-export type InsightTab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
+type InsightTab = 'overview' | 'projects' | 'money' | 'accounts' | 'receipts' | 'settings';
 
 /** Where acting on a suggestion takes you. A suggestion without one is just context. */
 export interface InsightAction {

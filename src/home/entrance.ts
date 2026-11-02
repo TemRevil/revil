@@ -5,7 +5,7 @@ import { prefersReducedMotion } from '../lib/device';
 export const EASE_OUT_EXPO = [0.16, 1, 0.3, 1] as const;
 export const EASE_OUT_QUAD = [0.5, 1, 0.89, 1] as const;
 
-export interface Travel {
+interface Travel {
     /** Start this far off along x / y (px) and settle at 0. */
     x?: number;
     y?: number;

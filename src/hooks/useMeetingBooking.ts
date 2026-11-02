@@ -17,7 +17,7 @@ import { timezoneOptions, localOffset } from '../lib/timezones';
 /** Pragmatic email validator: requires local@domain.tld and rejects whitespace.
  *  Not RFC 5322 perfect, but rejects 99% of typos / pasted junk. */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-export const isValidEmail = (s: string) => EMAIL_RE.test(s.trim());
+const isValidEmail = (s: string) => EMAIL_RE.test(s.trim());
 
 /** A taken slot as Settings/BookedSlots publishes it: the UTC instant it starts, nothing else. */
 export interface Meeting {
@@ -67,7 +67,7 @@ export const getDaysInMonth = (date: Date) => {
  * `via` says which of the two booked it. It is stored on the meeting (`Via`) so Canary
  * can show where a booking came from, and sent with the analytics event so Trails can.
  */
-export type BookingVia = 'book' | 'contact';
+type BookingVia = 'book' | 'contact';
 
 export default function useMeetingBooking({ showAlert, enabled = true, reads = true, via = 'contact' }: { showAlert: ShowAlert; enabled?: boolean; reads?: boolean; via?: BookingVia }) {
   const [calendarDate, setCalendarDate] = useState(new Date());

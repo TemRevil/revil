@@ -27,7 +27,7 @@
   flex-shrink: 0;
   width: 13.75em;
   position: sticky;
-  top: 2.5em;
+  top: var(--pj-under-bar);
 }
 .pv-article {
   flex: 1;
@@ -78,7 +78,7 @@
   line-height: 1.25;
   letter-spacing: -0.01em;
   color: var(--text-primary);
-  scroll-margin-top: 32px;
+  scroll-margin-top: var(--pj-under-bar);
 }
 .pv-article section:first-child h2 { margin-top: 0; }
 .pv-article h2:focus { outline: none; }

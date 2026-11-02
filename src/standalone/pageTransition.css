@@ -1,0 +1,76 @@
+/* Moving between the public pages (home, /projects, the project pages, /privacy) is a
+   cross-document view transition: the page leaving fades and softens while the page
+   arriving fades in with a slight rise, a little slower than a plain fade. Both sides of a
+   navigation have to opt in, so each of those pages imports this file; /book and the
+   dashboard don't, and keep a plain load. The floating top bar has its own name, so it
+   holds its place while the page changes under it. */
+@view-transition { navigation: auto; }
+
+.pj-bar { view-transition-name: pj-bar; }
+
+::view-transition-old(root) { animation: pt-out .56s cubic-bezier(.22, 1, .36, 1) both; }
+::view-transition-new(root) { animation: pt-in .56s cubic-bezier(.22, 1, .36, 1) both; }
+/* The bar doesn't move; only its current-page underline crossfades. */
+::view-transition-group(pj-bar) { animation-duration: 0s; }
+::view-transition-old(pj-bar), ::view-transition-new(pj-bar) { animation-duration: .3s; }
+
+@keyframes pt-out { to { opacity: 0; filter: blur(4px); } }
+@keyframes pt-in { from { opacity: 0; filter: blur(4px); transform: translateY(8px); } }
+@keyframes pt-fade { from { opacity: 0; } }
+
+/* Lite (phones, see globals.css): a plain crossfade. Blurring and moving a whole page
+   snapshot is the costly part on a phone. */
+:root[data-lite]::view-transition-old(root) { animation: pt-fade .4s ease reverse both; }
+:root[data-lite]::view-transition-new(root) { animation: pt-fade .4s ease both; }
+
+/* No cross-document view transitions in this browser (<html data-no-vt>, set in the
+   layout's <head>): the arriving page's content still eases in, under the bar. */
+@media (prefers-reduced-motion: no-preference) {
+  /* backwards, not both: nothing (a transform, a filter) stays on main once it is in. */
+  :root[data-no-vt] .pj-wrap > main { animation: pt-in .56s cubic-bezier(.22, 1, .36, 1) backwards; }
+  :root[data-no-vt][data-lite] .pj-wrap > main { animation: pt-fade .4s ease backwards; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+}
+
+/* The homepage's curtain between the standalone pages (PageCurtain.tsx): hidden until a
+   link to another of them sweeps it in, and shown from the first paint of the page that
+   opens under it (<html data-pj-curtain>, set in the layout's <head>) until it lifts. It
+   carries the next page's name, written on the page being left. Arriving, it lifts by
+   itself from the first paint, by the side opposite the one it came in from: no wait for
+   the page's script. */
+.pj-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  backdrop-filter: blur(40px);
+}
+:root[data-pj-curtain] .pj-curtain {
+  display: flex;
+  /* Longhands: the build drops a shorthand that has no name in it. */
+  animation-duration: .15s;
+  animation-timing-function: cubic-bezier(.76, 0, .24, 1);
+  animation-delay: .06s;
+  animation-fill-mode: both;
+}
+:root[data-pj-curtain="left"] .pj-curtain { animation-name: pj-lift-right; }
+:root[data-pj-curtain="right"] .pj-curtain { animation-name: pj-lift-left; }
+:root[data-pj-curtain="bottom"] .pj-curtain { animation-name: pj-lift-up; }
+:root[data-pj-curtain="top"] .pj-curtain { animation-name: pj-lift-down; }
+.pj-curtain-name { visibility: hidden; line-height: 1; color: var(--text-primary); }
+/* Arriving: the name was written on the page before, so it is there from the first paint. */
+:root[data-pj-curtain] .pj-curtain-name { visibility: visible; }
+@keyframes pj-lift-right { to { transform: translateX(100%); } }
+@keyframes pj-lift-left { to { transform: translateX(-100%); } }
+@keyframes pj-lift-up { to { transform: translateY(-100%); } }
+@keyframes pj-lift-down { to { transform: translateY(100%); } }
+@keyframes pj-lift-fade { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-pj-curtain] .pj-curtain { animation-name: pj-lift-fade; }
+}

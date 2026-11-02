@@ -6,6 +6,7 @@ import PageTitle from '../../standalone/PageTitle';
 import ProjectsList from '../../standalone/ProjectsList';
 import type { FirestoreProject } from '../../home/projects/shape';
 import '../../standalone/standalone.css';
+import '../../standalone/pageTransition.css';
 
 const title = 'Projects | Tem Revil';
 const description =
@@ -60,7 +61,7 @@ export default function ProjectsIndex() {
         <div className="pj">
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(graph) }} />
             <div className="pj-wrap">
-                <StandaloneBar current="list" />
+                <StandaloneBar current="list" title="Projects" />
                 <main>
                     <header className="pj-list-head pj-page-heading">
                         <PageTitle>Projects</PageTitle>

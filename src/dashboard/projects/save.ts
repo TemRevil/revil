@@ -13,7 +13,7 @@
  */
 
 /** The fields the project form owns. */
-export const FORM_FIELDS = [
+const FORM_FIELDS = [
     'Description', 'Case Study', 'Live Link', 'Download Link', 'Project Icon',
     'Repository Link', 'Contributors', 'Tags', 'Project Images',
 ] as const;

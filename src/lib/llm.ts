@@ -16,7 +16,7 @@
 
 export type Provider = 'anthropic' | 'openai' | 'gemini';
 
-export interface ToolDef {
+interface ToolDef {
     name: string;
     description: string;
     params: Record<string, unknown>; // JSON-schema object
@@ -29,7 +29,7 @@ export interface ToolResult { id: string; name: string; output: string; }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type NativeMsg = any;
 
-export interface ChatResult { assistant: NativeMsg; text: string; toolCalls: ToolCall[]; }
+interface ChatResult { assistant: NativeMsg; text: string; toolCalls: ToolCall[]; }
 
 const KEY_OVERRIDE = 'llm_key_override';
 const MODEL_KEY = 'llm_model';
@@ -63,7 +63,7 @@ export function setKeyOverride(key: string) {
  * The model id is placed in the Gemini URL path, so it may hold only these characters.
  * Same rule as the `llm` Cloud Function applies before it builds the same URL.
  */
-export const MODEL_ID_RE = /^[A-Za-z0-9.\-_]+$/;
+const MODEL_ID_RE = /^[A-Za-z0-9.\-_]+$/;
 export const isValidModelId = (model: unknown): model is string => typeof model === 'string' && MODEL_ID_RE.test(model);
 export function getModel(): string {
     return (typeof window !== 'undefined' && localStorage.getItem(MODEL_KEY)) || '';

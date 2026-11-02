@@ -11,7 +11,7 @@ export type ChartFilter = 'daily' | 'weekly' | 'monthly';
 export interface ChartPoint { label: string; fullDate: string; earned: number; spent: number; type: ChartFilter; }
 
 // ── D-Views-style frosted tooltip ──────────────────────────────────────────
-export const ChartTooltip = ({ active, payload, isDark, cur }: TooltipContentProps & { isDark?: boolean; cur: Currency }) => {
+const ChartTooltip = ({ active, payload, isDark, cur }: TooltipContentProps & { isDark?: boolean; cur: Currency }) => {
     if (!active || !payload || !payload.length) return null;
     const p = payload[0].payload as ChartPoint;
     const d = new Date(p.fullDate);

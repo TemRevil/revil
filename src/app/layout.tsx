@@ -5,6 +5,10 @@ import { LITE_SCRIPT } from '../lib/device'
 
 /** Saved (or system) theme on <html>, before anything paints. */
 const THEME_SCRIPT = "(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;var c=document.documentElement.classList;if(d){c.add('dark');}else{c.remove('dark');}}catch(e){}})();"
+/** No cross-document view transitions in this browser: <html data-no-vt>, so the standalone pages ease their content in instead (standalone/pageTransition.css). */
+const NO_VT_SCRIPT = "(function(){if(!('onpagereveal' in window))document.documentElement.setAttribute('data-no-vt','')})();"
+/** Opened under the standalone pages' curtain (standalone/PageCurtain.tsx): <html data-pj-curtain="side"> so the page paints covered, and the browser's own page transition is skipped. */
+const PJ_CURTAIN_SCRIPT = "(function(){try{var d=document.documentElement,s=sessionStorage.getItem('pj-curtain');if(s&&!d.hasAttribute('data-lite')){d.setAttribute('data-pj-curtain',s);addEventListener('pagereveal',function(e){var v=e.viewTransition;if(v){v.skipTransition();v.ready.catch(function(){});v.finished.catch(function(){});v.updateCallbackDone.catch(function(){})}},{once:true})}}catch(e){}})();"
 /** GitHub Pages visitors (temrevil.github.io/revil) go to temrevil.com, path, query and hash kept. */
 const CANONICAL_SCRIPT = "(function(){try{if(location.hostname==='temrevil.github.io'){var p=location.pathname;if(p==='/revil'){p='/';}else if(p.indexOf('/revil/')===0){p=p.slice(6);}location.replace('https://temrevil.com'+p+location.search+location.hash);}}catch(e){}})();"
 import { SITE_URL as siteUrl, SITE_NAME as siteName, SITE_TITLE as siteTitle, SITE_DESCRIPTION as siteDescription, SHARE_CARD } from '../lib/siteProfile'
@@ -87,12 +91,15 @@ export default function RootLayout({
       <head>
         {/* Plain inline scripts, run by the parser before the first paint: the saved theme
             (the whole app, the dashboard included, opens in it with no flash; the Navbar's
-            toggle writes localStorage 'theme'), lite mode on phones (lib/device.ts), and the
-            GitHub Pages to temrevil.com redirect. Not next/script beforeInteractive: that
+            toggle writes localStorage 'theme'), lite mode on phones (lib/device.ts), whether
+            page transitions are supported, whether the page opens under the standalone curtain, and the GitHub Pages to temrevil.com redirect.
+            Not next/script beforeInteractive: that
             only queues them for the Next runtime, which runs later and inserts them as new
             scripts, which a hash-based CSP refuses. These are hashed per page instead. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: LITE_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: NO_VT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: PJ_CURTAIN_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: CANONICAL_SCRIPT }} />
         {/* Google Search Console verification */}
         <meta name="google-site-verification" content="uQR0p6nF_uFGSNYBtO-_tKpQ6W-Qu_LrwF77SLoEprc" />

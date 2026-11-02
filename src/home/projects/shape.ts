@@ -10,14 +10,14 @@ import { bestDistance, SEARCH_MAX_DISTANCE } from '../../lib/fuzzy';
  * section (live data) and the page (the build's snapshot) read the same.
  */
 
-export interface RawContributorData {
+interface RawContributorData {
     Name?: string;
     Role?: string;
     Image?: string;
     "Social Accounts"?: Record<string, string>;
 }
 
-export interface RawTagData {
+interface RawTagData {
     Name?: string;
     Color?: string;
     Icon?: string;
@@ -87,7 +87,7 @@ export const tagsOf = (doc: Data | null | undefined): Tag[] =>
     }));
 
 /** A project's tag with its colour and icon: its own, else the Tags/Tags entry's, else a guess from the name. */
-export const resolveTag = (t: string | RawTagData, known: Tag[]): Tag => {
+const resolveTag = (t: string | RawTagData, known: Tag[]): Tag => {
     const name = typeof t === 'string' ? t : (t.Name || 'Unix');
     const globalTag = known.find(gt => gt.name.toLowerCase() === name.toLowerCase());
     return {
@@ -150,7 +150,7 @@ export const shapeProject = (data: FirestoreProject, contributors: Contributor[]
 };
 
 /** Whether a project carries every one of these tags, in its stack or its own tags. */
-export const hasTags = (project: { stack?: string[]; tags?: Tag[] }, tags: string[]) => {
+const hasTags = (project: { stack?: string[]; tags?: Tag[] }, tags: string[]) => {
     const own = [...(project.stack || []), ...(project.tags || []).map(t => t.name)].map(s => s.toLowerCase());
     return tags.every(tag => own.includes(tag.toLowerCase()));
 };

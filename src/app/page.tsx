@@ -1,5 +1,6 @@
 import { preload } from 'react-dom'
 import HomeApp from './HomeApp'
+import '../standalone/pageTransition.css'
 import { projectPages } from '../lib/projectPages'
 import { baseGraph, homeGraph, jsonLd, HOME_FAQ, JOB_TITLE, SERVICES, SKILLS, SOCIAL_PROFILES } from '../lib/siteProfile'
 

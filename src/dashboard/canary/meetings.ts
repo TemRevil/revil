@@ -10,7 +10,7 @@ import {
     dayIndex, hostTimeToInstant, hostWallClock, isTaken, isoInstant, slotStart, type HostZone,
 } from '../../lib/bookingRules';
 
-export interface MeetingSlot {
+interface MeetingSlot {
     id: string;
     /** The owner's calendar day, as a local Date at midnight. */
     date: Date;

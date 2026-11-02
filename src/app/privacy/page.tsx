@@ -6,6 +6,7 @@ import StandaloneBar from '../../standalone/StandaloneBar';
 import PageTitle from '../../standalone/PageTitle';
 import Contents from '../../standalone/Contents';
 import '../../standalone/standalone.css';
+import '../../standalone/pageTransition.css';
 import '../../standalone/privacy.css';
 
 const title = 'Privacy & terms | Tem Revil';
@@ -88,7 +89,7 @@ export default function Privacy() {
     return (
         <div className="pj">
             <div className="pj-wrap">
-                <StandaloneBar current="privacy" />
+                <StandaloneBar current="privacy" title="Privacy & terms" />
                 <main className="pv">
                     <header className="pv-hero pj-page-heading">
                         <PageTitle>Privacy &amp; terms</PageTitle>

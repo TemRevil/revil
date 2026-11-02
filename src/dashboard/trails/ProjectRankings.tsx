@@ -10,7 +10,7 @@ import FileImage from '../../ui/FileImage';
 // hitting download shows progressively stronger intent. We rank by a weighted
 // engagement score so high-intent projects rise above merely-seen ones, and
 // surface a conversion rate (actions per view) as a quality tie-breaker.
-export const RANK_WEIGHTS = { view: 1, live: 4, github: 3, download: 6 } as const;
+const RANK_WEIGHTS = { view: 1, live: 4, github: 3, download: 6 } as const;
 
 export interface RankInput {
     id: string;
@@ -22,7 +22,7 @@ export interface RankInput {
     downloadViews: number;
 }
 
-export interface RankedProject extends RankInput {
+interface RankedProject extends RankInput {
     score: number;
     conversion: number; // actions / views, 0..1
 }

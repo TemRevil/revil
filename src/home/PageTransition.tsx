@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useBoilHold } from '../book/paintKit';
 import { whenFramesFlow } from '../lib/idle';
 import { prefersReducedMotion } from '../lib/device';
 import { useHydrated } from '../hooks/useHydrated';
 import { handwrite } from '../lib/handwrite';
-import Handwriting from '../ui/Handwriting';
+import Handwriting, { fitSize } from '../ui/Handwriting';
 
 interface PageTransitionProps {
     isTransitioning: boolean;
@@ -16,7 +16,7 @@ interface PageTransitionProps {
     direction?: number;
 }
 
-const EASE_IN_OUT = 'cubic-bezier(.76, 0, .24, 1)';
+export const EASE_IN_OUT = 'cubic-bezier(.76, 0, .24, 1)';
 /** The curtain's sweep across the page, in and out. */
 const SWEEP = 150;
 /** The name is written this many times faster than the labels on the page: it holds up the switch. */
@@ -24,12 +24,12 @@ const PACE = 3;
 /** How long the written name stays before the curtain lifts. */
 const HOLD = 150;
 /** With reduced motion: the curtain fades in and out over the page instead of sweeping. */
-const FADE = 150;
+export const FADE = 150;
 
-type Side = 'top' | 'bottom' | 'right' | 'left';
+export type Side = 'top' | 'bottom' | 'right' | 'left';
 const FAR: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
 /** The curtain moved just past one side of the page. */
-const past = (side: Side) =>
+export const past = (side: Side) =>
     side === 'top' ? 'translateY(-100%)' : side === 'bottom' ? 'translateY(100%)' :
         side === 'left' ? 'translateX(-100%)' : 'translateX(100%)';
 
@@ -44,22 +44,12 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
     const curtainRef = useRef<HTMLDivElement>(null);
     const nameRef = useRef<HTMLDivElement>(null);
     const hydrated = useHydrated();
-    const [fontSize, setFontSize] = useState(100);
     const currentDirection: Side =
         direction === 2 ? 'right' :
             direction === -2 ? 'left' :
                 direction > 0 ? 'bottom' : 'top';
 
     const displayName = nextSectionName.charAt(0).toUpperCase() + nextSectionName.slice(1);
-
-    useEffect(() => {
-        const handleResize = () => {
-            setFontSize(Math.max(40, Math.min(window.innerWidth / 6, 100)));
-        };
-        handleResize();
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
 
     // Read from refs, so a parent re-render mid-switch can't restart the sequence.
     const moving = useRef(onCurtainMoving);
@@ -155,7 +145,7 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
             style={{ backgroundColor: 'transparent', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', display: 'none' }}
         >
             <div className="absolute flex items-center justify-center" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '100%', height: '100%' }}>
-                <div ref={nameRef} style={{ visibility: 'hidden', fontSize, lineHeight: 1, color: 'var(--text-primary)' }}>
+                <div ref={nameRef} style={{ visibility: 'hidden', fontSize: fitSize(displayName), lineHeight: 1, color: 'var(--text-primary)' }}>
                     <Handwriting text={displayName} />
                 </div>
             </div>

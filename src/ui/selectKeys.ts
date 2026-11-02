@@ -11,7 +11,7 @@ export interface KeyOption {
 }
 
 /** How far PageUp / PageDown jump. */
-export const PAGE = 10;
+const PAGE = 10;
 
 /** The next enabled option from `from` going `step` (clamped, never wraps), or `from` when there is none. */
 export function stepEnabled(opts: KeyOption[], from: number, step: number): number {
@@ -54,7 +54,7 @@ export function typeahead(opts: KeyOption[], from: number, text: string): number
     return -1;
 }
 
-export type KeyAction =
+type KeyAction =
     /** Open the list with this option active. */
     | { kind: 'open'; active: number }
     /** Make this option active (the list is already open). */
@@ -68,7 +68,7 @@ export type KeyAction =
     /** A printable character for type-to-find. */
     | { kind: 'find'; char: string };
 
-export interface KeyInput {
+interface KeyInput {
     key: string;
     altKey?: boolean;
     ctrlKey?: boolean;

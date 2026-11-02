@@ -81,7 +81,7 @@ export function dragScroll(el: HTMLElement): () => void {
     };
 }
 
-export interface RailEdges {
+interface RailEdges {
     /** Items are hidden past the left edge. */
     before: boolean;
     /** Items are hidden past the right edge. */

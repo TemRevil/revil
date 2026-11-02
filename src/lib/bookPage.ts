@@ -7,7 +7,7 @@
  * renders the page as designed.
  */
 
-export type BookLinkKind = 'email' | 'github' | 'linkedin' | 'instagram' | 'portfolio' | 'link';
+type BookLinkKind = 'email' | 'github' | 'linkedin' | 'instagram' | 'portfolio' | 'link';
 
 export interface BookLink {
     id: string;
