@@ -6,6 +6,7 @@ import { prefersReducedMotion } from '../lib/device';
 import { useHydrated } from '../hooks/useHydrated';
 import { handwrite } from '../lib/handwrite';
 import Handwriting from '../ui/Handwriting';
+import { UNITS, penLine } from '../lib/pen/pen';
 
 interface PageTransitionProps {
     isTransitioning: boolean;
@@ -51,15 +52,20 @@ const PageTransition = ({ isTransitioning, onCurtainMoving, onTransitionComplete
                 direction > 0 ? 'bottom' : 'top';
 
     const displayName = nextSectionName.charAt(0).toUpperCase() + nextSectionName.slice(1);
+    /** The written name's width (em). */
+    const nameWidth = displayName ? penLine(displayName).width / UNITS : 0;
 
     useEffect(() => {
+        // A longer name (a standalone page's section title) is written smaller, to fit across
+        // the window; the homepage's one-word names stay at the size set by the window alone.
         const handleResize = () => {
-            setFontSize(Math.max(40, Math.min(window.innerWidth / 6, 100)));
+            const fit = nameWidth ? window.innerWidth * 0.9 / nameWidth : Infinity;
+            setFontSize(Math.min(Math.max(40, Math.min(window.innerWidth / 6, 100)), fit));
         };
         handleResize();
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
-    }, []);
+    }, [nameWidth]);
 
     // Read from refs, so a parent re-render mid-switch can't restart the sequence.
     const moving = useRef(onCurtainMoving);
