@@ -1,0 +1,36 @@
+/* Moving between the public pages (home, /projects, the project pages, /privacy) is a
+   cross-document view transition: the page leaving fades and softens while the page
+   arriving fades in with a slight rise, a little slower than a plain fade. Both sides of a
+   navigation have to opt in, so each of those pages imports this file; /book and the
+   dashboard don't, and keep a plain load. The floating top bar has its own name, so it
+   holds its place while the page changes under it. */
+@view-transition { navigation: auto; }
+
+.pj-bar { view-transition-name: pj-bar; }
+
+::view-transition-old(root) { animation: pt-out .56s cubic-bezier(.22, 1, .36, 1) both; }
+::view-transition-new(root) { animation: pt-in .56s cubic-bezier(.22, 1, .36, 1) both; }
+/* The bar doesn't move; only its current-page underline crossfades. */
+::view-transition-group(pj-bar) { animation-duration: 0s; }
+::view-transition-old(pj-bar), ::view-transition-new(pj-bar) { animation-duration: .3s; }
+
+@keyframes pt-out { to { opacity: 0; filter: blur(4px); } }
+@keyframes pt-in { from { opacity: 0; filter: blur(4px); transform: translateY(8px); } }
+@keyframes pt-fade { from { opacity: 0; } }
+
+/* Lite (phones, see globals.css): a plain crossfade. Blurring and moving a whole page
+   snapshot is the costly part on a phone. */
+:root[data-lite]::view-transition-old(root) { animation: pt-fade .4s ease reverse both; }
+:root[data-lite]::view-transition-new(root) { animation: pt-fade .4s ease both; }
+
+/* No cross-document view transitions in this browser (<html data-no-vt>, set in the
+   layout's <head>): the arriving page's content still eases in, under the bar. */
+@media (prefers-reduced-motion: no-preference) {
+  /* backwards, not both: nothing (a transform, a filter) stays on main once it is in. */
+  :root[data-no-vt] .pj-wrap > main { animation: pt-in .56s cubic-bezier(.22, 1, .36, 1) backwards; }
+  :root[data-no-vt][data-lite] .pj-wrap > main { animation: pt-fade .4s ease backwards; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+}

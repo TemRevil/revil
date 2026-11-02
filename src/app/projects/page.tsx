@@ -6,6 +6,7 @@ import PageTitle from '../../standalone/PageTitle';
 import ProjectsList from '../../standalone/ProjectsList';
 import type { FirestoreProject } from '../../home/projects/shape';
 import '../../standalone/standalone.css';
+import '../../standalone/pageTransition.css';
 
 const title = 'Projects | Tem Revil';
 const description =

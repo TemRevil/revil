@@ -33,12 +33,12 @@
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 26px;
   width: fit-content;
   max-width: 100%;
   margin: 12px auto 0;
-  padding: 4px 4px 4px 10px;
-  border-radius: 16px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(24px) saturate(1.8);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
@@ -60,7 +60,7 @@ html[data-lite].dark .pj-bar { background: rgb(14, 14, 16); }
   outline-offset: 3px;
   border-radius: 6px;
 }
-.pj-bar nav { display: flex; gap: 22px; }
+.pj-bar nav { display: flex; gap: 24px; }
 .pj-navlink {
   position: relative;
   display: inline-flex;
@@ -115,7 +115,7 @@ html[data-lite].dark .pj-bar { background: rgb(14, 14, 16); }
 /* A phone fits the bar on one line: "Portfolio" goes, since the R beside it is the same
    link home, and the call button drops its arrow. */
 @media (max-width: 520px) {
-  .pj-bar { gap: 16px; }
+  .pj-bar { gap: 16px; padding: 5px 5px 5px 12px; }
   .pj-bar nav { gap: 16px; }
   .pj-nav-wide { display: none; }
   .pj-mark { width: 28px; height: 28px; }

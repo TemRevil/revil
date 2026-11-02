@@ -13,6 +13,7 @@ import StandaloneBar from '../../../standalone/StandaloneBar';
 import CaseStudy from '../../../standalone/CaseStudy';
 import ProjectGallery from '../../../standalone/ProjectGallery';
 import '../../../standalone/standalone.css';
+import '../../../standalone/pageTransition.css';
 
 // One static page per project, built from the snapshot. A slug the build doesn't
 // know is a 404 rather than a page rendered on demand (there is no server).

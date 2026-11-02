@@ -6,6 +6,7 @@ import StandaloneBar from '../../standalone/StandaloneBar';
 import PageTitle from '../../standalone/PageTitle';
 import Contents from '../../standalone/Contents';
 import '../../standalone/standalone.css';
+import '../../standalone/pageTransition.css';
 import '../../standalone/privacy.css';
 
 const title = 'Privacy & terms | Tem Revil';
