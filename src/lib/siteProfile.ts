@@ -136,6 +136,8 @@ export const HOME_FAQ: { q: string; a: string }[] = [
 
 /** Tags that are programming languages, for SoftwareSourceCode.programmingLanguage. */
 const LANGUAGES = ['HTML', 'CSS', 'JavaScript', 'TypeScript', 'Python', 'Dart', 'Kotlin', 'Swift', 'Go', 'Rust', 'PHP', 'Java', 'C#', 'C++', 'SQL'];
+/** Tags that are operating systems, for SoftwareApplication.operatingSystem. */
+const SYSTEMS = ['Windows', 'macOS', 'Linux', 'Android', 'iOS'];
 
 /**
  * One project as schema.org sees it, the same node on the homepage and on the
@@ -150,8 +152,14 @@ export const projectNode = ({ project: p, name, slug }: ProjectPage) => {
     const images = mediaOf(p).filter((m) => !m.video).map((m) => m.url);
     const languages = LANGUAGES.filter((l) => tags.some((t) => t.toLowerCase() === l.toLowerCase()));
     const others = contributorsOf(p).filter((c) => c.name !== 'Mohammed Ahmed');
+    // A project people can download is an app as well as its code, so answer engines
+    // can name it when asked for an app that does what it does.
+    const download = p['Download Link'];
+    const systems = SYSTEMS.filter((s) => tags.some((t) => t.toLowerCase() === s.toLowerCase()));
+    const kinds = [...(download ? ['SoftwareApplication'] : []), ...(repo ? ['SoftwareSourceCode'] : [])];
     return {
-        '@type': repo ? 'SoftwareSourceCode' : 'CreativeWork',
+        '@type': kinds.length > 1 ? kinds : kinds[0] ?? 'CreativeWork',
+        ...(download ? { downloadUrl: download, ...(systems.length ? { operatingSystem: systems.join(', ') } : {}) } : {}),
         '@id': `${url}#project`,
         url,
         name,
