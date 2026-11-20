@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'lucide-react';
-import { GoogleAuthProvider, signInWithPopup as authSignInWithPopup } from 'firebase/auth';
+import type { User as AuthUser } from 'firebase/auth';
 import { httpsCallable, getFunctions } from 'firebase/functions';
 import app from '../lib/firebase';
 import { appAuth } from '../lib/appAuth';
+import { finishGoogleSignIn, pendingSignIn, signInErrorMessage, startGoogleSignIn } from '../lib/googleSignIn';
 import { useSettings } from './SettingsContext';
 import { PaintDefs, usePaint } from '../book/paintKit';
 import '../book/book.css';
@@ -25,8 +26,6 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const auth = appAuth();
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
 
     // Shared Settings/Account listener (single Firestore connection for all components)
     const { account } = useSettings();
@@ -36,47 +35,57 @@ const SecretPage = ({ onNavigate }: SecretPageProps) => {
         title: account?.title || 'Authorized Revil Only'
     };
 
+    const navigateRef = useRef(onNavigate);
+    useEffect(() => { navigateRef.current = onNavigate; }, [onNavigate]);
+
+    // After Google: only the owner may sign in. A new or unknown account is refused: the
+    // server deletes it (a client-side delete can fail and leave it behind).
+    const admit = async (user: AuthUser) => {
+        // Force-refresh the ID token so a freshly-minted `admin` custom claim is
+        // picked up immediately (otherwise it only applies on the next token refresh,
+        // and all admin Firestore/Storage writes would be rejected this session).
+        let isAdmin = false;
+        try { isAdmin = (await user.getIdTokenResult(true)).claims.admin === true; } catch { /* treated as not admin */ }
+
+        // Login alert. For anyone but the owner the server refuses the sign-in,
+        // deletes the account and alerts the owner instead.
+        const notifyLogin = httpsCallable(getFunctions(app), 'notifyLogin');
+        const alert = notifyLogin({
+            userAgent: navigator.userAgent,
+            provider: user.providerData?.[0]?.providerId || 'google.com',
+        });
+        if (!isAdmin) {
+            await alert.catch(() => {});
+            await auth.signOut();
+            setError('Access denied - account not recognized.');
+            return;
+        }
+        alert.catch(() => {}); // Silent - don't block the owner's login
+        navigateRef.current?.('dashboard');
+    };
+
+    // Back from Google (the sign-in is a redirect, not a popup): finish it here.
+    const finishing = useRef(false);
+    useEffect(() => {
+        if (finishing.current || pendingSignIn() !== 'secret') return;
+        finishing.current = true;
+         
+        setLoading(true);
+        finishGoogleSignIn()
+            .then((result) => (result ? admit(result.user) : undefined))
+            .catch((err: unknown) => setError(signInErrorMessage(err, 'Sign-in failed')))
+            .finally(() => setLoading(false));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setLoading(true);
-
         try {
-            const result = await authSignInWithPopup(auth, provider);
-            // Only the owner may sign in. A new or unknown account is refused below: the
-            // server deletes it (a client-side delete can fail and leave it behind).
-            // Force-refresh the ID token so a freshly-minted `admin` custom claim is
-            // picked up immediately (otherwise it only applies on the next token refresh,
-            // and all admin Firestore/Storage writes would be rejected this session).
-            let isAdmin = false;
-            try { isAdmin = (await result.user.getIdTokenResult(true)).claims.admin === true; } catch { /* treated as not admin */ }
-
-            // Login alert. For anyone but the owner the server refuses the sign-in,
-            // deletes the account and alerts the owner instead.
-            const notifyLogin = httpsCallable(getFunctions(app), 'notifyLogin');
-            const alert = notifyLogin({
-                userAgent: navigator.userAgent,
-                provider: result.user.providerData?.[0]?.providerId || 'google.com',
-            });
-            if (!isAdmin) {
-                await alert.catch(() => {});
-                await auth.signOut();
-                setError('Access denied - account not recognized.');
-                return;
-            }
-            alert.catch(() => {}); // Silent - don't block the owner's login
-
-            if (onNavigate) {
-                onNavigate('dashboard');
-            }
+            await startGoogleSignIn('secret'); // leaves the page for Google
         } catch (err: unknown) {
-            const e = err as { code?: string; message?: string };
-            if (e.code === 'auth/popup-closed-by-user') {
-                setError('Sign-in was cancelled.');
-            } else {
-                setError(e.message || 'An error occurred');
-            }
-        } finally {
+            setError(signInErrorMessage(err, 'Could not open Google sign-in'));
             setLoading(false);
         }
     };

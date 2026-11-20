@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { useEffect, useRef, useState } from 'react';
 import { Plug, ShieldCheck, Lock, Loader2 } from 'lucide-react';
-import { appAuth } from '../../lib/appAuth';
+import { finishGoogleSignIn, pendingSignIn, signInErrorMessage, startGoogleSignIn } from '../../lib/googleSignIn';
 import Alert from '../../ui/Alert';
 import useSafeAlert from '../../hooks/useSafeAlert';
 
@@ -70,51 +69,63 @@ export default function McpLogin() {
         }
     }, [showAlert]);
 
+    // Hand the Firebase ID token to the function. Proving who you are is only half of
+    // it: what comes back is a pending approval naming the client and the exact address
+    // the code would be sent to, and nothing is minted until the answer below. Anyone can
+    // register an MCP client pointing at their own host, so this screen is what stops a
+    // crafted link from turning one click into full admin access for a stranger.
+    const handOver = async (cb: string, s: string, token: string) => {
+        const resp = await fetch(cb, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+            body: new URLSearchParams({ s, id_token: token }),
+        });
+        const data = (await resp.json().catch(() => ({}))) as
+            { approval?: string; client_name?: string; redirect_uri?: string; redirect_host?: string; can_write?: boolean; error?: string };
+        if (resp.ok && data.approval && data.redirect_uri) {
+            setConsent({
+                approval: data.approval,
+                clientName: data.client_name || 'Unknown client',
+                redirectUri: data.redirect_uri,
+                redirectHost: data.redirect_host || data.redirect_uri,
+                // Read-only unless the server says the client asked for write access.
+                canWrite: data.can_write === true,
+            });
+            setState(prev => ({ ...prev, phase: 'consent' }));
+            return;
+        }
+        setState(prev => ({ ...prev, phase: 'idle' }));
+        showAlert({ type: 'error', message: data.error || 'Authorization failed. Please try again.', duration: 0 });
+    };
+
+    // Back from Google (the sign-in is a redirect, not a popup): the login parameters
+    // are still in this URL, so finish the hand-over here.
+    const finishing = useRef(false);
+    useEffect(() => {
+        if (state.phase !== 'idle' || finishing.current || pendingSignIn() !== 'mcp') return;
+        finishing.current = true;
+         
+        setState(prev => ({ ...prev, phase: 'working' }));
+        finishGoogleSignIn()
+            .then(async (result) => {
+                if (!result) { setState(prev => ({ ...prev, phase: 'idle' })); return; }
+                await handOver(state.cb, state.s, await result.user.getIdToken());
+            })
+            .catch((err: unknown) => {
+                setState(prev => ({ ...prev, phase: 'idle' }));
+                showAlert({ type: 'error', message: signInErrorMessage(err, 'Sign-in failed. Please try again'), duration: 0 });
+            });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state.phase]);
+
     const connect = async () => {
         if (state.phase !== 'idle') return;
         setState(prev => ({ ...prev, phase: 'working' }));
         try {
-            const provider = new GoogleAuthProvider();
-            provider.setCustomParameters({ prompt: 'select_account' });
-            const res = await signInWithPopup(appAuth(), provider);
-            const token = await res.user.getIdToken();
-
-            // Hand the token to the function. Proving who you are is only half of
-            // it: what comes back is a pending approval naming the client and the
-            // exact address the code would be sent to, and nothing is minted until
-            // the answer below. Anyone can register an MCP client pointing at their
-            // own host, so this screen is what stops a crafted link from turning one
-            // click into full admin access for a stranger.
-            const resp = await fetch(state.cb, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-                body: new URLSearchParams({ s: state.s, id_token: token }),
-            });
-            const data = (await resp.json().catch(() => ({}))) as
-                { approval?: string; client_name?: string; redirect_uri?: string; redirect_host?: string; can_write?: boolean; error?: string };
-            if (resp.ok && data.approval && data.redirect_uri) {
-                setConsent({
-                    approval: data.approval,
-                    clientName: data.client_name || 'Unknown client',
-                    redirectUri: data.redirect_uri,
-                    redirectHost: data.redirect_host || data.redirect_uri,
-                    // Read-only unless the server says the client asked for write access.
-                    canWrite: data.can_write === true,
-                });
-                setState(prev => ({ ...prev, phase: 'consent' }));
-                return;
-            }
-            setState(prev => ({ ...prev, phase: 'idle' }));
-            showAlert({ type: 'error', message: data.error || 'Authorization failed. Please try again.' });
+            await startGoogleSignIn('mcp'); // leaves the page for Google, and comes back here
         } catch (err) {
             setState(prev => ({ ...prev, phase: 'idle' }));
-            // The Firebase code (auth/popup-blocked, auth/network-request-failed...) says why.
-            const code = (err as { code?: unknown })?.code;
-            showAlert({
-                type: 'error',
-                message: `Sign-in was cancelled or failed${typeof code === 'string' ? ` (${code})` : ''}. Please try again.`,
-                duration: 0,
-            });
+            showAlert({ type: 'error', message: signInErrorMessage(err, 'Could not open Google sign-in. Please try again'), duration: 0 });
         }
     };
 

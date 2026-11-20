@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { loadFirebase } from '../lib/liveDoc';
 import { analytics } from '../lib/analytics/collector';
 import { EMPTY_TAILOR, type LinkTailor } from '../lib/analytics/types';
+import { pendingSignIn } from '../lib/signInPending';
 
 interface AlgorithmProps {
     currentSection: string;
@@ -34,6 +35,12 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
     useEffect(() => {
         if (started.current) return;
         started.current = true;
+
+        // Back from Google sign-in, started on the secret page: reopen it to finish.
+        if (pendingSignIn() === 'secret') {
+            navigateRef.current('secret');
+            return;
+        }
 
         // A story link from a "someone opened your link" email: park the id and send
         // the owner through the normal login. The dashboard picks it up from there.
