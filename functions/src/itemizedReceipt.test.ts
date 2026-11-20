@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildItemizedReceiptHtml, resolveItemizedLines } from "./itemizedReceipt";
+import { themeGaps } from "./emailShell";
 
 const base = { receiptNo: "REV-TEST", dateLabel: "27 October 2026" };
 
@@ -36,10 +37,24 @@ describe("resolveItemizedLines", () => {
 describe("buildItemizedReceiptHtml", () => {
   it("is framed by the shared email shell, with its number, date and customer inside", () => {
     const html = buildItemizedReceiptHtml({ ...base, customerName: "Acme <Ltd>", lines: [{ label: "Fixes", amount: 150, currency: "USD" }] });
-    expect(html).toContain('class="body pad"');
+    expect(html).toContain('class="body pad');
     expect(html).toContain("<title>Receipt REV-TEST</title>");
     expect(html).toContain("REV-TEST");
     expect(html).toContain("27 October 2026");
     expect(html).toContain("Acme &lt;Ltd&gt;");
+  });
+});
+describe("theme", () => {
+  it("draws every part in colors that follow the reader's light or dark theme", () => {
+    const html = buildItemizedReceiptHtml({
+      ...base, customerName: "Acme", customerSubtitle: "Ops", note: "Thanks",
+      workLogTitle: "Work", workLog: [{ date: "1 Oct", text: "Setup" }, { date: "2 Oct", text: "Fixes" }],
+      grandTotal: { currency: "USD", amount: 180 },
+      lines: [
+        { label: "Fixes", caption: "Bugs", qty: 3, unitPrice: 50, amount: 150, currency: "USD", details: [{ date: "1 Oct", text: "Login" }] },
+        { label: "Domain", amount: 600, currency: "EGP" },
+      ],
+    });
+    expect(themeGaps(html)).toEqual([]);
   });
 });

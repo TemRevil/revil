@@ -29,7 +29,7 @@ import {
   bookingRefusal, hostWallClock, hostZone, isUpcoming, parseAvailability, slotStart, zoneRecord,
   MEETING_MS, type HostZone,
 } from "./booking.js";
-import { emailShell, SITE_URL } from "./emailShell.js";
+import { ACCENT, emailShell, SITE_URL } from "./emailShell.js";
 import { handledProjectsMirror, sameMirror, type HandledProject } from "./handledProjects.js";
 import { HOLD_MS, holdActive, holdIds, quota, readQuotas, refundQuotas, takeQuotas, RATE_LIMITS, type Quota } from "./limits.js";
 import { callCalendar, readCreateReply, replySucceeded, MEET_LINK_RE } from "./calendar.js";
@@ -38,6 +38,7 @@ import {
   attachmentPath, futureSlots, greetingName, offsetLabel, replyPath, timeAtOffset, upcomingFrom, visitorOffset,
 } from "./forms.js";
 import { COLLECTIONS } from "./collections.js";
+import { GUEST_EMAIL_RE, cancelNotices } from "./meetingNotices.js";
 
 // Mail is delivered by the outbox (./outbox): every notification is a MailJobs
 // document first, retried until it is sent and kept as `failed` if it never is.
@@ -114,9 +115,6 @@ function escSubject(v: unknown): string {
   return String(v).replace(/[\r\n]+/g, " ").trim().slice(0, 200);
 }
 
-/** Basic sanity check so we never try to email obvious junk addresses. */
-const GUEST_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
 /** Label/value rows for a mail body. Values are HTML: escape anything a visitor typed. */
 function infoRows(rows: Array<[string, string]>): string {
   return rows.map(([label, value], i) => `
@@ -182,6 +180,34 @@ function guestAckMail(to: string, entryName: unknown, heading: string, intro: st
           ${ctaHtml}
           <div class="divider"></div>
           <p>I'll personally get back to you within <strong>24 hours</strong>. If it's urgent, just reply to this email.</p>
+          <p style="margin-top:16px">- Revil</p>
+        `,
+    }),
+  };
+}
+
+/** The guest's "your call is cancelled" mail, with a way to book another time. */
+function guestCancelMail(to: string, entryName: unknown, when: string): MailMessage {
+  const name = greetingName(entryName);
+  const heading = "Your call is cancelled";
+  return {
+    to,
+    subject: heading,
+    fromName: "Revil",
+    replyTo: HELLO_EMAIL,
+    label: "Cancellation notice",
+    html: emailShell({
+      title: heading,
+      preheader: `Your call on ${when} is off the calendar.`,
+      bodyHtml: `
+          <h2>${escHtml(heading)}</h2>
+          <p>Hi ${escHtml(name || "there")},</p>
+          <p>Your call has been cancelled, so its calendar invite and meeting link no longer apply.</p>
+          <div class="divider"></div>
+          <div>${infoRows([["Was at", escHtml(when)]])}</div>
+          <div style="margin-top:24px;text-align:center"><a href="${SITE_URL}/book" class="btn">Book a new time</a></div>
+          <div class="divider"></div>
+          <p>If you'd rather sort out a time together, just reply to this email.</p>
           <p style="margin-top:16px">- Revil</p>
         `,
     }),
@@ -390,6 +416,54 @@ export const notifyCanaryMeeting = onDocumentWritten(
           "Your call is booked",
           "Thanks for booking a call - it's on my calendar.",
           [["When", escHtml(guestWhen || ownerWhen)]], meetButton, "Booking acknowledgement"));
+      }
+    }
+
+    // ── A cancelled meeting ────────────────────────────────────
+    // Deleted from the dashboard, by the MCP's cancel_booking or the dashboard assistant.
+    // Only a call that was still ahead is a cancellation (cancelNotices decides); the
+    // calendar invite itself is withdrawn by whoever deleted it, which also makes Google
+    // send the guest its own cancellation.
+    const gone = before && !m ? event.data?.before?.data() as MeetingDoc | undefined : undefined;
+    if (gone) {
+      const at = slotStart(gone);
+      const notice = cancelNotices({ Name: gone.Name, Email: gone.Email, Ack: gone.Ack, startMs: at }, Date.now());
+      if (notice.owner && at !== null) {
+        const zone = await readHostZone();
+        const wall = hostWallClock(at, zone);
+        const ownerWhen = hostTime(at, zone);
+        const guestOffset = visitorOffset(gone.UserTimezone);
+        const guestWhen = guestOffset !== null ? timeAtOffset(at, guestOffset) : ownerWhen;
+        const hasEmail = GUEST_EMAIL_RE.test(String(gone.Email || ""));
+        await queue(jobId("meeting-cancel-owner", key), {
+          to: ownerInboxes(),
+          fromName: "Revil Portfolio",
+          ...(hasEmail ? { replyTo: String(gone.Email) } : {}),
+          subject: escSubject(`Meeting cancelled: ${gone.Name} on ${wall.date} at ${wall.time}`),
+          label: "Cancellation notification",
+          html: emailShell({
+            title: "Meeting Cancelled",
+            preheader: `${gone.Name}'s call on ${wall.date} is off the calendar`,
+            bodyHtml: `
+          <h2>Meeting Cancelled</h2>
+          <p>This call was cancelled and its slot is free again on the booking calendar.</p>
+          <div class="divider"></div>
+          <div>${infoRows([
+            ["Guest", escHtml(gone.Name)],
+            ["Email", hasEmail
+              ? `<a href="mailto:${escAttr(gone.Email)}" style="color:${ACCENT};text-decoration:none">${escHtml(gone.Email)}</a>`
+              : "Not provided"],
+            ["Was at", escHtml(ownerWhen)],
+            ["Reason", escHtml(gone["What For"] || gone.Reason || "Not specified")],
+            ["Guest told", notice.guest ? "Yes, by email" : "No"],
+          ])}</div>
+        `,
+            footerHtml: `Sent from <a href="${SITE_URL}" style="color:${ACCENT};text-decoration:none">temrevil.com</a> meeting system`,
+          }),
+        });
+        if (notice.guest) {
+          await queue(jobId("meeting-cancel", key), guestCancelMail(notice.guest, gone.Name, guestWhen));
+        }
       }
     }
 

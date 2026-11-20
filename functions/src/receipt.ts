@@ -1,7 +1,7 @@
 // GENERATED from src/lib/receipt.ts by scripts/sync-shared.mjs - edit that file.
 
 /**
- * The light receipt / payment request - the ONE builder for it. The dashboard's receipt
+ * The receipt / payment request - the ONE builder for it. The dashboard's receipt
  * modal and the AI's send_treasury_receipt tool both use it, so a receipt looks and adds
  * up the same whoever sends it. The functions build copies this file to
  * functions/src/receipt.ts (functions/scripts/sync-shared.mjs): edit it here. It may only
@@ -12,7 +12,7 @@ import {
     convert, formatMoney, hasInstallments, legacyPaid, projectContractTotal, projectPayments, projectReceived,
 } from './money';
 import { escapeHtml as esc } from './html';
-import { emailShell } from './emailShell';
+import { ACCENT, C, emailShell } from './emailShell';
 
 export interface ReceiptLine {
     name: string;
@@ -150,10 +150,9 @@ export function receiptPaymentRows<T extends MoneyIncome>(
 /** How an undated (legacy) payment row is labelled on a receipt. */
 export const LEGACY_PAYMENT_LABEL = 'Recorded before the payment log';
 
-const ACCENT = '#3395ff';
-const INK = '#0f172a';
-const MUTE = '#64748b';
-const LINE = '#e6e9ef';
+const INK = C.ink;
+const MUTE = C.mute;
+const LINE = C.line;
 
 /**
  * Build a self-contained, email-safe receipt as a full HTML document. Table-based layout
@@ -179,10 +178,10 @@ export function buildReceiptHtml(d: ReceiptData): string {
     const banner = isDue
         ? `
         <tr><td style="padding:20px 0 0">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.dueFill};border:1px solid ${C.dueLine};border-radius:12px">
             <tr><td style="padding:14px 16px">
-              <div style="color:#9a3412;font-size:14px;font-weight:800">Payment requested</div>
-              <div style="color:#b45309;font-size:13px;margin-top:3px">
+              <div style="color:${C.dueInk};font-size:14px;font-weight:800">Payment requested</div>
+              <div style="color:${C.dueSoft};font-size:13px;margin-top:3px">
                 ${money(d.totals.balance)} outstanding${d.dueByLabel ? ` &middot; due by ${esc(d.dueByLabel)}` : ''}.
               </div>
             </td></tr>
@@ -190,10 +189,10 @@ export function buildReceiptHtml(d: ReceiptData): string {
         </td></tr>`
         : `
         <tr><td style="padding:20px 0 0">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.okFill};border:1px solid ${C.okLine};border-radius:12px">
             <tr><td style="padding:14px 16px">
-              <div style="color:#166534;font-size:14px;font-weight:800">Thank you for your payment</div>
-              <div style="color:#15803d;font-size:13px;margin-top:3px">
+              <div style="color:${C.okInk};font-size:14px;font-weight:800">Thank you for your payment</div>
+              <div style="color:${C.okSoft};font-size:13px;margin-top:3px">
                 ${money(d.totals.paid)} received${when ? ` ${when}` : ''}.
               </div>
             </td></tr>
@@ -207,8 +206,8 @@ export function buildReceiptHtml(d: ReceiptData): string {
             ${l.note ? `<div style="color:${MUTE};font-size:12px;margin-top:2px">${esc(l.note)}</div>` : ''}
           </td>
           <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:${INK};font-size:14px;white-space:nowrap">${money(l.price)}</td>
-          <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:#16a34a;font-size:14px;white-space:nowrap">${money(l.paid)}</td>
-          <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:${l.balance && l.balance > 0 ? '#d97706' : MUTE};font-weight:700;font-size:14px;white-space:nowrap">${l.balance === null ? '&ndash;' : money(l.balance)}</td>
+          <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:${C.green};font-size:14px;white-space:nowrap">${money(l.paid)}</td>
+          <td style="padding:14px 16px;border-bottom:1px solid ${LINE};text-align:right;color:${l.balance && l.balance > 0 ? C.amber : MUTE};font-weight:700;font-size:14px;white-space:nowrap">${l.balance === null ? '&ndash;' : money(l.balance)}</td>
         </tr>`).join('');
 
     // Dated proof of every payment, so a client settling in instalments can reconcile the
@@ -216,14 +215,14 @@ export function buildReceiptHtml(d: ReceiptData): string {
     const paymentsBlock = paid.length > 1 ? `
         <tr><td style="padding:16px 0 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${LINE};border-radius:12px;overflow:hidden">
-            <tr style="background:#f8fafc">
+            <tr style="background:${C.panel}">
               <td style="padding:10px 16px;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Payments received</td>
               <td style="padding:10px 16px;text-align:right;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Amount</td>
             </tr>
             ${paid.map((p) => `
             <tr>
               <td style="padding:10px 16px;border-top:1px solid ${LINE};color:${INK};font-size:13px">${esc(p.dateLabel)}${p.note ? `<span style="color:${MUTE}"> &middot; ${esc(p.note)}</span>` : ''}</td>
-              <td style="padding:10px 16px;border-top:1px solid ${LINE};text-align:right;color:#16a34a;font-size:13px;font-weight:700;white-space:nowrap">${money(p.amount)}</td>
+              <td style="padding:10px 16px;border-top:1px solid ${LINE};text-align:right;color:${C.green};font-size:13px;font-weight:700;white-space:nowrap">${money(p.amount)}</td>
             </tr>`).join('')}
           </table>
         </td></tr>` : '';
@@ -240,7 +239,6 @@ export function buildReceiptHtml(d: ReceiptData): string {
     return emailShell({
         title: `Receipt ${d.receiptNo}`,
         kicker: isDue ? 'Invoice' : 'Receipt',
-        tone: 'light',
         bodyHtml: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <!-- meta -->
         <tr><td style="padding:0 0 8px">
@@ -261,7 +259,7 @@ ${banner}
         <!-- line items -->
         <tr><td style="padding:16px 0 0">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${LINE};border-radius:12px;overflow:hidden">
-            <tr style="background:#f8fafc">
+            <tr style="background:${C.panel}">
               <td style="padding:10px 16px;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Project</td>
               <td style="padding:10px 16px;text-align:right;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Price</td>
               <td style="padding:10px 16px;text-align:right;color:${MUTE};font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Paid</td>
@@ -275,17 +273,17 @@ ${banner}
         <tr><td style="padding:14px 0 4px">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             ${totalRow(d.perPayment ? 'This receipt' : 'Total price', money(d.totals.price))}
-            ${totalRow(isDue ? 'Paid to date' : 'Paid', money(d.totals.paid), { color: '#16a34a' })}
+            ${totalRow(isDue ? 'Paid to date' : 'Paid', money(d.totals.paid), { color: C.green })}
             ${totalRow(
                 isDue ? 'Amount due' : (d.perPayment ? 'Remaining on plan' : 'Balance due'),
                 money(d.totals.balance),
-                { strong: true, color: d.totals.balance > 0 ? '#d97706' : '#16a34a' },
+                { strong: true, color: d.totals.balance > 0 ? C.amber : C.green },
             )}
           </table>
         </td></tr>
 ${paymentsBlock}
         ${d.converted ? `<tr><td style="padding:2px 0 0"><div style="color:${MUTE};font-size:11px;text-align:right">Amounts converted to ${cur} at current rates.</div></td></tr>` : ''}
-        ${d.note ? `<tr><td style="padding:16px 0 0"><div style="background:#f8fafc;border:1px solid ${LINE};border-radius:12px;padding:14px 16px;color:${INK};font-size:13px;line-height:1.55">${esc(d.note)}</div></td></tr>` : ''}
+        ${d.note ? `<tr><td style="padding:16px 0 0"><div style="background:${C.panel};border:1px solid ${LINE};border-radius:12px;padding:14px 16px;color:${INK};font-size:13px;line-height:1.55">${esc(d.note)}</div></td></tr>` : ''}
       </table>`,
         footerHtml: footer,
     });

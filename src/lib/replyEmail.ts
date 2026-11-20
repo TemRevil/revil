@@ -10,7 +10,7 @@
  */
 
 import { escapeHtml as esc } from './html';
-import { emailShell } from './emailShell';
+import { C, emailShell } from './emailShell';
 
 interface ReplyEmailData {
   /** Recipient's name, used for the greeting. */
@@ -43,13 +43,13 @@ export function buildReplyHtml(d: ReplyEmailData): string {
 
   const names = (d.attachmentNames || []).filter(Boolean);
   const attach = names.length
-    ? `<p style="color:#8a8a8a;font-size:13px;margin-top:16px"><strong style="color:#aaa">Attached:</strong> ${names.map(esc).join(', ')}</p>`
+    ? `<p style="color:${C.mute};font-size:13px;margin-top:16px"><strong style="color:${C.soft}">Attached:</strong> ${names.map(esc).join(', ')}</p>`
     : '';
 
   const q = d.quote;
   const quote = q?.message
     ? `<div class="divider"></div>
-       <p style="font-size:12px;color:#666;margin-bottom:6px">On ${q.at ? esc(new Date(q.at).toLocaleString()) : 'your earlier message'}, ${q.name ? esc(q.name) + ' ' : ''}wrote:</p>
+       <p style="font-size:12px;color:${C.mute};margin-bottom:6px">On ${q.at ? esc(new Date(q.at).toLocaleString()) : 'your earlier message'}, ${q.name ? esc(q.name) + ' ' : ''}wrote:</p>
        <div class="message-box">${esc(q.message).replace(/\r?\n/g, '<br>')}</div>`
     : '';
 
@@ -58,8 +58,8 @@ export function buildReplyHtml(d: ReplyEmailData): string {
     ${body}
     ${attach}
     <div class="divider"></div>
-    <p style="margin-bottom:2px;color:#c8c8c8">Best,</p>
-    <p style="margin-top:0;font-weight:700;color:#ffffff">Tem Revil</p>
+    <p style="margin-bottom:2px;color:${C.soft}">Best,</p>
+    <p style="margin-top:0;font-weight:700;color:${C.ink}">Tem Revil</p>
     ${quote}
   `;
 

@@ -1,5 +1,5 @@
 /**
- * Itemized (dark) receipt - used ONLY by the MCP send_itemized_receipt tool, so unlike
+ * Itemized receipt - used ONLY by the MCP send_itemized_receipt tool, so unlike
  * receipt.ts (generated from the dashboard's builder) it lives here and nowhere else.
  *
  * The hand-built style used for issued receipts: a dated work log, free-form line items
@@ -7,9 +7,8 @@
  */
 
 import { escapeHtml as esc } from "./html";
-import { emailShell } from "./emailShell";
+import { ACCENT, C, emailShell } from "./emailShell";
 
-const ACCENT = "#3395ff";
 
 export interface ItemizedLine {
     label: string;
@@ -117,22 +116,19 @@ export function revReceiptNumber(d = new Date()): string {
     return `REV-${ymd}-${r}`;
 }
 
-// Dark receipt palette. Every text tone is checked against the surface it actually sits
-// on (card #141414 / chip #1a1a1a) and clears WCAG AA 4.5:1, because this gets emailed and
-// printed - the old ad-hoc greys (#555 at 2.47:1, #666 at 3.21:1, #777 at 4.11:1) rendered
-// washed out. Four named tones replace the nine one-off hexes that were here before.
-// Surfaces were nearly invisible against the card (chip #1a1a1a was 1.06:1, hairlines
-// #1e1e1e/#222 about 1.13:1), so the total pills read as floating text. Lifted just enough
-// to separate without turning into boxes; one token now draws every hairline.
-const D_BORDER = '#2b2b2b';
-const D_ROW = '#2b2b2b';
-const D_CHIP = '#282828';
-const D_TEXT = '#ececec';   // 15.6:1 - primary (item names, amounts)
-const D_SOFT = '#c8c8c8';   // 11.0:1 - body copy (work log)
-const D_MUTED = '#a0a0a0';  //  7.0:1 - values, notes, nested details
-const D_FAINT = '#8a8a8a';  //  5.3:1 - labels, captions, footer (was #555/#666/#777)
+// The receipt's tones, from the shared palette (./emailShell C): light by default, and
+// the shell swaps each for its dark twin when the reader's mail app is in dark mode. Text
+// tones clear WCAG AA on the surface they sit on in both themes.
+const D_BORDER = C.line;
+const D_ROW = C.line;
+const D_CHIP = C.chip;
+const D_TEXT = C.ink;     // primary (item names, amounts)
+const D_SOFT = C.body;    // body copy (work log)
+const D_MUTED = C.soft;   // values, notes, nested details
+const D_FAINT = C.mute;   // labels, captions, footer
 // Filled grand-total row: white on the brand #3395ff is only 3.05:1, which fails for the
-// 13px label, so the fill is one step deeper. White on this is 4.95:1 and still reads blue.
+// 13px label, so the fill is one step deeper. White on this is 4.95:1 and still reads blue,
+// in either theme.
 const D_ACCENT_FILL = '#1f6fd0';
 
 /** Quantities print bare: 3 stays "3", 0.5 stays "0.5" (never "3.000"). */
@@ -148,7 +144,7 @@ function itemMoney(amount: number, currency: string): string {
 }
 
 /**
- * Build the dark, itemized receipt as a full HTML document. Table-based with inline
+ * Build the itemized receipt as a full HTML document. Table-based with inline
  * styles so it survives Gmail/Outlook. Same string for preview, download and email.
  */
 export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
@@ -179,7 +175,7 @@ export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
               ${l.qty != null && l.unitPrice != null ? `<div style="font-size:12px;color:${D_MUTED};margin-top:3px">${esc(fmtQty(l.qty))} &times; ${esc(itemMoney(l.unitPrice, l.currency))}</div>` : ''}
               ${details.length ? `<div style="margin-top:9px;padding-left:12px;border-left:2px solid ${D_BORDER}">${details.map(x => `<div style="font-size:12px;line-height:1.65;color:${D_MUTED};margin-top:5px"><span style="color:${ACCENT};font-weight:700">${esc(x.date)}</span> &nbsp;${esc(x.text)}</div>`).join('')}</div>` : ''}
             </td>
-            <td style="padding:14px 0;border-top:1px solid ${D_ROW};font-size:14px;color:#fff;font-weight:700;text-align:right;white-space:nowrap;vertical-align:top">${esc(itemMoney(lineTotal(l), l.currency))}</td>
+            <td style="padding:14px 0;border-top:1px solid ${D_ROW};font-size:14px;color:${D_TEXT};font-weight:700;text-align:right;white-space:nowrap;vertical-align:top">${esc(itemMoney(lineTotal(l), l.currency))}</td>
           </tr>`;
     }).join('');
 
@@ -187,7 +183,7 @@ export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
           ${i > 0 ? '<tr><td style="height:8px" colspan="2"></td></tr>' : ''}
           <tr>
             <td style="padding:10px 16px;background:${D_CHIP};border-radius:10px 0 0 10px;font-size:13px;color:${D_MUTED}">Total (${esc(cur)})</td>
-            <td style="padding:10px 16px;background:${D_CHIP};border-radius:0 10px 10px 0;font-size:16px;font-weight:800;color:#fff;text-align:right;white-space:nowrap">${esc(itemMoney(byCur.get(cur) || 0, cur))}</td>
+            <td style="padding:10px 16px;background:${D_CHIP};border-radius:0 10px 10px 0;font-size:16px;font-weight:800;color:${D_TEXT};text-align:right;white-space:nowrap">${esc(itemMoney(byCur.get(cur) || 0, cur))}</td>
           </tr>`).join('');
 
     // Optional emphasized grand total (accent-filled) after the per-currency rows.
@@ -216,7 +212,7 @@ export function buildItemizedReceiptHtml(d: ItemizedReceiptData): string {
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
           <td style="vertical-align:top">
             <div style="font-size:11px;color:${D_FAINT};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Bill to</div>
-            <div style="font-size:16px;font-weight:700;color:#fff">${d.customerName ? esc(d.customerName) : '&ndash;'}</div>
+            <div style="font-size:16px;font-weight:700;color:${D_TEXT}">${d.customerName ? esc(d.customerName) : '&ndash;'}</div>
             ${d.customerSubtitle ? `<div style="font-size:13px;color:${D_MUTED};margin-top:2px">${esc(d.customerSubtitle)}</div>` : ''}
           </td>
           <td style="vertical-align:top;text-align:right">
