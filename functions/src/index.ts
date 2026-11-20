@@ -58,8 +58,6 @@ interface MessageDoc {
   RepliedAt?: number;
   /** false when the visitor's acknowledgement quota was used up at submission. */
   Ack?: boolean;
-  /** Set on entries copied from the old Settings/Canary map: they were notified then. */
-  migratedFrom?: string;
 }
 interface MeetingDoc {
   Name?: string;
@@ -75,7 +73,6 @@ interface MeetingDoc {
   "What For"?: string;
   Reason?: string;
   Ack?: boolean;
-  migratedFrom?: string;
 }
 
 const HOUR_MS = 3_600_000;
@@ -254,13 +251,12 @@ export { trackSession } from "./analytics.js";
 //  2. notifyCanaryMessage / notifyCanaryMeeting - Firestore triggers, one run per
 //     message or meeting document.
 //     A new message or meeting queues the owner's notification and the visitor's
-//     acknowledgement; a deleted message has its uploads removed; every meeting
-//     write refreshes the public busy-slot list.
+//     acknowledgement; a cancelled meeting tells both; a deleted message has its
+//     uploads removed; every meeting write refreshes the public busy-slot list.
 //
 //     Every mail is queued under an id made from the entry's id, and a job is
 //     only ever created once, so a trigger that runs twice for one write can't
-//     send anything twice. Entries the migration copied over (migratedFrom) were
-//     notified when they first arrived, so they send nothing.
+//     send anything twice.
 // =====================================================================
 export const notifyCanaryMessage = onDocumentWritten(
   {
@@ -294,7 +290,7 @@ export const notifyCanaryMessage = onDocumentWritten(
     }
 
     // ── A new message ──────────────────────────────────────────
-    if (before || !e || !e.Name || e.migratedFrom) return;
+    if (before || !e || !e.Name) return;
     const owner = ownerInboxes();
     const zone = await readHostZone();
     {
@@ -368,7 +364,7 @@ export const notifyCanaryMeeting = onDocumentWritten(
     const m = event.data?.after?.exists ? event.data.after.data() as MeetingDoc : null;
 
     // ── A new meeting ──────────────────────────────────────────
-    if (!before && m && m.Name && !m.migratedFrom) {
+    if (!before && m && m.Name) {
       const owner = ownerInboxes();
       const zone = await readHostZone();
       const meetLink = typeof m.MeetingLink === "string" && MEET_LINK_RE.test(m.MeetingLink) ? m.MeetingLink : null;

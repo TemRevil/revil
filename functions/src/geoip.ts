@@ -167,11 +167,14 @@ function countryName(code: string): string {
 /**
  * The caller's real IP address, or "" when there is none.
  *
- * x-forwarded-for on Google's front end is "<whatever the caller sent>, <real
- * client IP>, <load balancer IP>" - GFE APPENDS, it does not replace. So the
- * leftmost entry is attacker-written (send `X-Forwarded-For: 8.8.8.8` and every
- * country figure in the dashboard becomes whatever you like); the trustworthy
- * one is second from the end, the last hop before Google's own address.
+ * Measured from live traffic (2026-11-20). On a direct call Google's front end
+ * APPENDS the address it was connected from: "<whatever the caller sent>, <caller>".
+ * Everything before the last hop is caller-written (send `X-Forwarded-For: 8.8.8.8`
+ * and it sits in front), so the LAST hop is the caller - and it can't be forged.
+ * Through Firebase Hosting (mcp.temrevil.com) Hosting rewrites the header itself to
+ * "<visitor>, <Hosting's Google address>", dropping whatever the caller sent; there
+ * the last hop is Google and the visitor is the one before it. That case is told
+ * apart by the last hop being in Google's range, which a caller can't connect from.
  */
 export function clientIp(
   headers: Record<string, string | string[] | undefined>,
@@ -180,30 +183,16 @@ export function clientIp(
   const raw = headers["x-forwarded-for"];
   const chain = Array.isArray(raw) ? raw.join(",") : (raw || "");
   const hops = chain.split(",").map((h) => h.trim()).filter(Boolean);
-  observeForwarding(hops, fallbackIp);
-  return (hops.length >= 2 ? hops[hops.length - 2] : hops[0]) || (fallbackIp || "").trim();
+  const last = hops[hops.length - 1];
+  const viaHosting = hops.length >= 2 && isHostingEdge(last);
+  return (viaHosting ? hops[hops.length - 2] : last) || (fallbackIp || "").trim();
 }
 
-/**
- * Observation, not a fix. The hop rule above is only safe if the platform appends TWO
- * entries (client, then its own front end). If it appends one, the second-from-last is
- * whatever the caller sent. Each instance logs the shape of its first few requests -
- * how many hops, and where the platform's own `req.ip` sits among them, never an
- * address - so the rule can be pinned from real traffic. Compare a plain request with
- * one sending `X-Forwarded-For: 203.0.113.9`: if the hop count rises by one and the
- * chosen hop becomes that address, the rule must change to the last hop. Remove this
- * once settled.
- */
-let observed = 0;
-function observeForwarding(hops: string[], platformIp?: string): void {
-  if (observed >= 20) return;
-  observed++;
-  const ip = (platformIp || "").trim();
-  console.log("[xff-shape]", {
-    hops: hops.length,
-    platformIpAt: ip ? hops.indexOf(ip) : null,
-    chosenAt: hops.length >= 2 ? hops.length - 2 : hops.length ? 0 : null,
-  });
+/** Firebase Hosting reaches a function from Google's 66.249.64.0/19. */
+const HOSTING_EDGE = ipv4ToInt("66.249.64.0");
+function isHostingEdge(ip: string | undefined): boolean {
+  const n = ip ? ipv4ToInt(ip) : null;
+  return n !== null && HOSTING_EDGE !== null && n >>> 13 === HOSTING_EDGE >>> 13;
 }
 
 /**
