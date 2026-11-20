@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backoffMs, claimable, jobId, retryReset, safeError } from "./outbox.js";
+import { backoffMs, claimable, jobId, newJob, retryReset, safeError } from "./outbox.js";
 
 describe("mail outbox", () => {
   it("lets a due pending job, or an expired claim, be taken - nothing else", () => {
@@ -35,5 +35,14 @@ describe("mail outbox", () => {
       expect(retryReset({ status, html: "<p>x</p>" }, 50)).toBeNull();
     }
     expect(retryReset(undefined, 50)).toBeNull();
+  });
+
+  it("builds a job Firestore will store: no field is ever undefined", () => {
+    // A meeting added without a guest email has no reply-to; a notice to one inbox has
+    // no cc. Firestore refuses undefined, and the job was then never queued at all.
+    const job = newJob({ to: "a@x.com", subject: "s", html: "<p>x</p>", fromName: "Revil", label: "l", cc: undefined, bcc: undefined, replyTo: undefined }, 7);
+    expect(Object.values(job)).not.toContain(undefined);
+    expect(job).toEqual({ to: "a@x.com", subject: "s", html: "<p>x</p>", fromName: "Revil", label: "l", status: "pending", attempts: 0, nextAttemptAt: 7, createdAt: 7 });
+    expect(newJob({ to: ["a@x.com"], subject: "s", html: "", fromName: "R", label: "l", replyTo: "g@y.com" }, 1).replyTo).toBe("g@y.com");
   });
 });

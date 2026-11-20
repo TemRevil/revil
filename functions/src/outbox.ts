@@ -102,9 +102,18 @@ export async function retryFailed(id: string): Promise<JobStatus | null> {
   return (((await ref.get()).data() as MailJob | undefined)?.status) ?? null;
 }
 
+/**
+ * A new pending job for this mail, without the optional fields left undefined (no cc,
+ * no reply-to). Firestore refuses an undefined value, and the job is then never queued.
+ */
+export function newJob(mail: MailMessage, now: number): MailJob {
+  const set = Object.fromEntries(Object.entries(mail).filter(([, v]) => v !== undefined)) as unknown as MailMessage;
+  return { ...set, status: "pending", attempts: 0, nextAttemptAt: now, createdAt: now };
+}
+
 /** Queue a mail once. A job that already exists (a retried trigger) is left as it is. */
 export async function enqueueMail(id: string, mail: MailMessage): Promise<void> {
-  const job: MailJob = { ...mail, status: "pending", attempts: 0, nextAttemptAt: Date.now(), createdAt: Date.now() };
+  const job = newJob(mail, Date.now());
   try {
     await getFirestore().collection(MAIL_JOBS).doc(id).create(job);
   } catch (err) {

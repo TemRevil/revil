@@ -22,7 +22,7 @@ const llmApiKey = defineSecret("LLM_API_KEY");
 // defined in their own module and re-exported so `firebase deploy --only functions:mcp` works.
 export { mcp, cleanupMcp } from "./mcp.js";
 import { meetingSyncUrl } from "./mcp.js";
-import { createTransporter, HELLO_EMAIL, resendKey, smtpUser } from "./mail.js";
+import { createTransporter, HELLO_EMAIL, notifyAlso, ownerRecipients, resendKey, smtpUser } from "./mail.js";
 import { escapeHtml as escHtml } from "./html.js";
 import { clientIp } from "./geoip.js";
 import {
@@ -126,10 +126,9 @@ function infoRows(rows: Array<[string, string]>): string {
             </div>`).join("");
 }
 
-/** The owner's own inbox, plus the public hello@ inbox when that is a different one. */
-function ownerInboxes(): { to: string; cc?: string } {
-  const owner = smtpUser.value();
-  return { to: owner, cc: owner.toLowerCase() === HELLO_EMAIL ? undefined : HELLO_EMAIL };
+/** Who gets the new-message and meeting-booked notices: the owner's inbox, hello@ and OWNER_NOTIFY_ALSO. */
+function ownerInboxes(): string[] {
+  return ownerRecipients(smtpUser.value(), notifyAlso.value());
 }
 
 /** The owner's clock, from Settings/Availability (a zone name, else the fixed offset). */
@@ -290,7 +289,7 @@ export const notifyCanaryMessage = onDocumentWritten(
       const safeName = escHtml(e.Name);
       const safeEmailAttr = escAttr(e.Email);
       await queue(jobId("contact-owner", key), {
-        ...owner,
+        to: owner,
         fromName: "Revil Portfolio",
         replyTo: GUEST_EMAIL_RE.test(String(e.Email || "")) ? e.Email : undefined,
         subject: escSubject(`New message from ${e.Name}`),
@@ -359,8 +358,7 @@ export const notifyCanaryMeeting = onDocumentWritten(
 
       const mName = escHtml(m.Name);
       await queue(jobId("meeting-owner", key), {
-        // The meeting notice goes to both inboxes as recipients, not as a copy.
-        to: owner.cc ? [owner.to, owner.cc] : owner.to,
+        to: owner,
         fromName: "Revil Portfolio",
         replyTo: GUEST_EMAIL_RE.test(String(m.Email || "")) ? m.Email : undefined,
         subject: escSubject(`Meeting booked: ${m.Name}${subjectWhen}`),
