@@ -173,18 +173,25 @@ function countryName(code: string): string {
  * and it sits in front), so the LAST hop is the caller - and it can't be forged.
  * Through Firebase Hosting (mcp.temrevil.com) Hosting rewrites the header itself to
  * "<visitor>, <Hosting's Google address>", dropping whatever the caller sent; there
- * the last hop is Google and the visitor is the one before it. That case is told
- * apart by the last hop being in Google's range, which a caller can't connect from.
+ * the last hop is Google and the visitor is the one before it.
+ *
+ * Only a function that really sits behind Hosting names its domain in `hostingDomain`
+ * (the MCP: mcp.temrevil.com), and the Hosting reading applies only when the request
+ * names that domain too AND its last hop is Hosting's Google edge. A Google address
+ * alone is not enough: other Google services connect from that range, and on any other
+ * function the last hop is the caller, whatever it is.
  */
 export function clientIp(
   headers: Record<string, string | string[] | undefined>,
   fallbackIp?: string,
+  hostingDomain?: string,
 ): string {
   const raw = headers["x-forwarded-for"];
   const chain = Array.isArray(raw) ? raw.join(",") : (raw || "");
   const hops = chain.split(",").map((h) => h.trim()).filter(Boolean);
   const last = hops[hops.length - 1];
-  const viaHosting = hops.length >= 2 && isHostingEdge(last);
+  const host = String(headers["x-forwarded-host"] || "").trim().toLowerCase();
+  const viaHosting = !!hostingDomain && host === hostingDomain && hops.length >= 2 && isHostingEdge(last);
   return (viaHosting ? hops[hops.length - 2] : last) || (fallbackIp || "").trim();
 }
 

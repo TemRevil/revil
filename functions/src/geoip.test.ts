@@ -21,8 +21,17 @@ describe("clientIp", () => {
     expect(clientIp({ "x-forwarded-for": `${FAKE}, ${VISITOR}`, "x-forwarded-host": "mcp.temrevil.com" })).toBe(VISITOR);
   });
 
-  it("takes the visitor, not Hosting's edge, through Firebase Hosting", () => {
-    expect(clientIp({ "x-forwarded-for": `${VISITOR}, ${HOSTING_EDGE}` })).toBe(VISITOR);
+  it("takes the visitor, not Hosting's edge, on the one function behind Firebase Hosting", () => {
+    const viaHosting = { "x-forwarded-for": `${VISITOR}, ${HOSTING_EDGE}`, "x-forwarded-host": "mcp.temrevil.com" };
+    expect(clientIp(viaHosting, undefined, "mcp.temrevil.com")).toBe(VISITOR);
+  });
+
+  it("trusts the Hosting shape nowhere else: a Google-range last hop alone proves nothing", () => {
+    // A site function is never behind Hosting, so a Google address last is the caller.
+    expect(clientIp({ "x-forwarded-for": `${FAKE}, ${HOSTING_EDGE}`, "x-forwarded-host": "mcp.temrevil.com" })).toBe(HOSTING_EDGE);
+    // The MCP function needs both: its own Hosting domain, and Google's edge as the last hop.
+    expect(clientIp({ "x-forwarded-for": `${FAKE}, ${HOSTING_EDGE}` }, undefined, "mcp.temrevil.com")).toBe(HOSTING_EDGE);
+    expect(clientIp({ "x-forwarded-for": `${FAKE}, ${VISITOR}`, "x-forwarded-host": "mcp.temrevil.com" }, undefined, "mcp.temrevil.com")).toBe(VISITOR);
   });
 
   it("falls back to the platform's address when there is no header", () => {

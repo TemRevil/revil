@@ -323,7 +323,8 @@ function validRedirectUri(v: unknown): boolean {
 
 /** This caller's key for the per-IP buckets: a hash, never the address itself. */
 function callerKey(req: Request): string {
-  const ip = clientIp(req.headers, req.ip) || "unknown";
+  // This is the one function behind Firebase Hosting (its own domain, from MCP_BASE_URL).
+  const ip = clientIp(req.headers, req.ip, new URL(baseUrl()).hostname) || "unknown";
   return createHash("sha256").update(ip).digest("hex").slice(0, 32);
 }
 
