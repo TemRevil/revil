@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "firebase-admin": "^14.5.0",
+    "firebase-admin": "^14.5.1",
     "firebase-functions": "^7.4.0",
-    "nodemailer": "^10.2.1",
+    "nodemailer": "^10.6.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
