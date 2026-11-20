@@ -106,9 +106,15 @@ export default function McpLogin() {
             }
             setState(prev => ({ ...prev, phase: 'idle' }));
             showAlert({ type: 'error', message: data.error || 'Authorization failed. Please try again.' });
-        } catch {
+        } catch (err) {
             setState(prev => ({ ...prev, phase: 'idle' }));
-            showAlert({ type: 'error', message: 'Sign-in was cancelled or failed. Please try again.' });
+            // The Firebase code (auth/popup-blocked, auth/network-request-failed...) says why.
+            const code = (err as { code?: unknown })?.code;
+            showAlert({
+                type: 'error',
+                message: `Sign-in was cancelled or failed${typeof code === 'string' ? ` (${code})` : ''}. Please try again.`,
+                duration: 0,
+            });
         }
     };
 
