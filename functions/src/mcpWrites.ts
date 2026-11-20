@@ -8,6 +8,7 @@ import { nextMonthlyPaymentDate } from "./money";
 import { sha256url } from "./mcpGrants";
 import { MEETING_MS, isTaken, isoInstant, type BookedSlot } from "./booking";
 import { COLLECTIONS } from "./collections";
+import type { CreateOutcome } from "./calendar";
 
 /**
  * Write (or patch) one meeting document, refusing it when its start collides with
@@ -28,18 +29,70 @@ export async function saveMeeting(
   return db.runTransaction(async (tx) => {
     const [cur, near] = await Promise.all([
       tx.get(ref),
-      m.startMs === null
-        ? Promise.resolve(null)
-        : tx.get(col.where("start", ">", isoInstant(m.startMs - MEETING_MS)).where("start", "<", isoInstant(m.startMs + MEETING_MS))),
+      m.startMs === null ? Promise.resolve(null) : tx.get(nearby(db, m.startMs)),
     ]);
     if (!m.isNew && !cur.exists) return "missing";
-    if (m.startMs !== null && near) {
-      const others = near.docs.filter((d) => d.id !== m.id).map((d) => d.data() as BookedSlot);
-      if (isTaken(m.startMs, others)) return "clash";
-    }
+    if (m.startMs !== null && near && collides(near.docs, m.id, m.startMs)) return "clash";
     tx.set(ref, m.patch, { merge: true });
     return "saved";
   });
+}
+
+/** Every meeting starting within one meeting length either side of `startMs`. */
+const nearby = (db: Firestore, startMs: number) =>
+  db.collection(COLLECTIONS.meetings)
+    .where("start", ">", isoInstant(startMs - MEETING_MS))
+    .where("start", "<", isoInstant(startMs + MEETING_MS));
+
+const collides = (docs: { id: string; data(): unknown }[], selfId: string, startMs: number): boolean =>
+  isTaken(startMs, docs.filter((d) => d.id !== selfId).map((d) => d.data() as BookedSlot));
+
+/** The Google Calendar side of a booking: make its event (with a Meet link), or cancel one. */
+export interface MeetingCalendar {
+  create(): Promise<CreateOutcome>;
+  /** By event id when there is one; without it, by the request the event was made for. True when confirmed. */
+  cancel(eventId?: string): Promise<boolean>;
+}
+
+export type CalendarBooking =
+  | { status: "saved"; eventId: string; link: string }
+  | { status: "clash" }
+  | { status: "refused"; invalidEmail: boolean }
+  | { status: "unconfirmed"; cancelled: boolean };
+
+/**
+ * A new booking with its own Calendar event and Meet link, as the public booking form
+ * makes one: the event first, then the booking, with the link and event id in it from
+ * the first write (the guest's confirmation mail is sent from that write and carries
+ * the link). A slot that is already taken never gets an event; one taken while the
+ * event was being made gets its event cancelled. When the calendar refuses or does not
+ * confirm, nothing is booked, and an unconfirmed event is cancelled.
+ */
+export async function bookWithCalendar(
+  db: Firestore,
+  m: { id: string; patch: Record<string, unknown>; startMs: number },
+  calendar: MeetingCalendar,
+): Promise<CalendarBooking> {
+  const near = await nearby(db, m.startMs).get();
+  if (collides(near.docs, m.id, m.startMs)) return { status: "clash" };
+
+  const made = await calendar.create();
+  if (made.kind === "refused") return { status: "refused", invalidEmail: made.invalidEmail };
+  if (made.kind === "unknown") return { status: "unconfirmed", cancelled: await calendar.cancel() };
+
+  const patch = { ...m.patch, GoogleEventId: made.id, ...(made.link ? { MeetingLink: made.link } : {}) };
+  let saved: Awaited<ReturnType<typeof saveMeeting>>;
+  try {
+    saved = await saveMeeting(db, { id: m.id, patch, startMs: m.startMs, isNew: true });
+  } catch (err) {
+    await calendar.cancel(made.id);
+    throw err;
+  }
+  if (saved !== "saved") {
+    await calendar.cancel(made.id);
+    return { status: "clash" };
+  }
+  return { status: "saved", eventId: made.id, link: made.link };
 }
 
 /**

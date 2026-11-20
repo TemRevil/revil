@@ -51,7 +51,7 @@ import {
 } from "./booking";
 import { COLLECTIONS } from "./collections";
 import { HELLO_EMAIL, resendKey, smtpUser } from "./mail";
-import { callCalendar, replySucceeded } from "./calendar";
+import { callCalendar, readCreateReply, replySucceeded } from "./calendar";
 import { jobId, sendNow, type MailMessage } from "./outbox";
 import { clientIp } from "./geoip";
 import {
@@ -64,7 +64,7 @@ import {
   INVALID_DATE, SCOPE_READ, SCOPE_WRITE, SUPPORTED_SCOPES, UNTRUSTED_NOTE, hasScope, isValidYmd, markUntrusted,
   narrowScope, ownerInstant, ownerYmdHm, parseScope, projectNameError, receiptRecipient,
 } from "./mcpRules";
-import { incomeEntryId, recordIncome, saveMeeting } from "./mcpWrites";
+import { bookWithCalendar, incomeEntryId, recordIncome, saveMeeting } from "./mcpWrites";
 import { visitViews } from "./mcpVisits";
 
 // Google Apps Script endpoint that actually creates/updates/cancels the Google Calendar
@@ -254,10 +254,10 @@ export function buildInstructions(t: TimeInfo, cfg: McpCfg, scope: string): stri
     ...(writes
       ? [
           "- Receipts (send_treasury_receipt / send_itemized_receipt) only go to the customer email the owner saved on the treasury projects in the dashboard. You cannot send one anywhere else; if the address is missing or wrong, tell the owner to fix it in the dashboard.",
-          "- Bookings (add_booking) come in TWO modes - decide which one BEFORE creating a booking, and confirm it with the owner:",
-          "    • WITH a meeting link: pass `meetingLink`, an existing Google Meet / Zoom / etc. URL. Never invent or guess a link - if the owner wants one but hasn't given a URL, ask for it first.",
-          "    • WITHOUT a meeting link: omit `meetingLink` (an in-person / phone booking, or a link to be added later).",
-          "  Pass date as YYYY-MM-DD and time as 24-hour HH:MM in the owner's timezone. add_booking marks the slot busy on the public calendar and emails the admin (and the guest, if an email is given), but it does NOT create a Google Calendar event or auto-generate a link. A slot that collides with an existing booking is refused; check list_bookings first.",
+          "- Bookings (add_booking): get the guest's email first - if the owner hasn't given it, ASK. With an email the site creates a Google Calendar event with a Google Meet link, invites the guest, and emails them a confirmation with the link (the reply returns `meetingLink`; give it to the owner). If the calendar refuses or doesn't confirm, nothing is booked: tell the owner.",
+          "    • Pass `meetingLink` only when the owner wants a link they already have (Zoom etc.) instead; then no event is made. Never invent or guess a link.",
+          "    • Omit `email` only for an in-person / phone booking, or when the owner says so: no event, no link, no guest email.",
+          "  Pass date as YYYY-MM-DD and time as 24-hour HH:MM in the owner's timezone. add_booking marks the slot busy on the public calendar and emails the owner. A slot that collides with an existing booking is refused; check list_bookings first.",
           "- PAST DATES (add_booking / update_booking): a date before today is refused by default. Recording a meeting that already happened - or correcting one onto a past day - is possible ONLY here over MCP, and ONLY with the owner's explicit go-ahead: state the exact past date back to them, wait for a clear yes, and only then repeat the call with allowPast: true. Never set allowPast just to clear an error, and never assume a past date was intended - it is far more often a stale clock, so re-check get_current_time first. The public booking form on the site can never book a past slot.",
           "- CATEGORIES (list_categories): every booking sits in one - the owner's own buckets (a company, a client, a side project) or the built-in \"Personal\", which is where anything booked from the public site lands. Read list_categories before setting one and pass an EXACT name from it; never invent a category. Creating, renaming and deleting categories happens in the dashboard (Canary → Options) only, so if the one they want does not exist, say so and let them add it there.",
           "  If the owner did not say which category a booking belongs to, ASK before creating it - list their categories and let them pick, including \"Personal\". Do not quietly fall back to Personal because it is the default, and do not infer the category from the guest's name, email domain or the reason: a booking filed in the wrong bucket is worse than one question. The same goes for anything else they left unsaid on a write - a missing time, an unclear guest, a meeting link you were not given: ask, never invent.",
@@ -1075,9 +1075,12 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
     {
       title: "Add a booking",
       description:
-        "Create a meeting/call booking in the dashboard's Canary inbox. TWO modes: " +
-        "WITH a meeting link - pass `meetingLink`, an existing Google Meet / Zoom / etc. URL you already have; " +
-        "or WITHOUT a link - omit `meetingLink` (an in-person / phone booking, or a link to be added later). " +
+        "Create a meeting/call booking in the dashboard's Canary inbox. " +
+        "WITH the guest's `email` (the normal case - if the owner hasn't given it, ASK for it before calling): the site creates a Google Calendar event " +
+        "with a Google Meet link, invites the guest, and emails them a confirmation with the link; the reply returns `meetingLink`. " +
+        "If the calendar refuses or doesn't confirm, NOTHING is booked: tell the owner, don't retry silently. " +
+        "Pass `meetingLink` only to use a link the owner already has (Zoom etc.) instead - then no event is made. " +
+        "Omit `email` only for an in-person / phone booking or when the owner says so: no event, no link, no guest email. " +
         "Never invent a link. ALWAYS call get_current_time first and derive `date` from it - a date before today is rejected unless you pass `allowPast`. " +
         "BACKDATING (logging a meeting that already took place): owner-authorised only. Confirm the exact past date with the owner, get a clear yes, THEN call again with allowPast: true - never set it yourself to clear an error. " +
         "On a backdated booking, omit `email`: a guest address makes the site email them a confirmation for a meeting that is already over. " +
@@ -1085,15 +1088,14 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         "If the owner has not said which category this booking is for, ASK them and wait for an answer before calling: show the list and let them choose, \"Personal\" included. Omitting it silently files the booking as Personal, which is a real choice, not a safe default. " +
         "Pass `date` as YYYY-MM-DD and `time` as 24-hour HH:MM in the owner's timezone. " +
         "A time that collides with another booking is refused, by the same rule as the public booking form. " +
-        "This writes the booking directly to Firestore: it marks the slot busy on the public calendar and emails the admin " +
-        "(and the guest, if `email` is given), but it does NOT create a Google Calendar event or auto-generate a Meet link.",
+        "It marks the slot busy on the public calendar and emails the owner. A backdated booking never gets an event.",
       inputSchema: {
         name: z.string().min(1).describe("Guest name"),
         date: z.string().refine(isValidYmd, INVALID_DATE).describe("YYYY-MM-DD in the owner's timezone"),
         time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).describe("24-hour HH:MM in the owner's timezone"),
-        email: z.string().email().optional().describe("Guest email - if given, they get a confirmation email"),
+        email: z.string().email().optional().describe("Guest email - gets a Calendar invite with a Google Meet link and a confirmation email with the link. Ask the owner for it if not given."),
         reason: z.string().optional().describe("What the call is for"),
-        meetingLink: z.string().url().optional().describe("Meeting URL (Google Meet / Zoom / etc.). Omit for a booking WITHOUT a link."),
+        meetingLink: z.string().url().optional().describe("An existing meeting URL to use instead of a generated Meet link (no Calendar event is made). Usually omit."),
         allowPast: z.boolean().optional().describe("Set true ONLY to record a meeting that already happened, and ONLY after the owner has confirmed that exact past date. Ignored for today/future dates."),
         category: z.string().optional().describe("Category name (exactly as list_categories returns it) or its id. Omit - or pass \"Personal\" - for the built-in default. An unknown name is rejected: the owner adds categories in the dashboard."),
       },
@@ -1143,14 +1145,48 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         ...(categoryId ? { Category: categoryId } : {}),
         timestamp: now(),
       };
-      // Checked against the stored meetings and written in one transaction, by the
-      // same collision rule as the public booking form.
-      const saved = await saveMeeting(db(), { id, patch: payload, startMs, isNew: true });
-      if (saved === "clash") {
-        return fail(`${shown.date} at ${shown.time} collides with an existing booking. Check list_bookings and pick a free time.`);
+      const clash = () => fail(`${shown.date} at ${shown.time} collides with an existing booking. Check list_bookings and pick a free time.`);
+
+      // A guest to meet online: a Calendar event with a Meet link first, as the public
+      // booking form does, so the link is in the booking (and the guest's confirmation
+      // mail) from its first write. The invite carries the name only, never the reason:
+      // that can be the owner's own note.
+      let meetingLink = a.meetingLink ?? "";
+      if (a.email && !a.meetingLink && !backdated) {
+        const url = (meetingSyncUrl.value() || "").trim();
+        if (!url) return fail("Nothing was booked: the calendar isn't configured (MEETING_SYNC_URL). Book without an email, or pass a meetingLink.");
+        const email = a.email;
+        const startTime = isoInstant(startMs);
+        const r = await bookWithCalendar(db(), { id, patch: payload, startMs }, {
+          create: async () => readCreateReply(await callCalendar(url, {
+            requestId: id, name: a.name, email, reason: "", startTime, endTime: isoInstant(startMs + MEETING_MS),
+          })),
+          cancel: async (eventId) => replySucceeded(await callCalendar(url, {
+            action: "cancel", requestId: id, email, name: a.name, startTime, ...(eventId ? { eventId } : {}),
+          })),
+        });
+        if (r.status === "clash") return clash();
+        if (r.status === "refused") {
+          return fail(r.invalidEmail
+            ? `Nothing was booked: Google Calendar rejected ${email} as an attendee. Check the address with the owner.`
+            : "Nothing was booked: Google Calendar refused to create the event. Tell the owner; they can book from the dashboard.");
+        }
+        if (r.status === "unconfirmed") {
+          return fail("Nothing was booked: Google Calendar didn't confirm the event. " + (r.cancelled
+            ? "A cancel was sent for it in case it was made."
+            : "A cancel for it wasn't confirmed either, so ask the owner to check their calendar for a stray event."));
+        }
+        meetingLink = r.link;
+      } else {
+        // Checked against the stored meetings and written in one transaction, by the
+        // same collision rule as the public booking form.
+        const saved = await saveMeeting(db(), { id, patch: payload, startMs, isNew: true });
+        if (saved === "clash") return clash();
       }
       return ok({
-        status: "booked", id, start: payload.start, date: a.date, time: a.time, hasMeetingLink: !!a.meetingLink, category: categoryLabel,
+        status: "booked", id, start: payload.start, date: a.date, time: a.time, category: categoryLabel,
+        hasMeetingLink: !!meetingLink, ...(meetingLink ? { meetingLink } : {}),
+        guestEmailed: !!a.email,
         ...(backdated ? { backdated: true, note: `Recorded on ${a.date}, which is in the past (today is ${time.date}).` } : {}),
       });
     });
@@ -2142,6 +2178,8 @@ export const mcp = onRequest(
     region: "us-central1",
     cors: false,
     maxInstances: 10,
+    // add_booking can wait on the calendar twice (create, then a cancel): 25s each.
+    timeoutSeconds: 120,
     secrets: [smtpUser, resendKey, meetingSyncUrl],
   },
   async (req, res) => {

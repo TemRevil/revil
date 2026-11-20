@@ -5,7 +5,8 @@ import {
   lookupAccessToken, redeemAuthCode, redeemRefreshToken, sha256url, storeCode, storeSecret, sweepMcp, takeRateSlot,
   type AdminSubject, type CodeRec, type GrantDeps, type TokenResponse,
 } from "./mcpGrants";
-import { incomeEntryId, recordIncome, saveMeeting } from "./mcpWrites";
+import { bookWithCalendar, incomeEntryId, recordIncome, saveMeeting, type MeetingCalendar } from "./mcpWrites";
+import type { CreateOutcome } from "./calendar";
 
 // ── A small in-memory Firestore with optimistic transactions ─────────
 // Enough of the Admin SDK surface for the MCP code: doc get/set/create/delete/update,
@@ -438,6 +439,66 @@ describe("bookings", () => {
     expect(fake.read("CanaryMeetings/a")).toMatchObject({ Name: "Renamed", start: "2026-11-02T08:00:00.000Z" });
     expect(await saveMeeting(db, { id: "zzz", patch: { Name: "x" }, startMs: null, isNew: false })).toBe("missing");
     expect(fake.read("CanaryMeetings/zzz")).toBeUndefined();
+  });
+
+  describe("with a calendar event and Meet link", () => {
+    const LINK = "https://meet.google.com/abc-defg-hij";
+    function calendar(create: () => Promise<CreateOutcome>) {
+      const log = { created: 0, cancelled: [] as (string | undefined)[] };
+      const cal: MeetingCalendar = {
+        create: async () => { log.created++; return create(); },
+        cancel: async (eventId) => { log.cancelled.push(eventId); return true; },
+      };
+      return { cal, log };
+    }
+    const book = (id: string, ms: number, cal: MeetingCalendar) =>
+      bookWithCalendar(db, { id, patch: { ...at(ms), Email: "guest@example.com" }, startMs: ms }, cal);
+
+    it("makes the event first and stores its Meet link and id on the new booking", async () => {
+      const { cal, log } = calendar(async () => ({ kind: "created", id: "evt1", link: LINK }));
+      expect(await book("a", TEN, cal)).toEqual({ status: "saved", eventId: "evt1", link: LINK });
+      expect(log.created).toBe(1);
+      // In the document the moment it is created: the confirmation mail is sent from that first write.
+      expect(fake.read("CanaryMeetings/a")).toMatchObject({ MeetingLink: LINK, GoogleEventId: "evt1", Email: "guest@example.com" });
+    });
+
+    it("stores no link field when the calendar made the event without one", async () => {
+      const { cal } = calendar(async () => ({ kind: "created", id: "evt1", link: "" }));
+      expect(await book("a", TEN, cal)).toEqual({ status: "saved", eventId: "evt1", link: "" });
+      expect(fake.read("CanaryMeetings/a")).not.toHaveProperty("MeetingLink");
+    });
+
+    it("never makes an event for a slot that is already taken", async () => {
+      await saveMeeting(db, { id: "x", patch: at(TEN), startMs: TEN, isNew: true });
+      const { cal, log } = calendar(async () => ({ kind: "created", id: "evt1", link: LINK }));
+      expect(await book("a", TEN + 30 * 60_000, cal)).toEqual({ status: "clash" });
+      expect(log.created).toBe(0);
+      expect(meetings()).toEqual(["CanaryMeetings/x"]);
+    });
+
+    it("cancels the event when the slot was taken while it was being made", async () => {
+      const { cal, log } = calendar(async () => {
+        await saveMeeting(db, { id: "x", patch: at(TEN), startMs: TEN, isNew: true });
+        return { kind: "created", id: "evt1", link: LINK };
+      });
+      expect(await book("a", TEN, cal)).toEqual({ status: "clash" });
+      expect(log.cancelled).toEqual(["evt1"]);
+      expect(meetings()).toEqual(["CanaryMeetings/x"]);
+    });
+
+    it("books nothing when the calendar refuses", async () => {
+      const { cal, log } = calendar(async () => ({ kind: "refused", invalidEmail: true }));
+      expect(await book("a", TEN, cal)).toEqual({ status: "refused", invalidEmail: true });
+      expect(log.cancelled).toEqual([]);
+      expect(meetings()).toEqual([]);
+    });
+
+    it("books nothing and cancels whatever may have been made when the calendar does not confirm", async () => {
+      const { cal, log } = calendar(async () => ({ kind: "unknown" }));
+      expect(await book("a", TEN, cal)).toEqual({ status: "unconfirmed", cancelled: true });
+      expect(log.cancelled).toEqual([undefined]);
+      expect(meetings()).toEqual([]);
+    });
   });
 });
 
