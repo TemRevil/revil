@@ -9,6 +9,7 @@ import useMediaQuery from '../hooks/useMediaQuery';
 import { PHONE_QUERY } from '../lib/device';
 import { XS_QUERY, SM_QUERY } from './breakpoints';
 import { EASE } from './motion';
+import { parkCalendarReturn } from '../lib/calendarReturn';
 
 // The parameter name in the function type would trigger `no-unused-vars` in some
 // ESLint configurations, so we suppress that rule for the following type alias.
@@ -47,7 +48,8 @@ const MENU_ITEMS: { id: TabId; label: string; icon: typeof Layout }[] = [
 const isTabId = (s: string): s is TabId => s in TABS;
 
 const Dashboard = ({ onNavigate }: DashboardProps) => {
-    const [activeTab, setActiveTab] = useState<TabId>('projects');
+    // Back from connecting Google Calendar (Settings > Calendar shows how it went).
+    const [activeTab, setActiveTab] = useState<TabId>(() => (parkCalendarReturn() ? 'settings' : 'projects'));
     const [profileImage, setProfileImage] = useState<string>('');
     // In-dashboard AI copilot ("Spark") can be switched off from Settings → MCP.
     // Defaults on; only skips mounting when explicitly disabled in Settings/MCP.

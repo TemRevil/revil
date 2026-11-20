@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachmentPath, futureSlots, greetingName, replyPath, timeAtOffset, upcomingFrom, visitorOffset } from "./forms.js";
+import { attachmentPath, busyBlocks, futureSlots, greetingName, replyPath, timeAtOffset, upcomingFrom, visitorOffset } from "./forms.js";
 
 const BUCKET = "temrevil1.appspot.com";
 const fb = (bucket: string, path: string) =>
@@ -85,5 +85,39 @@ describe("public busy slots", () => {
 
   it("queries from one meeting length back, so a meeting still running is included", () => {
     expect(upcomingFrom(now)).toBe("2026-10-27T11:00:00.000Z");
+  });
+});
+
+describe("busy blocks from the owner's calendar", () => {
+  // Thursday 15 January 2026; the owner is at UTC+2 and works Monday to Thursday.
+  const now = Date.UTC(2026, 0, 15, 6);
+  const cfg = { workingDays: [1, 2, 3, 4], hours: [9] };
+  const z = (iso: string) => new Date(iso).toISOString();
+
+  it("rounds each block out to the 15-minute grid and merges what touches", () => {
+    const out = busyBlocks([
+      { start: "2026-01-15T09:07:00Z", end: "2026-01-15T09:50:00Z" },
+      { start: "2026-01-15T10:00:00Z", end: "2026-01-15T10:20:00Z" },
+      { start: "2026-01-15T13:00:00Z", end: "2026-01-15T14:00:00Z" },
+    ], now, cfg, 2);
+    expect(out).toEqual([
+      { start: z("2026-01-15T09:00:00Z"), end: z("2026-01-15T10:30:00Z") },
+      { start: z("2026-01-15T13:00:00Z"), end: z("2026-01-15T14:00:00Z") },
+    ]);
+  });
+
+  it("drops what has ended, what falls only on days off, and anything unreadable", () => {
+    const out = busyBlocks([
+      { start: "2026-01-15T03:00:00Z", end: "2026-01-15T05:00:00Z" },
+      { start: "2026-01-16T09:00:00Z", end: "2026-01-16T10:00:00Z" },
+      { start: "nope", end: "2026-01-16T10:00:00Z" },
+      { start: "2026-01-19T10:00:00Z", end: "2026-01-19T09:00:00Z" },
+    ], now, cfg, 2);
+    expect(out).toEqual([]);
+  });
+
+  it("keeps a block that reaches into a working day", () => {
+    const out = busyBlocks([{ start: "2026-01-17T20:00:00Z", end: "2026-01-19T08:00:00Z" }], now, cfg, 2);
+    expect(out).toEqual([{ start: z("2026-01-17T20:00:00Z"), end: z("2026-01-19T08:00:00Z") }]);
   });
 });

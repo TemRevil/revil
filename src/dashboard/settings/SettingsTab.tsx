@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, HardDrive, ZoomIn, Link, Sun, Moon, Plug, Mail } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Save, Upload, User, Sliders, Code, Clock, HardDrive, ZoomIn, Link, Sun, Moon, Plug, Mail, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 const DEFAULT_HERO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80";
 import Cropper from 'react-easy-crop';
@@ -15,6 +15,8 @@ import { timeZoneOptions } from '../../lib/timezones';
 import { offsetAt } from '../../lib/bookingRules';
 import MStackItem, { StackItemData } from './StackItemForm';
 import DMcpPanel from './McpSettings';
+import DCalendarPanel from './CalendarSettings';
+import { parkCalendarReturn } from '../../lib/calendarReturn';
 import Select from '../../ui/Select';
 import SaveBar from '../SaveBar';
 import LoadingCurtain from '../../ui/LoadingCurtain';
@@ -43,10 +45,13 @@ interface StackItem {
    trigger keeps its public subset in Settings/HandledProjects. */
 
 
+type SettingsTabId = 'availability' | 'stack' | 'account' | 'calendar' | 'mcp';
+
 export default function DSettings() {
     const [isLoading, setIsLoading] = useState(false);
 
-    const [activeTab, setActiveTab] = useState<'availability' | 'stack' | 'account' | 'mcp'>('availability');
+    // Back from connecting Google Calendar: open on that panel to show how it went.
+    const [activeTab, setActiveTab] = useState<SettingsTabId>(() => (parkCalendarReturn() ? 'calendar' : 'availability'));
     const [availability, setAvailability] = useState(75);
     // The owner's clock as an IANA zone name (see settings/zone.ts).
     const [selectedZone, setSelectedZone] = useState(browserZone);
@@ -130,7 +135,7 @@ export default function DSettings() {
     const [heroImageSizeDark, setHeroImageSizeDark] = useState<string>('');
     const [heroImageSizeLoadingDark, setHeroImageSizeLoadingDark] = useState(false);
 
-    const handleTabChange = (newTab: 'availability' | 'stack' | 'account' | 'mcp') => {
+    const handleTabChange = (newTab: SettingsTabId) => {
         setActiveTab(newTab);
     };
 
@@ -1027,6 +1032,7 @@ export default function DSettings() {
         { id: 'availability', label: 'Availability', icon: Sliders },
         { id: 'stack', label: 'Tech Stack', icon: Code },
         { id: 'account', label: 'Account', icon: User },
+        { id: 'calendar', label: 'Calendar', icon: CalendarDays },
         { id: 'mcp', label: 'MCP', icon: Plug },
     ] as const;
 
@@ -1612,6 +1618,19 @@ export default function DSettings() {
                             </div>
                         </div>
                     </motion.div>
+                    )}
+
+                    {activeTab === 'calendar' && (
+                        <motion.div
+                            key="calendar"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.15, ease: 'easeInOut' }}
+                            className="settings-section"
+                        >
+                            <DCalendarPanel isDark={isDark} />
+                        </motion.div>
                     )}
 
                     {activeTab === 'mcp' && (

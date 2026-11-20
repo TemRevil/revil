@@ -21,7 +21,9 @@
  *    is the point of it - on the picker's 15-minute grid, as long as it is on one of the
  *    owner's working days (their date), 30+ minutes away and not already taken.
  *  - Every meeting lasts an hour, so a time is taken when it would overlap a stored
- *    meeting, not only when it starts at the same minute.
+ *    meeting, not only when it starts at the same minute. A busy block from the owner's
+ *    own Google Calendar is stored the same way with its `end`, and takes every time
+ *    whose hour would touch it.
  *  - The owner's clock is a HostZone: an IANA zone name follows daylight saving, so its
  *    offset is worked out for each instant; a bare number is a fixed UTC offset.
  */
@@ -40,6 +42,8 @@ export interface AvailabilityConfig {
  */
 export interface BookedSlot {
     start?: unknown;
+    /** A busy block's end, as an ISO instant. Absent on a meeting: it lasts an hour. */
+    end?: unknown;
 }
 
 // Preserves the historic hardcoded schedule until the owner edits it: every day on,
@@ -253,11 +257,22 @@ export function zoneRecord(zone: HostZone): { timeZone: string | null; utcOffset
     return typeof zone === 'string' ? { timeZone: zone, utcOffset: null } : { timeZone: null, utcOffset: zone };
 }
 
-/** Whether a one-hour meeting starting at startMs would overlap a stored one. */
+/**
+ * When a stored slot ends: a busy block's own end, else an hour after it starts. An end
+ * that can't be read, or isn't after the start, counts as a one-hour meeting.
+ */
+export function slotEnd(m: BookedSlot | null | undefined): number | null {
+    const at = slotStart(m);
+    if (at === null) return null;
+    const end = slotStart({ start: m?.end });
+    return end !== null && end > at ? end : at + MEETING_MS;
+}
+
+/** Whether a one-hour meeting starting at startMs would overlap a stored slot. */
 function overlapsStored(startMs: number, meetings: BookedSlot[]): boolean {
     return meetings.some((m) => {
         const at = slotStart(m);
-        return at !== null && Math.abs(at - startMs) < MEETING_MS;
+        return at !== null && at < startMs + MEETING_MS && (slotEnd(m) as number) > startMs;
     });
 }
 
@@ -266,10 +281,10 @@ export function isTaken(startMs: number, meetings: BookedSlot[]): boolean {
     return overlapsStored(startMs, meetings);
 }
 
-/** A stored meeting that has not ended yet. One that can't be read never counts. */
+/** A stored meeting (or busy block) that has not ended yet. One that can't be read never counts. */
 export function isUpcoming(m: BookedSlot, nowMs: number): boolean {
-    const at = slotStart(m);
-    return at !== null && at + MEETING_MS > nowMs;
+    const end = slotEnd(m);
+    return end !== null && end > nowMs;
 }
 
 export interface PresetSlot {

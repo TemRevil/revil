@@ -3,6 +3,7 @@ import { loadFirebase } from '../lib/liveDoc';
 import { analytics } from '../lib/analytics/collector';
 import { EMPTY_TAILOR, type LinkTailor } from '../lib/analytics/types';
 import { pendingSignIn } from '../lib/signInPending';
+import { parkCalendarReturn } from '../lib/calendarReturn';
 
 interface AlgorithmProps {
     currentSection: string;
@@ -38,6 +39,13 @@ export const Algorithm = ({ currentSection, isContactOpen, onNavigate }: Algorit
 
         // Back from Google sign-in, started on the secret page: reopen it to finish.
         if (pendingSignIn() === 'secret') {
+            navigateRef.current('secret');
+            return;
+        }
+
+        // Back from connecting Google Calendar on a tab that isn't on the dashboard: the
+        // owner signs in as usual and the dashboard opens on Settings > Calendar.
+        if (parkCalendarReturn()) {
             navigateRef.current('secret');
             return;
         }

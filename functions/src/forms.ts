@@ -2,7 +2,10 @@
  * Small pure rules behind the public forms and the mail they cause, kept apart from
  * index.ts so they can be tested without Firebase.
  */
-import { MEETING_MS, isUpcoming, isoInstant, slotStart, wallClock, type BookedSlot } from "./booking.js";
+import {
+  DAY_MS, MEETING_MS, dayIndexAt, isUpcoming, offsetAt, isoInstant, slotStart, wallClock, zonedInstant,
+  type AvailabilityConfig, type BookedSlot, type HostZone,
+} from "./booking.js";
 
 /** Only an upload a visitor really made to emails/<folder>/<file>. */
 export const ATTACHMENT_PATH_RE = /^emails\/[A-Za-z0-9_-]{1,40}\/[^/]{1,200}$/;
@@ -103,6 +106,48 @@ export function futureSlots(meetings: Array<BookedSlot | null | undefined>, nowM
     .map((m) => slotStart(m) as number)
     .sort((a, b) => a - b)
     .map((at) => ({ start: isoInstant(at) }));
+}
+
+const GRID_MS = 15 * 60_000;
+
+/** Whether any owner day the span touches is a working day. */
+function touchesWorkingDay(startMs: number, endMs: number, cfg: AvailabilityConfig, zone: HostZone): boolean {
+  let t = startMs;
+  for (let i = 0; i < 400 && t < endMs; i++) {
+    const day = dayIndexAt(t, offsetAt(zone, t));
+    if (cfg.workingDays.includes(new Date(day * DAY_MS).getUTCDay())) return true;
+    t = zonedInstant(day + 1, 0, zone);
+  }
+  return false;
+}
+
+/**
+ * The owner's Google Calendar busy times as Settings/BookedSlots publishes them beside
+ * the meetings: start and end only (never what the event is), rounded out to the
+ * picker's 15-minute grid and merged, so they say no more than which times are taken.
+ * Blocks that have ended, or fall only on the owner's days off (nothing is bookable
+ * then), are left out.
+ */
+export function busyBlocks(
+  raw: Array<{ start?: unknown; end?: unknown }>, nowMs: number, cfg: AvailabilityConfig, zone: HostZone,
+): Array<{ start: string; end: string }> {
+  const spans = raw
+    .map((b) => {
+      const s = typeof b?.start === "string" ? Date.parse(b.start) : NaN;
+      const e = typeof b?.end === "string" ? Date.parse(b.end) : NaN;
+      return [Math.floor(s / GRID_MS) * GRID_MS, Math.ceil(e / GRID_MS) * GRID_MS];
+    })
+    .filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e) && e > s && e > nowMs)
+    .sort((a, b) => a[0] - b[0]);
+  const merged: number[][] = [];
+  for (const [s, e] of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  return merged
+    .filter(([s, e]) => touchesWorkingDay(s, e, cfg, zone))
+    .map(([s, e]) => ({ start: isoInstant(s), end: isoInstant(e) }));
 }
 
 /** Where the query for meetings that have not ended yet starts: anything starting after this. */

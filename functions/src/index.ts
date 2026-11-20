@@ -12,7 +12,8 @@ const db = getFirestore();
 
 // ── Secrets (set via: firebase functions:secrets:set NAME) ────────────
 // The email ones (SMTP_USER, RESEND_API_KEY) live in ./mail with the sender, and the
-// Calendar script's URL (MEETING_SYNC_URL) is defined in ./mcp, which also uses it.
+// Google Calendar connection's (GOOGLE_OAUTH_CLIENT_SECRET, CALENDAR_TOKEN_KEY) in
+// ./calendarAuth.
 
 // LLM provider key for the dashboard assistant ("Spark"). Held server-side so it
 // never ships in the public client bundle.
@@ -21,21 +22,24 @@ const llmApiKey = defineSecret("LLM_API_KEY");
 // Remote MCP server (agentic portfolio access over OAuth) and its daily cleanup -
 // defined in their own module and re-exported so `firebase deploy --only functions:mcp` works.
 export { mcp, cleanupMcp } from "./mcp.js";
-import { meetingSyncUrl } from "./mcp.js";
+
+// The owner's Google Calendar connection (Settings > Calendar): see ./calendarAuth.
+export { googleCalendar, calendarOAuth } from "./calendarAuth.js";
+import { CALENDAR_SECRETS, CONNECTION, calendarReady, calendarStatus, markBrokenAlerted, ownerCalendar } from "./calendarAuth.js";
 import { createTransporter, HELLO_EMAIL, notifyAlso, ownerRecipients, resendKey, smtpUser } from "./mail.js";
 import { escapeHtml as escHtml } from "./html.js";
 import { clientIp } from "./geoip.js";
 import {
   bookingRefusal, hostWallClock, hostZone, isUpcoming, parseAvailability, slotStart, zoneRecord,
-  MEETING_MS, type HostZone,
+  BOOKING_WINDOW_DAYS, MEETING_MS, type HostZone,
 } from "./booking.js";
 import { ACCENT, emailShell, SITE_URL } from "./emailShell.js";
 import { handledProjectsMirror, sameMirror, type HandledProject } from "./handledProjects.js";
 import { HOLD_MS, holdActive, holdIds, quota, readQuotas, refundQuotas, takeQuotas, RATE_LIMITS, type Quota } from "./limits.js";
-import { callCalendar, readCreateReply, replySucceeded, MEET_LINK_RE } from "./calendar.js";
+import { MEET_LINK_RE, eventIdFor } from "./googleCalendar.js";
 import { enqueueMail, jobId, retryFailed, MAIL_JOBS, type MailMessage } from "./outbox.js";
 import {
-  attachmentPath, futureSlots, greetingName, offsetLabel, replyPath, timeAtOffset, upcomingFrom, visitorOffset,
+  attachmentPath, busyBlocks, futureSlots, greetingName, offsetLabel, replyPath, timeAtOffset, upcomingFrom, visitorOffset,
 } from "./forms.js";
 import { COLLECTIONS } from "./collections.js";
 import { GUEST_EMAIL_RE, cancelNotices } from "./meetingNotices.js";
@@ -79,6 +83,8 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const AVAILABILITY = "Settings/Availability";
 const BOOKED_SLOTS = "Settings/BookedSlots";
+/** The owner's Google Calendar busy blocks, as last read (refreshCalendarBusy). Function-only. */
+const CALENDAR_BUSY = `${CONNECTION}/Cache/Busy`;
 const messages = () => db.collection(COLLECTIONS.messages);
 const meetings = () => db.collection(COLLECTIONS.meetings);
 /** Meetings that have not ended yet, in start order. */
@@ -222,7 +228,8 @@ async function queue(id: string, mail: MailMessage): Promise<void> {
 
 /**
  * Rebuilds the public busy-slot list from a query of the meetings that have not ended,
- * inside one transaction - never from the one meeting a trigger fired for. Reading the
+ * plus the owner's own busy blocks (refreshCalendarBusy), inside one transaction - never
+ * from the one meeting a trigger fired for. Reading the
  * query in the transaction is what makes it safe: a run for an older write can't put
  * back what was true then, because a newer meeting write makes the transaction retry
  * with the newer meetings. Each slot is a start instant and nothing else.
@@ -231,8 +238,10 @@ async function refreshBookedSlots(): Promise<void> {
   const slotsRef = db.doc(BOOKED_SLOTS);
   await db.runTransaction(async (tx) => {
     const now = Date.now();
-    const [snap, cur] = await Promise.all([tx.get(upcomingMeetings(now)), tx.get(slotsRef)]);
-    const slots = futureSlots(snap.docs.map((d) => d.data() as MeetingDoc), now);
+    const [snap, cur, busy] = await Promise.all([tx.get(upcomingMeetings(now)), tx.get(slotsRef), tx.get(db.doc(CALENDAR_BUSY))]);
+    const blocks = ((busy.data()?.Blocks || []) as Array<{ start: string; end: string }>).filter((b) => isUpcoming(b, now));
+    const slots = [...futureSlots(snap.docs.map((d) => d.data() as MeetingDoc), now), ...blocks]
+      .sort((a, b) => a.start.localeCompare(b.start));
     if (cur.exists && JSON.stringify(cur.data()?.Slots) === JSON.stringify(slots)) return;
     // Replaces the whole doc, so a slot list in an older shape is dropped with it.
     tx.set(slotsRef, { Slots: slots, lastWrite: FieldValue.serverTimestamp() });
@@ -651,15 +660,17 @@ async function alertUnconfirmedBooking(requestId: string, what: string, email: s
  * Public booking. Validates the request, reserves the time, creates the Calendar event
  * (with Meet link) and records the meeting as its own CanaryMeetings document.
  *
- * Only an explicit success from the Calendar script with a usable event id counts
- * (./calendar). A refusal is passed on as a plain message; anything else - a timeout,
- * an unreadable reply - may or may not have made an event, so it is cancelled (by the
- * request id, guest email and time) and the owner is told to check, and the visitor
- * gets a generic answer. If recording fails the event is cancelled too, so there is
- * never an invite for a time the public calendar does not show as taken.
+ * The time must also be free in the owner's own Google Calendar, read live (the public
+ * list of busy blocks can be up to 10 minutes old); if that can't be read, nothing is
+ * booked. Only a confirmed event with a usable Meet link counts (./googleCalendar). A
+ * refusal is passed on as a plain message; anything else - a timeout, a 5xx - may or may
+ * not have made an event, so it is cancelled by its exact id (derived from the request
+ * id) and the owner is told to check, and the visitor gets a generic answer. If
+ * recording fails the event is cancelled too, so there is never an invite for a time
+ * the public calendar does not show as taken.
  */
 export const bookMeeting = onCall(
-  { region: "us-central1", enforceAppCheck: true, secrets: [meetingSyncUrl, smtpUser], timeoutSeconds: 120 },
+  { region: "us-central1", enforceAppCheck: true, secrets: [...CALENDAR_SECRETS, smtpUser], timeoutSeconds: 120 },
   async (request) => {
     const d = (request.data || {}) as Record<string, unknown>;
     const name = textField(d.name, "Name", 100, true);
@@ -690,6 +701,21 @@ export const bookMeeting = onCall(
     const acks = ackQuotas(email, ip);
     const holdRefs = holdIds(startMs, MEETING_MS, CUSTOM_GRID_MS).map((id) => db.collection(RATE_LIMITS).doc(id));
     const ownHold = db.collection(RATE_LIMITS).doc(`hold_${startMs}`);
+
+    // 0. The calendar is connected, and the owner isn't busy then in it.
+    const calendar = ownerCalendar();
+    if (!(await calendarReady())) {
+      console.error("bookMeeting: Google Calendar is not connected");
+      throw new HttpsError("failed-precondition", `Booking is unavailable right now - please email ${HELLO_EMAIL}.`);
+    }
+    let busyThen: unknown[];
+    try {
+      busyThen = await calendar.busy(startMs, startMs + MEETING_MS);
+    } catch {
+      console.error("bookMeeting: the owner's busy times could not be read", { requestId });
+      throw new HttpsError("unavailable", `Booking is unavailable right now - please email ${HELLO_EMAIL}.`);
+    }
+    if (busyThen.length) throw new HttpsError("already-exists", "That time slot is no longer available. Please pick another.");
 
     // 1. Reserve: the time is free and allowed, under the cap, not rate limited.
     const now = Date.now();
@@ -725,32 +751,24 @@ export const bookMeeting = onCall(
       await dropHold();
     };
 
-    const url = (meetingSyncUrl.value() || "").trim();
-    if (!url) {
-      await release();
-      console.error("bookMeeting: MEETING_SYNC_URL is not set");
-      throw new HttpsError("failed-precondition", `Booking is unavailable right now - please email ${HELLO_EMAIL}.`);
-    }
-
     // 2. Calendar event + Meet link. The invite reaches the address the visitor typed,
     // so it carries no free text from them: the name only when it is plainly a name,
     // and no reason (the owner reads that in the dashboard and the notification).
     const calendarName = greetingName(name) ?? "Guest";
-    const reply = await callCalendar(url, { requestId, name: calendarName, email, reason: "", startTime, endTime });
-    const outcome = readCreateReply(reply);
+    const outcome = await calendar.createEvent({ bookingId: requestId, name: calendarName, email, startTime, endTime });
     if (outcome.kind === "refused") {
       await release();
-      console.warn("bookMeeting: the Calendar script refused the booking", { requestId });
+      console.warn("bookMeeting: Google Calendar refused the booking", { requestId });
       throw outcome.invalidEmail
         ? new HttpsError("invalid-argument", "Invalid Email Address provided.")
         : new HttpsError("internal", "Could not book meeting");
     }
     if (outcome.kind === "unknown") {
       await release();
-      console.error("bookMeeting: Calendar reply not confirmed", { requestId, httpStatus: reply.httpStatus });
-      const cancel = await callCalendar(url, { action: "cancel", requestId, email, name: calendarName, startTime });
+      console.error("bookMeeting: Google Calendar did not confirm the event", { requestId });
+      const cancel = await calendar.cancelEvent(eventIdFor(requestId));
       await alertUnconfirmedBooking(requestId,
-        replySucceeded(cancel)
+        cancel === "ok"
           ? "The calendar did not confirm a booking, so a cancel was sent for it."
           : "The calendar did not confirm a booking, and the cancel sent for it was not confirmed either.",
         email, startMs, zone);
@@ -776,8 +794,7 @@ export const bookMeeting = onCall(
       await meetingRef.create(entry);
     } catch (err) {
       console.error("bookMeeting: recording failed, cancelling the event:", (err as Error)?.message);
-      const cancel = await callCalendar(url, { action: "cancel", eventId: outcome.id, requestId, email, name: calendarName, startTime });
-      if (!replySucceeded(cancel)) {
+      if (await calendar.cancelEvent(outcome.id) !== "ok") {
         await alertUnconfirmedBooking(requestId,
           "A booking was made in the calendar but could not be recorded, and cancelling it was not confirmed.",
           email, startMs, zone);
@@ -792,47 +809,49 @@ export const bookMeeting = onCall(
 
 // =====================================================================
 //  2c. syncMeeting - admin-only: create, update or cancel a Calendar event from
-//      the dashboard's meeting editor (CanaryTab). Moved here from the separate
-//      `functions-meeting` codebase; same name, region, request and reply.
-//      The payload carries guest details, so it is never logged; neither is the
-//      script's URL (a credential) or its raw errors.
+//      the dashboard's meeting editor (CanaryTab): move a session's event (and
+//      re-invite its guest), or cancel it, by its exact event id. The payload
+//      carries guest details, so it is never logged.
 // =====================================================================
-const SYNC_ACTIONS = new Set(["create", "update", "cancel"]);
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 
 export const syncMeeting = onCall(
-  { region: "us-central1", enforceAppCheck: true, secrets: [meetingSyncUrl], maxInstances: 10, timeoutSeconds: 60 },
+  { region: "us-central1", enforceAppCheck: true, secrets: CALENDAR_SECRETS, maxInstances: 10, timeoutSeconds: 60 },
   async (request) => {
     await requireAdmin(request.auth, "Admin only.");
-    const payload = request.data;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      throw new HttpsError("invalid-argument", "Missing meeting details.");
+    const d = (request.data || {}) as Record<string, unknown>;
+    const eventId = typeof d.eventId === "string" ? d.eventId : "";
+    if (!eventId) throw new HttpsError("invalid-argument", "This session has no calendar event.");
+    if (!(await calendarReady())) {
+      throw new HttpsError("failed-precondition", "Google Calendar isn't connected - connect it in Settings > Calendar.");
     }
-    const action = (payload as { action?: unknown }).action ?? "create";
-    if (typeof action !== "string" || !SYNC_ACTIONS.has(action)) {
+    const calendar = ownerCalendar();
+
+    let outcome;
+    if (d.action === "cancel") {
+      outcome = await calendar.cancelEvent(eventId);
+    } else if (d.action === "update") {
+      const startTime = typeof d.startTime === "string" && ISO_RE.test(d.startTime) ? d.startTime : "";
+      const endTime = typeof d.endTime === "string" && ISO_RE.test(d.endTime) ? d.endTime : "";
+      if (!startTime || !endTime || Date.parse(endTime) <= Date.parse(startTime)) {
+        throw new HttpsError("invalid-argument", "Invalid meeting time.");
+      }
+      const name = textField(d.name, "Name", 100, true);
+      const email = emailField(d.email);
+      outcome = await calendar.updateEvent({ eventId, name, email, startTime, endTime });
+    } else {
       throw new HttpsError("invalid-argument", "Unknown meeting action.");
     }
-    if (JSON.stringify(payload).length > 20_000) throw new HttpsError("invalid-argument", "Meeting details are too large.");
 
-    const url = (meetingSyncUrl.value() || "").trim();
-    if (!url) {
-      console.error("syncMeeting: MEETING_SYNC_URL is not set");
-      throw new HttpsError("failed-precondition", "Meeting sync is not configured.");
+    if (outcome === "refused") {
+      console.warn("syncMeeting: Google Calendar refused the change", { action: d.action });
+      throw new HttpsError("internal", "The calendar refused the change.");
     }
-
-    const reply = await callCalendar(url, payload as Record<string, unknown>);
-    const body = reply.body as Record<string, unknown> | null;
-    if (body && body.status === "error") {
-      console.warn("syncMeeting: the Calendar script refused", { action });
-      throw /invalid attendee email/i.test(String(body.message || ""))
-        ? new HttpsError("invalid-argument", "Invalid attendee email.")
-        : new HttpsError("internal", "The calendar refused the change.");
-    }
-    const ok = action === "create" ? readCreateReply(reply).kind === "created" : replySucceeded(reply);
-    if (!ok) {
-      console.error("syncMeeting: Calendar reply not confirmed", { action, httpStatus: reply.httpStatus });
+    if (outcome !== "ok") {
+      console.error("syncMeeting: Google Calendar did not confirm the change", { action: d.action });
       throw new HttpsError("unavailable", "The calendar didn't confirm the change - check it before trying again.");
     }
-    return body;
+    return { ok: true };
   },
 );
 
@@ -893,6 +912,7 @@ export const mirrorTreasuryProjects = onDocumentWritten(
 //      - rate-limit documents whose window has passed, and the two site-wide
 //        lock documents the old limits used;
 //      - delivered mail jobs older than 30 days (failed ones stay for the owner);
+//      - Google Calendar connect attempts that were never finished;
 //      - the public busy-slot list, so meetings that ended drop off it.
 // =====================================================================
 async function deleteOldUploads(prefix: string, keep: Set<string>, cutoff: number): Promise<number> {
@@ -948,6 +968,7 @@ export const cleanupAttachments = onSchedule(
         await Promise.all(["contact", "meeting"].map((id) => db.collection(RATE_LIMITS).doc(id).delete()));
       }],
       ["delivered mail older than 30 days", () => deleteMatching(db.collection(MAIL_JOBS).where("sentAt", "<", now - 30 * DAY_MS))],
+      ["expired calendar connect attempts", () => deleteMatching(db.collection(`${CONNECTION}/States`).where("expiresAt", "<", now))],
       ["busy-slot refresh", () => refreshBookedSlots()],
     ];
     for (const [label, step] of steps) {
@@ -958,6 +979,58 @@ export const cleanupAttachments = onSchedule(
         console.error(`cleanupAttachments: ${label} failed:`, (err as Error)?.message);
       }
     }
+  },
+);
+
+// =====================================================================
+//  2f. refreshCalendarBusy - every 10 minutes, the owner's busy times in their own
+//      Google Calendar (start and end only, never what the events are) are read and
+//      published with the booked meetings in Settings/BookedSlots, so the booking
+//      page greys them out. bookMeeting checks the exact hour live as well, so a block
+//      added since the last run can't be booked over.
+//      When the calendar isn't connected, nothing is published; when Google stopped
+//      honouring the connection, the owner is told once to reconnect.
+// =====================================================================
+export const refreshCalendarBusy = onSchedule(
+  { schedule: "every 10 minutes", timeZone: "Etc/UTC", region: "us-central1", secrets: [...CALENDAR_SECRETS, smtpUser] },
+  async () => {
+    const status = await calendarStatus();
+    let blocks: Array<{ start: string; end: string }> = [];
+    if (status.connected && !status.broken) {
+      const now = Date.now();
+      const availability = (await db.doc(AVAILABILITY).get()).data() || {};
+      try {
+        const raw = await ownerCalendar().busy(now, now + (BOOKING_WINDOW_DAYS + 2) * DAY_MS);
+        blocks = busyBlocks(raw, now, parseAvailability(availability), hostZone(availability));
+      } catch (err) {
+        // Keep what was published last: a short outage shouldn't open every busy time.
+        console.error("refreshCalendarBusy: busy times could not be read:", (err as Error)?.message);
+        return;
+      }
+    }
+
+    if (status.broken && await markBrokenAlerted()) {
+      await queue(jobId("calendar-broken", String(status.connectedAt)), {
+        to: smtpUser.value(),
+        fromName: "Revil Portfolio",
+        subject: "Reconnect Google Calendar - bookings are paused",
+        label: "Calendar disconnected",
+        html: emailShell({
+          title: "Reconnect Google Calendar",
+          bodyHtml: `
+          <h2>Google Calendar needs reconnecting</h2>
+          <p>Google stopped accepting the site's connection to ${escHtml(status.account || "your calendar")} (it was revoked, or the account's password changed). Until it is reconnected, visitors can't book calls and the booking page doesn't know when you're busy.</p>
+          <p>Open the dashboard, then Settings, then Calendar, and choose Reconnect.</p>
+        `,
+        }),
+      });
+    }
+
+    const ref = db.doc(CALENDAR_BUSY);
+    const cur = (await ref.get()).data()?.Blocks;
+    if (JSON.stringify(cur || []) === JSON.stringify(blocks)) return;
+    await ref.set({ Blocks: blocks, readAt: Date.now() });
+    await refreshBookedSlots();
   },
 );
 

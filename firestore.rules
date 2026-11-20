@@ -5,7 +5,7 @@ service cloud.firestore {
     // Function to check if the user is the admin (uses Firebase Custom Claims)
     // Collections only Cloud Functions write (Admin SDK); each has its own block below.
     function functionCollections() {
-      return ['MCP', 'Analytics', 'RateLimits', 'McpAudit', 'MailJobs'];
+      return ['MCP', 'Analytics', 'RateLimits', 'McpAudit', 'MailJobs', 'Integrations'];
     }
 
     // Single documents only a Cloud Function writes, inside otherwise admin-writable
@@ -100,6 +100,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // The owner's Google Calendar connection (functions/src/calendarAuth.ts): the
+    // encrypted refresh token, the one-use states of a connection in progress, and the
+    // last busy times read. Only the Cloud Functions touch it; the dashboard sees the
+    // connection's status through the googleCalendar callable.
+    match /Integrations/{rest=**} {
+      allow read, write: if false;
+    }
+
     // Public-readable Settings content docs (Account bio, Availability,
     // HandledProjects, Developer, Tech Stack, BookedSlots, BookPage). Canary and MCP
     // stay private (rules are additive, so a blanket public read here would
@@ -180,8 +188,8 @@ service cloud.firestore {
     // collections have their own admin-only blocks above, so they never depend on it.
     //
     // So the catch-all names the top-level collection in a single-segment variable
-    // and subtracts those two, plus RateLimits, McpAudit and MailJobs (only
-    // functions write them), and the single function-owned Settings doc. Everything under them is governed only by their own
+    // and subtracts those two, plus RateLimits, McpAudit, MailJobs and Integrations
+    // (only functions write them), and the single function-owned Settings doc. Everything under them is governed only by their own
     // blocks above; the dashboard's real needs there (share links read/write, visit
     // stories read/delete) are granted explicitly and still work.
     match /{coll}/{doc} {

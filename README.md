@@ -100,12 +100,14 @@ Functions in `functions/` (Node 22):
 | Function | Trigger | What it does |
 | :--- | :--- | :--- |
 | `submitContact` | Callable, public, App Check | Validates a contact message, rate-limits it per IP and per email address, stores it as a `CanaryMessages` document |
-| `bookMeeting` | Callable, public, App Check | Validates a booking, checks the time, creates the Calendar event and Meet link through the Apps Script (only a clear success counts), stores the meeting |
+| `bookMeeting` | Callable, public, App Check | Validates a booking, checks the time (also free in the owner's Google Calendar), creates the Calendar event and Meet link and invites the guest (only a confirmed event counts), stores the meeting |
 | `notifyCanaryMessage` | Firestore write on `CanaryMessages/{id}` | Queues the owner's notification and the sender's acknowledgement for a new message; deletes a removed message's attachments |
 | `notifyCanaryMeeting` | Firestore write on `CanaryMeetings/{id}` | Queues the owner's notification and the guest's acknowledgement for a new meeting, rebuilds the public busy-slot mirror `Settings/BookedSlots` (upcoming start instants only) |
 | `sendMail` / `retryMail` | `MailJobs` create / every 5 minutes | The mail outbox: sends each queued mail, retries failures with backoff, keeps permanent failures as `failed` |
 | `retryMailJob` | Callable, admin | Puts a failed mail job back in the queue and tries it at once |
-| `syncMeeting` | Callable, admin, App Check | Forwards the dashboard's calendar changes (create, update, cancel) to the Apps Script |
+| `syncMeeting` | Callable, admin, App Check | Moves or cancels a session's Calendar event, by its exact id, for the dashboard |
+| `googleCalendar` / `calendarOAuth` | Callable, admin, App Check / HTTPS | Connect, check and disconnect the owner's Google Calendar (Settings > Calendar); Google's return address after consent |
+| `refreshCalendarBusy` | Scheduled, every 10 minutes | Publishes when the owner is busy in Google Calendar (start and end only) into `Settings/BookedSlots`, and emails the owner if the connection stops working |
 | `mirrorTreasuryProjects` | Firestore write on `TreasuryProjects/{id}` | Publishes the public project list `Settings/HandledProjects` (name, status, order only) |
 | `cleanupAttachments` | Scheduled, daily | Deletes stray contact and reply uploads, expired rate-limit records and old sent mail, and refreshes the busy-slot mirror |
 | `cleanupMcp` | Scheduled, every 6 hours | Removes expired MCP logins, codes, tokens and unused client registrations |
@@ -116,8 +118,12 @@ Functions in `functions/` (Node 22):
 | `trackSession` | HTTPS, App Check | Records visit analytics |
 | `mcp` | HTTPS | MCP server with OAuth 2.1, served at the Firebase Hosting site in `firebase.json` |
 
-The Google Apps Script owns the Calendar events and Meet links; `bookMeeting`,
-`syncMeeting` and the MCP tools all reach it through `functions/src/calendar.ts`.
+The owner connects Google Calendar from the dashboard with their own Google sign-in
+(`functions/src/calendarAuth.ts`, scopes: manage events, read busy times). The refresh
+token is stored encrypted in `Integrations/`, which only the functions can read.
+`bookMeeting`, `syncMeeting` and the MCP tools all use the Calendar API through
+`functions/src/googleCalendar.ts`; each booking's event id is derived from its id, so a
+retry never makes a second event.
 
 Shared logic (booking rules, time zones, money, receipts, the email shell, the public
 project list, HTML escaping) lives once under `src/` and
@@ -149,14 +155,15 @@ Real credentials live in Google Secret Manager and are read only inside function
 firebase functions:secrets:set SMTP_USER         # owner inbox
 firebase functions:secrets:set RESEND_API_KEY    # email relay
 firebase functions:secrets:set LLM_API_KEY       # assistant provider key
-firebase functions:secrets:set MEETING_SYNC_URL  # Apps Script endpoint (anyone with it can edit the calendar)
+firebase functions:secrets:set GOOGLE_OAUTH_CLIENT_SECRET  # OAuth web client used to connect Google Calendar
+firebase functions:secrets:set CALENDAR_TOKEN_KEY  # 32 random bytes, base64: encrypts the stored Calendar token
 ```
 
 ## Security
 
 - **Firestore rules** (`firestore.rules`): portfolio documents and a named list of
   `Settings` documents are publicly readable; everything else needs the `admin` claim.
-  `MCP` and `RateLimits` are for the functions only; analytics, visit stories, the MCP
+  `MCP`, `RateLimits` and `Integrations` are for the functions only; analytics, visit stories, the MCP
   audit log and the mail outbox (`MailJobs`) can be read and cleared by the admin but
   never written from a browser; `Settings/HandledProjects` is written only by its function.
 - **Storage rules** (`storage.rules`): visitors may upload one new file of an allowed

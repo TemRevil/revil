@@ -8,7 +8,7 @@ import { nextMonthlyPaymentDate } from "./money";
 import { sha256url } from "./mcpGrants";
 import { MEETING_MS, isTaken, isoInstant, type BookedSlot } from "./booking";
 import { COLLECTIONS } from "./collections";
-import type { CreateOutcome } from "./calendar";
+import type { CreateOutcome } from "./googleCalendar";
 
 /**
  * Write (or patch) one meeting document, refusing it when its start collides with

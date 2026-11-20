@@ -30,7 +30,6 @@
  */
 import { onRequest, type Request } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { defineSecret } from "firebase-functions/params";
 import { getAuth } from "firebase-admin/auth";
 import { createHash } from "crypto";
 import { z } from "zod";
@@ -51,7 +50,8 @@ import {
 } from "./booking";
 import { COLLECTIONS } from "./collections";
 import { HELLO_EMAIL, resendKey, smtpUser } from "./mail";
-import { callCalendar, readCreateReply, replySucceeded } from "./calendar";
+import { CALENDAR_SECRETS, calendarReady, ownerCalendar } from "./calendarAuth";
+import { eventIdFor, type ChangeOutcome } from "./googleCalendar";
 import { jobId, sendNow, type MailMessage } from "./outbox";
 import { clientIp } from "./geoip";
 import {
@@ -67,11 +67,6 @@ import {
 import { bookWithCalendar, incomeEntryId, recordIncome, saveMeeting } from "./mcpWrites";
 import { visitViews } from "./mcpVisits";
 
-// Google Apps Script endpoint that actually creates/updates/cancels the Google Calendar
-// event (the deployed `syncMeeting` callable is an admin-only, App Check-gated proxy to it).
-// Held as a secret, NOT in the repo: this repo is public, and anyone with the URL could
-// manipulate the owner's calendar.
-export const meetingSyncUrl = defineSecret("MEETING_SYNC_URL");
 // The MCP server class is loaded via dynamic import() below (the SDK is ESM-only),
 // which resolves to the package's ESM build. Type against that same build - a plain
 // `import type` from a CommonJS module resolves to the CJS build, whose McpServer is
@@ -254,7 +249,7 @@ export function buildInstructions(t: TimeInfo, cfg: McpCfg, scope: string): stri
     ...(writes
       ? [
           "- Receipts (send_treasury_receipt / send_itemized_receipt) only go to the customer email the owner saved on the treasury projects in the dashboard. You cannot send one anywhere else; if the address is missing or wrong, tell the owner to fix it in the dashboard.",
-          "- Bookings (add_booking): get the guest's email first - if the owner hasn't given it, ASK. With an email the site creates a Google Calendar event with a Google Meet link, invites the guest, and emails them a confirmation with the link (the reply returns `meetingLink`; give it to the owner). If the calendar refuses or doesn't confirm, nothing is booked: tell the owner.",
+          "- Bookings (add_booking): get the guest's email first - if the owner hasn't given it, ASK. With an email the site creates a Google Calendar event with a Google Meet link, invites the guest, and emails them a confirmation with the link (the reply returns `meetingLink`; give it to the owner). If the calendar refuses or doesn't confirm, nothing is booked: tell the owner. If the reply has `calendarWarning`, the time overlaps something in the owner's own calendar: say so.",
           "    • Pass `meetingLink` only when the owner wants a link they already have (Zoom etc.) instead; then no event is made. Never invent or guess a link.",
           "    • Omit `email` only for an in-person / phone booking, or when the owner says so: no event, no link, no guest email.",
           "  Pass date as YYYY-MM-DD and time as 24-hour HH:MM in the owner's timezone. add_booking marks the slot busy on the public calendar and emails the owner. A slot that collides with an existing booking is refused; check list_bookings first.",
@@ -1153,18 +1148,24 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       // mail) from its first write. The invite carries the name only, never the reason:
       // that can be the owner's own note.
       let meetingLink = a.meetingLink ?? "";
+      let busyNote: string | undefined;
       if (a.email && !a.meetingLink && !backdated) {
-        const url = (meetingSyncUrl.value() || "").trim();
-        if (!url) return fail("Nothing was booked: the calendar isn't configured (MEETING_SYNC_URL). Book without an email, or pass a meetingLink.");
+        if (!(await calendarReady())) {
+          return fail("Nothing was booked: Google Calendar isn't connected (or needs reconnecting) in the dashboard's Settings > Calendar. Book without an email, or pass a meetingLink.");
+        }
+        const calendar = ownerCalendar();
+        // The owner picked this time, so their own busy calendar is a warning, not a refusal.
+        try {
+          if ((await calendar.busy(startMs, startMs + MEETING_MS)).length) {
+            busyNote = "This overlaps something already in the owner's Google Calendar. Tell the owner.";
+          }
+        } catch { /* only a warning: the booking goes ahead */ }
         const email = a.email;
-        const startTime = isoInstant(startMs);
         const r = await bookWithCalendar(db(), { id, patch: payload, startMs }, {
-          create: async () => readCreateReply(await callCalendar(url, {
-            requestId: id, name: a.name, email, reason: "", startTime, endTime: isoInstant(startMs + MEETING_MS),
-          })),
-          cancel: async (eventId) => replySucceeded(await callCalendar(url, {
-            action: "cancel", requestId: id, email, name: a.name, startTime, ...(eventId ? { eventId } : {}),
-          })),
+          create: () => calendar.createEvent({
+            bookingId: id, name: a.name, email, startTime: isoInstant(startMs), endTime: isoInstant(startMs + MEETING_MS),
+          }),
+          cancel: async (eventId) => (await calendar.cancelEvent(eventId ?? eventIdFor(id))) === "ok",
         });
         if (r.status === "clash") return clash();
         if (r.status === "refused") {
@@ -1188,35 +1189,22 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
         status: "booked", id, start: payload.start, date: a.date, time: a.time, category: categoryLabel,
         hasMeetingLink: !!meetingLink, ...(meetingLink ? { meetingLink } : {}),
         guestEmailed: !!a.email,
+        ...(busyNote ? { calendarWarning: busyNote } : {}),
         ...(backdated ? { backdated: true, note: `Recorded on ${a.date}, which is in the past (today is ${time.date}).` } : {}),
       });
     });
 
   // ── Google Calendar sync ──────────────────────────────────────────
-  // The deployed `syncMeeting` callable enforces App Check, which a server has no way to
-  // satisfy - but it is only a proxy that forwards the payload to a Google Apps Script.
-  // So we post the SAME payloads straight to that script, giving MCP cancels/reschedules
-  // the same calendar behaviour the dashboard has.
+  // Moves and cancels go to the owner's calendar through the same connection the
+  // dashboard uses (./calendarAuth), by the booking's exact event id only: an event is
+  // never searched for by guest or time, which could find someone else's.
 
-  interface CalendarPayload {
-    action: "cancel" | "update" | "create";
-    eventId?: string; name?: string; email?: string; reason?: string;
-    startTime?: string; endTime?: string;
-  }
-
-  /**
-   * Post to the Apps Script through ./calendar (the one client bookMeeting and
-   * syncMeeting use: timeout, no URL or raw error in the logs). Best-effort: never
-   * throws into a tool call. Only a clear success counts; a refusal and an answer that
-   * never came are told apart, without passing on the script's own text.
-   */
-  const syncCalendar = async (payload: CalendarPayload): Promise<{ ok: boolean; error?: string }> => {
-    const url = (meetingSyncUrl.value() || "").trim();
-    if (!url) return { ok: false, error: "MEETING_SYNC_URL is not configured" };
-    const reply = await callCalendar(url, { ...payload });
-    if (replySucceeded(reply)) return { ok: true };
-    const refused = !!reply.body && typeof reply.body === "object" && (reply.body as { status?: unknown }).status === "error";
-    return { ok: false, error: refused ? "the calendar refused the change" : "the calendar did not confirm the change" };
+  /** What a calendar change did, in words for the result. Never throws into a tool call. */
+  const calendarChange = async (change: () => Promise<ChangeOutcome>): Promise<{ ok: boolean; error?: string }> => {
+    if (!(await calendarReady())) return { ok: false, error: "Google Calendar isn't connected in Settings > Calendar" };
+    const outcome = await change();
+    if (outcome === "ok") return { ok: true };
+    return { ok: false, error: outcome === "refused" ? "the calendar refused the change" : "the calendar did not confirm the change" };
   };
 
   server.registerTool("update_booking",
@@ -1307,20 +1295,19 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       }
 
       let calendar = "no calendar event attached to this booking";
-      if (existing.GoogleEventId && (slotMoved || patch.Name || patch.Email || patch["What For"])) {
+      if (existing.GoogleEventId && (slotMoved || patch.Name || patch.Email)) {
         const start = finalStart === null ? null : new Date(finalStart);
         if (!start) {
           calendar = "Could not read the booking's stored start time, so the calendar event was left alone.";
         } else {
-          const r = await syncCalendar({
-            action: "update",
-            eventId: existing.GoogleEventId,
+          const eventId = existing.GoogleEventId;
+          const r = await calendarChange(() => ownerCalendar().updateEvent({
+            eventId,
             name: finalName,
             email: finalEmail,
-            reason: String(patch["What For"] ?? existing["What For"] ?? ""),
             startTime: start.toISOString(),
             endTime: new Date(start.getTime() + MEETING_MS).toISOString(),
-          });
+          }));
           calendar = r.ok
             ? "Google Calendar event updated - the guest's invite now shows the new details."
             : `Google Calendar event NOT updated (${r.error}). Tell the owner to fix it from the dashboard.`;
@@ -1367,15 +1354,9 @@ export function registerTools(server: McpServerInstance, cfg: McpCfg, time: Time
       // Cancel the calendar event FIRST (same order as the dashboard): if it fails we have
       // not yet destroyed the details needed to find the event again.
       let calendar = "no calendar event attached to this booking";
-      if (existing.GoogleEventId || existing.Email) {
-        const start = at === null ? null : new Date(at);
-        const r = await syncCalendar({
-          action: "cancel",
-          eventId: existing.GoogleEventId,          // preferred: exact event
-          email: existing.Email,                    // fallback: search by guest
-          name: existing.Name,                      // fallback: search by name
-          ...(start ? { startTime: start.toISOString() } : {}),
-        });
+      if (existing.GoogleEventId) {
+        const eventId = existing.GoogleEventId;
+        const r = await calendarChange(() => ownerCalendar().cancelEvent(eventId));
         calendar = r.ok
           ? "Google Calendar event cancelled - the guest's invite is withdrawn."
           : `Google Calendar event NOT cancelled (${r.error}). Tell the owner to cancel it from the dashboard.`;
@@ -2179,9 +2160,9 @@ export const mcp = onRequest(
     region: "us-central1",
     cors: false,
     maxInstances: 10,
-    // add_booking can wait on the calendar twice (create, then a cancel): 25s each.
+    // add_booking can wait on the calendar a few times (busy, create, a cancel): 20s each.
     timeoutSeconds: 120,
-    secrets: [smtpUser, resendKey, meetingSyncUrl],
+    secrets: [smtpUser, resendKey, ...CALENDAR_SECRETS],
   },
   async (req, res) => {
     // Every async handler is awaited, so a rejection lands in the catch below and the

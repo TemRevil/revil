@@ -111,6 +111,40 @@ describe('host zone and daylight saving', () => {
     });
 });
 
+describe('busy blocks from the owner calendar', () => {
+    // Busy on the owner's clock (UTC+2) from 13:30 to 15:00.
+    const busy = [{ start: isoInstant(at(JAN15, 13, 30, 2)), end: isoInstant(at(JAN15, 15, 0, 2)) }];
+
+    it('takes every time whose hour would touch the block, whatever its length', () => {
+        expect(isTaken(at(JAN15, 12, 45, 2), busy)).toBe(true);
+        expect(isTaken(at(JAN15, 13, 0, 2), busy)).toBe(true);
+        expect(isTaken(at(JAN15, 14, 45, 2), busy)).toBe(true);
+    });
+
+    it('leaves the times that end before it or start after it free', () => {
+        expect(isTaken(at(JAN15, 12, 30, 2), busy)).toBe(false);
+        expect(isTaken(at(JAN15, 15, 0, 2), busy)).toBe(false);
+    });
+
+    it('reads an end that is missing, unreadable or not after the start as a one-hour meeting', () => {
+        const start = isoInstant(at(JAN15, 10, 0, 2));
+        for (const end of [undefined, 'later', start, isoInstant(at(JAN15, 9, 0, 2))]) {
+            expect(isTaken(at(JAN15, 10, 45, 2), [{ start, end }])).toBe(true);
+            expect(isTaken(at(JAN15, 11, 0, 2), [{ start, end }])).toBe(false);
+        }
+    });
+
+    it('greys a preset slot that falls in a block and keeps a block upcoming until it ends', () => {
+        const ctx: DayContext = {
+            nowMs: at(JAN15, 0, 0, 2) - DAY_MS, userTimezone: 2, hostOffset: 2,
+            cfg: { workingDays: [0, 1, 2, 3, 4, 5, 6], hours: [13, 14, 15] }, meetings: busy,
+        };
+        expect(presetSlotsForDay(JAN15, ctx).map((s) => s.taken)).toEqual([true, true, false]);
+        expect(isUpcoming(busy[0], at(JAN15, 14, 59, 2))).toBe(true);
+        expect(isUpcoming(busy[0], at(JAN15, 15, 0, 2))).toBe(false);
+    });
+});
+
 describe('isUpcoming', () => {
     const start = at(JAN15, 10, 0, 2);
     const m = booked(start);

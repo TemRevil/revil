@@ -19,9 +19,13 @@ import { timezoneOptions, localOffset } from '../lib/timezones';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const isValidEmail = (s: string) => EMAIL_RE.test(s.trim());
 
-/** A taken slot as Settings/BookedSlots publishes it: the UTC instant it starts, nothing else. */
+/**
+ * A taken slot as Settings/BookedSlots publishes it: the UTC instant it starts, and for a
+ * busy block from the owner's own calendar the instant it ends (a meeting lasts an hour).
+ */
 export interface Meeting {
   start: string;
+  end?: string;
 }
 
 /** Settings/BookedSlots' taken slots. An entry in any other shape is dropped. */
@@ -29,7 +33,7 @@ const meetingsOf = (data: Data | null | undefined): Meeting[] => {
   const slots = Array.isArray(data?.Slots) ? data.Slots as unknown[] : [];
   return slots
     .filter((s): s is Meeting => !!s && typeof s === 'object' && slotStart(s as Meeting) !== null)
-    .map((s) => ({ start: s.start }));
+    .map((s) => (typeof s.end === 'string' ? { start: s.start, end: s.end } : { start: s.start }));
 };
 
 interface BookMeetingResponse {

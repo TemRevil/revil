@@ -6,7 +6,7 @@ import {
   type AdminSubject, type CodeRec, type GrantDeps, type TokenResponse,
 } from "./mcpGrants";
 import { bookWithCalendar, incomeEntryId, recordIncome, saveMeeting, type MeetingCalendar } from "./mcpWrites";
-import type { CreateOutcome } from "./calendar";
+import type { CreateOutcome } from "./googleCalendar";
 
 // ── A small in-memory Firestore with optimistic transactions ─────────
 // Enough of the Admin SDK surface for the MCP code: doc get/set/create/delete/update,

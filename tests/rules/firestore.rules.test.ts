@@ -79,7 +79,7 @@ describe('private documents', () => {
 });
 
 describe('function-only collections', () => {
-    it.each(['MCP/tokens_abc', 'MCP/sub/deeper/doc', 'RateLimits/ip1'])('even the admin cannot touch %s', async (path) => {
+    it.each(['MCP/tokens_abc', 'MCP/sub/deeper/doc', 'RateLimits/ip1', 'Integrations/GoogleCalendar', 'Integrations/GoogleCalendar/States/s1', 'Integrations/GoogleCalendar/Cache/Busy'])('even the admin cannot touch %s', async (path) => {
         await seed(path);
         await assertFails(admin().doc(path).get());
         await assertFails(admin().doc(path).set({ v: 2 }));
